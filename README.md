@@ -12,9 +12,9 @@ AOS Communication Manager (CM) is a part of AoS system which responsible of the 
 
 See architecture [document](doc/architecture.md) for more details.
 
-# Build
+## Build
 
-## Required GO packages
+### Required GO packages
 
 All requires GO packages exist under `vendor` folder. Content of this folder is created with GO modules:
 
@@ -27,13 +27,13 @@ go mod init
 go mod vendor
 ```
 
-## Native build
+### Native build
 
 ```bash
 go build
 ```
 
-## ARM 64 build
+### ARM 64 build
 
 Install arm64 toolchain:
 
@@ -47,7 +47,7 @@ Build:
 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
 ```
 
-# Configuration
+## Configuration
 
 CM is configured through a configuration file. The file `aos_communicationmanager.cfg` should be either in current directory or specified with command line option as following:
 
@@ -55,7 +55,7 @@ CM is configured through a configuration file. The file `aos_communicationmanage
 ./aos_communicationmanager -c aos_communicationmanager.cfg
 ```
 
-The configuration file has JSON format described [here] (doc/config.md). Example configuration file could be found in `misc/config/aos_servicemanager.cfg`
+The configuration file has JSON format described [here] ([doc/config.md](https://kb.epam.com/display/EPMDAEPRA/Communication+Manager+Configuration)). Example configuration file could be found in `aos_communication.cfg`
 
 To increase log level use option -v:
 
@@ -63,7 +63,7 @@ To increase log level use option -v:
 ./aos_communicationmanager -c aos_communicationmanager.cfg -v debug
 ```
 
-# Run
+## Run
 
 ## Required packages
 
@@ -75,7 +75,7 @@ CM needs AoS Identity and Access Manager (IAM) to be running and configured (see
 * [rabbitmq-server] - AMQP server
 * [pyftpdlib] - light python ftp server
 
-# Test
+## Test
 
 Install all necessary dependencies:
 
