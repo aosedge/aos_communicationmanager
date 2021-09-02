@@ -29,6 +29,8 @@ import (
 	"github.com/coreos/go-systemd/journal"
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+
+	"aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************
@@ -138,6 +140,16 @@ func (hook *journalHook) Levels() []log.Level {
  * Private
  **********************************************************************************************************************/
 
+func reset(cfg *config.Config) (err error) {
+	log.Info("Cleanup working directory")
+
+	if err := os.RemoveAll(cfg.WorkingDir); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 /***********************************************************************************************************************
  * Main
  **********************************************************************************************************************/
@@ -178,10 +190,28 @@ func main() {
 
 	log.SetLevel(logLevel)
 
+	// Parse config
+
+	cfg, err := config.New(*configFile)
+	if err != nil {
+		// Config is important to make CM works properly. If we can't parse the config no reason to continue.
+		// If the error is temporary CM will be restarted by systemd.
+		log.Fatalf("Can't parse config: %s", err)
+	}
+
 	// Do reset
 
 	if *doReset {
-		return
+		if err = reset(cfg); err != nil {
+			// Try to continue even if reset failed.
+			log.Errorf("Can't perform reset: %s", err)
+
+			os.Exit(1)
+		}
+
+		log.Info("CM reset successfully")
+
+		os.Exit(0)
 	}
 
 	log.WithFields(log.Fields{"configFile": *configFile, "version": GitSummary}).Info("Start communication manager")
