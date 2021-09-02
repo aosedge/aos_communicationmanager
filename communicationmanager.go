@@ -30,6 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
+	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/config"
 )
 
@@ -44,6 +45,7 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
+	amqp *amqp.AmqpHandler
 }
 
 type journalHook struct {
@@ -83,10 +85,19 @@ func newCommunicationManager() (cm *communicationManager, err error) {
 
 	cm = &communicationManager{}
 
+	// Create AMQP handler
+	if cm.amqp, err = amqp.New(nil); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close amqp
+	if sm.amqp != nil {
+		sm.amqp.Close()
+	}
 }
 
 func (cm *communicationManager) run() {
