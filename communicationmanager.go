@@ -32,6 +32,7 @@ import (
 
 	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/config"
+	"aos_communicationmanager/fcrypt"
 	"aos_communicationmanager/iamclient"
 )
 
@@ -46,8 +47,9 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
-	iam  *iamclient.Client
-	amqp *amqp.AmqpHandler
+	amqp  *amqp.AmqpHandler
+	iam   *iamclient.Client
+	crypt *fcrypt.CryptoContext
 }
 
 type journalHook struct {
@@ -88,7 +90,7 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	cm = &communicationManager{}
 
 	// Create AMQP handler
-	if cm.amqp, err = amqp.New(nil); err != nil {
+	if cm.amqp, err = amqp.New(); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -97,10 +99,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create crypto context
+	if cm.crypt, err = fcrypt.New(cfg.Crypt, cm.iam); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close crypto context
+	if cm.crypt != nil {
+		cm.crypt.Close()
+	}
+
 	// Close iam
 	if cm.iam != nil {
 		cm.iam.Close()
