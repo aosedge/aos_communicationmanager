@@ -32,6 +32,7 @@ import (
 
 	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/config"
+	"aos_communicationmanager/database"
 	"aos_communicationmanager/fcrypt"
 	"aos_communicationmanager/iamclient"
 )
@@ -47,6 +48,7 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
+	db    *database.Database
 	amqp  *amqp.AmqpHandler
 	iam   *iamclient.Client
 	crypt *fcrypt.CryptoContext
@@ -89,6 +91,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 
 	cm = &communicationManager{}
 
+	if cm.db, err = database.New(cfg); err != nil {
+		// Try again after reset
+
+		log.Errorf("Can't create DB: %s", err)
+
+		if err = reset(cfg); err != nil {
+			log.Errorf("Can't reset CM: %s", err)
+		}
+
+		if cm.db, err = database.New(cfg); err != nil {
+			return cm, aoserrors.Wrap(err)
+		}
+	}
+
 	// Create AMQP handler
 	if cm.amqp, err = amqp.New(); err != nil {
 		return cm, aoserrors.Wrap(err)
@@ -121,6 +137,11 @@ func (cm *communicationManager) close() {
 	// Close amqp
 	if cm.amqp != nil {
 		cm.amqp.Close()
+	}
+
+	// Close DB
+	if cm.db != nil {
+		cm.db.Close()
 	}
 }
 
