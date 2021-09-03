@@ -32,6 +32,7 @@ import (
 
 	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/config"
+	"aos_communicationmanager/iamclient"
 )
 
 /***********************************************************************************************************************
@@ -45,6 +46,7 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
+	iam  *iamclient.Client
 	amqp *amqp.AmqpHandler
 }
 
@@ -75,7 +77,7 @@ func init() {
  * CommunicationManager
  **********************************************************************************************************************/
 
-func newCommunicationManager() (cm *communicationManager, err error) {
+func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) {
 	defer func() {
 		if err != nil {
 			cm.close()
@@ -90,13 +92,23 @@ func newCommunicationManager() (cm *communicationManager, err error) {
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create IAM client
+	if cm.iam, err = iamclient.New(cfg, cm.amqp, false); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close iam
+	if cm.iam != nil {
+		cm.iam.Close()
+	}
+
 	// Close amqp
-	if sm.amqp != nil {
-		sm.amqp.Close()
+	if cm.amqp != nil {
+		cm.amqp.Close()
 	}
 }
 
@@ -227,7 +239,7 @@ func main() {
 
 	log.WithFields(log.Fields{"configFile": *configFile, "version": GitSummary}).Info("Start communication manager")
 
-	cm, err := newCommunicationManager()
+	cm, err := newCommunicationManager(cfg)
 	if err != nil {
 		log.Fatalf("Can't create communication manager: %s", err)
 	}
