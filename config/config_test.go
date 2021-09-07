@@ -83,6 +83,19 @@ const testConfigContent = `{
 		"migrationPath" : "/usr/share/aos_communicationmanager/migration",
 		"mergedMigrationPath" : "/var/aos/communicationmanager/migration"
 	},
+	"smController": {
+		"smList": [
+			{
+				"smId": "sm0",
+				"serverUrl": "localhost:8888",
+				"isLocal": true
+			},
+			{
+				"smId": "sm1",
+				"serverUrl": "remotehost:8888"
+			}
+		]
+	},
 	"umController": {
 		"serverUrl": "localhost:8091",
 		"umClients": [{
@@ -250,6 +263,19 @@ func TestDownloaderConfig(t *testing.T) {
 
 	if !reflect.DeepEqual(originalConfig, testCfg.Downloader) {
 		t.Errorf("Wrong downloader config value: %v", testCfg.Downloader)
+	}
+}
+
+func TestSMControllerConfig(t *testing.T) {
+	originalConfig := config.SMController{
+		SMList: []config.SMConfig{
+			{SMID: "sm0", ServerURL: "localhost:8888", IsLocal: true},
+			{SMID: "sm1", ServerURL: "remotehost:8888"},
+		},
+	}
+
+	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {
+		t.Errorf("Wrong SM controller value: %v", testCfg.SMController)
 	}
 }
 

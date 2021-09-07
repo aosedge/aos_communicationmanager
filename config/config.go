@@ -108,6 +108,18 @@ type Downloader struct {
 	RetryDelay             Duration `json:"retryDelay"`
 }
 
+// SMConfig SM configuration
+type SMConfig struct {
+	SMID      string `json:"smId"`
+	ServerURL string `json:"serverUrl"`
+	IsLocal   bool   `json:"isLocal,omitempty"`
+}
+
+// SMController SM controller configuration
+type SMController struct {
+	SMList []SMConfig `json:"smList"`
+}
+
 // Config instance
 type Config struct {
 	Crypt                 Crypt        `json:"fcrypt"`
@@ -123,6 +135,7 @@ type Config struct {
 	Logging               Logging      `json:"logging"`
 	Alerts                Alerts       `json:"alerts"`
 	Migration             Migration    `json:"migration"`
+	SMController          SMController `json:"smController"`
 	UMController          UMController `json:"umController"`
 }
 
