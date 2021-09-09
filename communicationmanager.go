@@ -30,6 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
+	"aos_communicationmanager/alerts"
 	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/config"
 	"aos_communicationmanager/database"
@@ -48,10 +49,11 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
-	db    *database.Database
-	amqp  *amqp.AmqpHandler
-	iam   *iamclient.Client
-	crypt *fcrypt.CryptoContext
+	db     *database.Database
+	amqp   *amqp.AmqpHandler
+	iam    *iamclient.Client
+	crypt  *fcrypt.CryptoContext
+	alerts *alerts.Alerts
 }
 
 type journalHook struct {
@@ -120,10 +122,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create alerts
+	if cm.alerts, err = alerts.New(cfg, cm.amqp, cm.db); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close alerts
+	if cm.alerts != nil {
+		cm.alerts.Close()
+	}
+
 	// Close crypto context
 	if cm.crypt != nil {
 		cm.crypt.Close()
