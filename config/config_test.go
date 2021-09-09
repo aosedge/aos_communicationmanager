@@ -65,6 +65,7 @@ const testConfigContent = `{
 		"maxPartCount": 10
 	},
 	"alerts": {
+		"enableSystemAlerts": true,
 		"sendPeriod": "00:00:20",
 		"maxMessageSize": 1024,
 		"maxOfflineMessages": 32,
@@ -195,6 +196,10 @@ func TestGetLoggingConfig(t *testing.T) {
 }
 
 func TestGetAlertsConfig(t *testing.T) {
+	if !testCfg.Alerts.EnableSystemAlerts {
+		t.Errorf("Wrong enable system alerts value: %v", testCfg.Alerts.EnableSystemAlerts)
+	}
+
 	if testCfg.Alerts.SendPeriod.Duration != 20*time.Second {
 		t.Errorf("Wrong poll period value: %s", testCfg.Alerts.SendPeriod)
 	}

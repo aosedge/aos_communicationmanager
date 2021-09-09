@@ -85,7 +85,7 @@ type Logging struct {
 
 // Alerts configuration for alerts
 type Alerts struct {
-	Disabled           bool     `json:"disabled"`
+	EnableSystemAlerts bool     `json:"enableSystemAlerts"`
 	SendPeriod         Duration `json:"sendPeriod"`
 	MaxMessageSize     int      `json:"maxMessagesize"`
 	MaxOfflineMessages int      `json:"maxOfflineMessages"`

@@ -97,6 +97,7 @@ func TestGetSystemError(t *testing.T) {
 	testSender := newTestSender()
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     1024,
 		MaxOfflineMessages: 32}}, testSender, &testCursorStorage{})
@@ -182,6 +183,7 @@ func TestGetOfflineSystemError(t *testing.T) {
 
 	// Open and close to store cursor
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     1024,
 		MaxOfflineMessages: 32}}, testSender, cursorStorage)
@@ -213,6 +215,7 @@ func TestGetOfflineSystemError(t *testing.T) {
 
 	// Open again
 	alertsHandler, err = alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     1024,
 		MaxOfflineMessages: 32}}, testSender, cursorStorage)
@@ -378,7 +381,7 @@ func TestGetDowloadsStatusAlerts(t *testing.T) {
 	}
 }
 
-func TestGetConnectionManagerAlerts(t *testing.T) {
+func TestGetCommunicationManagerAlerts(t *testing.T) {
 	const numMessages = 5
 	testSender := newTestSender()
 
@@ -396,6 +399,7 @@ func TestGetConnectionManagerAlerts(t *testing.T) {
 	}
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     2048,
 		MaxOfflineMessages: 32}}, testSender, &testCursorStorage{})
@@ -424,6 +428,7 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 	const numExpectedMessages = 3
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     500,
 		MaxOfflineMessages: 32}}, testSender, &testCursorStorage{})
@@ -453,6 +458,7 @@ func TestAlertsMaxOfflineMessages(t *testing.T) {
 	testSender := newTestSender()
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     1024,
 		MaxOfflineMessages: 3}}, testSender, &testCursorStorage{})
@@ -487,6 +493,7 @@ func TestDuplicateAlerts(t *testing.T) {
 	testSender := newTestSender()
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     1024,
 		MaxOfflineMessages: 25}}, testSender, &testCursorStorage{})
@@ -517,6 +524,7 @@ func TestMessageFilter(t *testing.T) {
 	filter := []string{"test", "regexp"}
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
+		EnableSystemAlerts: true,
 		SendPeriod:         config.Duration{Duration: 1 * time.Second},
 		MaxMessageSize:     1024,
 		MaxOfflineMessages: 32,
