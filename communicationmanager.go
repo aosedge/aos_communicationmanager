@@ -39,6 +39,7 @@ import (
 	"aos_communicationmanager/fileserver"
 	"aos_communicationmanager/iamclient"
 	"aos_communicationmanager/monitoring"
+	"aos_communicationmanager/smcontroller"
 )
 
 /***********************************************************************************************************************
@@ -52,14 +53,15 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
-	db         *database.Database
-	amqp       *amqp.AmqpHandler
-	iam        *iamclient.Client
-	crypt      *fcrypt.CryptoContext
-	alerts     *alerts.Alerts
-	monitor    *monitoring.Monitor
-	downloader *downloader.Downloader
-	fileServer *fileserver.FileServer
+	db           *database.Database
+	amqp         *amqp.AmqpHandler
+	iam          *iamclient.Client
+	crypt        *fcrypt.CryptoContext
+	alerts       *alerts.Alerts
+	monitor      *monitoring.Monitor
+	downloader   *downloader.Downloader
+	fileServer   *fileserver.FileServer
+	smController *smcontroller.Controller
 }
 
 type journalHook struct {
@@ -148,10 +150,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create SM controller
+	if cm.smController, err = smcontroller.New(cfg, cm.amqp, cm.alerts, cm.monitor, cm.fileServer, false); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close SM controller
+	if cm.smController != nil {
+		cm.smController.Close()
+	}
+
 	// Close file server
 	if cm.fileServer != nil {
 		cm.fileServer.Close()
