@@ -99,6 +99,15 @@ type Migration struct {
 	MergedMigrationPath string `json:"mergedMigrationPath"`
 }
 
+// Downloader downloader configuration
+type Downloader struct {
+	DownloadDir            string   `json:"downloadDir"`
+	DecryptDir             string   `json:"decryptDir"`
+	MaxConcurrentDownloads int      `json:"maxConcurrentDownloads"`
+	RetryCount             int      `json:"retryCount"`
+	RetryDelay             Duration `json:"retryDelay"`
+}
+
 // Config instance
 type Config struct {
 	Crypt                 Crypt        `json:"fcrypt"`
@@ -106,9 +115,8 @@ type Config struct {
 	ServiceDiscoveryURL   string       `json:"serviceDiscoveryUrl"`
 	IAMServerURL          string       `json:"iamServerUrl"`
 	FileServerURL         string       `json:"fileServerUrl"`
+	Downloader            Downloader   `json:"downloader"`
 	WorkingDir            string       `json:"workingDir"`
-	DownloadDir           string       `json:"downloadDir"`
-	DownloadFileTTLDays   uint64       `json:"downloadFileTTLDays"`
 	BoardConfigFile       string       `json:"boardConfigFile"`
 	UnitStatusSendTimeout Duration     `json:"unitStatusSendTimeout"`
 	Monitoring            Monitoring   `json:"monitoring"`
@@ -131,7 +139,6 @@ func New(fileName string) (config *Config, err error) {
 
 	config = &Config{
 		UnitStatusSendTimeout: Duration{30 * time.Second},
-		DownloadFileTTLDays:   3,
 		Monitoring: Monitoring{
 			SendPeriod:         Duration{1 * time.Minute},
 			PollPeriod:         Duration{10 * time.Second},
@@ -142,7 +149,13 @@ func New(fileName string) (config *Config, err error) {
 		Alerts: Alerts{
 			SendPeriod:         Duration{10 * time.Second},
 			MaxMessageSize:     65536,
-			MaxOfflineMessages: 25}}
+			MaxOfflineMessages: 25},
+		Downloader: Downloader{
+			MaxConcurrentDownloads: 4,
+			RetryCount:             3,
+			RetryDelay:             Duration{1 * time.Minute},
+		},
+	}
 
 	if err = json.Unmarshal(raw, &config); err != nil {
 		return config, aoserrors.Wrap(err)
@@ -152,8 +165,12 @@ func New(fileName string) (config *Config, err error) {
 		config.CertStorage = "/var/aos/crypt/cm/"
 	}
 
-	if config.DownloadDir == "" {
-		config.DownloadDir = path.Join(config.WorkingDir, "download")
+	if config.Downloader.DownloadDir == "" {
+		config.Downloader.DownloadDir = path.Join(config.WorkingDir, "download")
+	}
+
+	if config.Downloader.DecryptDir == "" {
+		config.Downloader.DecryptDir = path.Join(config.WorkingDir, "decrypt")
 	}
 
 	if config.BoardConfigFile == "" {

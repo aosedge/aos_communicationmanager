@@ -36,6 +36,7 @@ import (
 	"aos_communicationmanager/database"
 	"aos_communicationmanager/downloader"
 	"aos_communicationmanager/fcrypt"
+	"aos_communicationmanager/fileserver"
 	"aos_communicationmanager/iamclient"
 	"aos_communicationmanager/monitoring"
 )
@@ -58,6 +59,7 @@ type communicationManager struct {
 	alerts     *alerts.Alerts
 	monitor    *monitoring.Monitor
 	downloader *downloader.Downloader
+	fileServer *fileserver.FileServer
 }
 
 type journalHook struct {
@@ -137,7 +139,12 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	// Create downloader
-	if cm.downloader, err = downloader.New(cfg, cm.crypt, cm.alerts); err != nil {
+	if cm.downloader, err = downloader.New("CM", cfg, cm.crypt, cm.alerts); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	// Create file server
+	if cm.fileServer, err = fileserver.New(cfg); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -145,6 +152,11 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 }
 
 func (cm *communicationManager) close() {
+	// Close file server
+	if cm.fileServer != nil {
+		cm.fileServer.Close()
+	}
+
 	// Close monitor
 	if cm.monitor != nil {
 		cm.monitor.Close()

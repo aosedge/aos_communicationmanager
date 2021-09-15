@@ -19,14 +19,17 @@ package downloader
 
 import (
 	"bufio"
+	"container/list"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,6 +37,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 	"gitpct.epam.com/epmd-aepr/aos_common/image"
+	"gitpct.epam.com/epmd-aepr/aos_common/utils/retryhelper"
 
 	"aos_communicationmanager/alerts"
 	"aos_communicationmanager/cloudprotocol"
@@ -45,17 +49,13 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const updateDownloadsTime = 10 * time.Second
-const statusAlertTickCount = 3
+const updateDownloadsTime = 30 * time.Second
 
-const startedFlagSuffix = ".started"
-const interruptedFlagSuffix = ".interrupted"
-const flagAccessRights = 0644
-const interruptionReason = "Internet connection error"
-
-const moduleID = "downloader"
-
-const downloadMaxTry = 3
+const (
+	encryptedFileExt = ".enc"
+	decryptedFileExt = ".dec"
+	interruptFileExt = ".int"
+)
 
 /***********************************************************************************************************************
  * Types
@@ -63,16 +63,25 @@ const downloadMaxTry = 3
 
 // CryptoContext interface to access crypto functions
 type CryptoContext interface {
-	ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (symetricContext fcrypt.SymmetricContextInterface, err error)
+	ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (symmetricContext fcrypt.SymmetricContextInterface, err error)
 	CreateSignContext() (signContext fcrypt.SignContextInterface, err error)
 }
 
 // Downloader instance
 type Downloader struct {
-	crypt           CryptoContext
-	downloadDir     string
-	sender          AlertSender
-	downloadFileTTL time.Duration
+	sync.Mutex
+
+	moduleID           string
+	cryptoContext      CryptoContext
+	config             config.Downloader
+	downloadMountPoint string
+	decryptMountPoint  string
+	sender             AlertSender
+	lockedFiles        []string
+	currentDownloads   map[string]*downloadResult
+	waitQueue          *list.List
+	availableBlocks    map[string]int64
+	blockSizes         map[string]int64
 }
 
 // AlertSender provdes alert sender interface
@@ -84,9 +93,9 @@ type AlertSender interface {
 	SendDownloadStatusAlert(downloadStatus alerts.DownloadStatus)
 }
 
-/***********************************************************************************************************************
+/*******************************************************************************
  * Vars
- **********************************************************************************************************************/
+ ******************************************************************************/
 
 // ErrNotDownloaded returns when file can't be downloaded
 var ErrNotDownloaded = errors.New("can't download file from any source")
@@ -96,145 +105,449 @@ var ErrNotDownloaded = errors.New("can't download file from any source")
 ***********************************************************************************************************************/
 
 // New creates new downloader object
-func New(config *config.Config, fcrypt CryptoContext, sender AlertSender) (downloader *Downloader, err error) {
-	log.Debug("New downloader")
+func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (downloader *Downloader, err error) {
+	log.Debug("Create downloader instance")
 
-	if err = os.MkdirAll(config.DownloadDir, 755); err != nil {
+	downloader = &Downloader{
+		moduleID:         moduleID,
+		config:           cfg.Downloader,
+		sender:           sender,
+		cryptoContext:    cryptoContext,
+		currentDownloads: make(map[string]*downloadResult),
+		waitQueue:        list.New(),
+		availableBlocks:  make(map[string]int64),
+		blockSizes:       make(map[string]int64),
+	}
+
+	if err = os.MkdirAll(downloader.config.DownloadDir, 755); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	downloader = &Downloader{
-		crypt:           fcrypt,
-		downloadDir:     config.DownloadDir,
-		sender:          sender,
-		downloadFileTTL: time.Hour * 24 * time.Duration(config.DownloadFileTTLDays),
+	if err = os.MkdirAll(downloader.config.DecryptDir, 755); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if downloader.downloadMountPoint, err = getMountPoint(downloader.config.DownloadDir); err != nil {
+		return nil, err
+	}
+
+	if downloader.decryptMountPoint, err = getMountPoint(downloader.config.DecryptDir); err != nil {
+		return nil, err
 	}
 
 	return downloader, nil
 }
 
-// DownloadAndDecrypt download decrypt and validate blob
-func (downloader *Downloader) DownloadAndDecrypt(packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
-	decryptDir string) (resultFile string, err error) {
-	if err = checkDescryptDir(decryptDir); err != nil {
-		return "", aoserrors.Wrap(err)
+// DownloadAndDecrypt downloads, decrypts and verifies package
+func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result Result, err error) {
+	downloader.Lock()
+	defer downloader.Unlock()
+
+	id := base64.URLEncoding.EncodeToString(packageInfo.Sha256)
+
+	downloadResult := &downloadResult{
+		id:                id,
+		ctx:               ctx,
+		packageInfo:       packageInfo,
+		chains:            chains,
+		certs:             certs,
+		statusChannel:     make(chan error, 1),
+		release:           downloader.releaseResult,
+		decryptedFileName: path.Join(downloader.config.DecryptDir, id+decryptedFileExt),
+		downloadFileName:  path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
+		interruptFileName: path.Join(downloader.config.DownloadDir, id+interruptFileExt),
 	}
 
-	if err = downloader.isEnoughSpaceForPackage(packageInfo, downloader.downloadDir, decryptDir); err != nil {
-		return "", aoserrors.Wrap(err)
+	log.WithField("id", id).Debug("Download and decrypt")
+
+	if err = downloader.addToQueue(downloadResult); err != nil {
+		return nil, err
 	}
 
-	fileName, err := downloader.downloadWithMaxTry(packageInfo)
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-	defer os.Remove(fileName)
-
-	defer func() {
-		if err != nil && resultFile != "" {
-			os.RemoveAll(resultFile)
-		}
-	}()
-
-	resultFile, err = downloader.decryptPackage(fileName, decryptDir, packageInfo.DecryptionInfo)
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	err = downloader.validateSigns(resultFile, packageInfo.Signs, chains, certs)
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	return resultFile, nil
+	return downloadResult, nil
 }
 
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
-func checkDescryptDir(decryptDir string) (err error) {
-	if decryptDir == "" {
-		return aoserrors.New("decrypt directory is not defined")
+func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
+	if len(result.packageInfo.URLs) == 0 {
+		return aoserrors.New("download URLs is empty")
 	}
 
-	statInfo, err := os.Stat(decryptDir)
-	if err != nil && !os.IsNotExist(err) {
-		return aoserrors.Wrap(err)
+	if result.packageInfo.DecryptionInfo == nil {
+		return aoserrors.New("no decrypt image info")
 	}
 
-	if os.IsNotExist(err) {
-		if err = os.MkdirAll(decryptDir, 755); err != nil {
-			return aoserrors.Wrap(err)
+	if result.packageInfo.Signs == nil {
+		return aoserrors.New("no signs info")
+	}
+
+	if downloader.isResultInQueue(result) {
+		return aoserrors.Errorf("download ID %s is being already processed", result.id)
+	}
+
+	defer func() {
+		if err != nil {
+			downloader.unlockDownload(result)
+			downloader.unlockDecrypt(result)
 		}
-	} else {
-		if !statInfo.Mode().IsDir() {
-			return aoserrors.New("decrypt dir path is the file path")
+	}()
+
+	downloader.lockDownload(result)
+	downloader.lockDecrypt(result)
+
+	// if max concurrent downloads exceeds, put into wait queue
+	if len(downloader.currentDownloads) >= downloader.config.MaxConcurrentDownloads {
+		log.WithField("id", result.id).Debug("Add download to wait queue due to max concurrent downloads")
+
+		downloader.waitQueue.PushBack(result)
+
+		return nil
+	}
+
+	// set initial value for free size variables
+	if len(downloader.currentDownloads) == 0 {
+		if err = downloader.initAvailableBlocks(); err != nil {
+			return err
 		}
 	}
+
+	// try to allocate space for download and decrypt. If there is no current downloads and allocation fails then
+	// there is no space left. Otherwise, wait till other downloads finished and we will have more room to download.
+	if err = downloader.tryAllocateSpace(result); err != nil {
+		if len(downloader.currentDownloads) == 0 {
+			return err
+		} else {
+			log.WithField("id", result.id).Debugf("Add download to wait queue due to: %s", err)
+
+			downloader.waitQueue.PushBack(result)
+
+			return nil
+		}
+	}
+
+	downloader.currentDownloads[result.id] = result
+
+	go downloader.process(result)
 
 	return nil
 }
 
-func (downloader *Downloader) removeOutdatedFiles() (err error) {
-	files, err := ioutil.ReadDir(downloader.downloadDir)
+func (downloader *Downloader) isResultInQueue(result *downloadResult) (present bool) {
+	// check current downloads
+	if _, ok := downloader.currentDownloads[result.id]; ok {
+		return true
+	}
+
+	// check wait queue
+	for element := downloader.waitQueue.Front(); element != nil; element = element.Next() {
+		if element.Value.(*downloadResult).id == result.id {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (downloader *Downloader) isFileLocked(fileName string) (locked bool) {
+	for _, lockedFile := range downloader.lockedFiles {
+		if fileName == lockedFile {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (downloader *Downloader) lockFile(fileName string) {
+	log.WithField("file", fileName).Debug("Lock file")
+
+	for _, lockedFile := range downloader.lockedFiles {
+		if fileName == lockedFile {
+			return
+		}
+	}
+
+	downloader.lockedFiles = append(downloader.lockedFiles, fileName)
+}
+
+func (downloader *Downloader) unlockFile(fileName string) {
+	log.WithField("file", fileName).Debug("Unlock file")
+
+	for i, lockedFile := range downloader.lockedFiles {
+		if fileName == lockedFile {
+			downloader.lockedFiles[i] = downloader.lockedFiles[len(downloader.lockedFiles)-1]
+			downloader.lockedFiles = downloader.lockedFiles[:len(downloader.lockedFiles)-1]
+
+			return
+		}
+	}
+}
+
+func (downloader *Downloader) initAvailableBlocks() (err error) {
+	var stat syscall.Statfs_t
+
+	if err = syscall.Statfs(downloader.config.DownloadDir, &stat); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	downloader.availableBlocks[downloader.downloadMountPoint] = int64(stat.Bavail)
+	downloader.blockSizes[downloader.downloadMountPoint] = stat.Bsize
+
+	if err = syscall.Statfs(downloader.config.DecryptDir, &stat); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	downloader.availableBlocks[downloader.decryptMountPoint] = int64(stat.Bavail)
+	downloader.blockSizes[downloader.decryptMountPoint] = stat.Bsize
+
+	return nil
+}
+
+func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err error) {
+	requiredDownloadBlocks, err := downloader.getRequiredBlocks(
+		result.downloadFileName, downloader.blockSizes[downloader.downloadMountPoint], result.packageInfo.Size)
 	if err != nil {
 		return err
 	}
 
-	now := time.Now()
+	requiredDecryptBlocks, err := downloader.getRequiredBlocks(
+		result.decryptedFileName, downloader.blockSizes[downloader.decryptMountPoint], result.packageInfo.Size)
+	if err != nil {
+		return err
+	}
 
-	for _, file := range files {
-		if now.Sub(file.ModTime()) > downloader.downloadFileTTL {
-			fileName := path.Join(downloader.downloadDir, file.Name())
+	log.WithFields(log.Fields{
+		"id":              result.id,
+		"availableBlocks": downloader.availableBlocks[downloader.downloadMountPoint],
+		"blockSize":       downloader.blockSizes[downloader.downloadMountPoint],
+		"requiredBlocks":  requiredDownloadBlocks,
+	}).Debugf("Check download space")
 
-			log.Debugf("Remove outdated file: %s", fileName)
+	if requiredDownloadBlocks > downloader.availableBlocks[downloader.downloadMountPoint] {
+		if err = downloader.tryFreeSpace(
+			downloader.downloadMountPoint, downloader.config.DownloadDir, requiredDownloadBlocks); err != nil {
+			if downloader.downloadMountPoint != downloader.decryptMountPoint {
+				return err
+			}
 
-			if err = os.RemoveAll(fileName); err != nil {
-				log.Errorf("Can't remove outdated file: %s", fileName)
+			// if decrypt dir and download dir are on same partition, try to free decrypt dir as well
+			if err = downloader.tryFreeSpace(
+				downloader.decryptMountPoint, downloader.config.DecryptDir, requiredDownloadBlocks); err != nil {
+				return err
 			}
 		}
+	}
+
+	downloader.availableBlocks[downloader.downloadMountPoint] =
+		downloader.availableBlocks[downloader.downloadMountPoint] - requiredDownloadBlocks
+
+	log.WithFields(log.Fields{
+		"id":              result.id,
+		"availableBlocks": downloader.availableBlocks[downloader.decryptMountPoint],
+		"blockSize":       downloader.blockSizes[downloader.decryptMountPoint],
+		"requiredBlocks":  requiredDecryptBlocks,
+	}).Debugf("Check decrypt space")
+
+	if requiredDecryptBlocks > downloader.availableBlocks[downloader.decryptMountPoint] {
+		if err = downloader.tryFreeSpace(
+			downloader.decryptMountPoint, downloader.config.DecryptDir, requiredDecryptBlocks); err != nil {
+			if downloader.downloadMountPoint != downloader.decryptMountPoint {
+				return err
+			}
+
+			// if decrypt dir and download dir are on same partition, try to free download dir as well
+			if err = downloader.tryFreeSpace(
+				downloader.downloadMountPoint, downloader.config.DownloadDir, requiredDecryptBlocks); err != nil {
+				return err
+			}
+		}
+	}
+
+	downloader.availableBlocks[downloader.decryptMountPoint] =
+		downloader.availableBlocks[downloader.decryptMountPoint] - requiredDecryptBlocks
+
+	return nil
+}
+
+func (downloader *Downloader) tryFreeSpace(mountPoint, dir string, requiredBlocks int64) (err error) {
+	log.WithField("dir", dir).Debug("Try to free space")
+
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	// Sort by modified time
+	sort.Slice(files, func(i, j int) bool { return files[i].ModTime().Before(files[j].ModTime()) })
+
+	for _, file := range files {
+		fileName := path.Join(dir, file.Name())
+
+		// Do not delete locked files
+		if downloader.isFileLocked(fileName) {
+			continue
+		}
+
+		_, fsSize, err := getFileSize(fileName)
+		if err != nil {
+			log.Errorf("Can't get FS file size: %s", err)
+		}
+
+		fileBlocks := sizeToBlocks(fsSize, downloader.blockSizes[mountPoint])
+
+		if !file.IsDir() {
+			log.WithFields(log.Fields{
+				"fileName": fileName,
+				"blocks":   fileBlocks}).Debugf("Remove outdated file: %s", fileName)
+		} else {
+			log.WithFields(log.Fields{
+				"directory": fileName,
+				"blocks":    fileBlocks}).Warnf("Remove foreign directory: %s", fileName)
+		}
+
+		if err = os.RemoveAll(fileName); err != nil {
+			log.Errorf("Can't remove outdated file: %s", fileName)
+			continue
+		}
+
+		downloader.availableBlocks[mountPoint] += int64(fileBlocks)
+
+		if downloader.availableBlocks[mountPoint] >= requiredBlocks {
+			return nil
+		}
+	}
+
+	return aoserrors.New("can't free required space")
+}
+
+func (downloader *Downloader) getRequiredBlocks(
+	fileName string, blockSize int64, size uint64) (requiredBlocks int64, err error) {
+	_, fsSize, err := getFileSize(fileName)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, aoserrors.Wrap(err)
+	}
+
+	return sizeToBlocks(size, blockSize) - sizeToBlocks(fsSize, blockSize), nil
+}
+
+func sizeToBlocks(fileSize uint64, blockSize int64) (numBlocks int64) {
+	return (int64(fileSize) + blockSize - 1) / blockSize
+}
+
+func (downloader *Downloader) process(result *downloadResult) (err error) {
+	defer func() {
+		downloader.Lock()
+		defer downloader.Unlock()
+
+		downloader.unlockDownload(result)
+
+		delete(downloader.currentDownloads, result.id)
+
+		result.statusChannel <- err
+
+		downloader.handleWaitQueue()
+	}()
+
+	log.WithFields(log.Fields{"id": result.id}).Debug("Process download")
+
+	if err = downloader.downloadWithMaxTry(result); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err = downloader.decryptPackage(result); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err = downloader.validateSigns(result); err != nil {
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
 }
 
-func (downloader *Downloader) downloadWithMaxTry(
-	packageInfo cloudprotocol.DecryptDataStruct) (fileName string, err error) {
-	for try := 0; try < downloadMaxTry; try++ {
-		if try != 0 {
-			log.Warnf("Can't download file: %s. Retry...", err)
+func (downloader *Downloader) handleWaitQueue() {
+	numIter := downloader.waitQueue.Len()
+
+	for i := 0; i < numIter; i++ {
+		// get first element from wait queue
+		firstElement := downloader.waitQueue.Front()
+
+		if firstElement == nil {
+			return
 		}
 
-		if fileName, err = downloader.processURLs(packageInfo.URLs); err != nil {
+		result := firstElement.Value.(*downloadResult)
+		downloader.waitQueue.Remove(firstElement)
+
+		log.WithFields(log.Fields{"id": result.id}).Debug("Take download from wait queue")
+
+		var err error
+
+		// Wait either context done or added into queue again
+		select {
+		case <-result.ctx.Done():
+			err = result.ctx.Err()
+
+		default:
+			err = downloader.addToQueue(result)
+		}
+
+		if err != nil {
+			result.statusChannel <- err
 			continue
 		}
 
-		if err = image.CheckFileInfo(context.Background(), fileName, image.FileInfo{
-			Sha256: packageInfo.Sha256,
-			Sha512: packageInfo.Sha512,
-			Size:   packageInfo.Size}); err != nil {
-			os.RemoveAll(fileName)
-			continue
+		if len(downloader.currentDownloads) >= downloader.config.MaxConcurrentDownloads {
+			return
 		}
-
-		return fileName, nil
 	}
-
-	return "", err
 }
 
-func (downloader *Downloader) processURLs(urls []string) (resultFile string, err error) {
-	if len(urls) == 0 {
-		return "", aoserrors.New("file list URLs is empty")
+func (downloader *Downloader) downloadWithMaxTry(result *downloadResult) (err error) {
+	if err = retryhelper.Retry(result.ctx,
+		func() (err error) {
+			fileSize, _, err := getFileSize(result.downloadFileName)
+			if os.IsNotExist(err) || fileSize != result.packageInfo.Size {
+				if err = downloader.downloadURLs(result); err != nil {
+					return aoserrors.Wrap(err)
+				}
+			}
+
+			if err = image.CheckFileInfo(result.ctx, result.downloadFileName, image.FileInfo{
+				Sha256: result.packageInfo.Sha256,
+				Sha512: result.packageInfo.Sha512,
+				Size:   result.packageInfo.Size,
+			}); err != nil {
+				if removeErr := os.RemoveAll(result.downloadFileName); removeErr != nil {
+					log.Errorf("Can't delete file %s: %s", result.downloadFileName, aoserrors.Wrap(removeErr))
+				}
+
+				return aoserrors.Wrap(err)
+			}
+
+			return nil
+		},
+		func(retryCount int, delay time.Duration, err error) {
+			log.WithFields(log.Fields{"id": result.id}).Debugf("Retry download in %s", delay)
+		},
+		downloader.config.RetryCount, downloader.config.RetryDelay.Duration, 0); err != nil {
+		return aoserrors.Wrap(ErrNotDownloaded)
 	}
 
+	return nil
+}
+
+func (downloader *Downloader) downloadURLs(result *downloadResult) (err error) {
 	fileDownloaded := false
 
-	for _, rawURL := range urls {
-		if resultFile, err = downloader.download(rawURL); err != nil {
-			log.WithField("url", rawURL).Warningf("Can't download file: %s", err)
+	for _, url := range result.packageInfo.URLs {
+		log.WithFields(log.Fields{"id": result.id, "url": url}).Debugf("Try to download from URL")
+
+		if err = downloader.download(url, result); err != nil {
 			continue
 		}
 
@@ -244,255 +557,125 @@ func (downloader *Downloader) processURLs(urls []string) (resultFile string, err
 	}
 
 	if !fileDownloaded {
-		return resultFile, aoserrors.Wrap(ErrNotDownloaded)
+		return aoserrors.Wrap(err)
 	}
 
-	return resultFile, nil
+	return nil
 }
 
-func (downloader *Downloader) download(url string) (fileName string, err error) {
-	log.WithField("url", url).Debug("Start downloading file")
-
-	grabClient := grab.NewClient()
-
+func (downloader *Downloader) download(url string, result *downloadResult) (err error) {
 	timer := time.NewTicker(updateDownloadsTime)
 	defer timer.Stop()
 
-	req, err := grab.NewRequest(downloader.downloadDir, url)
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	req.BeforeCopy = downloader.beforeCopyHook
-	req.AfterCopy = downloader.afterCopyHook
-
-	resp := grabClient.Do(req)
-
-	defer func() {
-		if finalErr := downloader.finalizeDownload(resp); finalErr != nil {
-			log.Warningf("Error finalizing download: %s", finalErr)
-		}
-	}()
-
-	counter := 0
-	for {
-		select {
-		case <-timer.C:
-			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size}).Debug("Download progress")
-
-			counter++
-
-			if downloader.sender != nil && counter >= statusAlertTickCount {
-				counter = 0
-				downloadStatus, err := getAlertStatusFromResponse(resp)
-				if err != nil {
-					return "", aoserrors.Wrap(err)
-				}
-
-				downloader.sender.SendDownloadStatusAlert(downloadStatus)
-			}
-
-		case <-resp.Done:
-			if err := resp.Err(); err != nil {
-				return "", aoserrors.Wrap(err)
-			}
-
-			log.WithFields(log.Fields{"url": url, "file": resp.Filename}).Debug("Download complete")
-
-			return resp.Filename, nil
-		}
-	}
-}
-
-func (downloader *Downloader) beforeCopyHook(resp *grab.Response) (err error) {
-	copyStartedFile := resp.Filename + startedFlagSuffix
-	copyInterruptedFile := resp.Filename + interruptedFlagSuffix
-
-	if !fileExists(copyStartedFile) {
-		if err = createFile(copyStartedFile); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if downloader.sender != nil {
-			downloadStatus, err := getAlertStatusFromResponse(resp)
-			if err != nil {
-				return aoserrors.Wrap(err)
-			}
-
-			downloader.sender.SendDownloadStartedAlert(downloadStatus)
-		}
-	} else {
-		// If download was started and no interrupted file was created,
-		// then no interrupted alert was sent. Sending interrupted alert
-		if !fileExists(copyInterruptedFile) {
-			if err = createFile(copyInterruptedFile); err != nil {
-				return aoserrors.Wrap(err)
-			}
-
-			log.Debug("Send download interrupted alert")
-
-			if downloader.sender != nil {
-				downloadStatus, err := getAlertStatusFromResponse(resp)
-				if err != nil {
-					return aoserrors.Wrap(err)
-				}
-
-				// TODO: read reason from interruption flag file
-				downloader.sender.SendDownloadInterruptedAlert(downloadStatus, interruptionReason)
-			}
-		}
-	}
-
-	if resp.DidResume {
-		log.Debug("Send download resumed alert")
-
-		if downloader.sender != nil {
-			downloadStatus, err := getAlertStatusFromResponse(resp)
-			if err != nil {
-				return aoserrors.Wrap(err)
-			}
-
-			// TODO: read reason from interruption flag file
-			downloader.sender.SendDownloadResumedAlert(downloadStatus, interruptionReason)
-		}
-	}
-
-	return nil
-}
-
-func (downloader *Downloader) afterCopyHook(resp *grab.Response) (err error) {
-	copyStartedFile := resp.Filename + startedFlagSuffix
-	copyInterruptedFile := resp.Filename + interruptedFlagSuffix
-
-	if fileExists(copyStartedFile) {
-		log.WithField("file", copyStartedFile).Debug("Flag removed. Download finished successfully")
-
-		if err = os.Remove(copyStartedFile); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	if fileExists(copyInterruptedFile) {
-		if err = os.Remove(copyInterruptedFile); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	log.Debug("Send download finished alert")
-
-	if downloader.sender != nil {
-		downloadStatus, err := getAlertStatusFromResponse(resp)
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		downloader.sender.SendDownloadFinishedAlert(downloadStatus, resp.HTTPResponse.StatusCode)
-	}
-
-	return nil
-}
-
-func (downloader *Downloader) finalizeDownload(resp *grab.Response) (err error) {
-	copyStartedFile := resp.Filename + startedFlagSuffix
-	copyInterruptedFile := resp.Filename + interruptedFlagSuffix
-
-	if fileExists(copyStartedFile) {
-		log.Debug("Send download interrupted alert")
-
-		if downloader.sender != nil {
-			downloadStatus, err := getAlertStatusFromResponse(resp)
-			if err != nil {
-				return aoserrors.Wrap(err)
-			}
-
-			// TODO: read reason from interruption flag file
-			downloader.sender.SendDownloadInterruptedAlert(downloadStatus, interruptionReason)
-		}
-
-		if err = createFile(copyInterruptedFile); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-func (downloader *Downloader) decryptPackage(srcFileName string, decryptDir string,
-	decryptionInfo *cloudprotocol.DecryptionInfo) (resultFile string, err error) {
-	if decryptionInfo == nil {
-		return "", aoserrors.New("no decrypt image info")
-	}
-
-	if decryptionInfo.ReceiverInfo == nil {
-		return "", aoserrors.New("no receiver info")
-	}
-
-	context, err := downloader.crypt.ImportSessionKey(fcrypt.CryptoSessionKeyInfo{
-		SymmetricAlgName:  decryptionInfo.BlockAlg,
-		SessionKey:        decryptionInfo.BlockKey,
-		SessionIV:         decryptionInfo.BlockIv,
-		AsymmetricAlgName: decryptionInfo.AsymAlg,
-		ReceiverInfo: fcrypt.ReceiverInfo{
-			Issuer: decryptionInfo.ReceiverInfo.Issuer,
-			Serial: decryptionInfo.ReceiverInfo.Serial},
-	})
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	srcFile, err := os.Open(srcFileName)
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-	defer srcFile.Close()
-
-	dstFileName := path.Join(decryptDir, filepath.Base(srcFileName))
-
-	dstFile, err := os.OpenFile(dstFileName, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-	defer func() {
-		dstFile.Close()
-
-		if err != nil {
-			os.RemoveAll(dstFileName)
-		}
-	}()
-
-	log.WithFields(log.Fields{"srcFile": srcFile.Name(), "dstFile": dstFile.Name()}).Debug("Decrypt image")
-
-	if err = context.DecryptFile(srcFile, dstFile); err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	return dstFileName, aoserrors.Wrap(err)
-}
-
-func (downloader *Downloader) validateSigns(filePath string, signs *cloudprotocol.Signs,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (err error) {
-	context, err := downloader.crypt.CreateSignContext()
+	req, err := grab.NewRequest(result.downloadFileName, url)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	for _, cert := range certs {
-		if err = context.AddCertificate(cert.Fingerprint, cert.Certificate); err != nil {
+	req = req.WithContext(result.ctx)
+	req.Size = int64(result.packageInfo.Size)
+
+	resp := grab.DefaultClient.Do(req)
+
+	if !resp.DidResume {
+		log.WithFields(log.Fields{"url": url, "id": result.id}).Debug("Download started")
+
+		downloader.sender.SendDownloadStartedAlert(downloader.getDownloadStatus(resp))
+	} else {
+		reason := result.retreiveInterruptReason()
+
+		log.WithFields(log.Fields{"url": url, "id": result.id, "reason": reason}).Debug("Download resumed")
+
+		downloader.sender.SendDownloadResumedAlert(downloader.getDownloadStatus(resp), reason)
+		result.removeInterruptReason()
+	}
+
+	for {
+		select {
+		case <-timer.C:
+			downloader.sender.SendDownloadStatusAlert(downloader.getDownloadStatus(resp))
+
+			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size}).Debug("Download progress")
+
+		case <-resp.Done:
+			if err = resp.Err(); err != nil {
+				log.WithFields(log.Fields{
+					"id":         result.id,
+					"file":       resp.Filename,
+					"downloaded": resp.BytesComplete(), "reason": err}).Warn("Download interrupted")
+
+				result.storeInterruptReason(err.Error())
+				downloader.sender.SendDownloadInterruptedAlert(downloader.getDownloadStatus(resp), err.Error())
+
+				return aoserrors.Wrap(err)
+			}
+
+			log.WithFields(log.Fields{
+				"id":         result.id,
+				"file":       resp.Filename,
+				"downloaded": resp.BytesComplete()}).Debug("Download completed")
+
+			downloader.sender.SendDownloadFinishedAlert(downloader.getDownloadStatus(resp), resp.HTTPResponse.StatusCode)
+
+			return nil
+		}
+	}
+}
+
+func (downloader *Downloader) decryptPackage(result *downloadResult) (err error) {
+	symmetricCtx, err := downloader.cryptoContext.ImportSessionKey(fcrypt.CryptoSessionKeyInfo{
+		SymmetricAlgName:  result.packageInfo.DecryptionInfo.BlockAlg,
+		SessionKey:        result.packageInfo.DecryptionInfo.BlockKey,
+		SessionIV:         result.packageInfo.DecryptionInfo.BlockIv,
+		AsymmetricAlgName: result.packageInfo.DecryptionInfo.AsymAlg,
+		ReceiverInfo: fcrypt.ReceiverInfo{
+			Issuer: result.packageInfo.DecryptionInfo.ReceiverInfo.Issuer,
+			Serial: result.packageInfo.DecryptionInfo.ReceiverInfo.Serial},
+	})
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	srcFile, err := os.Open(result.downloadFileName)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(result.decryptedFileName, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer dstFile.Close()
+
+	log.WithFields(log.Fields{"srcFile": srcFile.Name(), "dstFile": dstFile.Name()}).Debug("Decrypt image")
+
+	if err = symmetricCtx.DecryptFile(srcFile, dstFile); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return aoserrors.Wrap(err)
+}
+
+func (downloader *Downloader) validateSigns(result *downloadResult) (err error) {
+	signCtx, err := downloader.cryptoContext.CreateSignContext()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, cert := range result.certs {
+		if err = signCtx.AddCertificate(cert.Fingerprint, cert.Certificate); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
 
-	for _, chain := range chains {
-		if err = context.AddCertificateChain(chain.Name, chain.Fingerprints); err != nil {
+	for _, chain := range result.chains {
+		if err = signCtx.AddCertificateChain(chain.Name, chain.Fingerprints); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
 
-	if signs == nil {
-		return aoserrors.New("package does not have signature")
-	}
-
-	file, err := os.Open(filePath)
+	file, err := os.Open(result.decryptedFileName)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -500,24 +683,46 @@ func (downloader *Downloader) validateSigns(filePath string, signs *cloudprotoco
 
 	log.WithField("file", file.Name()).Debug("Check signature")
 
-	if err = context.VerifySign(file, signs.ChainName, signs.Alg, signs.Value); err != nil {
+	if err = signCtx.VerifySign(file,
+		result.packageInfo.Signs.ChainName, result.packageInfo.Signs.Alg, result.packageInfo.Signs.Value); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	return nil
 }
 
-func getAlertStatusFromResponse(resp *grab.Response) (status alerts.DownloadStatus, err error) {
-	if resp == nil {
-		return alerts.DownloadStatus{}, aoserrors.New("invalid response")
-	}
-
-	return alerts.DownloadStatus{Source: moduleID, URL: resp.Request.HTTPRequest.URL.String(),
+func (downloader *Downloader) getDownloadStatus(resp *grab.Response) (status alerts.DownloadStatus) {
+	return alerts.DownloadStatus{Source: downloader.moduleID, URL: resp.Request.HTTPRequest.URL.String(),
 		Progress: int(resp.Progress() * 100), DownloadedBytes: uint64(resp.BytesComplete()),
-		TotalBytes: uint64(resp.Size)}, nil
+		TotalBytes: uint64(resp.Size)}
 }
 
-func fileExists(filename string) bool {
+func (downloader *Downloader) lockDownload(result *downloadResult) {
+	downloader.lockFile(result.downloadFileName)
+	downloader.lockFile(result.interruptFileName)
+}
+
+func (downloader *Downloader) unlockDownload(result *downloadResult) {
+	downloader.unlockFile(result.downloadFileName)
+	downloader.unlockFile(result.interruptFileName)
+}
+
+func (downloader *Downloader) lockDecrypt(result *downloadResult) {
+	downloader.lockFile(result.decryptedFileName)
+}
+
+func (downloader *Downloader) unlockDecrypt(result *downloadResult) {
+	downloader.unlockFile(result.decryptedFileName)
+}
+
+func (downloader *Downloader) releaseResult(result *downloadResult) {
+	downloader.Lock()
+	defer downloader.Unlock()
+
+	downloader.unlockDecrypt(result)
+}
+
+func fileExists(filename string) (exist bool) {
 	info, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return false
@@ -526,8 +731,18 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func createFile(filename string) (err error) {
-	return aoserrors.Wrap(ioutil.WriteFile(filename, []byte{}, flagAccessRights))
+func getFileSize(fileName string) (size uint64, fsSize uint64, err error) {
+	var stat syscall.Stat_t
+
+	if err = syscall.Stat(fileName, &stat); err != nil {
+		if os.IsNotExist(err) {
+			return 0, 0, err
+		}
+
+		return 0, 0, aoserrors.Wrap(err)
+	}
+
+	return uint64(stat.Size), uint64(stat.Blocks) * 512, nil
 }
 
 func getMountPoint(dir string) (mountPoint string, err error) {
@@ -540,74 +755,26 @@ func getMountPoint(dir string) (mountPoint string, err error) {
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
+		line := scanner.Text()
+
+		fields := strings.Fields(line)
 		if len(fields) < 2 {
-			// the last split() item is empty string following the last \n
 			continue
 		}
 
-		if strings.HasPrefix(dir, fields[1]) {
-			return fields[1], nil
+		relPath, err := filepath.Rel(fields[1], dir)
+		if err != nil || strings.Contains(relPath, "..") {
+			continue
+		}
+
+		if len(fields[1]) > len(mountPoint) {
+			mountPoint = fields[1]
 		}
 	}
 
-	return "", aoserrors.Errorf("failed to find mount point for %s", dir)
-}
-
-func (downloader *Downloader) isEnoughSpaceForPackage(
-	packageInfo cloudprotocol.DecryptDataStruct, downloadDir, decryptedDir string) (err error) {
-	var stat syscall.Statfs_t
-	var notCompletedFileSizes uint64
-
-	for _, urlRaw := range packageInfo.URLs {
-		url, err := url.Parse(urlRaw)
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		filePath := path.Join(downloadDir, filepath.Base(url.Path))
-		if fileExists(filePath) {
-			fi, err := os.Stat(filePath)
-			if err != nil {
-				return aoserrors.Wrap(err)
-			}
-
-			notCompletedFileSizes += uint64(fi.Size())
-
-			break
-		}
+	if mountPoint == "" {
+		return "", aoserrors.Errorf("failed to find mount point for %s", dir)
 	}
 
-	downloadMountPoint, err := getMountPoint(downloadDir)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	decryptMountPoint, err := getMountPoint(decryptedDir)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if downloadMountPoint == decryptMountPoint {
-		syscall.Statfs(downloadDir, &stat)
-
-		// Free space is needed for double size of the package - for encrypted package and for decrypted
-		if 2*packageInfo.Size > (stat.Bavail*uint64(stat.Bsize) + notCompletedFileSizes) {
-			return aoserrors.New("not enough space for downloading and decrypting")
-		}
-	} else {
-		syscall.Statfs(downloadDir, &stat)
-
-		if packageInfo.Size > (stat.Bavail*uint64(stat.Bsize) + notCompletedFileSizes) {
-			return aoserrors.New("not enough space for downloading")
-		}
-
-		syscall.Statfs(decryptedDir, &stat)
-
-		if packageInfo.Size > stat.Bavail*uint64(stat.Bsize) {
-			return aoserrors.New("not enough space for decrypting")
-		}
-	}
-
-	return nil
+	return mountPoint, nil
 }

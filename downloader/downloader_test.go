@@ -22,16 +22,20 @@ package downloader_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
 	"path"
+	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 	"gitpct.epam.com/epmd-aepr/aos_common/image"
 	"gitpct.epam.com/epmd-aepr/aos_common/utils/testtools"
 
@@ -40,6 +44,15 @@ import (
 	"aos_communicationmanager/config"
 	"aos_communicationmanager/downloader"
 	"aos_communicationmanager/fcrypt"
+)
+
+/***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+const (
+	Kilobyte = uint64(1 << 10)
+	Megabyte = uint64(1 << 20)
 )
 
 /***********************************************************************************************************************
@@ -71,15 +84,18 @@ type alertsCounter struct {
  **********************************************************************************************************************/
 
 const pythonServerScript = "start.py"
-const decryptedDirName = "decrypt"
 
 /***********************************************************************************************************************
  * Vars
  **********************************************************************************************************************/
 
-var downloaderObj *downloader.Downloader
-var serverDir string
-var downloadDir string
+var (
+	tmpDir      string
+	serverDir   string
+	downloadDir string
+	decryptDir  string
+)
+
 var alertsCnt alertsCounter
 
 /***********************************************************************************************************************
@@ -105,13 +121,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Error setting up: %s", err)
 	}
 
-	conf := config.Config{DownloadDir: downloadDir, DownloadFileTTLDays: 3}
-
-	downloaderObj, err = downloader.New(&conf, &testCryptoContext{}, &testAlertSender{})
-	if err != nil {
-		log.Fatalf("Error creation downloader: %s", err)
-	}
-
 	ret := m.Run()
 
 	if err = cleanup(); err != nil {
@@ -122,170 +131,204 @@ func TestMain(m *testing.M) {
 }
 
 func TestDownload(t *testing.T) {
-	//Define alertsCnt with 0
 	alertsCnt = alertsCounter{}
-	sentData := []byte("Hello downloader\n")
-	fileName := "package.txt"
 
-	err := ioutil.WriteFile(path.Join(serverDir, fileName), sentData, 0644)
-	if err != nil {
-		log.Fatalf("Can't create package file: %s", err)
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
 	}
-	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
-	chains := []cloudprotocol.CertificateChain{}
-	certs := []cloudprotocol.Certificate{}
 
-	_, err = downloaderObj.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(downloadDir, decryptedDirName))
+	fileName := path.Join(serverDir, "package.txt")
+
+	if err := ioutil.WriteFile(fileName, []byte("Hello downloader\n"), 0644); err != nil {
+		t.Fatalf("Can't create package file: %s", err)
+	}
+	defer os.RemoveAll(fileName)
+
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 1,
+			RetryCount:             1,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
-		t.Errorf("Can't DownloadAndDecrypt %s", err)
+		t.Fatalf("Can't create downloader: %s", err)
+	}
+
+	result, err := downloadInstance.DownloadAndDecrypt(
+		context.Background(), preparePackageInfo("http://localhost:8001/", fileName), nil, nil)
+	if err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
+
+	if err = result.Wait(); err != nil {
+		t.Errorf("Download error: %s", err)
 	}
 
 	if alertsCnt.alertStarted != 1 {
-		t.Error("DownloadStartedAlert was not received")
+		t.Error("Download started alert was not received")
 	}
 
 	if alertsCnt.alertFinished != 1 {
-		t.Error("DownloadFinishedAlert was not received")
+		t.Error("Download finished alert was not received")
 	}
 }
 
 func TestInterruptResumeDownload(t *testing.T) {
-	//Define alertsCnt with 0
 	alertsCnt = alertsCounter{}
-	fileName := "bigPackage.txt"
-	filePath := path.Join(serverDir, fileName)
-	// Generate file with size 1Mb
-	if err := generateBigPackage(filePath, "1", "1M"); err != nil {
-		t.Errorf("Can't generate big file")
+
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
 	}
-	defer os.RemoveAll(filePath)
 
-	// Kill connection 3 times (due to retry counter) after 32 secs to receive status alert
-	go func() {
-		for i := 0; i < 3; i++ {
+	if err := setWondershaperLimit("lo", "128"); err != nil {
+		t.Fatalf("Can't set speed limit: %s", err)
+	}
+	defer clearWondershaperLimit("lo")
 
-			time.Sleep(32 * time.Second)
-			log.Debug("Kill connection")
+	fileName := path.Join(serverDir, "package.txt")
 
-			if _, err := exec.Command("ss", "-K", "src", "127.0.0.1", "dport", "=", "8001").CombinedOutput(); err != nil {
-				t.Errorf("Can't stop http server: %s", err)
-			}
-		}
-	}()
+	if err := generateFile(fileName, 1*Megabyte); err != nil {
+		t.Fatalf("Can't generate file: %s", err)
+	}
+	defer os.RemoveAll(fileName)
+
+	// Kill connection after 32 secs to receive status alert
+	killConnectionIn("localhost", 8001, 32*time.Second)
+
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 1,
+			RetryCount:             1,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
-	chains := []cloudprotocol.CertificateChain{}
-	certs := []cloudprotocol.Certificate{}
 
-	_, err := downloaderObj.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(downloadDir, decryptedDirName))
-	if err == nil {
-		t.Errorf("Error was expected DownloadAndDecrypt")
+	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	if err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
+
+	if err = result.Wait(); err == nil {
+		t.Error("Error expected")
 	}
 
 	if alertsCnt.alertStarted != 1 {
-		t.Error("DownloadStartedAlert was not received")
+		t.Error("Download started alert was not received")
 	}
 
 	if alertsCnt.alertStatus == 0 {
-		t.Error("DownloadStatusAlert was not received")
+		t.Error("Download status was not received")
 	}
 
 	if alertsCnt.alertInterrupted == 0 {
-		t.Error("DownloadInterruptedAlert was not received")
+		t.Error("Download interrupted alert was not received")
 	}
 
-	time.Sleep(1 * time.Second)
+	if result, err = downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
 
-	_, err = downloaderObj.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(downloadDir, decryptedDirName))
-	if err != nil {
-		t.Errorf("Can't DownloadAndDecrypt %s", err)
+	if err = result.Wait(); err != nil {
+		t.Errorf("Download error: %s", err)
 	}
 
 	if alertsCnt.alertResumed == 0 {
-		t.Error("DownloadResumedAlert was not received")
+		t.Error("Download resumed alert was not received")
 	}
 
 	if alertsCnt.alertFinished == 0 {
-		t.Error("DownloadFinishedAlert was not received")
+		t.Error("Download finished alert was not received")
 	}
 }
 
 // The test checks if available disk size is counted properly after resuming
 // download and takes into account files that already have been partially downloaded
 func TestAvailableSize(t *testing.T) {
-	mountDir, imgFile, err := createTmpDisk(8)
-	if err != nil {
-		t.Fatalf("Can't create temporary disk: %s", err)
+	alertsCnt = alertsCounter{}
+
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
 	}
 
-	defer func() {
-		if err = clearTmpDisk(mountDir, imgFile); err != nil {
-			t.Errorf("Can't remove temporary disk: %s", err)
-		}
-	}()
-
-	conf := config.Config{DownloadDir: mountDir, DownloadFileTTLDays: 3}
-
-	secondDownloader, err := downloader.New(&conf, &testCryptoContext{}, &testAlertSender{})
-	if err != nil {
-		log.Fatalf("Error creation downloader: %s", err)
+	if err := setWondershaperLimit("lo", "512"); err != nil {
+		t.Fatalf("Can't set speed limit: %s", err)
 	}
-
-	fileName := "bigPackage.txt"
-	filePath := path.Join(serverDir, fileName)
-	// Generate file with size 1Mb
-	if err := generateBigPackage(filePath, "1", "1M"); err != nil {
-		t.Errorf("Can't generate big file: %s", err)
-	}
+	defer clearWondershaperLimit("lo")
 
 	var stat syscall.Statfs_t
-	syscall.Statfs(mountDir, &stat)
 
-	// Fill-up the available space to fit only one package and safe 100KB for metadata files and etc
-	payloadSize := stat.Bavail*uint64(stat.Bsize) - 2*1024*1024 - 100*1024
+	syscall.Statfs(downloadDir, &stat)
 
-	if err := generateBigPackage(path.Join(mountDir, "payload"), fmt.Sprintf("%d", payloadSize), "1"); err != nil {
-		t.Errorf("Can't generate payload file: %s", err)
+	fileName := path.Join(serverDir, "package.txt")
+	// File should be a little less than required due to extra blocks needed by FS
+	fileSize := (stat.Bavail - 16) * uint64(stat.Bsize)
+
+	if err := generateFile(fileName, fileSize); err != nil {
+		t.Errorf("Can't generate file: %s", err)
 	}
+	defer os.RemoveAll(fileName)
 
-	// Download more than half of the package in 1 minute and kill the connection
-	go func() {
-		for i := 0; i < 3; i++ {
+	// Download more than half of the package in 10 second and kill the connection
+	killConnectionIn("localhost", 8001, 10*time.Second)
 
-			time.Sleep(20 * time.Second)
-			log.Debug("Kill connection")
-
-			if _, err := exec.Command("ss", "-K", "src", "127.0.0.1", "dport", "=", "8001").CombinedOutput(); err != nil {
-				t.Errorf("Can't stop http server: %s", err)
-			}
-		}
-	}()
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 1,
+			RetryCount:             1,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
-	chains := []cloudprotocol.CertificateChain{}
-	certs := []cloudprotocol.Certificate{}
 
-	if _, err = secondDownloader.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(mountDir, decryptedDirName)); err == nil {
-		t.Error("Error was expected")
+	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	if err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
 	}
 
-	time.Sleep(1 * time.Second)
+	if err = result.Wait(); err == nil {
+		t.Error("Error expected")
+	}
 
-	if _, err = secondDownloader.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(mountDir, decryptedDirName)); err != nil {
-		t.Errorf("Can't download and decrypt package: %s", err)
+	if result, err = downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
+
+	if err = result.Wait(); err != nil {
+		t.Errorf("Download error: %s", err)
 	}
 }
 
-func TestInterruptResumeDownloadFrom2Servers(t *testing.T) {
-	// Define alertsCnt with 0
+func TestResumeDownloadFromTwoServers(t *testing.T) {
 	alertsCnt = alertsCounter{}
-	fileName := "bigPackage.txt"
-	filePath := path.Join(serverDir, fileName)
-	// Generate file with size 1Mb
-	if err := generateBigPackage(filePath, "1", "1M"); err != nil {
-		t.Errorf("Can't generate big file")
+
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
 	}
-	defer os.RemoveAll(filePath)
+
+	if err := setWondershaperLimit("lo", "256"); err != nil {
+		t.Fatalf("Can't set speed limit: %s", err)
+	}
+	defer clearWondershaperLimit("lo")
+
+	fileName := path.Join(serverDir, "package.txt")
+
+	if err := generateFile(fileName, 1*Megabyte); err != nil {
+		t.Fatalf("Can't generate file: %s", err)
+	}
+	defer os.RemoveAll(fileName)
 
 	go func() {
 		log.Fatal(http.ListenAndServe(":8002", http.FileServer(http.Dir(serverDir))))
@@ -294,31 +337,202 @@ func TestInterruptResumeDownloadFrom2Servers(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Kill first connection and try resume from another server
+	killConnectionIn("localhost", 8001, 10*time.Second)
 
-	go func() {
-		time.Sleep(30 * time.Second)
-
-		for i := 0; i < 3; i++ {
-			log.Debug("Kill connection")
-
-			if _, err := exec.Command("ss", "-K", "src", "127.0.0.1", "dport", "=", "8001").CombinedOutput(); err != nil {
-				t.Errorf("Can't stop http server: %s", err)
-			}
-		}
-	}()
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 1,
+			RetryCount:             1,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
-	chains := []cloudprotocol.CertificateChain{}
-	certs := []cloudprotocol.Certificate{}
 
-	if _, err := downloaderObj.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(downloadDir, decryptedDirName)); err == nil {
-		t.Error("Error was expected")
+	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	if err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
+
+	if err = result.Wait(); err == nil {
+		t.Error("Error expected")
 	}
 
 	packageInfo = preparePackageInfo("http://localhost:8002/", fileName)
 
-	if _, err := downloaderObj.DownloadAndDecrypt(packageInfo, chains, certs, path.Join(downloadDir, decryptedDirName)); err != nil {
-		t.Errorf("Can't download and decrypt package: %s", err)
+	if result, err = downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
+
+	if err = result.Wait(); err != nil {
+		t.Errorf("Download error: %s", err)
+	}
+}
+
+func TestConcurrentDownloads(t *testing.T) {
+	const numDownloads = 10
+	const fileNamePattern = "package%d.txt"
+
+	alertsCnt = alertsCounter{}
+
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
+	}
+
+	if err := setWondershaperLimit("lo", "1024"); err != nil {
+		t.Fatalf("Can't set speed limit: %s", err)
+	}
+	defer clearWondershaperLimit("lo")
+
+	for i := 0; i < numDownloads; i++ {
+		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), 100*Kilobyte); err != nil {
+			t.Fatalf("Can't generate file: %s", err)
+		}
+	}
+	defer func() {
+		for i := 0; i < numDownloads; i++ {
+			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
+		}
+	}()
+
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 5,
+			RetryCount:             1,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
+
+	wg := sync.WaitGroup{}
+
+	for i := 0; i < numDownloads; i++ {
+		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
+
+		result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+		if err != nil {
+			t.Errorf("Can't download and decrypt package: %s", err)
+			continue
+		}
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err = result.Wait(); err != nil {
+				t.Errorf("Download error: %s", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestConcurrentLimitSpaceDownloads(t *testing.T) {
+	const numDownloads = 3
+	const fileNamePattern = "package%d.txt"
+
+	alertsCnt = alertsCounter{}
+
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
+	}
+
+	if err := setWondershaperLimit("lo", "4096"); err != nil {
+		t.Fatalf("Can't set speed limit: %s", err)
+	}
+	defer clearWondershaperLimit("lo")
+
+	var stat syscall.Statfs_t
+
+	syscall.Statfs(downloadDir, &stat)
+
+	// Create files half of available size
+	fileSize := (stat.Bavail / 2) * uint64(stat.Bsize)
+
+	for i := 0; i < numDownloads; i++ {
+		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), fileSize); err != nil {
+			t.Fatalf("Can't generate file: %s", err)
+		}
+	}
+	defer func() {
+		for i := 0; i < numDownloads; i++ {
+			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
+		}
+	}()
+
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 3,
+			RetryCount:             1,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
+
+	wg := sync.WaitGroup{}
+
+	results := make([]downloader.Result, 0, numDownloads)
+
+	for i := 0; i < numDownloads; i++ {
+		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
+
+		result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+		if err != nil {
+			t.Errorf("Can't download and decrypt package: %s", err)
+			continue
+		}
+
+		results = append(results, result)
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err = result.Wait(); err != nil {
+				t.Errorf("Download error: %s", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Try to download another file. It should fail as there is no space in DecryptDir
+	if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, numDownloads)), fileSize); err != nil {
+		t.Fatalf("Can't generate file: %s", err)
+	}
+
+	packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, numDownloads))
+
+	if _, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err == nil {
+		t.Error("Error expected")
+	}
+
+	// Release previous results
+	for _, result := range results {
+		result.Release()
+	}
+
+	// Now it should download successfully
+	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	if err != nil {
+		t.Fatalf("Can't download and decrypt package: %s", err)
+	}
+
+	if err = result.Wait(); err != nil {
+		t.Errorf("Download error: %s", err)
 	}
 }
 
@@ -334,14 +548,9 @@ func (context *testCryptoContext) CreateSignContext() (fcrypt.SignContextInterfa
 	return &testSignContext{}, nil
 }
 
-func (context *testSymmetricContext) DecryptFile(encryptedFile, clearFile *os.File) (err error) {
-	data, err := ioutil.ReadFile(encryptedFile.Name())
-	if err != nil {
-		return err
-	}
-
-	if _, err = clearFile.Write(data); err != nil {
-		return err
+func (context *testSymmetricContext) DecryptFile(encryptedFile, decryptedFile *os.File) (err error) {
+	if _, err = io.Copy(decryptedFile, encryptedFile); err != nil {
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -360,34 +569,33 @@ func (context *testSignContext) VerifySign(f *os.File, chainName string, algName
 }
 
 func (instance *testAlertSender) SendDownloadStartedAlert(downloadStatus alerts.DownloadStatus) {
-	printDownloadAlertStatus(downloadStatus)
+	log.WithFields(log.Fields{"status": downloadStatus}).Debug("Download started alert")
+
 	alertsCnt.alertStarted++
 }
 
 func (instance *testAlertSender) SendDownloadFinishedAlert(downloadStatus alerts.DownloadStatus, code int) {
-	printDownloadAlertStatus(downloadStatus)
+	log.WithFields(log.Fields{"status": downloadStatus, "code": code}).Debug("Download finished alert")
+
 	alertsCnt.alertFinished++
 }
 
 func (instance *testAlertSender) SendDownloadInterruptedAlert(downloadStatus alerts.DownloadStatus, reason string) {
-	printDownloadAlertStatus(downloadStatus)
+	log.WithFields(log.Fields{"status": downloadStatus, "reason": reason}).Debug("Download interrupted alert")
+
 	alertsCnt.alertInterrupted++
 }
 
 func (instance *testAlertSender) SendDownloadResumedAlert(downloadStatus alerts.DownloadStatus, reason string) {
-	printDownloadAlertStatus(downloadStatus)
+	log.WithFields(log.Fields{"status": downloadStatus, "reason": reason}).Debug("Download resumed alert")
+
 	alertsCnt.alertResumed++
 }
 
 func (instance *testAlertSender) SendDownloadStatusAlert(downloadStatus alerts.DownloadStatus) {
-	printDownloadAlertStatus(downloadStatus)
-	alertsCnt.alertStatus++
-}
+	log.WithFields(log.Fields{"status": downloadStatus}).Debug("Download status alert")
 
-func printDownloadAlertStatus(downloadStatus alerts.DownloadStatus) {
-	log.Debugf("DownloadAlertStatus: source = %s, url = %s, progress = %d, downloadedBytes = %d, totalBytes = %d",
-		downloadStatus.Source, downloadStatus.URL, downloadStatus.Progress, downloadStatus.DownloadedBytes,
-		downloadStatus.TotalBytes)
+	alertsCnt.alertStatus++
 }
 
 /***********************************************************************************************************************
@@ -395,17 +603,22 @@ func printDownloadAlertStatus(downloadStatus alerts.DownloadStatus) {
  **********************************************************************************************************************/
 
 func setup() (err error) {
-	serverDir, err = ioutil.TempDir("", "server_")
+	tmpDir, err = ioutil.TempDir("", "cm_")
 	if err != nil {
 		return err
 	}
 
-	downloadDir, err = ioutil.TempDir("", "wd_")
-	if err != nil {
+	if downloadDir, err = createTmpDisk("downloadDir", 2); err != nil {
 		return err
 	}
 
-	if err = setWondershaperLimit("lo", "128"); err != nil {
+	if decryptDir, err = createTmpDisk("decryptDir", 8); err != nil {
+		return err
+	}
+
+	serverDir = path.Join(tmpDir, "fileServer")
+
+	if err = os.MkdirAll(serverDir, 0755); err != nil {
 		return err
 	}
 
@@ -420,13 +633,31 @@ func setup() (err error) {
 
 func cleanup() (err error) {
 	clearWondershaperLimit("lo")
-	os.RemoveAll(downloadDir)
-	os.RemoveAll(serverDir)
+
+	closeTmpDisk("downloadDir")
+	closeTmpDisk("decryptDir")
+
+	os.RemoveAll(tmpDir)
 
 	return nil
 }
 
+func killConnectionIn(host string, port int16, delay time.Duration) {
+	go func() {
+		time.Sleep(delay)
+
+		log.Debug("Kill connection")
+
+		if _, err := exec.Command(
+			"ss", "-K", "src", host, "dport", "=", strconv.Itoa(int(port))).CombinedOutput(); err != nil {
+			log.Errorf("Can't kill connection: %s", err)
+		}
+	}()
+}
+
 func preparePackageInfo(host, fileName string) (packageInfo cloudprotocol.DecryptDataStruct) {
+	fileName = path.Base(fileName)
+
 	packageInfo.URLs = []string{host + fileName}
 
 	filePath := path.Join(serverDir, fileName)
@@ -459,10 +690,10 @@ func preparePackageInfo(host, fileName string) (packageInfo cloudprotocol.Decryp
 	return packageInfo
 }
 
-func generateBigPackage(fileName string, count, bs string) (err error) {
-	if output, err := exec.Command("dd", "if=/dev/zero", "of="+fileName, "bs="+bs,
-		"count="+count).CombinedOutput(); err != nil {
-		return fmt.Errorf("%s (%s)", err, (string(output)))
+func generateFile(fileName string, size uint64) (err error) {
+	if output, err := exec.Command("dd", "if=/dev/urandom", "of="+fileName, "bs=1",
+		"count="+strconv.FormatUint(size, 10)).CombinedOutput(); err != nil {
+		return aoserrors.Errorf("%s (%s)", err, (string(output)))
 	}
 
 	return nil
@@ -471,7 +702,7 @@ func generateBigPackage(fileName string, count, bs string) (err error) {
 //Set traffic limit for interface
 func setWondershaperLimit(iface string, limit string) (err error) {
 	if output, err := exec.Command("wondershaper", "-a", iface, "-d", limit).CombinedOutput(); err != nil {
-		return fmt.Errorf("%s (%s)", err, (string(output)))
+		return aoserrors.Errorf("%s (%s)", err, (string(output)))
 	}
 
 	return nil
@@ -479,58 +710,85 @@ func setWondershaperLimit(iface string, limit string) (err error) {
 
 func clearWondershaperLimit(iface string) (err error) {
 	if output, err := exec.Command("wondershaper", "-ca", iface).CombinedOutput(); err != nil {
-		return fmt.Errorf("%s (%s)", err, (string(output)))
+		return aoserrors.Errorf("%s (%s)", err, (string(output)))
 	}
 
 	return nil
 }
 
-func createTmpDisk(sizeMb uint64) (mountDir, imgFileName string, err error) {
-	imgFile, err := ioutil.TempFile("", "um_")
-	if err != nil {
-		return "", "", err
-	}
-
-	imgFileName = imgFile.Name()
-
+func createTmpDisk(name string, size uint64) (mountDir string, err error) {
+	fileName := path.Join(tmpDir, name+".ext4")
 	defer func() {
 		if err != nil {
-			os.Remove(imgFileName)
+			os.RemoveAll(fileName)
 		}
 	}()
 
-	if mountDir, err = ioutil.TempDir("", "um_"); err != nil {
-		return "", "", err
-	}
+	mountDir = path.Join(tmpDir, name)
 
+	if err = os.MkdirAll(mountDir, 0755); err != nil {
+		return "", aoserrors.Wrap(err)
+	}
 	defer func() {
 		if err != nil {
 			os.RemoveAll(mountDir)
 		}
 	}()
 
-	if err = testtools.CreateFilePartition(imgFileName, "ext3", sizeMb, nil, false); err != nil {
-		return "", "", err
+	if err = testtools.CreateFilePartition(fileName, "ext4", size, nil, false); err != nil {
+		return "", aoserrors.Wrap(err)
 	}
 
-	if output, err := exec.Command("mount", imgFileName, mountDir).CombinedOutput(); err != nil {
-		return "", "", fmt.Errorf("%s (%s)", err, (string(output)))
+	if output, err := exec.Command("mount", fileName, mountDir).CombinedOutput(); err != nil {
+		return "", aoserrors.Errorf("%s (%s)", err, (string(output)))
 	}
 
-	return mountDir, imgFileName, nil
+	return mountDir, nil
 }
 
-func clearTmpDisk(mountDir, imgFile string) (err error) {
+func clearDisks() (err error) {
+	if err = clearTmpDisk("downloadDir"); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err = clearTmpDisk("decryptDir"); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func clearTmpDisk(name string) (err error) {
+	mountDir := path.Join(tmpDir, name)
+
+	items, err := ioutil.ReadDir(downloadDir)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, item := range items {
+		if err = os.RemoveAll(path.Join(mountDir, item.Name())); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+func closeTmpDisk(name string) (err error) {
+	fileName := path.Join(tmpDir, name+".ext4")
+	mountDir := path.Join(tmpDir, name)
+
 	if output, err := exec.Command("umount", mountDir).CombinedOutput(); err != nil {
-		return fmt.Errorf("%s (%s)", err, (string(output)))
+		return aoserrors.Errorf("%s (%s)", err, (string(output)))
 	}
 
 	if err = os.RemoveAll(mountDir); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
-	if err = os.Remove(imgFile); err != nil {
-		return err
+	if err = os.Remove(fileName); err != nil {
+		return aoserrors.Wrap(err)
 	}
 
 	return nil

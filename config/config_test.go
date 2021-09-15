@@ -46,6 +46,13 @@ const testConfigContent = `{
 	"fileServerUrl":"localhost:8092",
 	"workingDir" : "workingDir",
 	"boardConfigFile" : "/var/aos/aos_board.cfg",
+	"downloader": {
+		"downloadDir": "/path/to/download",
+		"decryptDir": "/path/to/decrypt",
+		"maxConcurrentDownloads": 10,
+		"retryCount": 5,
+		"retryDelay": "10s"
+	},
 	"monitoring": {
 		"sendPeriod": "00:05:00",
 		"pollPeriod": "00:00:01",
@@ -229,6 +236,20 @@ func TestUMControllerConfig(t *testing.T) {
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {
 		t.Errorf("Wrong UM controller value: %v", testCfg.UMController)
+	}
+}
+
+func TestDownloaderConfig(t *testing.T) {
+	originalConfig := config.Downloader{
+		DownloadDir:            "/path/to/download",
+		DecryptDir:             "/path/to/decrypt",
+		MaxConcurrentDownloads: 10,
+		RetryCount:             5,
+		RetryDelay:             config.Duration{10 * time.Second},
+	}
+
+	if !reflect.DeepEqual(originalConfig, testCfg.Downloader) {
+		t.Errorf("Wrong downloader config value: %v", testCfg.Downloader)
 	}
 }
 
