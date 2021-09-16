@@ -42,6 +42,7 @@ import (
 	"aos_communicationmanager/monitoring"
 	"aos_communicationmanager/smcontroller"
 	"aos_communicationmanager/umcontroller"
+	"aos_communicationmanager/unitstatushandler"
 )
 
 /***********************************************************************************************************************
@@ -55,17 +56,18 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
-	db           *database.Database
-	amqp         *amqp.AmqpHandler
-	iam          *iamclient.Client
-	crypt        *fcrypt.CryptoContext
-	alerts       *alerts.Alerts
-	monitor      *monitoring.Monitor
-	downloader   *downloader.Downloader
-	fileServer   *fileserver.FileServer
-	smController *smcontroller.Controller
-	umController *umcontroller.Controller
-	boardConfig  *boardconfig.Instance
+	db            *database.Database
+	amqp          *amqp.AmqpHandler
+	iam           *iamclient.Client
+	crypt         *fcrypt.CryptoContext
+	alerts        *alerts.Alerts
+	monitor       *monitoring.Monitor
+	downloader    *downloader.Downloader
+	fileServer    *fileserver.FileServer
+	smController  *smcontroller.Controller
+	umController  *umcontroller.Controller
+	boardConfig   *boardconfig.Instance
+	statusHandler *unitstatushandler.Instance
 }
 
 type journalHook struct {
@@ -169,10 +171,21 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create unit status handler
+	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.boardConfig, cm.umController, cm.smController,
+		cm.downloader, cm.amqp); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close unit status handler
+	if cm.statusHandler != nil {
+		cm.statusHandler.Close()
+	}
+
 	// Close UM controller
 	if cm.umController != nil {
 		cm.umController.Close()
