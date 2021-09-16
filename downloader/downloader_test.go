@@ -548,7 +548,7 @@ func (context *testCryptoContext) CreateSignContext() (fcrypt.SignContextInterfa
 	return &testSignContext{}, nil
 }
 
-func (context *testSymmetricContext) DecryptFile(encryptedFile, decryptedFile *os.File) (err error) {
+func (context *testSymmetricContext) DecryptFile(ctx context.Context, encryptedFile, decryptedFile *os.File) (err error) {
 	if _, err = io.Copy(decryptedFile, encryptedFile); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -564,7 +564,8 @@ func (context *testSignContext) AddCertificateChain(name string, fingerprints []
 	return nil
 }
 
-func (context *testSignContext) VerifySign(f *os.File, chainName string, algName string, signValue []byte) (err error) {
+func (context *testSignContext) VerifySign(
+	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error) {
 	return nil
 }
 

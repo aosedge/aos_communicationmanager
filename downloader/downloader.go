@@ -650,7 +650,7 @@ func (downloader *Downloader) decryptPackage(result *downloadResult) (err error)
 
 	log.WithFields(log.Fields{"srcFile": srcFile.Name(), "dstFile": dstFile.Name()}).Debug("Decrypt image")
 
-	if err = symmetricCtx.DecryptFile(srcFile, dstFile); err != nil {
+	if err = symmetricCtx.DecryptFile(result.ctx, srcFile, dstFile); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -683,7 +683,7 @@ func (downloader *Downloader) validateSigns(result *downloadResult) (err error) 
 
 	log.WithField("file", file.Name()).Debug("Check signature")
 
-	if err = signCtx.VerifySign(file,
+	if err = signCtx.VerifySign(result.ctx, file,
 		result.packageInfo.Signs.ChainName, result.packageInfo.Signs.Alg, result.packageInfo.Signs.Value); err != nil {
 		return aoserrors.Wrap(err)
 	}

@@ -18,6 +18,7 @@
 package fcrypt
 
 import (
+	"context"
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
@@ -38,6 +39,7 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+	"gitpct.epam.com/epmd-aepr/aos_common/utils/contextreader"
 	"gitpct.epam.com/epmd-aepr/aos_common/utils/cryptutils"
 	"gitpct.epam.com/epmd-aepr/aos_common/utils/tpmkey"
 
@@ -83,7 +85,7 @@ type CryptoContext struct {
 
 // SymmetricContextInterface interface for SymmetricCipherContext
 type SymmetricContextInterface interface {
-	DecryptFile(encryptedFile, clearFile *os.File) (err error)
+	DecryptFile(ctx context.Context, encryptedFile, clearFile *os.File) (err error)
 }
 
 // SymmetricCipherContext symmetric cipher context
@@ -108,7 +110,7 @@ type SignContext struct {
 type SignContextInterface interface {
 	AddCertificate(fingerprint string, asn1Bytes []byte) (err error)
 	AddCertificateChain(name string, fingerprints []string) (err error)
-	VerifySign(f *os.File, chainName string, algName string, signValue []byte) (err error)
+	VerifySign(ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error)
 }
 
 // CertificateProvider interface to get certificate
@@ -136,39 +138,39 @@ type pkcs11Descriptor struct {
  **********************************************************************************************************************/
 
 // New create context for crypto operations
-func New(conf config.Crypt, provider CertificateProvider) (ctx *CryptoContext, err error) {
+func New(conf config.Crypt, provider CertificateProvider) (cryptoContext *CryptoContext, err error) {
 	// Create context
-	ctx = &CryptoContext{
+	cryptoContext = &CryptoContext{
 		certProvider:  provider,
 		pkcs11Ctx:     make(map[pkcs11Descriptor]*crypto11.Context),
 		pkcs11Library: conf.Pkcs11Library}
 
 	if conf.CACert != "" {
-		if ctx.rootCertPool, err = cryptutils.GetCaCertPool(conf.CACert); err != nil {
+		if cryptoContext.rootCertPool, err = cryptutils.GetCaCertPool(conf.CACert); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 	}
 
 	if conf.TpmDevice != "" {
-		if ctx.tpmDevice, err = tpm2.OpenTPM(conf.TpmDevice); err != nil {
+		if cryptoContext.tpmDevice, err = tpm2.OpenTPM(conf.TpmDevice); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 	}
 
-	return ctx, nil
+	return cryptoContext, nil
 }
 
 // Close closes crypto context
-func (ctx *CryptoContext) Close() (err error) {
-	if ctx.tpmDevice != nil {
-		if tpmErr := ctx.tpmDevice.Close(); tpmErr != nil {
+func (cryptoContext *CryptoContext) Close() (err error) {
+	if cryptoContext.tpmDevice != nil {
+		if tpmErr := cryptoContext.tpmDevice.Close(); tpmErr != nil {
 			if err == nil {
 				err = tpmErr
 			}
 		}
 	}
 
-	for pkcs11Desc, pkcs11ctx := range ctx.pkcs11Ctx {
+	for pkcs11Desc, pkcs11ctx := range cryptoContext.pkcs11Ctx {
 		log.WithFields(log.Fields{"library": pkcs11Desc.library, "token": pkcs11Desc.token}).Debug("Close PKCS11 context")
 
 		if pkcs11Err := pkcs11ctx.Close(); pkcs11Err != nil {
@@ -184,13 +186,13 @@ func (ctx *CryptoContext) Close() (err error) {
 }
 
 // GetOrganization returns online certificate origanizarion names
-func (ctx *CryptoContext) GetOrganization() (names []string, err error) {
-	certURLStr, _, err := ctx.certProvider.GetCertificate(onlineCertificate, nil, "")
+func (cryptoContext *CryptoContext) GetOrganization() (names []string, err error) {
+	certURLStr, _, err := cryptoContext.certProvider.GetCertificate(onlineCertificate, nil, "")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	certs, err := ctx.loadCertificateByURL(certURLStr)
+	certs, err := cryptoContext.loadCertificateByURL(certURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -203,8 +205,8 @@ func (ctx *CryptoContext) GetOrganization() (names []string, err error) {
 }
 
 // GetCertSerial returns certificate serial number
-func (ctx *CryptoContext) GetCertSerial(certURL string) (serial string, err error) {
-	certs, err := ctx.loadCertificateByURL(certURL)
+func (cryptoContext *CryptoContext) GetCertSerial(certURL string) (serial string, err error) {
+	certs, err := cryptoContext.loadCertificateByURL(certURL)
 	if err != nil {
 		return "", aoserrors.Wrap(err)
 	}
@@ -213,34 +215,34 @@ func (ctx *CryptoContext) GetCertSerial(certURL string) (serial string, err erro
 }
 
 // CreateSignContext creates sign context
-func (ctx *CryptoContext) CreateSignContext() (signContext SignContextInterface, err error) {
-	if ctx == nil || ctx.rootCertPool == nil {
+func (cryptoContext *CryptoContext) CreateSignContext() (signContext SignContextInterface, err error) {
+	if cryptoContext == nil || cryptoContext.rootCertPool == nil {
 		return nil, aoserrors.New("asymmetric context not initialized")
 	}
 
-	return &SignContext{cryptoContext: ctx}, nil
+	return &SignContext{cryptoContext: cryptoContext}, nil
 }
 
 // GetTLSConfig Provides TLS configuration for HTTPS client
-func (ctx *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) {
+func (cryptoContext *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) {
 	cfg = &tls.Config{}
 
-	certURLStr, keyURLStr, err := ctx.certProvider.GetCertificate(onlineCertificate, nil, "")
+	certURLStr, keyURLStr, err := cryptoContext.certProvider.GetCertificate(onlineCertificate, nil, "")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	clientCert, err := ctx.loadCertificateByURL(certURLStr)
+	clientCert, err := cryptoContext.loadCertificateByURL(certURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	onlinePrivate, _, err := ctx.loadPrivateKeyByURL(keyURLStr)
+	onlinePrivate, _, err := cryptoContext.loadPrivateKeyByURL(keyURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	cfg.RootCAs = ctx.rootCertPool
+	cfg.RootCAs = cryptoContext.rootCertPool
 	cfg.Certificates = []tls.Certificate{{PrivateKey: onlinePrivate, Certificate: getRawCertificate(clientCert)}}
 	cfg.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) (err error) {
 		return nil
@@ -252,14 +254,14 @@ func (ctx *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) {
 }
 
 // DecryptMetadata decrypt envelope
-func (ctx *CryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
+func (cryptoContext *CryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
 	ci, err := unmarshallCMS(input)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	for _, recipient := range ci.EnvelopedData.RecipientInfos {
-		dkey, err := ctx.getKeyForEnvelope(recipient.(keyTransRecipientInfo))
+		dkey, err := cryptoContext.getKeyForEnvelope(recipient.(keyTransRecipientInfo))
 		if err != nil {
 			log.Warnf("Can't get key for envelope: %s", err)
 
@@ -280,13 +282,15 @@ func (ctx *CryptoContext) DecryptMetadata(input []byte) (output []byte, err erro
 }
 
 // ImportSessionKey function retrieves a symmetric key from crypto context
-func (ctx *CryptoContext) ImportSessionKey(keyInfo CryptoSessionKeyInfo) (symContext SymmetricContextInterface, err error) {
-	_, keyURLStr, err := ctx.certProvider.GetCertificate(offlineCertificate, keyInfo.ReceiverInfo.Issuer, keyInfo.ReceiverInfo.Serial)
+func (cryptoContext *CryptoContext) ImportSessionKey(
+	keyInfo CryptoSessionKeyInfo) (symContext SymmetricContextInterface, err error) {
+	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(
+		offlineCertificate, keyInfo.ReceiverInfo.Issuer, keyInfo.ReceiverInfo.Serial)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	privKey, supportPKCS1v15SessionKey, err := ctx.loadPrivateKeyByURL(keyURLStr)
+	privKey, supportPKCS1v15SessionKey, err := cryptoContext.loadPrivateKeyByURL(keyURLStr)
 	if err != nil {
 		log.Errorf("Cant load private key: %s", err)
 
@@ -346,11 +350,11 @@ func (ctx *CryptoContext) ImportSessionKey(keyInfo CryptoSessionKeyInfo) (symCon
 }
 
 // AddCertificate adds certificate to context
-func (ctx *SignContext) AddCertificate(fingerprint string, asn1Bytes []byte) error {
+func (signContext *SignContext) AddCertificate(fingerprint string, asn1Bytes []byte) error {
 	fingerUpper := strings.ToUpper(fingerprint)
 
 	// Check certificate presents
-	for _, item := range ctx.signCertificates {
+	for _, item := range signContext.signCertificates {
 		if item.fingerprint == fingerUpper {
 			return nil
 		}
@@ -363,32 +367,35 @@ func (ctx *SignContext) AddCertificate(fingerprint string, asn1Bytes []byte) err
 	}
 
 	// Append the new certificate to the collection
-	ctx.signCertificates = append(ctx.signCertificates, certificateInfo{fingerprint: fingerUpper, certificate: cert})
+	signContext.signCertificates = append(
+		signContext.signCertificates, certificateInfo{fingerprint: fingerUpper, certificate: cert})
 
 	return nil
 }
 
 // AddCertificateChain adds certificate chain to context
-func (ctx *SignContext) AddCertificateChain(name string, fingerprints []string) error {
+func (signContext *SignContext) AddCertificateChain(name string, fingerprints []string) error {
 	if len(fingerprints) == 0 {
 		return aoserrors.New("can't add certificate chain with empty fingerprint list")
 	}
 
 	// Check certificate presents
-	for _, item := range ctx.signCertificateChains {
+	for _, item := range signContext.signCertificateChains {
 		if item.name == name {
 			return nil
 		}
 	}
 
-	ctx.signCertificateChains = append(ctx.signCertificateChains, certificateChainInfo{name, fingerprints})
+	signContext.signCertificateChains = append(
+		signContext.signCertificateChains, certificateChainInfo{name, fingerprints})
 
 	return nil
 }
 
 // VerifySign verifies signature
-func (ctx *SignContext) VerifySign(f *os.File, chainName string, algName string, signValue []byte) (err error) {
-	if len(ctx.signCertificateChains) == 0 || len(ctx.signCertificates) == 0 {
+func (signContext *SignContext) VerifySign(
+	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error) {
+	if len(signContext.signCertificateChains) == 0 || len(signContext.signCertificates) == 0 {
 		return aoserrors.New("sign context not initialized (no certificates)")
 	}
 
@@ -396,7 +403,7 @@ func (ctx *SignContext) VerifySign(f *os.File, chainName string, algName string,
 	var signCertFingerprint string
 
 	// Find chain
-	for _, chainTmp := range ctx.signCertificateChains {
+	for _, chainTmp := range signContext.signCertificateChains {
 		if chainTmp.name == chainName {
 			chain = chainTmp
 			signCertFingerprint = chain.fingerprints[0]
@@ -409,7 +416,7 @@ func (ctx *SignContext) VerifySign(f *os.File, chainName string, algName string,
 		return aoserrors.New("unknown chain name")
 	}
 
-	signCert := ctx.getCertificateByFingerprint(signCertFingerprint)
+	signCert := signContext.getCertificateByFingerprint(signCertFingerprint)
 
 	if signCert == nil {
 		return aoserrors.New("signing certificate is absent")
@@ -436,7 +443,9 @@ func (ctx *SignContext) VerifySign(f *os.File, chainName string, algName string,
 
 	hash := hashFunc.New()
 
-	if _, err = io.Copy(hash, f); err != nil {
+	contextReader := contextreader.New(ctx, f)
+
+	if _, err = io.Copy(hash, contextReader); err != nil {
 		log.Errorf("Error hashing file: %s", err)
 
 		return aoserrors.Wrap(err)
@@ -472,7 +481,7 @@ func (ctx *SignContext) VerifySign(f *os.File, chainName string, algName string,
 	intermediatePool := x509.NewCertPool()
 
 	for _, certFingerprints := range chain.fingerprints[1:] {
-		crt := ctx.getCertificateByFingerprint(certFingerprints)
+		crt := signContext.getCertificateByFingerprint(certFingerprints)
 		if crt == nil {
 			return aoserrors.Errorf("cannot find certificate in chain fingerprint: %s", certFingerprints)
 		}
@@ -482,7 +491,7 @@ func (ctx *SignContext) VerifySign(f *os.File, chainName string, algName string,
 
 	verifyOptions := x509.VerifyOptions{
 		Intermediates: intermediatePool,
-		Roots:         ctx.cryptoContext.rootCertPool,
+		Roots:         signContext.cryptoContext.rootCertPool,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	}
 
@@ -501,8 +510,9 @@ func CreateSymmetricCipherContext() (symContext *SymmetricCipherContext) {
 }
 
 // DecryptFile decrypts file
-func (ctx *SymmetricCipherContext) DecryptFile(encryptedFile, clearFile *os.File) (err error) {
-	if !ctx.isReady() {
+func (symmetricContext *SymmetricCipherContext) DecryptFile(
+	ctx context.Context, encryptedFile, clearFile *os.File) (err error) {
+	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
 
@@ -513,7 +523,7 @@ func (ctx *SymmetricCipherContext) DecryptFile(encryptedFile, clearFile *os.File
 	}
 
 	fileSize := inputFileStat.Size()
-	if fileSize%int64(ctx.decrypter.BlockSize()) != 0 {
+	if fileSize%int64(symmetricContext.decrypter.BlockSize()) != 0 {
 		return aoserrors.New("file size is incorrect")
 	}
 
@@ -525,19 +535,21 @@ func (ctx *SymmetricCipherContext) DecryptFile(encryptedFile, clearFile *os.File
 	chunkDecrypted := make([]byte, fileBlockSize)
 	totalReadSize := int64(0)
 
+	contextReader := contextreader.New(ctx, encryptedFile)
+
 	for totalReadSize < fileSize {
-		readSize, err := encryptedFile.Read(chunkEncrypted)
+		readSize, err := contextReader.Read(chunkEncrypted)
 		if err != nil && err != io.EOF {
 			return aoserrors.Wrap(err)
 		}
 
 		totalReadSize += int64(readSize)
 
-		ctx.decrypter.CryptBlocks(chunkDecrypted[:readSize], chunkEncrypted[:readSize])
+		symmetricContext.decrypter.CryptBlocks(chunkDecrypted[:readSize], chunkEncrypted[:readSize])
 
 		if totalReadSize == fileSize {
 			// Remove padding from the last block if needed
-			padSize, err := ctx.getPaddingSize(chunkDecrypted[:readSize], readSize)
+			padSize, err := symmetricContext.getPaddingSize(chunkDecrypted[:readSize], readSize)
 			if err != nil {
 				return aoserrors.Wrap(err)
 			}
@@ -559,7 +571,7 @@ func (ctx *SymmetricCipherContext) DecryptFile(encryptedFile, clearFile *os.File
  * Private
  **********************************************************************************************************************/
 
-func (ctx *CryptoContext) loadPkcs11PrivateKey(keyURL *url.URL) (key crypto.PrivateKey, err error) {
+func (cryptoContext *CryptoContext) loadPkcs11PrivateKey(keyURL *url.URL) (key crypto.PrivateKey, err error) {
 	library, token, label, id, userPin, err := parsePkcs11Url(keyURL)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -567,7 +579,7 @@ func (ctx *CryptoContext) loadPkcs11PrivateKey(keyURL *url.URL) (key crypto.Priv
 
 	log.WithFields(log.Fields{"label": label, "id": id}).Debug("Load PKCS11 certificate")
 
-	pkcs11Ctx, err := ctx.getPkcs11Context(library, token, userPin)
+	pkcs11Ctx, err := cryptoContext.getPkcs11Context(library, token, userPin)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -583,7 +595,7 @@ func (ctx *CryptoContext) loadPkcs11PrivateKey(keyURL *url.URL) (key crypto.Priv
 	return key, nil
 }
 
-func (ctx *CryptoContext) loadPrivateKeyByURL(keyURLStr string) (privKey crypto.PrivateKey,
+func (cryptoContext *CryptoContext) loadPrivateKeyByURL(keyURLStr string) (privKey crypto.PrivateKey,
 	supportPKCS1v15SessionKey bool, err error) {
 	keyURL, err := url.Parse(keyURLStr)
 	if err != nil {
@@ -599,7 +611,7 @@ func (ctx *CryptoContext) loadPrivateKeyByURL(keyURLStr string) (privKey crypto.
 		supportPKCS1v15SessionKey = true
 
 	case cryptutils.SchemeTPM:
-		if ctx.tpmDevice == nil {
+		if cryptoContext.tpmDevice == nil {
 			return nil, false, aoserrors.Errorf("TPM device is not configured")
 		}
 
@@ -609,12 +621,12 @@ func (ctx *CryptoContext) loadPrivateKeyByURL(keyURLStr string) (privKey crypto.
 			return nil, false, aoserrors.Wrap(err)
 		}
 
-		if privKey, err = tpmkey.CreateFromPersistent(ctx.tpmDevice, tpmutil.Handle(handle)); err != nil {
+		if privKey, err = tpmkey.CreateFromPersistent(cryptoContext.tpmDevice, tpmutil.Handle(handle)); err != nil {
 			return nil, false, aoserrors.Wrap(err)
 		}
 
 	case cryptutils.SchemePKCS11:
-		if privKey, err = ctx.loadPkcs11PrivateKey(keyURL); err != nil {
+		if privKey, err = cryptoContext.loadPkcs11PrivateKey(keyURL); err != nil {
 			return nil, false, aoserrors.Wrap(err)
 		}
 
@@ -677,15 +689,15 @@ func parsePkcs11Url(pkcs11Url *url.URL) (library, token, label, id, userPin stri
 	return library, token, label, id, userPin, nil
 }
 
-func (ctx *CryptoContext) getPkcs11Context(library, token, userPin string) (pkcs11Ctx *crypto11.Context, err error) {
+func (cryptoContext *CryptoContext) getPkcs11Context(library, token, userPin string) (pkcs11Ctx *crypto11.Context, err error) {
 	log.WithFields(log.Fields{"library": library, "token": token}).Debug("Get PKCS11 context")
 
-	if library == "" && ctx.pkcs11Library == "" {
+	if library == "" && cryptoContext.pkcs11Library == "" {
 		return nil, aoserrors.New("PKCS11 library is not defined")
 	}
 
 	if library == "" {
-		library = ctx.pkcs11Library
+		library = cryptoContext.pkcs11Library
 	}
 
 	var (
@@ -693,20 +705,20 @@ func (ctx *CryptoContext) getPkcs11Context(library, token, userPin string) (pkcs
 		pkcs11Desc = pkcs11Descriptor{library: library, token: token}
 	)
 
-	if pkcs11Ctx, ok = ctx.pkcs11Ctx[pkcs11Desc]; !ok {
+	if pkcs11Ctx, ok = cryptoContext.pkcs11Ctx[pkcs11Desc]; !ok {
 		log.WithFields(log.Fields{"library": library, "token": token}).Debug("Create PKCS11 context")
 
 		if pkcs11Ctx, err = crypto11.Configure(&crypto11.Config{Path: library, TokenLabel: token, Pin: userPin}); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
-		ctx.pkcs11Ctx[pkcs11Desc] = pkcs11Ctx
+		cryptoContext.pkcs11Ctx[pkcs11Desc] = pkcs11Ctx
 	}
 
 	return pkcs11Ctx, nil
 }
 
-func (ctx *CryptoContext) loadPkcs11Certificate(certURL *url.URL) (certs []*x509.Certificate, err error) {
+func (cryptoContext *CryptoContext) loadPkcs11Certificate(certURL *url.URL) (certs []*x509.Certificate, err error) {
 	library, token, label, id, userPin, err := parsePkcs11Url(certURL)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -714,7 +726,7 @@ func (ctx *CryptoContext) loadPkcs11Certificate(certURL *url.URL) (certs []*x509
 
 	log.WithFields(log.Fields{"label": label, "id": id}).Debug("Load PKCS11 certificate")
 
-	pkcs11Ctx, err := ctx.getPkcs11Context(library, token, userPin)
+	pkcs11Ctx, err := cryptoContext.getPkcs11Context(library, token, userPin)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -730,7 +742,7 @@ func (ctx *CryptoContext) loadPkcs11Certificate(certURL *url.URL) (certs []*x509
 	return certs, nil
 }
 
-func (ctx *CryptoContext) loadCertificateByURL(certURLStr string) (certs []*x509.Certificate, err error) {
+func (cryptoContext *CryptoContext) loadCertificateByURL(certURLStr string) (certs []*x509.Certificate, err error) {
 	certURL, err := url.Parse(certURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -745,7 +757,7 @@ func (ctx *CryptoContext) loadCertificateByURL(certURLStr string) (certs []*x509
 		return certs, nil
 
 	case cryptutils.SchemePKCS11:
-		if certs, err = ctx.loadPkcs11Certificate(certURL); err != nil {
+		if certs, err = cryptoContext.loadPkcs11Certificate(certURL); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -756,18 +768,18 @@ func (ctx *CryptoContext) loadCertificateByURL(certURLStr string) (certs []*x509
 	}
 }
 
-func (ctx *CryptoContext) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key []byte, err error) {
+func (cryptoContext *CryptoContext) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key []byte, err error) {
 	issuer, err := asn1.Marshal(keyInfo.Rid.Issuer)
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
 
-	_, keyURLStr, err := ctx.certProvider.GetCertificate(offlineCertificate, issuer, fmt.Sprintf("%X", keyInfo.Rid.SerialNumber))
+	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(offlineCertificate, issuer, fmt.Sprintf("%X", keyInfo.Rid.SerialNumber))
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
 
-	privKey, _, err := ctx.loadPrivateKeyByURL(keyURLStr)
+	privKey, _, err := cryptoContext.loadPrivateKeyByURL(keyURLStr)
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
@@ -784,7 +796,7 @@ func (ctx *CryptoContext) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key 
 	return key, nil
 }
 
-func (ctx *SymmetricCipherContext) generateKeyAndIV(algString string) (err error) {
+func (symmetricContext *SymmetricCipherContext) generateKeyAndIV(algString string) (err error) {
 	// Get alg name
 	algName, _, _ := decodeAlgNames(algString)
 
@@ -807,12 +819,12 @@ func (ctx *SymmetricCipherContext) generateKeyAndIV(algString string) (err error
 	}
 
 	// Check and set values
-	return aoserrors.Wrap(ctx.set(algString, key, iv))
+	return aoserrors.Wrap(symmetricContext.set(algString, key, iv))
 }
 
-func (ctx *SignContext) getCertificateByFingerprint(fingerprint string) (cert *x509.Certificate) {
+func (signContext *SignContext) getCertificateByFingerprint(fingerprint string) (cert *x509.Certificate) {
 	// Find certificate in the chain
-	for _, certTmp := range ctx.signCertificates {
+	for _, certTmp := range signContext.signCertificates {
 		if certTmp.fingerprint == fingerprint {
 			return certTmp.certificate
 		}
@@ -821,8 +833,8 @@ func (ctx *SignContext) getCertificateByFingerprint(fingerprint string) (cert *x
 	return nil
 }
 
-func (ctx *SymmetricCipherContext) encryptFile(clearFile, encryptedFile *os.File) (err error) {
-	if !ctx.isReady() {
+func (symmetricContext *SymmetricCipherContext) encryptFile(ctx context.Context, clearFile, encryptedFile *os.File) (err error) {
+	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
 
@@ -840,6 +852,8 @@ func (ctx *SymmetricCipherContext) encryptFile(clearFile, encryptedFile *os.File
 		return aoserrors.Wrap(err)
 	}
 
+	contextReader := contextreader.New(ctx, clearFile)
+
 	// We need more space if the input file size proportional to the fileBlockSize
 	chunkEncrypted := make([]byte, fileBlockSize+128)
 	chunkClear := make([]byte, fileBlockSize+128)
@@ -850,20 +864,20 @@ func (ctx *SymmetricCipherContext) encryptFile(clearFile, encryptedFile *os.File
 		if writtenSize+int64(currentChunkSize) > fileSize {
 			// The last block may need a padding appending
 			currentChunkSize = int(fileSize - writtenSize)
-			if _, err = clearFile.Read(chunkClear[:currentChunkSize]); err != nil {
+			if _, err = contextReader.Read(chunkClear[:currentChunkSize]); err != nil {
 				return aoserrors.Wrap(err)
 			}
-			readSize, err = ctx.appendPadding(chunkClear, currentChunkSize)
+			readSize, err = symmetricContext.appendPadding(chunkClear, currentChunkSize)
 			if err != nil {
 				return aoserrors.Wrap(err)
 			}
 		} else {
-			if readSize, err = clearFile.Read(chunkClear[:fileBlockSize]); err != nil {
+			if readSize, err = contextReader.Read(chunkClear[:fileBlockSize]); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
 
-		ctx.encrypter.CryptBlocks(chunkEncrypted, chunkClear[:readSize])
+		symmetricContext.encrypter.CryptBlocks(chunkEncrypted, chunkClear[:readSize])
 
 		if _, err = encryptedFile.Write(chunkEncrypted[:readSize]); err != nil {
 			return aoserrors.Wrap(err)
@@ -875,27 +889,27 @@ func (ctx *SymmetricCipherContext) encryptFile(clearFile, encryptedFile *os.File
 	return aoserrors.Wrap(encryptedFile.Sync())
 }
 
-func (ctx *SymmetricCipherContext) set(algString string, key []byte, iv []byte) error {
+func (symmetricContext *SymmetricCipherContext) set(algString string, key []byte, iv []byte) error {
 	if algString == "" {
 		return aoserrors.New("construct symmetric alg context: empty conf string")
 	}
 
-	ctx.key = key
-	ctx.iv = iv
+	symmetricContext.key = key
+	symmetricContext.iv = iv
 
-	ctx.setAlg(algString)
+	symmetricContext.setAlg(algString)
 
-	return aoserrors.Wrap(ctx.loadKey())
+	return aoserrors.Wrap(symmetricContext.loadKey())
 }
 
-func (ctx *SymmetricCipherContext) setAlg(algString string) {
-	ctx.algName, ctx.modeName, ctx.paddingName = decodeAlgNames(algString)
+func (symmetricContext *SymmetricCipherContext) setAlg(algString string) {
+	symmetricContext.algName, symmetricContext.modeName, symmetricContext.paddingName = decodeAlgNames(algString)
 }
 
-func (ctx *SymmetricCipherContext) appendPadding(dataIn []byte, dataLen int) (fullSize int, err error) {
-	switch strings.ToUpper(ctx.paddingName) {
+func (symmetricContext *SymmetricCipherContext) appendPadding(dataIn []byte, dataLen int) (fullSize int, err error) {
+	switch strings.ToUpper(symmetricContext.paddingName) {
 	case "PKCS7PADDING", "PKCS7":
-		if fullSize, err = ctx.appendPkcs7Padding(dataIn, dataLen); err != nil {
+		if fullSize, err = symmetricContext.appendPkcs7Padding(dataIn, dataLen); err != nil {
 			return 0, aoserrors.Wrap(err)
 		}
 
@@ -906,10 +920,10 @@ func (ctx *SymmetricCipherContext) appendPadding(dataIn []byte, dataLen int) (fu
 	}
 }
 
-func (ctx *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (removedSize int, err error) {
-	switch strings.ToUpper(ctx.paddingName) {
+func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (removedSize int, err error) {
+	switch strings.ToUpper(symmetricContext.paddingName) {
 	case "PKCS7PADDING", "PKCS7":
-		if removedSize, err = ctx.removePkcs7Padding(dataIn, dataLen); err != nil {
+		if removedSize, err = symmetricContext.removePkcs7Padding(dataIn, dataLen); err != nil {
 			return 0, aoserrors.Wrap(err)
 		}
 
@@ -920,8 +934,8 @@ func (ctx *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (r
 	}
 }
 
-func (ctx *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int) (fullSize int, err error) {
-	blockSize := ctx.encrypter.BlockSize()
+func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int) (fullSize int, err error) {
+	blockSize := symmetricContext.encrypter.BlockSize()
 	appendSize := blockSize - (dataLen % blockSize)
 
 	fullSize = dataLen + appendSize
@@ -936,8 +950,8 @@ func (ctx *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int
 	return fullSize, nil
 }
 
-func (ctx *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int) (removedSize int, err error) {
-	blockLen := ctx.decrypter.BlockSize()
+func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int) (removedSize int, err error) {
+	blockLen := symmetricContext.decrypter.BlockSize()
 
 	if dataLen%blockLen != 0 || dataLen == 0 {
 		return 0, aoserrors.New("padding error (invalid total size)")
@@ -958,21 +972,21 @@ func (ctx *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int
 	return removedSize, nil
 }
 
-func (ctx *SymmetricCipherContext) loadKey() (err error) {
+func (symmetricContext *SymmetricCipherContext) loadKey() (err error) {
 	var block cipher.Block
 	keySizeBits := 0
 
-	switch strings.ToUpper(ctx.algName) {
+	switch strings.ToUpper(symmetricContext.algName) {
 	case "AES128", "AES192", "AES256":
-		if keySizeBits, err = strconv.Atoi(ctx.algName[3:]); err != nil {
+		if keySizeBits, err = strconv.Atoi(symmetricContext.algName[3:]); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
-		if keySizeBits/8 != len(ctx.key) {
+		if keySizeBits/8 != len(symmetricContext.key) {
 			return aoserrors.New("invalid symmetric key size")
 		}
 
-		block, err = aes.NewCipher(ctx.key)
+		block, err = aes.NewCipher(symmetricContext.key)
 		if err != nil {
 			log.Errorf("can't create cipher: %s", err)
 
@@ -980,25 +994,25 @@ func (ctx *SymmetricCipherContext) loadKey() (err error) {
 		}
 
 	default:
-		return aoserrors.New("unsupported cryptographic algorithm: " + ctx.algName)
+		return aoserrors.New("unsupported cryptographic algorithm: " + symmetricContext.algName)
 	}
 
-	if len(ctx.iv) != block.BlockSize() {
+	if len(symmetricContext.iv) != block.BlockSize() {
 		return aoserrors.New("invalid IV size")
 	}
 
-	switch ctx.modeName {
+	switch symmetricContext.modeName {
 	case "CBC":
-		ctx.decrypter = cipher.NewCBCDecrypter(block, ctx.iv)
-		ctx.encrypter = cipher.NewCBCEncrypter(block, ctx.iv)
+		symmetricContext.decrypter = cipher.NewCBCDecrypter(block, symmetricContext.iv)
+		symmetricContext.encrypter = cipher.NewCBCEncrypter(block, symmetricContext.iv)
 
 	default:
-		return aoserrors.New("unsupported encryption mode: " + ctx.modeName)
+		return aoserrors.New("unsupported encryption mode: " + symmetricContext.modeName)
 	}
 
 	return nil
 }
 
-func (ctx *SymmetricCipherContext) isReady() bool {
-	return ctx.encrypter != nil || ctx.decrypter != nil
+func (symmetricContext *SymmetricCipherContext) isReady() bool {
+	return symmetricContext.encrypter != nil || symmetricContext.decrypter != nil
 }

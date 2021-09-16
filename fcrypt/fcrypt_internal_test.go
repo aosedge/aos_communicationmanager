@@ -19,6 +19,7 @@ package fcrypt
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
@@ -600,8 +601,8 @@ func TestMain(m *testing.M) {
 
 func TestSymmetricCipherContext_Set(t *testing.T) {
 	for _, testItem := range structSymmetricCipherContextSetTests {
-		ctx := CreateSymmetricCipherContext()
-		err := ctx.set(testItem.algName, testItem.key, testItem.iv)
+		symmetricContext := CreateSymmetricCipherContext()
+		err := symmetricContext.set(testItem.algName, testItem.key, testItem.iv)
 
 		if (err == nil) != testItem.ok {
 			t.Errorf("Got unexpected error '%v' value on test %#v", err, testItem)
@@ -613,8 +614,8 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 	testSizes := []int{0, 15, fileBlockSize, fileBlockSize + 100}
 
 	for _, testItem := range testSizes {
-		ctx := CreateSymmetricCipherContext()
-		err := ctx.generateKeyAndIV("AES128/CBC")
+		symmetricContext := CreateSymmetricCipherContext()
+		err := symmetricContext.generateKeyAndIV("AES128/CBC")
 		if err != nil {
 			t.Fatalf("Error creating context: '%v'", err)
 		}
@@ -639,7 +640,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 			t.Fatalf("Error creating file: '%v'", err)
 		}
 
-		if err = ctx.encryptFile(clearFile, encFile); err != nil {
+		if err = symmetricContext.encryptFile(context.Background(), clearFile, encFile); err != nil {
 			t.Errorf("Error encrypting file: %v", err)
 		}
 
@@ -651,7 +652,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 			t.Errorf("Invalid file (%v) size: %v vs %v", encFile.Name(), fi.Size(), int64((1+testItem/16)*16))
 		}
 
-		if err = ctx.DecryptFile(encFile, decFile); err != nil {
+		if err = symmetricContext.DecryptFile(context.Background(), encFile, decFile); err != nil {
 			t.Errorf("Error encrypting file: %v", err)
 		}
 
@@ -689,9 +690,8 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 }
 
 func TestSymmetricCipherContext_appendPadding(t *testing.T) {
-	ctx := CreateSymmetricCipherContext()
-	err := ctx.generateKeyAndIV("AES128/CBC")
-	if err != nil {
+	symmetricContext := CreateSymmetricCipherContext()
+	if err := symmetricContext.generateKeyAndIV("AES128/CBC"); err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
 
@@ -706,7 +706,7 @@ func TestSymmetricCipherContext_appendPadding(t *testing.T) {
 		copy(testItem.padded, item.padded)
 		testItem.unpaddedLen = item.unpaddedLen
 		testItem.ok = item.ok
-		resultSize, err := ctx.appendPadding(testItem.unpadded, testItem.unpaddedLen)
+		resultSize, err := symmetricContext.appendPadding(testItem.unpadded, testItem.unpaddedLen)
 		if err != nil {
 			if testItem.ok {
 				t.Errorf("Got unexpected result: error='%v' siz='%v', value on test %#v", err, resultSize, testItem)
@@ -720,8 +720,8 @@ func TestSymmetricCipherContext_appendPadding(t *testing.T) {
 }
 
 func TestSymmetricCipherContext_getPaddingSize(t *testing.T) {
-	ctx := CreateSymmetricCipherContext()
-	err := ctx.generateKeyAndIV("AES128/CBC")
+	symmetricContext := CreateSymmetricCipherContext()
+	err := symmetricContext.generateKeyAndIV("AES128/CBC")
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -737,7 +737,7 @@ func TestSymmetricCipherContext_getPaddingSize(t *testing.T) {
 		copy(testItem.padded, item.padded)
 		testItem.unpaddedLen = item.unpaddedLen
 		testItem.ok = item.ok
-		resultSize, err := ctx.getPaddingSize(testItem.padded, len(testItem.padded))
+		resultSize, err := symmetricContext.getPaddingSize(testItem.padded, len(testItem.padded))
 		if err != nil {
 			if testItem.ok {
 				t.Errorf("Got unexpected result: error='%v' siz='%v', value on test %#v", err, resultSize, testItem)
@@ -760,15 +760,14 @@ func TestInvalidParams(t *testing.T) {
 	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline1")}
 
-	ctx, err := New(conf, &certProvider)
+	cryptoContext, err := New(conf, &certProvider)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
 
 	var keyInfo CryptoSessionKeyInfo
 
-	_, err = ctx.ImportSessionKey(keyInfo)
-	if err == nil {
+	if _, err = cryptoContext.ImportSessionKey(keyInfo); err == nil {
 		t.Fatalf("Import session key not failed")
 	}
 
@@ -776,8 +775,8 @@ func TestInvalidParams(t *testing.T) {
 	keyInfo.SessionIV = []byte{1, 2}
 	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING"
 	keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"
-	_, err = ctx.ImportSessionKey(keyInfo)
-	if err == nil {
+
+	if _, err = cryptoContext.ImportSessionKey(keyInfo); err == nil {
 		t.Fatalf("Import session key not failed")
 	}
 }
@@ -811,7 +810,7 @@ func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
 
 	for _, certProvider := range testCertProviders {
 		// Create and use context
-		ctx, err := New(config.Crypt{}, certProvider)
+		cryptoContext, err := New(config.Crypt{}, certProvider)
 		if err != nil {
 			t.Fatalf("Error creating context: '%v'", err)
 		}
@@ -822,7 +821,7 @@ func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
 		keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING"
 		keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"
 
-		sessionKey, err := ctx.ImportSessionKey(keyInfo)
+		sessionKey, err := cryptoContext.ImportSessionKey(keyInfo)
 		if err != nil {
 			t.Fatalf("Error decode key: '%v'", err)
 		}
@@ -840,7 +839,7 @@ func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
 			t.Fatalf("Error decrypt key: invalid key")
 		}
 
-		if err = ctx.Close(); err != nil {
+		if err = cryptoContext.Close(); err != nil {
 			t.Fatalf("Can't close crypto context: %s", err)
 		}
 	}
@@ -868,7 +867,7 @@ func TestDecryptSessionKeyOAEP(t *testing.T) {
 	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline1")}
 
-	ctx, err := New(conf, &certProvider)
+	cryptoContext, err := New(conf, &certProvider)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -879,7 +878,7 @@ func TestDecryptSessionKeyOAEP(t *testing.T) {
 	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING"
 	keyInfo.AsymmetricAlgName = "RSA/OAEP"
 
-	ctxSym, err := ctx.ImportSessionKey(keyInfo)
+	ctxSym, err := cryptoContext.ImportSessionKey(keyInfo)
 	if err != nil {
 		t.Fatalf("Error decode key: '%v'", err)
 	}
@@ -919,7 +918,7 @@ func TestInvalidSessionKeyPkcs1v15(t *testing.T) {
 	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline2")}
 
-	ctx, err := New(conf, &certProvider)
+	cryptoContext, err := New(conf, &certProvider)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -930,7 +929,7 @@ func TestInvalidSessionKeyPkcs1v15(t *testing.T) {
 	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING"
 	keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"
 
-	ctxSym, err := ctx.ImportSessionKey(keyInfo)
+	ctxSym, err := cryptoContext.ImportSessionKey(keyInfo)
 	if err != nil {
 		t.Fatalf("Error importing key: '%v'", err)
 	}
@@ -967,7 +966,7 @@ func TestInvalidSessionKeyOAEP(t *testing.T) {
 	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline2")}
 
-	ctx, err := New(conf, &certProvider)
+	cryptoContext, err := New(conf, &certProvider)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -978,7 +977,7 @@ func TestInvalidSessionKeyOAEP(t *testing.T) {
 	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING"
 	keyInfo.AsymmetricAlgName = "RSA/OAEP"
 
-	if _, err = ctx.ImportSessionKey(keyInfo); err == nil {
+	if _, err = cryptoContext.ImportSessionKey(keyInfo); err == nil {
 		t.Fatalf("Error decode key: decrypt should raise error")
 	}
 }
@@ -1038,12 +1037,12 @@ func TestVerifySignOfComponent(t *testing.T) {
 	conf := config.Crypt{CACert: certURL.Path}
 	certProvider := testCertificateProvider{}
 
-	ctx, err := New(conf, &certProvider)
+	cryptoContext, err := New(conf, &certProvider)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
 
-	signCtx, err := ctx.CreateSignContext()
+	signCtx, err := cryptoContext.CreateSignContext()
 	if err != nil {
 		t.Fatalf("Error creating sign context: '%v'", err)
 	}
@@ -1077,7 +1076,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 		tmpFile.Write(data.FileData)
 		tmpFile.Seek(0, 0)
 
-		err = signCtx.VerifySign(tmpFile, data.Signs.ChainName, data.Signs.Alg, data.Signs.Value)
+		err = signCtx.VerifySign(context.Background(), tmpFile, data.Signs.ChainName, data.Signs.Alg, data.Signs.Value)
 		if err != nil {
 			t.Fatal("Verify fail", err)
 		}
@@ -1093,12 +1092,12 @@ func TestGetCertificateOrganization(t *testing.T) {
 	}
 
 	for _, certProvider := range testCertProviders {
-		ctx, err := New(config.Crypt{}, certProvider)
+		cryptoContext, err := New(config.Crypt{}, certProvider)
 		if err != nil {
 			t.Fatalf("Can't create crypto context: %s", err)
 		}
 
-		names, err := ctx.GetOrganization()
+		names, err := cryptoContext.GetOrganization()
 		if err != nil {
 			t.Fatalf("Can't get organization: %s", err)
 		}
@@ -1111,7 +1110,7 @@ func TestGetCertificateOrganization(t *testing.T) {
 			t.Fatalf("Wrong organization name: %s", names[0])
 		}
 
-		if err = ctx.Close(); err != nil {
+		if err = cryptoContext.Close(); err != nil {
 			t.Fatalf("Can't close crypto context: %s", err)
 		}
 	}
