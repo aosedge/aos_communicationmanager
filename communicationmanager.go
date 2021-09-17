@@ -32,6 +32,7 @@ import (
 
 	"aos_communicationmanager/alerts"
 	amqp "aos_communicationmanager/amqphandler"
+	"aos_communicationmanager/boardconfig"
 	"aos_communicationmanager/config"
 	"aos_communicationmanager/database"
 	"aos_communicationmanager/downloader"
@@ -64,6 +65,7 @@ type communicationManager struct {
 	fileServer   *fileserver.FileServer
 	smController *smcontroller.Controller
 	umController *umcontroller.Controller
+	boardConfig  *boardconfig.Instance
 }
 
 type journalHook struct {
@@ -159,6 +161,11 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 
 	// Create UM controller
 	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.fileServer, false); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	// Create board config
+	if cm.boardConfig, err = boardconfig.New(cfg, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
