@@ -1,0 +1,24 @@
+image: golang:1.14
+
+stages:
+  - build
+  - test
+
+build:
+  tags:
+    - cm_ci
+  stage: build
+  script:
+    - go build
+
+test:
+  tags:
+    - um_ci
+  stage: test
+  before_script:
+    - git clone  https://github.com/magnific0/wondershaper.git && cd wondershaper && make install
+    - apt update -y
+    - apt install -y rabbitmq-server softhsm2
+  script:
+    - go test $(go list ./...) -v -coverprofile .testCoverage.txt
+    - go tool cover -func=.testCoverage.txt
