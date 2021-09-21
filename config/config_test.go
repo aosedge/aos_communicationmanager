@@ -241,10 +241,9 @@ func TestGetAlertsConfig(t *testing.T) {
 func TestUMControllerConfig(t *testing.T) {
 	umClient := config.UMClientConfig{UMID: "um", Priority: 0, IsLocal: true}
 
-	originalConfig := config.UMController{ServerURL: "localhost:8091",
-		FileServerURL: "localhost:8092",
-		UMClients:     []config.UMClientConfig{umClient},
-		UpdateDir:     "/var/aos/update",
+	originalConfig := config.UMController{
+		ServerURL: "localhost:8091",
+		UMClients: []config.UMClientConfig{umClient},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {

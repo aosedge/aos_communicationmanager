@@ -20,24 +20,18 @@ package umcontroller_test
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"os"
-	"path"
 	"reflect"
-	"strconv"
 	"testing"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 	pb "gitpct.epam.com/epmd-aepr/aos_common/api/updatemanager/v1"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"
-	"aos_communicationmanager/downloader"
-	loader "aos_communicationmanager/downloader"
 	"aos_communicationmanager/umcontroller"
 )
 
@@ -52,14 +46,8 @@ const (
 type testStorage struct {
 	updateInfo []umcontroller.SystemComponent
 }
-type testDownloader struct {
-}
 
-type testNotifyDownloader struct {
-	downloadSyncCh chan bool
-	componetCount  int
-	curretCount    int
-	err            error
+type testURLTranslator struct {
 }
 
 type testUmConnection struct {
@@ -87,34 +75,23 @@ func init() {
 }
 
 /***********************************************************************************************************************
- * Main
- **********************************************************************************************************************/
-
-/***********************************************************************************************************************
  * Tests
  **********************************************************************************************************************/
 
 func TestConnection(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "umID1", Priority: 10},
 			{UMID: "umID2", Priority: 0}},
-		UpdateDir: tmpDir,
 	}
 	smConfig := config.Config{UMController: umCtrlConfig}
 
-	umCtrl, err := umcontroller.New(&smConfig, &testStorage{}, &testDownloader{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &testStorage{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	components := []*pb.SystemComponent{
 		{Id: "component1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -139,7 +116,7 @@ func TestConnection(t *testing.T) {
 		t.Errorf("Error connect %s", err)
 	}
 
-	newComponents, err := umCtrl.GetComponentsInfo()
+	newComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Errorf("Can't get system components %s", err)
 	}
@@ -195,31 +172,22 @@ func createClientConnection(clientID string, state pb.UmState,
 }
 
 func TestFullUpdate(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM1", Priority: 1},
 			{UMID: "testUM2", Priority: 10}},
-		UpdateDir: tmpDir,
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um1Components := []*pb.SystemComponent{
 		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -236,19 +204,20 @@ func TestFullUpdate(t *testing.T) {
 	go um2.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um1C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um2C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um2C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um1C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um2C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um2C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func(finChan chan bool) {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		finChan <- true
 	}(finishChannel)
-
-	<-updateDownloader.downloadSyncCh
 
 	um1Components = append(um1Components, &pb.SystemComponent{Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um1.setComponents(um1Components)
@@ -278,8 +247,8 @@ func TestFullUpdate(t *testing.T) {
 	um2.sendState(pb.UmState_UPDATED)
 
 	um1Components = []*pb.SystemComponent{
-		&pb.SystemComponent{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		&pb.SystemComponent{Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED}}
+		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+		{Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED}}
 	um1.setComponents(um1Components)
 
 	um1.step = "apply"
@@ -309,7 +278,7 @@ func TestFullUpdate(t *testing.T) {
 		{ID: "um2C1", VendorVersion: "2", Status: "installed"},
 		{ID: "um2C2", VendorVersion: "2", Status: "installed"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -336,31 +305,22 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		t.Skip("Skipping testing in CI environment")
 	}
 
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM3", Priority: 1},
 			{UMID: "testUM4", Priority: 10}},
-		UpdateDir: tmpDir,
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um3Components := []*pb.SystemComponent{
 		{Id: "um3C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -377,19 +337,20 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	go um4.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		cloudprotocol.ComponentInfoFromCloud{ID: "um3C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		cloudprotocol.ComponentInfoFromCloud{ID: "um4C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		cloudprotocol.ComponentInfoFromCloud{ID: "um4C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um3C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um4C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um4C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		close(finishChannel)
 	}()
-
-	<-updateDownloader.downloadSyncCh
 
 	// prepare UM3
 	um3Components = append(um3Components, &pb.SystemComponent{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -471,7 +432,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{ID: "um4C1", VendorVersion: "2", Status: "installed"},
 		{ID: "um4C2", VendorVersion: "2", Status: "installed"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -493,31 +454,22 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 }
 
 func TestFullUpdateWithReboot(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM5", Priority: 1},
 			{UMID: "testUM6", Priority: 10}},
-		UpdateDir: tmpDir,
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um5Components := []*pb.SystemComponent{
 		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -534,19 +486,20 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	go um6.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um5C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um6C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um6C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um5C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um6C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um6C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		close(finishChannel)
 	}()
-
-	<-updateDownloader.downloadSyncCh
 
 	// prepare UM5
 	um5Components = append(um5Components, &pb.SystemComponent{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -583,11 +536,11 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um6.notifyTestChan
 	<-finishChannel
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um5 = newTestUM("testUM5", pb.UmState_UPDATED, "apply", um5Components, t)
 	go um5.processMessages()
@@ -619,11 +572,11 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um5.notifyTestChan
 	<-um6.notifyTestChan
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um5Components = []*pb.SystemComponent{
 		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -653,7 +606,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{ID: "um6C1", VendorVersion: "2", Status: "installed"},
 		{ID: "um6C2", VendorVersion: "2", Status: "installed"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -675,31 +628,22 @@ func TestFullUpdateWithReboot(t *testing.T) {
 }
 
 func TestRevertOnPrepare(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM7", Priority: 1},
 			{UMID: "testUM8", Priority: 10}},
-		UpdateDir: tmpDir,
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um7Components := []*pb.SystemComponent{
 		{Id: "um7C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -716,19 +660,20 @@ func TestRevertOnPrepare(t *testing.T) {
 	go um8.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um7C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um8C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um8C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um7C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um8C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um8C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		close(finishChannel)
 	}()
-
-	<-updateDownloader.downloadSyncCh
 
 	um7Components = append(um7Components, &pb.SystemComponent{Id: "um7C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um7.setComponents(um7Components)
@@ -778,7 +723,7 @@ func TestRevertOnPrepare(t *testing.T) {
 		{ID: "um8C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um8C2", VendorVersion: "2", Status: "error"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -801,31 +746,22 @@ func TestRevertOnPrepare(t *testing.T) {
 }
 
 func TestRevertOnUpdate(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM9", Priority: 1},
 			{UMID: "testUM10", Priority: 10}},
-		UpdateDir: tmpDir,
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um9Components := []*pb.SystemComponent{
 		{Id: "um9C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -842,19 +778,20 @@ func TestRevertOnUpdate(t *testing.T) {
 	go um10.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um9C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um10C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um10C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um9C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um10C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um10C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		close(finishChannel)
 	}()
-
-	<-updateDownloader.downloadSyncCh
 
 	um9Components = append(um9Components, &pb.SystemComponent{Id: "um9C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um9.setComponents(um9Components)
@@ -922,7 +859,7 @@ func TestRevertOnUpdate(t *testing.T) {
 		{ID: "um10C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um10C2", VendorVersion: "2", Status: "error"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -945,31 +882,22 @@ func TestRevertOnUpdate(t *testing.T) {
 }
 
 func TestRevertOnUpdateWithDisconnect(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM11", Priority: 1},
 			{UMID: "testUM12", Priority: 10}},
-		UpdateDir: tmpDir,
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um11Components := []*pb.SystemComponent{
 		{Id: "um11C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -986,19 +914,20 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	go um12.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um11C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um12C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um12C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um11C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um12C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um12C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		close(finishChannel)
 	}()
-
-	<-updateDownloader.downloadSyncCh
 
 	um11Components = append(um11Components, &pb.SystemComponent{Id: "um11C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um11.setComponents(um11Components)
@@ -1071,7 +1000,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 		{ID: "um12C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um12C2", VendorVersion: "2", Status: "error"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -1094,32 +1023,22 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 }
 
 func TestRevertOnUpdateWithReboot(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
 	umCtrlConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM13", Priority: 1, IsLocal: true},
 			{UMID: "testUM14", Priority: 10}},
-		UpdateDir:     tmpDir,
-		FileServerURL: "localhost:8099",
 	}
 
 	smConfig := config.Config{UMController: umCtrlConfig}
 
 	var updateStorage testStorage
 
-	updateDownloader := testNotifyDownloader{downloadSyncCh: make(chan bool, 1), componetCount: 3}
-
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um13Components := []*pb.SystemComponent{
 		{Id: "um13C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1136,19 +1055,20 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	go um14.processMessages()
 
 	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um13C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um14C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um14C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
+		{ID: "um13C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um14C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
+		{ID: "um14C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}}},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
+		umCtrl.UpdateComponents(updateComponents)
 		close(finishChannel)
 	}()
-
-	<-updateDownloader.downloadSyncCh
 
 	um13Components = append(um13Components, &pb.SystemComponent{Id: "um13C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um13.setComponents(um13Components)
@@ -1195,11 +1115,11 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	<-finishChannel
 	// um14  reboot
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &updateDownloader, true)
+	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
+	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um13 = newTestUM("testUM13", pb.UmState_UPDATED, "revert", um13Components, t)
 	go um13.processMessages()
@@ -1239,7 +1159,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		{ID: "um14C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um14C2", VendorVersion: "2", Status: "error"}}
 
-	currentComponents, err := umCtrl.GetComponentsInfo()
+	currentComponents, err := umCtrl.GetStatus()
 	if err != nil {
 		t.Fatalf("Can't get components info: %s", err)
 	}
@@ -1261,85 +1181,6 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-func TestNotDownloadedUpdate(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "aos_")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
-		UMClients: []config.UMClientConfig{{UMID: "testUM1", Priority: 1}, {UMID: "testUM2", Priority: 10}},
-		UpdateDir: tmpDir,
-	}
-
-	smConfig := config.Config{UMController: umCtrlConfig}
-
-	updateDownloader := testNotifyDownloader{err: downloader.ErrNotDownloaded}
-
-	umCtrl, err := umcontroller.New(&smConfig, new(testStorage), &updateDownloader, true)
-	if err != nil {
-		t.Errorf("Can't create UM controller: %s", err)
-	}
-	go watchUpdateStatus(umCtrl.UpdateStatus())
-
-	um1Components := []*pb.SystemComponent{
-		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um1C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED}}
-
-	um1 := newTestUM("testUM1", pb.UmState_IDLE, "init", um1Components, t)
-	go um1.processMessages()
-
-	um2Components := []*pb.SystemComponent{
-		{Id: "um2C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um2C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED}}
-
-	um2 := newTestUM("testUM2", pb.UmState_IDLE, "init", um2Components, t)
-	go um2.processMessages()
-
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
-		{ID: "um1C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-		{ID: "um2C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"}},
-	}
-
-	statusChannel := make(chan error)
-
-	go func() {
-		statusChannel <- umCtrl.UpdateComponents(updateComponents, []cloudprotocol.CertificateChain{}, []cloudprotocol.Certificate{})
-	}()
-
-	if err := <-statusChannel; err == nil {
-		t.Errorf("Update failure expected")
-	}
-
-	etalonComponents := []cloudprotocol.ComponentInfo{
-		{ID: "um1C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um1C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um2C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um2C2", VendorVersion: "1", Status: "installed"}}
-
-	currentComponents, err := umCtrl.GetComponentsInfo()
-	if err != nil {
-		t.Fatalf("Can't get components info: %s", err)
-	}
-
-	if !reflect.DeepEqual(etalonComponents, currentComponents) {
-		log.Debug(currentComponents)
-		t.Error("incorrect result component list")
-	}
-
-	um1.closeConnection()
-	um2.closeConnection()
-
-	<-um1.notifyTestChan
-	<-um2.notifyTestChan
-
-	umCtrl.Close()
-
-	time.Sleep(time.Second)
-}
-
 /*******************************************************************************
  * Interfaces
  ******************************************************************************/
@@ -1351,34 +1192,6 @@ func (storage *testStorage) GetComponentsUpdateInfo() (updateInfo []umcontroller
 func (storage *testStorage) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComponent) (err error) {
 	storage.updateInfo = updateInfo
 	return err
-}
-
-func (downloader *testDownloader) DownloadAndDecrypt(packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate, decryptDir string) (resultFile string, err error) {
-
-	return "", nil
-}
-
-func (downloader *testNotifyDownloader) DownloadAndDecrypt(packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate, decryptDir string) (resultFile string, err error) {
-	log.Debug("testNotifyDownloader")
-
-	if downloader.err != nil {
-		return "", aoserrors.Wrap(loader.ErrNotDownloaded)
-	}
-
-	resultFile = path.Join(decryptDir, strconv.Itoa(downloader.curretCount))
-
-	if err := ioutil.WriteFile(resultFile, []byte("Some Update"), 0644); err != nil {
-		return resultFile, err
-	}
-
-	downloader.curretCount++
-	if downloader.curretCount == downloader.componetCount {
-		downloader.downloadSyncCh <- true
-	}
-
-	return resultFile, nil
 }
 
 func (um *testUmConnection) processMessages() {
@@ -1473,6 +1286,10 @@ func (um *testUmConnection) closeConnection() {
 	um.continueChan <- true
 	um.conn.Close()
 	um.stream.CloseSend()
+}
+
+func (translator *testURLTranslator) TranslateURL(isLocal bool, inURL string) (outURL string, err error) {
+	return "file://" + inURL, nil
 }
 
 func watchUpdateStatus(statusChannel <-chan cloudprotocol.ComponentInfo) {

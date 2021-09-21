@@ -40,6 +40,7 @@ import (
 	"aos_communicationmanager/iamclient"
 	"aos_communicationmanager/monitoring"
 	"aos_communicationmanager/smcontroller"
+	"aos_communicationmanager/umcontroller"
 )
 
 /***********************************************************************************************************************
@@ -62,6 +63,7 @@ type communicationManager struct {
 	downloader   *downloader.Downloader
 	fileServer   *fileserver.FileServer
 	smController *smcontroller.Controller
+	umController *umcontroller.Controller
 }
 
 type journalHook struct {
@@ -155,10 +157,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create UM controller
+	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.fileServer, false); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close UM controller
+	if cm.umController != nil {
+		cm.umController.Close()
+	}
+
 	// Close SM controller
 	if cm.smController != nil {
 		cm.smController.Close()

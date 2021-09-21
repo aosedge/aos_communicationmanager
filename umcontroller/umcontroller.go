@@ -18,35 +18,35 @@
 package umcontroller
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
-	"gitpct.epam.com/epmd-aepr/aos_common/image"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"
-	"aos_communicationmanager/downloader"
 )
 
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
+// URLTranslator translates local URL to remote
+type URLTranslator interface {
+	TranslateURL(isLocal bool, inURL string) (outURL string, err error)
+}
+
 // Controller update managers controller
 type Controller struct {
-	storage      storage
-	downloader   Downloader
-	server       *umCtrlServer
-	eventChannel chan umCtrlInternalMsg
-	stopChannel  chan bool
+	storage       storage
+	server        *umCtrlServer
+	urlTranslator URLTranslator
+	eventChannel  chan umCtrlInternalMsg
+	stopChannel   chan bool
 
 	updateDir string
 
@@ -54,7 +54,6 @@ type Controller struct {
 	currentComponents []cloudprotocol.ComponentInfo
 	fsm               *fsm.FSM
 	connectionMonitor allConnectionMonitor
-	fileStorage       *fileStorage
 	operable          bool
 	updateFinishCond  *sync.Cond
 
@@ -105,12 +104,6 @@ type systemComponentStatus struct {
 	err           string
 }
 
-type updateRequest struct {
-	components []cloudprotocol.ComponentInfoFromCloud
-	chains     []cloudprotocol.CertificateChain
-	certs      []cloudprotocol.Certificate
-}
-
 type allConnectionMonitor struct {
 	sync.Mutex
 	connTimer     *time.Timer
@@ -122,12 +115,6 @@ type allConnectionMonitor struct {
 type storage interface {
 	GetComponentsUpdateInfo() (updateInfo []SystemComponent, err error)
 	SetComponentsUpdateInfo(updateInfo []SystemComponent) (err error)
-}
-
-type Downloader interface {
-	DownloadAndDecrypt(packageInfo cloudprotocol.DecryptDataStruct,
-		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
-		decryptDir string) (resultFile string, err error)
 }
 
 /***********************************************************************************************************************
@@ -145,7 +132,6 @@ const (
 	stateInit                          = "init"
 	stateIdle                          = "idle"
 	stateFaultState                    = "fault"
-	stateDownloading                   = "downloading"
 	statePrepareUpdate                 = "prepareUpdate"
 	stateUpdateUmStatusOnPrepareUpdate = "updateUmStatusOnPrepareUpdate"
 	stateStartUpdate                   = "startUpdate"
@@ -161,7 +147,6 @@ const (
 	evAllClientsConnected = "allClientsConnected"
 	evConnectionTimeout   = "connectionTimeout"
 	evUpdateRequest       = "updateRequest"
-	evDownloadSuccess     = "downloadSuccess"
 	evContinue            = "continue"
 	evUpdatePrepared      = "updatePrepared"
 	evUmStateUpdated      = "umStateUpdated"
@@ -192,12 +177,10 @@ const connectionTimeout = 300 * time.Second
  **********************************************************************************************************************/
 
 // New creates new update managers controller
-func New(config *config.Config, storage storage,
-	downloader Downloader, insecure bool) (umCtrl *Controller, err error) {
+func New(config *config.Config, storage storage, urlTranslator URLTranslator, insecure bool) (umCtrl *Controller, err error) {
 	umCtrl = &Controller{
 		storage:           storage,
-		downloader:        downloader,
-		updateDir:         config.UMController.UpdateDir,
+		urlTranslator:     urlTranslator,
 		eventChannel:      make(chan umCtrlInternalMsg),
 		stopChannel:       make(chan bool),
 		connectionMonitor: allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
@@ -206,9 +189,6 @@ func New(config *config.Config, storage storage,
 		statusChannel:     make(chan cloudprotocol.ComponentInfo, 1),
 	}
 
-	if umCtrl.fileStorage, err = newFileStorage(config.UMController); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
 	for _, client := range config.UMController.UMClients {
 		umCtrl.connections = append(umCtrl.connections, umConnection{umID: client.UMID,
 			isLocalClient: client.IsLocal, updatePriority: client.Priority, handler: nil})
@@ -223,15 +203,12 @@ func New(config *config.Config, storage storage,
 		fsm.Events{
 			//process Idle state
 			{Name: evAllClientsConnected, Src: []string{stateInit}, Dst: stateIdle},
+			{Name: evUpdateRequest, Src: []string{stateIdle}, Dst: statePrepareUpdate},
 			{Name: evContinuePrepare, Src: []string{stateIdle}, Dst: statePrepareUpdate},
 			{Name: evContinueUpdate, Src: []string{stateIdle}, Dst: stateStartUpdate},
 			{Name: evContinueApply, Src: []string{stateIdle}, Dst: stateStartApply},
 			{Name: evContinueRevert, Src: []string{stateIdle}, Dst: stateStartRevert},
-			//process downloading
-			{Name: evUpdateRequest, Src: []string{stateIdle}, Dst: stateDownloading},
-			{Name: evUpdateFailed, Src: []string{stateDownloading}, Dst: stateIdle},
 			//process prepare
-			{Name: evDownloadSuccess, Src: []string{stateDownloading}, Dst: statePrepareUpdate},
 			{Name: evUmStateUpdated, Src: []string{statePrepareUpdate}, Dst: stateUpdateUmStatusOnPrepareUpdate},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnPrepareUpdate}, Dst: statePrepareUpdate},
 			//process start update
@@ -255,7 +232,6 @@ func New(config *config.Config, storage storage,
 		},
 		fsm.Callbacks{
 			"enter_" + stateIdle:                          umCtrl.processIdleState,
-			"enter_" + stateDownloading:                   umCtrl.processNewComponentList,
 			"enter_" + statePrepareUpdate:                 umCtrl.processPrepareState,
 			"enter_" + stateUpdateUmStatusOnPrepareUpdate: umCtrl.processUpdateUmState,
 			"enter_" + stateStartUpdate:                   umCtrl.processStartUpdateState,
@@ -282,7 +258,6 @@ func New(config *config.Config, storage storage,
 	umCtrl.connectionMonitor.wg.Add(1)
 	go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
 	go umCtrl.server.Start()
-	go umCtrl.fileStorage.startFileStorage()
 
 	return umCtrl, nil
 }
@@ -295,8 +270,8 @@ func (umCtrl *Controller) Close() {
 	close(umCtrl.statusChannel)
 }
 
-// GetComponentsInfo returns list of system components information
-func (umCtrl *Controller) GetComponentsInfo() (info []cloudprotocol.ComponentInfo, err error) {
+// GetStatus returns list of system components information
+func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
 	currentState := umCtrl.fsm.Current()
 	if currentState != stateInit {
 		return umCtrl.currentComponents, nil
@@ -308,8 +283,7 @@ func (umCtrl *Controller) GetComponentsInfo() (info []cloudprotocol.ComponentInf
 }
 
 // UpdateComponents updates components
-func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (err error) {
+func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (err error) {
 	log.Debug("Update components")
 
 	currentState := umCtrl.fsm.Current()
@@ -321,16 +295,32 @@ func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentI
 			return nil
 		}
 
+		componentsUpdateInfo := []SystemComponent{}
+
 		for _, component := range components {
 			componentStatus := systemComponentStatus{id: component.ID, vendorVersion: component.VendorVersion,
-				aosVersion: component.AosVersion, status: cloudprotocol.PendingStatus}
+				aosVersion: component.AosVersion, status: cloudprotocol.DownloadedStatus}
+
+			componentInfo := SystemComponent{ID: component.ID, VendorVersion: component.VendorVersion,
+				AosVersion: component.AosVersion, URL: component.URLs[0], Annotations: string(component.Annotations),
+				Sha256: component.Sha256, Sha512: component.Sha512, Size: component.Size}
+
+			if !umCtrl.addComponentForUpdateToUm(componentInfo) {
+				log.Warnf("Update unsupported component %s. Skip. ", component.ID)
+				continue
+			}
+
+			componentsUpdateInfo = append(componentsUpdateInfo, componentInfo)
 
 			umCtrl.updateComponentElement(componentStatus)
 		}
 
-		umCtrl.generateFSMEvent(evUpdateRequest, updateRequest{components: components, certs: certs, chains: chains})
-	} else {
-		log.Debugf("Another update in progress, current state: %s", currentState)
+		if err = umCtrl.storage.SetComponentsUpdateInfo(componentsUpdateInfo); err != nil {
+			go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.Wrap(err))
+			return
+		}
+
+		umCtrl.generateFSMEvent(evUpdateRequest, nil)
 	}
 
 	umCtrl.updateFinishCond.L.Lock()
@@ -341,8 +331,8 @@ func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentI
 	return umCtrl.updateError
 }
 
-// UpdateStatus returns update component status channel
-func (umCtrl *Controller) UpdateStatus() (statusChannel <-chan cloudprotocol.ComponentInfo) {
+// StatusChannel returns update component status channel
+func (umCtrl *Controller) StatusChannel() (statusChannel <-chan cloudprotocol.ComponentInfo) {
 	return umCtrl.statusChannel
 }
 
@@ -382,7 +372,6 @@ func (umCtrl *Controller) processInternallMessages() {
 			log.Debug("Close all connections")
 
 			umCtrl.server.Stop()
-			umCtrl.fileStorage.stopFileStorage()
 			umCtrl.updateFinishCond.Broadcast()
 
 			return
@@ -546,38 +535,6 @@ func (umCtrl *Controller) cleanupCurrentComponentStatus() {
 	umCtrl.currentComponents = umCtrl.currentComponents[:i]
 }
 
-func (umCtrl *Controller) downloadComponentUpdate(componentUpdate cloudprotocol.ComponentInfoFromCloud,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (infoForUpdate SystemComponent, err error) {
-	decryptData := cloudprotocol.DecryptDataStruct{URLs: componentUpdate.URLs,
-		Sha256:         componentUpdate.Sha256,
-		Sha512:         componentUpdate.Sha512,
-		Size:           componentUpdate.Size,
-		DecryptionInfo: componentUpdate.DecryptionInfo,
-		Signs:          componentUpdate.Signs}
-
-	infoForUpdate = SystemComponent{ID: componentUpdate.ID,
-		VendorVersion: componentUpdate.VendorVersion,
-		AosVersion:    componentUpdate.AosVersion,
-		Annotations:   string(componentUpdate.Annotations),
-	}
-
-	infoForUpdate.URL, err = umCtrl.downloader.DownloadAndDecrypt(decryptData, chains, certs, umCtrl.updateDir)
-	if err != nil {
-		return infoForUpdate, aoserrors.Wrap(err)
-	}
-
-	fileInfo, err := image.CreateFileInfo(context.Background(), infoForUpdate.URL)
-	if err != nil {
-		return infoForUpdate, aoserrors.Wrap(err)
-	}
-
-	infoForUpdate.Sha256 = fileInfo.Sha256
-	infoForUpdate.Sha512 = fileInfo.Sha512
-	infoForUpdate.Size = fileInfo.Size
-
-	return infoForUpdate, nil
-}
-
 func (umCtrl *Controller) getCurrentUpdateState() (state string) {
 	var onPrepareState, onApplyState bool
 
@@ -630,8 +587,14 @@ func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponen
 	for i := range umCtrl.connections {
 		for _, id := range umCtrl.connections[i].components {
 			if id == componentInfo.ID {
-				componentInfo.URL = umCtrl.fileStorage.getImageURL(umCtrl.connections[i].isLocalClient,
-					componentInfo.URL)
+				newURL, err := umCtrl.urlTranslator.TranslateURL(umCtrl.connections[i].isLocalClient, componentInfo.URL)
+				if err != nil {
+					log.Error("Can't translate URL: ", err)
+
+					return false
+				}
+
+				componentInfo.URL = newURL
 
 				umCtrl.connections[i].updatePackages = append(umCtrl.connections[i].updatePackages, componentInfo)
 
@@ -647,8 +610,6 @@ func (umCtrl *Controller) cleanupUpdateData() {
 	for i := range umCtrl.connections {
 		umCtrl.connections[i].updatePackages = []SystemComponent{}
 	}
-
-	os.RemoveAll(umCtrl.updateDir)
 
 	updatecomponents, err := umCtrl.storage.GetComponentsUpdateInfo()
 	if err != nil {
@@ -749,56 +710,6 @@ func (umCtrl *Controller) processIdleState(e *fsm.Event) {
 
 func (umCtrl *Controller) processFaultState(e *fsm.Event) {
 
-}
-
-func (umCtrl *Controller) processNewComponentList(e *fsm.Event) {
-	newComponentList := e.Args[0].(updateRequest)
-
-	if err := os.MkdirAll(umCtrl.updateDir, 755); err != nil {
-		go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.Wrap(err))
-		return
-	}
-
-	componentsToSave := []SystemComponent{}
-
-	for _, component := range newComponentList.components {
-		componentStatus := systemComponentStatus{id: component.ID, vendorVersion: component.VendorVersion,
-			aosVersion: component.AosVersion, status: cloudprotocol.DownloadingStatus}
-
-		umCtrl.updateComponentElement(componentStatus)
-		updatePackage, err := umCtrl.downloadComponentUpdate(component, newComponentList.chains, newComponentList.certs)
-		if err != nil {
-			// Do not return error if can't download file. It will be downloaded again on next desired status
-			// Just display error
-			if strings.Contains(err.Error(), downloader.ErrNotDownloaded.Error()) {
-				log.WithFields(log.Fields{"id": component.ID}).Errorf("Can't download component image: %s", aoserrors.Wrap(err))
-			} else {
-				componentStatus.status = cloudprotocol.ErrorStatus
-				componentStatus.err = err.Error()
-				umCtrl.updateComponentElement(componentStatus)
-			}
-
-			go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.Wrap(err))
-			return
-		}
-
-		if umCtrl.addComponentForUpdateToUm(updatePackage) == false {
-			log.Warn("Downloaded unsupported component ", updatePackage.ID)
-			continue
-		}
-
-		componentsToSave = append(componentsToSave, updatePackage)
-
-		componentStatus.status = cloudprotocol.DownloadedStatus
-		umCtrl.updateComponentElement(componentStatus)
-	}
-
-	if err := umCtrl.storage.SetComponentsUpdateInfo(componentsToSave); err != nil {
-		go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.Wrap(err))
-		return
-	}
-
-	go umCtrl.generateFSMEvent(evDownloadSuccess)
 }
 
 func (umCtrl *Controller) processPrepareState(e *fsm.Event) {

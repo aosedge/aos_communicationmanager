@@ -40,10 +40,8 @@ type Crypt struct {
 
 // UMController configuration for update controller
 type UMController struct {
-	ServerURL     string           `json:"serverUrl"`
-	FileServerURL string           `json:"fileServerUrl,omitempty"`
-	UMClients     []UMClientConfig `json:"umClients"`
-	UpdateDir     string           `json:"updateDir"`
+	ServerURL string           `json:"serverUrl"`
+	UMClients []UMClientConfig `json:"umClients"`
 }
 
 // UMClientConfig update manager config
@@ -196,10 +194,6 @@ func New(fileName string) (config *Config, err error) {
 
 	if config.Migration.MergedMigrationPath == "" {
 		config.Migration.MergedMigrationPath = path.Join(config.WorkingDir, "migration")
-	}
-
-	if config.UMController.UpdateDir == "" {
-		config.UMController.UpdateDir = path.Join(config.WorkingDir, "update")
 	}
 
 	return config, nil
