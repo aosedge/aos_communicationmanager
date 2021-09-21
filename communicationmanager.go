@@ -36,6 +36,7 @@ import (
 	"aos_communicationmanager/database"
 	"aos_communicationmanager/fcrypt"
 	"aos_communicationmanager/iamclient"
+	"aos_communicationmanager/monitoring"
 )
 
 /***********************************************************************************************************************
@@ -49,11 +50,12 @@ const reconnectTimeout = 10 * time.Second
  **********************************************************************************************************************/
 
 type communicationManager struct {
-	db     *database.Database
-	amqp   *amqp.AmqpHandler
-	iam    *iamclient.Client
-	crypt  *fcrypt.CryptoContext
-	alerts *alerts.Alerts
+	db      *database.Database
+	amqp    *amqp.AmqpHandler
+	iam     *iamclient.Client
+	crypt   *fcrypt.CryptoContext
+	alerts  *alerts.Alerts
+	monitor *monitoring.Monitor
 }
 
 type journalHook struct {
@@ -127,10 +129,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	// Create monitor
+	if cm.monitor, err = monitoring.New(cfg, cm.alerts, nil, cm.amqp); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	return cm, nil
 }
 
 func (cm *communicationManager) close() {
+	// Close monitor
+	if cm.monitor != nil {
+		cm.monitor.Close()
+	}
+
 	// Close alerts
 	if cm.alerts != nil {
 		cm.alerts.Close()
