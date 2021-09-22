@@ -152,10 +152,12 @@ func New(config *config.Config, resourceAlerts ResourceAlertSender,
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	monitor.cancelFunction = cancelFunc
 
-	monitor.pollTimer = time.NewTicker(monitor.config.PollPeriod.Duration)
-	monitor.sendTimer = time.NewTicker(monitor.config.SendPeriod.Duration)
+	if monitor.config.EnableSystemMonitoring {
+		monitor.pollTimer = time.NewTicker(monitor.config.PollPeriod.Duration)
+		monitor.sendTimer = time.NewTicker(monitor.config.SendPeriod.Duration)
 
-	go monitor.run(ctx)
+		go monitor.run(ctx)
+	}
 
 	go func() {
 		for {
@@ -188,8 +190,13 @@ func (monitor *Monitor) SendMonitoringData(monitoringData cloudprotocol.Monitori
 func (monitor *Monitor) Close() {
 	log.Debug("Close monitor")
 
-	monitor.sendTimer.Stop()
-	monitor.pollTimer.Stop()
+	if monitor.sendTimer != nil {
+		monitor.sendTimer.Stop()
+	}
+
+	if monitor.pollTimer != nil {
+		monitor.pollTimer.Stop()
+	}
 
 	monitor.cancelFunction()
 }

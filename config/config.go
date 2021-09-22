@@ -67,14 +67,15 @@ type AlertRule struct {
 
 // Monitoring configuration for system monitoring
 type Monitoring struct {
-	MaxOfflineMessages int        `json:"maxOfflineMessages"`
-	SendPeriod         Duration   `json:"sendPeriod"`
-	PollPeriod         Duration   `json:"pollPeriod"`
-	RAM                *AlertRule `json:"ram"`
-	CPU                *AlertRule `json:"cpu"`
-	UsedDisk           *AlertRule `json:"usedDisk"`
-	InTraffic          *AlertRule `json:"inTraffic"`
-	OutTraffic         *AlertRule `json:"outTraffic"`
+	EnableSystemMonitoring bool       `json:"enableSystemMonitoring"`
+	MaxOfflineMessages     int        `json:"maxOfflineMessages"`
+	SendPeriod             Duration   `json:"sendPeriod"`
+	PollPeriod             Duration   `json:"pollPeriod"`
+	RAM                    *AlertRule `json:"ram"`
+	CPU                    *AlertRule `json:"cpu"`
+	UsedDisk               *AlertRule `json:"usedDisk"`
+	InTraffic              *AlertRule `json:"inTraffic"`
+	OutTraffic             *AlertRule `json:"outTraffic"`
 }
 
 // Logging configuration for system and service logging
