@@ -43,6 +43,7 @@ const testConfigContent = `{
 	"certStorage": "/var/aos/crypt/cm/",
 	"serviceDiscoveryUrl" : "www.aos.com",
 	"iamServerUrl" : "localhost:8090",
+	"fileServerUrl":"localhost:8092",
 	"workingDir" : "workingDir",
 	"boardConfigFile" : "/var/aos/aos_board.cfg",
 	"monitoring": {
@@ -77,13 +78,11 @@ const testConfigContent = `{
 	},
 	"umController": {
 		"serverUrl": "localhost:8091",
-		"fileServerUrl": "localhost:8092",
 		"umClients": [{
 			"umId": "um",
 			"priority": 0,
 			"isLocal": true
-		}],
-		"updateDir": "/var/aos/update"
+		}]
 	}
 }`
 
@@ -246,6 +245,12 @@ func TestDatabaseMigration(t *testing.T) {
 func TestCertStorage(t *testing.T) {
 	if testCfg.CertStorage != "/var/aos/crypt/cm/" {
 		t.Errorf("Wrong certificate storage value: %s", testCfg.CertStorage)
+	}
+}
+
+func TestFileServer(t *testing.T) {
+	if testCfg.FileServerURL != "localhost:8092" {
+		t.Errorf("Wrong file server URL value: %s", testCfg.FileServerURL)
 	}
 }
 

@@ -105,6 +105,7 @@ type Config struct {
 	CertStorage           string       `json:"certStorage"`
 	ServiceDiscoveryURL   string       `json:"serviceDiscoveryUrl"`
 	IAMServerURL          string       `json:"iamServerUrl"`
+	FileServerURL         string       `json:"fileServerUrl"`
 	WorkingDir            string       `json:"workingDir"`
 	DownloadDir           string       `json:"downloadDir"`
 	DownloadFileTTLDays   uint64       `json:"downloadFileTTLDays"`
