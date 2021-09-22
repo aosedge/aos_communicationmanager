@@ -18,21 +18,26 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"os/signal"
+	"reflect"
 	"syscall"
 	"time"
 
 	"github.com/coreos/go-systemd/journal"
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+	"gitpct.epam.com/epmd-aepr/aos_common/utils/retryhelper"
 
 	"aos_communicationmanager/alerts"
 	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/boardconfig"
+	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"
 	"aos_communicationmanager/database"
 	"aos_communicationmanager/downloader"
@@ -49,7 +54,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const reconnectTimeout = 10 * time.Second
+const (
+	initReconnectTimeout = 10 * time.Second
+	maxReconnectTimeout  = 10 * time.Minute
+)
 
 /***********************************************************************************************************************
  * Types
@@ -232,7 +240,162 @@ func (cm *communicationManager) close() {
 	}
 }
 
-func (cm *communicationManager) run() {
+func (cm *communicationManager) getServiceDiscoveryURL(cfg *config.Config) (serviceDiscoveryURL string) {
+	// Get organization names from certificate and use it as discovery URL
+	orgNames, err := cm.crypt.GetOrganization()
+	if err != nil {
+		log.Warningf("Organization name will be taken from config file: %s", err)
+
+		return cfg.ServiceDiscoveryURL
+	}
+
+	if len(orgNames) == 0 || orgNames[0] == "" {
+		log.Warn("Certificate organization name is empty or organization is not a single")
+
+		return cfg.ServiceDiscoveryURL
+	}
+
+	url := url.URL{
+		Scheme: "https",
+		Host:   orgNames[0],
+	}
+
+	return url.String() + ":9000"
+}
+
+func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
+	switch data := message.Data.(type) {
+	case *cloudprotocol.DecodedDesiredStatus:
+		log.Info("Receive desired status message")
+
+		cm.statusHandler.ProcessDesiredStatus(*data)
+
+		return nil
+
+	case *cloudprotocol.DecodedOverrideEnvVars:
+		log.Info("Receive override env vars message")
+
+		if err = cm.smController.OverrideEnvVars(*data); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.StateAcceptance:
+		log.WithFields(log.Fields{
+			"serviceID": data.ServiceID,
+			"result":    data.Result}).Info("Receive state acceptance message")
+
+		if err = cm.smController.ServiceStateAcceptance(message.CorrelationID, *data); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.UpdateState:
+		log.WithFields(log.Fields{
+			"serviceID": data.ServiceID,
+			"checksum":  data.Checksum}).Info("Receive update state message")
+
+		if err = cm.smController.SetServiceState(*data); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.RequestServiceLog:
+		log.WithFields(log.Fields{
+			"serviceID": data.ServiceID,
+			"from":      data.From,
+			"till":      data.Till}).Info("Receive request service log message")
+
+		if err = cm.smController.GetServiceLog(*data); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.RequestServiceCrashLog:
+		log.WithFields(log.Fields{
+			"serviceID": data.ServiceID}).Info("Receive request service crash log message")
+
+		if err = cm.smController.GetServiceCrashLog(*data); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.RequestSystemLog:
+		log.WithFields(log.Fields{
+			"from": data.From,
+			"till": data.Till}).Info("Receive request system log message")
+
+		if err = cm.smController.GetSystemLog(*data); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.RenewCertsNotificationWithPwd:
+		log.Info("Receive renew certificates notification message")
+
+		if err = cm.iam.RenewCertificatesNotification(data.Password, data.Certificates); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.IssuedUnitCerts:
+		log.Info("Receive issued unit certificates message")
+
+		if err = cm.iam.InstallCertificates(data.Certificates, cm.crypt); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	default:
+		log.Warnf("Receive unsupported amqp message: %s", reflect.TypeOf(data))
+	}
+
+	return nil
+}
+
+func (cm *communicationManager) handleMessages() (err error) {
+	for {
+		select {
+		case message := <-cm.amqp.MessageChannel:
+			if err, ok := message.Data.(error); ok {
+				return aoserrors.Wrap(err)
+			}
+
+			if err = cm.processMessage(message); err != nil {
+				log.Errorf("Error processing message: %s", err)
+			}
+
+		case users := <-cm.iam.UsersChangedChannel():
+			log.WithField("users", users).Info("Users changed")
+
+			return nil
+		}
+	}
+}
+
+func (cm *communicationManager) run(ctx context.Context, serviceDiscoveryURL string) {
+	for {
+		if err := cm.smController.SetUsers(cm.iam.GetUsers()); err != nil {
+			log.Errorf("Error setting SM users: %s", err)
+		}
+
+		retryhelper.Retry(ctx,
+			func() (err error) {
+				if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL,
+					cm.iam.GetSystemID(), cm.iam.GetUsers()); err != nil {
+					return aoserrors.Wrap(err)
+				}
+
+				return nil
+			},
+			func(retryCount int, delay time.Duration, err error) {
+				log.Errorf("Can't establish connection: %s", err)
+				log.Debugf("Retry connection in %v", delay)
+			},
+			0, initReconnectTimeout, maxReconnectTimeout)
+
+		if err := cm.statusHandler.SendUnitStatus(); err != nil {
+			log.Errorf("Error setting status handler users: %s", err)
+		}
+
+		if err := cm.handleMessages(); err != nil {
+			log.Errorf("Connection error: %s", err)
+		}
+
+		cm.amqp.Disconnect()
+	}
 }
 
 /***********************************************************************************************************************
@@ -365,7 +528,9 @@ func main() {
 	}
 	defer cm.close()
 
-	go cm.run()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
+	go cm.run(ctx, cm.getServiceDiscoveryURL(cfg))
 
 	// Handle SIGTERM
 
@@ -376,6 +541,8 @@ func main() {
 	<-terminateChannel
 
 	cm.close()
+
+	cancelFunc()
 
 	os.Exit(0)
 }
