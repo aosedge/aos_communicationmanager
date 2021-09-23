@@ -8,6 +8,9 @@ build:
   tags:
     - cm_ci
   stage: build
+  before_script:
+    - apt update -y
+    - apt install -y libsystemd-dev
   script:
     - go build
 
@@ -15,10 +18,15 @@ test:
   tags:
     - um_ci
   stage: test
+  variables:
+    RABBITMQ_DEFAULT_USER: guest
+    RABBITMQ_DEFAULT_PASS: guest
+    AMQP_URL: 'amqp://guest:guest@rabbitmq:5672'
+  services:
+    - rabbitmq:latest
   before_script:
-    - git clone  https://github.com/magnific0/wondershaper.git && cd wondershaper && make install
     - apt update -y
-    - apt install -y rabbitmq-server softhsm2
+    - apt install -y softhsm2 opensc libsystemd-dev
   script:
-    - go test $(go list ./...) -v -coverprofile .testCoverage.txt
+    - go test $(go list ./... | grep -v "/vendor\|downloader\|alerts") -v -failfast -coverprofile .testCoverage.txt
     - go tool cover -func=.testCoverage.txt
