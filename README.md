@@ -77,12 +77,6 @@ CM needs AoS Identity and Access Manager (IAM) to be running and configured (see
 
 ## Test
 
-Install all necessary dependencies:
-
-```bash
-./ci/setup_env.sh
-```
-
 Test all packages:
 
 ```bash
