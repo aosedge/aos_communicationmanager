@@ -101,9 +101,6 @@ type Instance struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// TODO: Status mutex is required to guard component statuses because they received by firmware updater channel.
-	// If firmware updater is re-implemented using same approach as software updater, this mutex can be removed.
-	statusMutex       sync.Mutex
 	statusTimer       *time.Timer
 	boardConfigStatus itemStatus
 	componentStatuses map[string]*itemStatus
@@ -196,7 +193,6 @@ func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.Decod
 // SendUnitStatus sends unit status
 func (instance *Instance) SendUnitStatus() (err error) {
 	instance.Lock()
-	defer instance.Unlock()
 
 	if instance.isDesiredStatusProcessing {
 		instance.cancelSoftwareUpdate()
@@ -204,15 +200,17 @@ func (instance *Instance) SendUnitStatus() (err error) {
 		instance.pendindDesiredStatus = nil
 	}
 
+	instance.Unlock()
+
 	// Init statuses may take time and should not lock mutex for long time
 	if err = instance.initStatuses(); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	instance.isInitialized = true
+	instance.Lock()
+	defer instance.Unlock()
 
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
+	instance.isInitialized = true
 
 	instance.statusChanged(true)
 
@@ -226,14 +224,14 @@ func (instance *Instance) SendUnitStatus() (err error) {
 func (instance *Instance) initStatuses() (err error) {
 	log.Debug("Get initial firmware and software statuses")
 
-	instance.statusMutex.Lock()
+	instance.Lock()
 
 	instance.boardConfigStatus = nil
 	instance.componentStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
 	instance.layerStatuses = make(map[string]*itemStatus)
 
-	instance.statusMutex.Unlock()
+	instance.Unlock()
 
 	// Get initial board config info
 
@@ -402,8 +400,8 @@ func (instance *Instance) waitSoftwareUpdate() {
 }
 
 func (instance *Instance) sendCurrentStatus() {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
+	instance.Lock()
+	defer instance.Unlock()
 
 	unitStatus := cloudprotocol.UnitStatus{
 		BoardConfig: make([]cloudprotocol.BoardConfigInfo, 0, len(instance.boardConfigStatus)),
@@ -445,8 +443,8 @@ func (instance *Instance) sendCurrentStatus() {
 }
 
 func (instance *Instance) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigInfo) {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
+	instance.Lock()
+	defer instance.Unlock()
 
 	log.WithFields(log.Fields{
 		"status":        boardConfigInfo.Status,
@@ -457,8 +455,8 @@ func (instance *Instance) updateBoardConfigStatus(boardConfigInfo cloudprotocol.
 }
 
 func (instance *Instance) updateComponentStatus(componentInfo cloudprotocol.ComponentInfo) {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
+	instance.Lock()
+	defer instance.Unlock()
 
 	log.WithFields(log.Fields{
 		"id":            componentInfo.ID,
@@ -476,8 +474,8 @@ func (instance *Instance) updateComponentStatus(componentInfo cloudprotocol.Comp
 }
 
 func (instance *Instance) updateLayerStatus(layerInfo cloudprotocol.LayerInfo) {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
+	instance.Lock()
+	defer instance.Unlock()
 
 	log.WithFields(log.Fields{
 		"id":         layerInfo.ID,
@@ -496,8 +494,8 @@ func (instance *Instance) updateLayerStatus(layerInfo cloudprotocol.LayerInfo) {
 }
 
 func (instance *Instance) updateServiceStatus(serviceInfo cloudprotocol.ServiceInfo) {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
+	instance.Lock()
+	defer instance.Unlock()
 
 	log.WithFields(log.Fields{
 		"id":         serviceInfo.ID,
