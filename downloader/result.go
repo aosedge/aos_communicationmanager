@@ -42,12 +42,9 @@ const unknownInterruptReason = "unknown"
 type Result interface {
 	GetFileName() (fileName string)
 	Wait() (err error)
-	Release()
 }
 
 type downloadResult struct {
-	// DecryptedFile decrypted file name
-
 	id string
 
 	ctx         context.Context
@@ -60,8 +57,6 @@ type downloadResult struct {
 	decryptedFileName string
 	downloadFileName  string
 	interruptFileName string
-
-	release func(result *downloadResult)
 }
 
 /***********************************************************************************************************************
@@ -78,10 +73,6 @@ func (result *downloadResult) Wait() (err error) {
 	close(result.statusChannel)
 
 	return err
-}
-
-func (result *downloadResult) Release() {
-	result.release(result)
 }
 
 /***********************************************************************************************************************

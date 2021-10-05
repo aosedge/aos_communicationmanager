@@ -153,7 +153,6 @@ func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInf
 		chains:            chains,
 		certs:             certs,
 		statusChannel:     make(chan error, 1),
-		release:           downloader.releaseResult,
 		decryptedFileName: path.Join(downloader.config.DecryptDir, id+decryptedFileExt),
 		downloadFileName:  path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
 		interruptFileName: path.Join(downloader.config.DownloadDir, id+interruptFileExt),
@@ -192,12 +191,10 @@ func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
 	defer func() {
 		if err != nil {
 			downloader.unlockDownload(result)
-			downloader.unlockDecrypt(result)
 		}
 	}()
 
 	downloader.lockDownload(result)
-	downloader.lockDecrypt(result)
 
 	// if max concurrent downloads exceeds, put into wait queue
 	if len(downloader.currentDownloads) >= downloader.config.MaxConcurrentDownloads {
@@ -333,12 +330,6 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 			if downloader.downloadMountPoint != downloader.decryptMountPoint {
 				return err
 			}
-
-			// if decrypt dir and download dir are on same partition, try to free decrypt dir as well
-			if err = downloader.tryFreeSpace(
-				downloader.decryptMountPoint, downloader.config.DecryptDir, requiredDownloadBlocks); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -353,17 +344,14 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 	}).Debugf("Check decrypt space")
 
 	if requiredDecryptBlocks > downloader.availableBlocks[downloader.decryptMountPoint] {
-		if err = downloader.tryFreeSpace(
-			downloader.decryptMountPoint, downloader.config.DecryptDir, requiredDecryptBlocks); err != nil {
-			if downloader.downloadMountPoint != downloader.decryptMountPoint {
-				return err
-			}
+		if downloader.downloadMountPoint != downloader.decryptMountPoint {
+			return aoserrors.New("not enough space for decrypt")
+		}
 
-			// if decrypt dir and download dir are on same partition, try to free download dir as well
-			if err = downloader.tryFreeSpace(
-				downloader.downloadMountPoint, downloader.config.DownloadDir, requiredDecryptBlocks); err != nil {
-				return err
-			}
+		// if decrypt dir and download dir are on same partition, try to free download dir
+		if err = downloader.tryFreeSpace(
+			downloader.downloadMountPoint, downloader.config.DownloadDir, requiredDecryptBlocks); err != nil {
+			return err
 		}
 	}
 
@@ -705,21 +693,6 @@ func (downloader *Downloader) lockDownload(result *downloadResult) {
 func (downloader *Downloader) unlockDownload(result *downloadResult) {
 	downloader.unlockFile(result.downloadFileName)
 	downloader.unlockFile(result.interruptFileName)
-}
-
-func (downloader *Downloader) lockDecrypt(result *downloadResult) {
-	downloader.lockFile(result.decryptedFileName)
-}
-
-func (downloader *Downloader) unlockDecrypt(result *downloadResult) {
-	downloader.unlockFile(result.decryptedFileName)
-}
-
-func (downloader *Downloader) releaseResult(result *downloadResult) {
-	downloader.Lock()
-	defer downloader.Unlock()
-
-	downloader.unlockDecrypt(result)
 }
 
 func fileExists(filename string) (exist bool) {

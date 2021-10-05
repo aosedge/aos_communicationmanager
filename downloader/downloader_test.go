@@ -520,9 +520,11 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 		t.Error("Error expected")
 	}
 
-	// Release previous results
+	// Remove decrypted files
 	for _, result := range results {
-		result.Release()
+		if err = os.RemoveAll(result.GetFileName()); err != nil {
+			t.Fatalf("Can't remove decrypted file: %s", err)
+		}
 	}
 
 	// Now it should download successfully

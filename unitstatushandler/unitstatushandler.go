@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -639,7 +640,11 @@ desiredLoop:
 		if err != nil {
 			return aoserrors.Wrap(err)
 		}
-		defer result.Release()
+		defer func() {
+			if err := os.RemoveAll(result.GetFileName()); err != nil {
+				log.Errorf("Can't remove decrypted file: %s", err)
+			}
+		}()
 
 		wg.Add(1)
 
@@ -929,7 +934,11 @@ func (instance *Instance) installLayer(ctx context.Context, layerInfo cloudproto
 	if err = result.Wait(); err != nil {
 		return aoserrors.Wrap(err)
 	}
-	defer result.Release()
+	defer func() {
+		if err := os.RemoveAll(result.GetFileName()); err != nil {
+			log.Errorf("Can't remove decrypted file: %s", err)
+		}
+	}()
 
 	url := url.URL{
 		Scheme: "file",
@@ -994,7 +1003,11 @@ func (instance *Instance) installService(ctx context.Context, serviceInfo cloudp
 	if err = result.Wait(); err != nil {
 		return aoserrors.Wrap(err)
 	}
-	defer result.Release()
+	defer func() {
+		if err := os.RemoveAll(result.GetFileName()); err != nil {
+			log.Errorf("Can't remove decrypted file: %s", err)
+		}
+	}()
 
 	url := url.URL{
 		Scheme: "file",
