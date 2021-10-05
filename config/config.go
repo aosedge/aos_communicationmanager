@@ -77,12 +77,6 @@ type Monitoring struct {
 	OutTraffic             *AlertRule `json:"outTraffic"`
 }
 
-// Logging configuration for system and service logging
-type Logging struct {
-	MaxPartSize  uint64 `json:"maxPartSize"`
-	MaxPartCount uint64 `json:"maxPartCount"`
-}
-
 // Alerts configuration for alerts
 type Alerts struct {
 	EnableSystemAlerts bool     `json:"enableSystemAlerts"`
@@ -133,7 +127,6 @@ type Config struct {
 	BoardConfigFile       string       `json:"boardConfigFile"`
 	UnitStatusSendTimeout Duration     `json:"unitStatusSendTimeout"`
 	Monitoring            Monitoring   `json:"monitoring"`
-	Logging               Logging      `json:"logging"`
 	Alerts                Alerts       `json:"alerts"`
 	Migration             Migration    `json:"migration"`
 	SMController          SMController `json:"smController"`
@@ -157,9 +150,6 @@ func New(fileName string) (config *Config, err error) {
 			SendPeriod:         Duration{1 * time.Minute},
 			PollPeriod:         Duration{10 * time.Second},
 			MaxOfflineMessages: 25},
-		Logging: Logging{
-			MaxPartSize:  524288,
-			MaxPartCount: 20},
 		Alerts: Alerts{
 			SendPeriod:         Duration{10 * time.Second},
 			MaxMessageSize:     65536,

@@ -69,10 +69,6 @@ const testConfigContent = `{
 			"maxThreshold": 150
 		}
 	},
-	"logging": {
-		"maxPartSize": 1024,
-		"maxPartCount": 10
-	},
 	"alerts": {
 		"enableSystemAlerts": true,
 		"sendPeriod": "00:00:20",
@@ -204,16 +200,6 @@ func TestGetMonitoringConfig(t *testing.T) {
 
 	if testCfg.Monitoring.OutTraffic.MinTimeout.Duration != 20*time.Second {
 		t.Errorf("Wrong value: %s", testCfg.Monitoring.RAM.MinTimeout)
-	}
-}
-
-func TestGetLoggingConfig(t *testing.T) {
-	if testCfg.Logging.MaxPartSize != 1024 {
-		t.Errorf("Wrong max part size: %d", testCfg.Logging.MaxPartSize)
-	}
-
-	if testCfg.Logging.MaxPartCount != 10 {
-		t.Errorf("Wrong max part count: %d", testCfg.Logging.MaxPartCount)
 	}
 }
 
