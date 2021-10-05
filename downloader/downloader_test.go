@@ -762,7 +762,7 @@ func clearDisks() (err error) {
 func clearTmpDisk(name string) (err error) {
 	mountDir := path.Join(tmpDir, name)
 
-	items, err := ioutil.ReadDir(downloadDir)
+	items, err := ioutil.ReadDir(mountDir)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
