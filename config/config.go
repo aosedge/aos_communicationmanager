@@ -99,6 +99,7 @@ type Downloader struct {
 	MaxConcurrentDownloads int      `json:"maxConcurrentDownloads"`
 	RetryCount             int      `json:"retryCount"`
 	RetryDelay             Duration `json:"retryDelay"`
+	DownloadPartLimit      int      `json:"downloadPartLimit"`
 }
 
 // SMConfig SM configuration
@@ -158,6 +159,7 @@ func New(fileName string) (config *Config, err error) {
 			MaxConcurrentDownloads: 4,
 			RetryCount:             3,
 			RetryDelay:             Duration{1 * time.Minute},
+			DownloadPartLimit:      100,
 		},
 	}
 

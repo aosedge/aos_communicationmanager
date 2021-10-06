@@ -74,14 +74,15 @@ type Downloader struct {
 	moduleID           string
 	cryptoContext      CryptoContext
 	config             config.Downloader
-	downloadMountPoint string
-	decryptMountPoint  string
 	sender             AlertSender
 	lockedFiles        []string
 	currentDownloads   map[string]*downloadResult
 	waitQueue          *list.List
-	availableBlocks    map[string]int64
-	blockSizes         map[string]int64
+	downloadMountPoint string
+	decryptMountPoint  string
+	availableSize      map[string]int64
+	downloadLimit      int64
+	downloadSize       int64
 }
 
 // AlertSender provdes alert sender interface
@@ -115,8 +116,7 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 		cryptoContext:    cryptoContext,
 		currentDownloads: make(map[string]*downloadResult),
 		waitQueue:        list.New(),
-		availableBlocks:  make(map[string]int64),
-		blockSizes:       make(map[string]int64),
+		availableSize:    make(map[string]int64),
 	}
 
 	if err = os.MkdirAll(downloader.config.DownloadDir, 755); err != nil {
@@ -207,7 +207,7 @@ func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
 
 	// set initial value for free size variables
 	if len(downloader.currentDownloads) == 0 {
-		if err = downloader.initAvailableBlocks(); err != nil {
+		if err = downloader.initAvailableSize(); err != nil {
 			return err
 		}
 	}
@@ -217,13 +217,13 @@ func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
 	if err = downloader.tryAllocateSpace(result); err != nil {
 		if len(downloader.currentDownloads) == 0 {
 			return err
-		} else {
-			log.WithField("id", result.id).Debugf("Add download to wait queue due to: %s", err)
-
-			downloader.waitQueue.PushBack(result)
-
-			return nil
 		}
+
+		log.WithField("id", result.id).Debugf("Add download to wait queue due to: %s", err)
+
+		downloader.waitQueue.PushBack(result)
+
+		return nil
 	}
 
 	downloader.currentDownloads[result.id] = result
@@ -284,89 +284,104 @@ func (downloader *Downloader) unlockFile(fileName string) {
 	}
 }
 
-func (downloader *Downloader) initAvailableBlocks() (err error) {
+func (downloader *Downloader) initAvailableSize() (err error) {
+	if downloader.downloadSize, err = getDirSize(downloader.config.DownloadDir); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
 	var stat syscall.Statfs_t
 
 	if err = syscall.Statfs(downloader.config.DownloadDir, &stat); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	downloader.availableBlocks[downloader.downloadMountPoint] = int64(stat.Bavail)
-	downloader.blockSizes[downloader.downloadMountPoint] = stat.Bsize
+	downloader.availableSize[downloader.downloadMountPoint] = int64(stat.Bavail) * stat.Bsize
+	downloader.downloadLimit = int64(stat.Blocks) * stat.Bsize * int64(downloader.config.DownloadPartLimit) / 100
 
-	if err = syscall.Statfs(downloader.config.DecryptDir, &stat); err != nil {
-		return aoserrors.Wrap(err)
+	if downloader.downloadMountPoint != downloader.decryptMountPoint {
+		if err = syscall.Statfs(downloader.config.DecryptDir, &stat); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		downloader.availableSize[downloader.decryptMountPoint] = int64(stat.Bavail) * stat.Bsize
+	} else {
+		downloader.availableSize[downloader.decryptMountPoint] = downloader.availableSize[downloader.downloadMountPoint]
 	}
-
-	downloader.availableBlocks[downloader.decryptMountPoint] = int64(stat.Bavail)
-	downloader.blockSizes[downloader.decryptMountPoint] = stat.Bsize
 
 	return nil
 }
 
 func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err error) {
-	requiredDownloadBlocks, err := downloader.getRequiredBlocks(
-		result.downloadFileName, downloader.blockSizes[downloader.downloadMountPoint], result.packageInfo.Size)
+	requiredDownloadSize, err := downloader.getRequiredSize(result.downloadFileName, int64(result.packageInfo.Size))
 	if err != nil {
 		return err
 	}
 
-	requiredDecryptBlocks, err := downloader.getRequiredBlocks(
-		result.decryptedFileName, downloader.blockSizes[downloader.decryptMountPoint], result.packageInfo.Size)
-	if err != nil {
-		return err
+	availableSize := downloader.availableSize[downloader.downloadMountPoint]
+
+	if availableSize+downloader.downloadSize > downloader.downloadLimit {
+		availableSize = downloader.downloadLimit - downloader.downloadSize
 	}
 
 	log.WithFields(log.Fields{
-		"id":              result.id,
-		"availableBlocks": downloader.availableBlocks[downloader.downloadMountPoint],
-		"blockSize":       downloader.blockSizes[downloader.downloadMountPoint],
-		"requiredBlocks":  requiredDownloadBlocks,
+		"id":            result.id,
+		"availableSize": availableSize,
+		"requiredSize":  requiredDownloadSize,
 	}).Debugf("Check download space")
 
-	if requiredDownloadBlocks > downloader.availableBlocks[downloader.downloadMountPoint] {
-		if err = downloader.tryFreeSpace(
-			downloader.downloadMountPoint, downloader.config.DownloadDir, requiredDownloadBlocks); err != nil {
-			if downloader.downloadMountPoint != downloader.decryptMountPoint {
-				return err
-			}
+	if requiredDownloadSize > availableSize {
+		freedSize, err := downloader.tryFreeSpace(downloader.config.DownloadDir,
+			requiredDownloadSize-availableSize)
+		if err != nil {
+			return aoserrors.Wrap(err)
 		}
+
+		downloader.availableSize[downloader.downloadMountPoint] += freedSize
 	}
 
-	downloader.availableBlocks[downloader.downloadMountPoint] =
-		downloader.availableBlocks[downloader.downloadMountPoint] - requiredDownloadBlocks
+	downloader.availableSize[downloader.downloadMountPoint] -= requiredDownloadSize
+	downloader.downloadSize += requiredDownloadSize
+
+	requiredDecryptSize, err := downloader.getRequiredSize(result.decryptedFileName, int64(result.packageInfo.Size))
+	if err != nil {
+		return err
+	}
+
+	availableSize = downloader.availableSize[downloader.decryptMountPoint]
 
 	log.WithFields(log.Fields{
-		"id":              result.id,
-		"availableBlocks": downloader.availableBlocks[downloader.decryptMountPoint],
-		"blockSize":       downloader.blockSizes[downloader.decryptMountPoint],
-		"requiredBlocks":  requiredDecryptBlocks,
+		"id":            result.id,
+		"availableSize": availableSize,
+		"requiredSize":  requiredDecryptSize,
 	}).Debugf("Check decrypt space")
 
-	if requiredDecryptBlocks > downloader.availableBlocks[downloader.decryptMountPoint] {
+	if requiredDecryptSize > availableSize {
 		if downloader.downloadMountPoint != downloader.decryptMountPoint {
 			return aoserrors.New("not enough space for decrypt")
 		}
 
 		// if decrypt dir and download dir are on same partition, try to free download dir
-		if err = downloader.tryFreeSpace(
-			downloader.downloadMountPoint, downloader.config.DownloadDir, requiredDecryptBlocks); err != nil {
-			return err
+
+		freedSize, err := downloader.tryFreeSpace(downloader.config.DownloadDir,
+			requiredDecryptSize-availableSize)
+		if err != nil {
+			return aoserrors.Wrap(err)
 		}
+
+		downloader.availableSize[downloader.downloadMountPoint] += freedSize
 	}
 
-	downloader.availableBlocks[downloader.decryptMountPoint] =
-		downloader.availableBlocks[downloader.decryptMountPoint] - requiredDecryptBlocks
+	downloader.availableSize[downloader.downloadMountPoint] -= requiredDownloadSize
 
 	return nil
 }
 
-func (downloader *Downloader) tryFreeSpace(mountPoint, dir string, requiredBlocks int64) (err error) {
-	log.WithField("dir", dir).Debug("Try to free space")
+func (downloader *Downloader) tryFreeSpace(dir string, requiredSize int64) (freedSize int64, err error) {
+	log.WithFields(log.Fields{"dir": dir, "requiredSize": requiredSize}).Debug("Try to free space")
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Sort by modified time
@@ -380,21 +395,17 @@ func (downloader *Downloader) tryFreeSpace(mountPoint, dir string, requiredBlock
 			continue
 		}
 
-		_, fsSize, err := getFileSize(fileName)
+		fileSize, err := getFileSize(fileName)
 		if err != nil {
 			log.Errorf("Can't get FS file size: %s", err)
 		}
 
-		fileBlocks := sizeToBlocks(fsSize, downloader.blockSizes[mountPoint])
-
 		if !file.IsDir() {
 			log.WithFields(log.Fields{
-				"fileName": fileName,
-				"blocks":   fileBlocks}).Debugf("Remove outdated file: %s", fileName)
+				"name": fileName,
+				"size": fileSize}).Debugf("Remove outdated file: %s", fileName)
 		} else {
-			log.WithFields(log.Fields{
-				"directory": fileName,
-				"blocks":    fileBlocks}).Warnf("Remove foreign directory: %s", fileName)
+			log.WithFields(log.Fields{"directory": fileName}).Warnf("Remove foreign directory: %s", fileName)
 		}
 
 		if err = os.RemoveAll(fileName); err != nil {
@@ -402,28 +413,32 @@ func (downloader *Downloader) tryFreeSpace(mountPoint, dir string, requiredBlock
 			continue
 		}
 
-		downloader.availableBlocks[mountPoint] += int64(fileBlocks)
+		freedSize += fileSize
 
-		if downloader.availableBlocks[mountPoint] >= requiredBlocks {
-			return nil
+		if freedSize >= requiredSize {
+			return freedSize, nil
 		}
 	}
 
-	return aoserrors.New("can't free required space")
+	return 0, aoserrors.New("can't free required space")
 }
 
-func (downloader *Downloader) getRequiredBlocks(
-	fileName string, blockSize int64, size uint64) (requiredBlocks int64, err error) {
-	_, fsSize, err := getFileSize(fileName)
+func (downloader *Downloader) getRequiredSize(fileName string, totalSize int64) (requiredSize int64, err error) {
+	size, err := getFileSize(fileName)
 	if err != nil && !os.IsNotExist(err) {
 		return 0, aoserrors.Wrap(err)
 	}
 
-	return sizeToBlocks(size, blockSize) - sizeToBlocks(fsSize, blockSize), nil
-}
+	if totalSize < size {
+		log.WithFields(log.Fields{
+			"name":         fileName,
+			"expectedSize": totalSize,
+			"currentSize":  size}).Warnf("File size is larger than expected")
 
-func sizeToBlocks(fileSize uint64, blockSize int64) (numBlocks int64) {
-	return (int64(fileSize) + blockSize - 1) / blockSize
+		return totalSize, nil
+	}
+
+	return totalSize - size, nil
 }
 
 func (downloader *Downloader) process(result *downloadResult) (err error) {
@@ -498,8 +513,12 @@ func (downloader *Downloader) handleWaitQueue() {
 func (downloader *Downloader) downloadWithMaxTry(result *downloadResult) (err error) {
 	if err = retryhelper.Retry(result.ctx,
 		func() (err error) {
-			fileSize, _, err := getFileSize(result.downloadFileName)
-			if os.IsNotExist(err) || fileSize != result.packageInfo.Size {
+			fileSize, err := getFileSize(result.downloadFileName)
+			if err != nil && !os.IsNotExist(err) {
+				return aoserrors.Wrap(err)
+			}
+
+			if fileSize != int64(result.packageInfo.Size) {
 				if err = downloader.downloadURLs(result); err != nil {
 					return aoserrors.Wrap(err)
 				}
@@ -695,27 +714,19 @@ func (downloader *Downloader) unlockDownload(result *downloadResult) {
 	downloader.unlockFile(result.interruptFileName)
 }
 
-func fileExists(filename string) (exist bool) {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-
-	return !info.IsDir()
-}
-
-func getFileSize(fileName string) (size uint64, fsSize uint64, err error) {
+func getFileSize(fileName string) (size int64, err error) {
 	var stat syscall.Stat_t
 
 	if err = syscall.Stat(fileName, &stat); err != nil {
 		if os.IsNotExist(err) {
-			return 0, 0, err
+			// Plain error returned here explicitly to allow check if file doesn't exist in callers
+			return 0, err
 		}
 
-		return 0, 0, aoserrors.Wrap(err)
+		return 0, aoserrors.Wrap(err)
 	}
 
-	return uint64(stat.Size), uint64(stat.Blocks) * 512, nil
+	return stat.Size, nil
 }
 
 func getMountPoint(dir string) (mountPoint string, err error) {
@@ -750,4 +761,22 @@ func getMountPoint(dir string) (mountPoint string, err error) {
 	}
 
 	return mountPoint, nil
+}
+
+func getDirSize(path string) (size int64, err error) {
+	if err = filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		if !info.IsDir() {
+			size += info.Size()
+		}
+
+		return err
+	}); err != nil {
+		return 0, aoserrors.Wrap(err)
+	}
+
+	return size, nil
 }

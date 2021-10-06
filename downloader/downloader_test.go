@@ -150,6 +150,7 @@ func TestDownload(t *testing.T) {
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			RetryCount:             1,
+			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
@@ -203,6 +204,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			RetryCount:             1,
+			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
@@ -285,6 +287,7 @@ func TestAvailableSize(t *testing.T) {
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			RetryCount:             1,
+			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
@@ -345,6 +348,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			RetryCount:             1,
+			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
@@ -405,6 +409,7 @@ func TestConcurrentDownloads(t *testing.T) {
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 5,
 			RetryCount:             1,
+			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
@@ -475,6 +480,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 3,
 			RetryCount:             1,
+			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
 	if err != nil {
@@ -535,6 +541,93 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 
 	if err = result.Wait(); err != nil {
 		t.Errorf("Download error: %s", err)
+	}
+}
+
+func TestDownloadPartLimit(t *testing.T) {
+	const numDownloads = 10
+	const fileNamePattern = "package%d.txt"
+	const downloadPartLimit = 50
+
+	alertsCnt = alertsCounter{}
+
+	if err := clearDisks(); err != nil {
+		t.Fatalf("Can't clear disks: %s", err)
+	}
+
+	if err := setWondershaperLimit("lo", "4096"); err != nil {
+		t.Fatalf("Can't set speed limit: %s", err)
+	}
+	defer clearWondershaperLimit("lo")
+
+	var stat syscall.Statfs_t
+
+	if err := syscall.Statfs(downloadDir, &stat); err != nil {
+		t.Fatalf("Can't get FS status: %s", err)
+	}
+
+	expectedFreeBlocks := stat.Bavail - stat.Blocks*downloadPartLimit/100
+
+	fileSize := (stat.Bavail / numDownloads) * uint64(stat.Bsize)
+
+	for i := 0; i < numDownloads; i++ {
+		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), fileSize); err != nil {
+			t.Fatalf("Can't generate file: %s", err)
+		}
+	}
+	defer func() {
+		for i := 0; i < numDownloads; i++ {
+			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
+		}
+	}()
+
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			DecryptDir:             decryptDir,
+			MaxConcurrentDownloads: 3,
+			RetryCount:             1,
+			DownloadPartLimit:      downloadPartLimit,
+		},
+	}, &testCryptoContext{}, &testAlertSender{})
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
+
+	wg := sync.WaitGroup{}
+
+	results := make([]downloader.Result, 0, numDownloads)
+
+	for i := 0; i < numDownloads; i++ {
+		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
+
+		result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+		if err != nil {
+			t.Errorf("Can't download and decrypt package: %s", err)
+			continue
+		}
+
+		results = append(results, result)
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err = result.Wait(); err != nil {
+				t.Errorf("Download error: %s", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if err := syscall.Statfs(downloadDir, &stat); err != nil {
+		t.Fatalf("Can't get FS status: %s", err)
+	}
+
+	if stat.Bavail < expectedFreeBlocks {
+		t.Errorf("Num of available blocks should be more than expected: %d < %d", stat.Bavail, expectedFreeBlocks)
 	}
 }
 

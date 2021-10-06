@@ -52,7 +52,8 @@ const testConfigContent = `{
 		"decryptDir": "/path/to/decrypt",
 		"maxConcurrentDownloads": 10,
 		"retryCount": 5,
-		"retryDelay": "10s"
+		"retryDelay": "10s",
+		"downloadPartLimit": 57
 	},
 	"monitoring": {
 		"sendPeriod": "00:05:00",
@@ -248,6 +249,7 @@ func TestDownloaderConfig(t *testing.T) {
 		MaxConcurrentDownloads: 10,
 		RetryCount:             5,
 		RetryDelay:             config.Duration{10 * time.Second},
+		DownloadPartLimit:      57,
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.Downloader) {
