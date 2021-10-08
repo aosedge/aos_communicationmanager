@@ -94,7 +94,8 @@ const testConfigContent = `{
 				"smId": "sm1",
 				"serverUrl": "remotehost:8888"
 			}
-		]
+		],
+		"updateTTL": "30h"
 	},
 	"umController": {
 		"serverUrl": "localhost:8091",
@@ -102,7 +103,8 @@ const testConfigContent = `{
 			"umId": "um",
 			"priority": 0,
 			"isLocal": true
-		}]
+		}],
+		"updateTTL": "100h"
 	}
 }`
 
@@ -244,6 +246,7 @@ func TestUMControllerConfig(t *testing.T) {
 	originalConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{umClient},
+		UpdateTTL: config.Duration{100 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {
@@ -271,6 +274,7 @@ func TestSMControllerConfig(t *testing.T) {
 			{SMID: "sm0", ServerURL: "localhost:8888", IsLocal: true},
 			{SMID: "sm1", ServerURL: "remotehost:8888"},
 		},
+		UpdateTTL: config.Duration{30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {

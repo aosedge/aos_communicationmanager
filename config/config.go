@@ -42,6 +42,7 @@ type Crypt struct {
 type UMController struct {
 	ServerURL string           `json:"serverUrl"`
 	UMClients []UMClientConfig `json:"umClients"`
+	UpdateTTL Duration         `json:"updateTTL"`
 }
 
 // UMClientConfig update manager config
@@ -115,7 +116,8 @@ type SMConfig struct {
 
 // SMController SM controller configuration
 type SMController struct {
-	SMList []SMConfig `json:"smList"`
+	SMList    []SMConfig `json:"smList"`
+	UpdateTTL Duration   `json:"updateTTL"`
 }
 
 // Config instance
