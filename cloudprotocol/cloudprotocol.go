@@ -83,6 +83,13 @@ const (
 	ErrorStatus       = "error"
 )
 
+// SOTA/FOTA schedule type
+const (
+	ForceUpdate     = "force"
+	TriggerUpdate   = "trigger"
+	TimetableUpdate = "timetable"
+)
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -164,6 +171,8 @@ type DesiredStatus struct {
 	Services          []byte             `json:"services"`
 	Layers            []byte             `json:"layers"`
 	Components        []byte             `json:"components"`
+	FOTASchedule      []byte             `json:"fotaSchedule"`
+	SOTASchedule      []byte             `json:"sotaSchedule"`
 	CertificateChains []CertificateChain `json:"certificateChains,omitempty"`
 	Certificates      []Certificate      `json:"certificates,omitempty"`
 }
@@ -424,12 +433,33 @@ type ComponentInfoFromCloud struct {
 	DecryptDataStruct
 }
 
+// TimeSlot time slot with start and finish time
+type TimeSlot struct {
+	Start  string `json:"start"`
+	Finish string `json:"finish"`
+}
+
+// TimetableEntry entry for update timetable
+type TimetableEntry struct {
+	DayOfWeek uint       `json:"dayOfWeek"`
+	TimeSlots []TimeSlot `json:"timeSlots"`
+}
+
+// ScheduleRule rule for performing schedule update
+type ScheduleRule struct {
+	TTL       uint64           `json:"ttl"`
+	Type      string           `json:"type"`
+	Timetable []TimetableEntry `json:"timetable"`
+}
+
 // DecodedDesiredStatus decoded desired status
 type DecodedDesiredStatus struct {
 	BoardConfig       json.RawMessage
 	Layers            []LayerInfoFromCloud
 	Services          []ServiceInfoFromCloud
 	Components        []ComponentInfoFromCloud
+	FOTASchedule      ScheduleRule
+	SOTASchedule      ScheduleRule
 	CertificateChains []CertificateChain
 	Certificates      []Certificate
 }
