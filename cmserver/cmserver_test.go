@@ -201,3 +201,11 @@ func (handler *testUpdateHandler) GetFOTAStatus() (status cmserver.UpdateStatus)
 func (handler *testUpdateHandler) GetSOTAStatus() (status cmserver.UpdateStatus) {
 	return cmserver.UpdateStatus{State: cmserver.NoUpdate}
 }
+
+func (handler *testUpdateHandler) StartFOTAUpdate() (err error) {
+	return nil
+}
+
+func (handler *testUpdateHandler) StartSOTAUpdate() (err error) {
+	return nil
+}

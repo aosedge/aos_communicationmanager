@@ -18,6 +18,7 @@
 package cmserver
 
 import (
+	"context"
 	"net"
 	"sync"
 
@@ -28,6 +29,7 @@ import (
 	"gitpct.epam.com/epmd-aepr/aos_common/utils/cryptutils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"aos_communicationmanager/config"
 )
@@ -67,6 +69,8 @@ type UpdateHandler interface {
 	GetSOTAStatusChannel() (channel <-chan UpdateStatus)
 	GetFOTAStatus() (status UpdateStatus)
 	GetSOTAStatus() (status UpdateStatus)
+	StartFOTAUpdate() (err error)
+	StartSOTAUpdate() (err error)
 }
 
 // CMServer CM server instance
@@ -198,6 +202,16 @@ func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.Updat
 	server.Unlock()
 
 	return nil
+}
+
+// StartFOTAUpdate triggers FOTA update
+func (server *CMServer) StartFOTAUpdate(ctx context.Context, req *empty.Empty) (ret *empty.Empty, err error) {
+	return &emptypb.Empty{}, server.updatehandler.StartFOTAUpdate()
+}
+
+// StartSOTAUpdate triggers SOTA update
+func (server *CMServer) StartSOTAUpdate(ctx context.Context, req *empty.Empty) (ret *empty.Empty, err error) {
+	return &emptypb.Empty{}, server.updatehandler.StartSOTAUpdate()
 }
 
 func (state UpdateState) String() string {
