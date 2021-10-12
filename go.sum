@@ -446,6 +446,10 @@ gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20210922072818-fb91af0d4d5d h1:dveDc
 gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20210922072818-fb91af0d4d5d/go.mod h1:+rm3dMfZiEOSG9aIhH5XDDqPkgdFtl9tUAf4Gxx0bho=
 gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20210928130140-41cdb2842108 h1:TAlLgU3eocRFChdnre/kTae33isYIfrl6xET1BifHo8=
 gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20210928130140-41cdb2842108/go.mod h1:+rm3dMfZiEOSG9aIhH5XDDqPkgdFtl9tUAf4Gxx0bho=
+gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211008135500-46379a1e328f h1:ml6bFfZZfeKjmtP8x6opvEmO20N+KDGXCdJuhTM03es=
+gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211008135500-46379a1e328f/go.mod h1:e/fBh/h7MVw0kNQOapNi2hX/h07OQmbD2qWpDvhJCVY=
+gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211012093919-69fe31e1f311 h1:0O3Mvv4IG+fnWpjbzHcEi+ljcIZbD8qGOxWy8XDNSO4=
+gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211012093919-69fe31e1f311/go.mod h1:e/fBh/h7MVw0kNQOapNi2hX/h07OQmbD2qWpDvhJCVY=
 gitpct.epam.com/epmd-aepr/aos_common v1.0.0 h1:4FftftJxMM5GuvZt135NVgy26K1UWQTgqDsbhwBWznM=
 gitpct.epam.com/epmd-aepr/aos_common v1.0.0/go.mod h1:9M0Ym70G7m2r6uWqYCp3N1RKLPtRmba+Zml6oiJXy94=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
@@ -779,6 +783,8 @@ google.golang.org/protobuf v1.25.0/go.mod h1:9JNX74DMeImyA3h4bdi1ymwjUzf21/xIlba
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
 google.golang.org/protobuf v1.26.0 h1:bxAC2xTBsZGibn2RTntX0oH50xLsqy1OxA9tTL3p/lk=
 google.golang.org/protobuf v1.26.0/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
+google.golang.org/protobuf v1.27.1 h1:SnqbnDw1V7RiZcXPx5MEeqPv2s79L9i7BJUlG/+RurQ=
+google.golang.org/protobuf v1.27.1/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
 gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=

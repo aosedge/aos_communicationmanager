@@ -24,7 +24,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/streadway/amqp v1.0.0
 	github.com/tklauser/go-sysconf v0.3.9 // indirect
-	gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20210928130140-41cdb2842108
+	gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211012093919-69fe31e1f311
 	google.golang.org/grpc v1.33.2
-	google.golang.org/protobuf v1.26.0
+	google.golang.org/protobuf v1.27.1
 )

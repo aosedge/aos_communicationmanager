@@ -92,9 +92,10 @@ github.com/thales-e-security/pool
 github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.3.0
 github.com/tklauser/numcpus
-# gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20210928130140-41cdb2842108
+# gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211012093919-69fe31e1f311
 ## explicit
 gitpct.epam.com/epmd-aepr/aos_common/aoserrors
+gitpct.epam.com/epmd-aepr/aos_common/api/communicationmanager/v1
 gitpct.epam.com/epmd-aepr/aos_common/api/iamanager/v1
 gitpct.epam.com/epmd-aepr/aos_common/api/servicemanager/v1
 gitpct.epam.com/epmd-aepr/aos_common/api/updatemanager/v1
@@ -169,7 +170,7 @@ google.golang.org/grpc/serviceconfig
 google.golang.org/grpc/stats
 google.golang.org/grpc/status
 google.golang.org/grpc/tap
-# google.golang.org/protobuf v1.26.0
+# google.golang.org/protobuf v1.27.1
 ## explicit
 google.golang.org/protobuf/encoding/prototext
 google.golang.org/protobuf/encoding/protowire
