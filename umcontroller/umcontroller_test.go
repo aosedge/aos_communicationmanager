@@ -91,7 +91,6 @@ func TestConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	components := []*pb.SystemComponent{
 		{Id: "component1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -187,7 +186,6 @@ func TestFullUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um1Components := []*pb.SystemComponent{
 		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -320,7 +318,6 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um3Components := []*pb.SystemComponent{
 		{Id: "um3C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -469,7 +466,6 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um5Components := []*pb.SystemComponent{
 		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -540,7 +536,6 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um5 = newTestUM("testUM5", pb.UmState_UPDATED, "apply", um5Components, t)
 	go um5.processMessages()
@@ -576,7 +571,6 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um5Components = []*pb.SystemComponent{
 		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -643,7 +637,6 @@ func TestRevertOnPrepare(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um7Components := []*pb.SystemComponent{
 		{Id: "um7C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -761,7 +754,6 @@ func TestRevertOnUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um9Components := []*pb.SystemComponent{
 		{Id: "um9C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -897,7 +889,6 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um11Components := []*pb.SystemComponent{
 		{Id: "um11C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1038,7 +1029,6 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um13Components := []*pb.SystemComponent{
 		{Id: "um13C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1119,7 +1109,6 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
-	go watchUpdateStatus(umCtrl.StatusChannel())
 
 	um13 = newTestUM("testUM13", pb.UmState_UPDATED, "revert", um13Components, t)
 	go um13.processMessages()
@@ -1290,23 +1279,4 @@ func (um *testUmConnection) closeConnection() {
 
 func (translator *testURLTranslator) TranslateURL(isLocal bool, inURL string) (outURL string, err error) {
 	return "file://" + inURL, nil
-}
-
-func watchUpdateStatus(statusChannel <-chan cloudprotocol.ComponentInfo) {
-	for {
-		select {
-		case status, ok := <-statusChannel:
-			if !ok {
-				return
-			}
-
-			log.WithFields(log.Fields{
-				"id":            status.ID,
-				"aosVersion":    status.AosVersion,
-				"vendorVersion": status.VendorVersion,
-				"status":        status.Status,
-				"error":         status.Error,
-			}).Debug("Receive component status")
-		}
-	}
 }

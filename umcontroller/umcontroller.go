@@ -58,8 +58,6 @@ type Controller struct {
 	updateFinishCond  *sync.Cond
 
 	updateError error
-
-	statusChannel chan cloudprotocol.ComponentInfo
 }
 
 // SystemComponent information about system component update
@@ -186,7 +184,6 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 		connectionMonitor: allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
 		operable:          true,
 		updateFinishCond:  sync.NewCond(&sync.Mutex{}),
-		statusChannel:     make(chan cloudprotocol.ComponentInfo, 1),
 	}
 
 	for _, client := range config.UMController.UMClients {
@@ -266,8 +263,6 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 func (umCtrl *Controller) Close() {
 	umCtrl.operable = false
 	umCtrl.stopChannel <- true
-
-	close(umCtrl.statusChannel)
 }
 
 // GetStatus returns list of system components information
@@ -329,11 +324,6 @@ func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentI
 	umCtrl.updateFinishCond.Wait()
 
 	return umCtrl.updateError
-}
-
-// StatusChannel returns update component status channel
-func (umCtrl *Controller) StatusChannel() (statusChannel <-chan cloudprotocol.ComponentInfo) {
-	return umCtrl.statusChannel
 }
 
 /***********************************************************************************************************************
@@ -501,8 +491,6 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 			if umCtrl.currentComponents[i].Status != component.status {
 				umCtrl.currentComponents[i].Status = component.status
 				umCtrl.currentComponents[i].Error = component.err
-
-				umCtrl.statusChannel <- umCtrl.currentComponents[i]
 			}
 
 			return
@@ -516,8 +504,6 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 		Status:        component.status,
 		Error:         component.err,
 	})
-
-	umCtrl.statusChannel <- umCtrl.currentComponents[len(umCtrl.currentComponents)-1]
 }
 
 func (umCtrl *Controller) cleanupCurrentComponentStatus() {
@@ -527,8 +513,6 @@ func (umCtrl *Controller) cleanupCurrentComponentStatus() {
 		if component.Status == cloudprotocol.InstalledStatus || component.Status == cloudprotocol.ErrorStatus {
 			umCtrl.currentComponents[i] = component
 			i++
-
-			umCtrl.statusChannel <- component
 		}
 	}
 
