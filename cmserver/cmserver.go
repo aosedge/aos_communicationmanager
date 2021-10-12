@@ -19,7 +19,9 @@ package cmserver
 
 import (
 	"net"
+	"sync"
 
+	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 	pb "gitpct.epam.com/epmd-aepr/aos_common/api/communicationmanager/v1"
@@ -34,6 +36,14 @@ import (
  * Consts
  **********************************************************************************************************************/
 
+// Update states
+const (
+	NoUpdate UpdateState = iota
+	Downloading
+	ReadyToUpdate
+	Updating
+)
+
 /***********************************************************************************************************************
  * Vars
  **********************************************************************************************************************/
@@ -42,11 +52,34 @@ import (
  * Types
  **********************************************************************************************************************/
 
+// UpdateState type for update state
+type UpdateState int
+
+// UpdateStatus represents SOTA/FOTA status
+type UpdateStatus struct {
+	State UpdateState
+	Error string
+}
+
+// UpdateHandler interface for SOTA/FOTA update
+type UpdateHandler interface {
+	GetFOTAStatusChannel() (channel <-chan UpdateStatus)
+	GetSOTAStatusChannel() (channel <-chan UpdateStatus)
+	GetFOTAStatus() (status UpdateStatus)
+	GetSOTAStatus() (status UpdateStatus)
+}
+
 // CMServer CM server instance
 type CMServer struct {
 	grpcServer *grpc.Server
 	listener   net.Listener
 	pb.UnimplementedUpdateSchedulerServiceServer
+	clients           []pb.UpdateSchedulerService_SubscribeNotificationsServer
+	currentFOTAStatus UpdateStatus
+	currentSOTAStatus UpdateStatus
+	stopChannel       chan bool
+	updatehandler     UpdateHandler
+	sync.Mutex
 }
 
 /***********************************************************************************************************************
@@ -54,8 +87,13 @@ type CMServer struct {
  **********************************************************************************************************************/
 
 // New creates new IAM server instance
-func New(cfg *config.Config, insecure bool) (server *CMServer, err error) {
-	server = &CMServer{}
+func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMServer, err error) {
+	server = &CMServer{
+		currentFOTAStatus: handler.GetFOTAStatus(),
+		currentSOTAStatus: handler.GetSOTAStatus(),
+		stopChannel:       make(chan bool, 1),
+		updatehandler:     handler,
+	}
 
 	if cfg.CMServerURL != "" {
 		var opts []grpc.ServerOption
@@ -77,6 +115,8 @@ func New(cfg *config.Config, insecure bool) (server *CMServer, err error) {
 
 		log.Debug("Start update scheduler grpc server")
 
+		server.clients = []pb.UpdateSchedulerService_SubscribeNotificationsServer{}
+
 		server.listener, err = net.Listen("tcp", cfg.CMServerURL)
 		if err != nil {
 			return server, aoserrors.Wrap(err)
@@ -84,6 +124,8 @@ func New(cfg *config.Config, insecure bool) (server *CMServer, err error) {
 
 		go server.grpcServer.Serve(server.listener)
 	}
+
+	go server.handleChannels()
 
 	return server, nil
 }
@@ -99,4 +141,122 @@ func (server *CMServer) Close() {
 	if server.listener != nil {
 		server.listener.Close()
 	}
+
+	server.clients = nil
+
+	server.stopChannel <- true
+}
+
+// SubscribeNotifications sunscribes on SOTA FOTA packages status changes
+func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer) (err error) {
+	log.Debug("New CM client subscribed to schedule update notification")
+
+	server.Lock()
+
+	// send current status of sota and fota packages
+	fotaNotification := pb.SchedulerNotifications{
+		SchedulerNotification: &pb.SchedulerNotifications_FotaStatus{FotaStatus: server.currentFOTAStatus.getPbStatus()},
+	}
+
+	if err = stream.Send(&fotaNotification); err != nil {
+		server.Unlock()
+
+		log.Error("Can't send FOTA notification: ", err)
+
+		return err
+	}
+
+	sotaNotification := pb.SchedulerNotifications{
+		SchedulerNotification: &pb.SchedulerNotifications_SotaStatus{SotaStatus: server.currentSOTAStatus.getPbStatus()},
+	}
+
+	if err := stream.Send(&sotaNotification); err != nil {
+		server.Unlock()
+
+		log.Error("Can't send SOTA notification: ", err)
+
+		return err
+	}
+
+	server.clients = append(server.clients, stream)
+
+	server.Unlock()
+
+	<-stream.Context().Done()
+
+	server.Lock()
+
+	for i, item := range server.clients {
+		if stream == item {
+			server.clients[i] = server.clients[len(server.clients)-1]
+			server.clients = server.clients[:len(server.clients)-1]
+
+			break
+		}
+	}
+
+	server.Unlock()
+
+	return nil
+}
+
+func (state UpdateState) String() string {
+	return [...]string{"no update", "downloading", "ready to update", "updating"}[state]
+}
+
+/***********************************************************************************************************************
+ * Private
+ **********************************************************************************************************************/
+
+func (server *CMServer) handleChannels() {
+	for {
+		notification := pb.SchedulerNotifications{}
+
+		select {
+		case fotaStatus := <-server.updatehandler.GetFOTAStatusChannel():
+			server.Lock()
+
+			server.currentFOTAStatus = fotaStatus
+
+			notification.SchedulerNotification = &pb.SchedulerNotifications_FotaStatus{FotaStatus: fotaStatus.getPbStatus()}
+
+			server.notifyAllClients(&notification)
+
+			server.Unlock()
+
+		case sotaStatus := <-server.updatehandler.GetSOTAStatusChannel():
+			server.Lock()
+
+			server.currentFOTAStatus = sotaStatus
+
+			notification.SchedulerNotification = &pb.SchedulerNotifications_SotaStatus{SotaStatus: sotaStatus.getPbStatus()}
+
+			server.notifyAllClients(&notification)
+
+			server.Unlock()
+
+		case <-server.stopChannel:
+			return
+		}
+	}
+}
+
+func (server *CMServer) notifyAllClients(notification *pb.SchedulerNotifications) {
+	for _, client := range server.clients {
+		if err := client.Send(notification); err != nil {
+			log.Error("Can't send notification: ", err)
+		}
+	}
+}
+
+func (updateStatus *UpdateStatus) getPbStatus() (pbStatus *pb.UpdateStatus) {
+	pbStatus = new(pb.UpdateStatus)
+
+	pbStatus.Error = updateStatus.Error
+
+	pbStatus.State = [...]pb.UpdateState{
+		pb.UpdateState_NO_UPDATE, pb.UpdateState_DOWNLOADING,
+		pb.UpdateState_READY_TO_UPDATE, pb.UpdateState_UPDATING}[updateStatus.State]
+
+	return pbStatus
 }
