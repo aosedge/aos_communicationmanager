@@ -127,6 +127,7 @@ type Config struct {
 	ServiceDiscoveryURL   string       `json:"serviceDiscoveryUrl"`
 	IAMServerURL          string       `json:"iamServerUrl"`
 	FileServerURL         string       `json:"fileServerUrl"`
+	CMServerURL           string       `json:"cmServerUrl"`
 	Downloader            Downloader   `json:"downloader"`
 	WorkingDir            string       `json:"workingDir"`
 	BoardConfigFile       string       `json:"boardConfigFile"`

@@ -44,6 +44,7 @@ const testConfigContent = `{
 	"serviceDiscoveryUrl" : "www.aos.com",
 	"iamServerUrl" : "localhost:8090",
 	"fileServerUrl":"localhost:8092",
+	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
 	"boardConfigFile" : "/var/aos/aos_board.cfg",
 	"downloader": {
@@ -301,6 +302,12 @@ func TestCertStorage(t *testing.T) {
 func TestFileServer(t *testing.T) {
 	if testCfg.FileServerURL != "localhost:8092" {
 		t.Errorf("Wrong file server URL value: %s", testCfg.FileServerURL)
+	}
+}
+
+func TestCMServer(t *testing.T) {
+	if testCfg.CMServerURL != "localhost:8094" {
+		t.Errorf("Wrong cm server URL value: %s", testCfg.CMServerURL)
 	}
 }
 
