@@ -278,7 +278,8 @@ func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err e
 }
 
 // UpdateComponents updates components
-func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (err error) {
+func (umCtrl *Controller) UpdateComponents(
+	components []cloudprotocol.ComponentInfoFromCloud) (status []cloudprotocol.ComponentInfo, err error) {
 	log.Debug("Update components")
 
 	currentState := umCtrl.fsm.Current()
@@ -287,7 +288,7 @@ func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentI
 		umCtrl.updateError = nil
 
 		if len(components) == 0 {
-			return nil
+			return umCtrl.currentComponents, nil
 		}
 
 		componentsUpdateInfo := []SystemComponent{}
@@ -323,7 +324,7 @@ func (umCtrl *Controller) UpdateComponents(components []cloudprotocol.ComponentI
 
 	umCtrl.updateFinishCond.Wait()
 
-	return umCtrl.updateError
+	return umCtrl.currentComponents, umCtrl.updateError
 }
 
 /***********************************************************************************************************************
