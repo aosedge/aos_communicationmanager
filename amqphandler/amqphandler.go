@@ -632,6 +632,14 @@ func (handler *AmqpHandler) decodeDesiredStatus(
 		return nil, err
 	}
 
+	if err = handler.decodeData(encodedStatus.FOTASchedule, &decodedStatus.FOTASchedule); err != nil {
+		return nil, err
+	}
+
+	if err = handler.decodeData(encodedStatus.SOTASchedule, &decodedStatus.SOTASchedule); err != nil {
+		return nil, err
+	}
+
 	return decodedStatus, nil
 }
 
