@@ -22,7 +22,6 @@ import (
 	"container/list"
 	"context"
 	"encoding/base64"
-	"errors"
 	"io/ioutil"
 	"os"
 	"path"
@@ -94,13 +93,6 @@ type AlertSender interface {
 	SendDownloadStatusAlert(downloadStatus alerts.DownloadStatus)
 }
 
-/*******************************************************************************
- * Vars
- ******************************************************************************/
-
-// ErrNotDownloaded returns when file can't be downloaded
-var ErrNotDownloaded = errors.New("can't download file from any source")
-
 /***********************************************************************************************************************
 * Public
 ***********************************************************************************************************************/
@@ -128,11 +120,11 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 	}
 
 	if downloader.downloadMountPoint, err = getMountPoint(downloader.config.DownloadDir); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if downloader.decryptMountPoint, err = getMountPoint(downloader.config.DecryptDir); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	return downloader, nil
@@ -161,7 +153,7 @@ func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInf
 	log.WithField("id", id).Debug("Download and decrypt")
 
 	if err = downloader.addToQueue(downloadResult); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	return downloadResult, nil
@@ -208,7 +200,7 @@ func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
 	// set initial value for free size variables
 	if len(downloader.currentDownloads) == 0 {
 		if err = downloader.initAvailableSize(); err != nil {
-			return err
+			return aoserrors.Wrap(err)
 		}
 	}
 
@@ -216,7 +208,7 @@ func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
 	// there is no space left. Otherwise, wait till other downloads finished and we will have more room to download.
 	if err = downloader.tryAllocateSpace(result); err != nil {
 		if len(downloader.currentDownloads) == 0 {
-			return err
+			return aoserrors.Wrap(err)
 		}
 
 		log.WithField("id", result.id).Debugf("Add download to wait queue due to: %s", err)
@@ -314,7 +306,7 @@ func (downloader *Downloader) initAvailableSize() (err error) {
 func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err error) {
 	requiredDownloadSize, err := downloader.getRequiredSize(result.downloadFileName, int64(result.packageInfo.Size))
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	availableSize := downloader.availableSize[downloader.downloadMountPoint]
@@ -344,7 +336,7 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 
 	requiredDecryptSize, err := downloader.getRequiredSize(result.decryptedFileName, int64(result.packageInfo.Size))
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	availableSize = downloader.availableSize[downloader.decryptMountPoint]
@@ -381,7 +373,7 @@ func (downloader *Downloader) tryFreeSpace(dir string, requiredSize int64) (free
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return 0, err
+		return 0, aoserrors.Wrap(err)
 	}
 
 	// Sort by modified time
@@ -457,7 +449,7 @@ func (downloader *Downloader) process(result *downloadResult) (err error) {
 
 	log.WithFields(log.Fields{"id": result.id}).Debug("Process download")
 
-	if err = downloader.downloadWithMaxTry(result); err != nil {
+	if err = downloader.downloadPackage(result); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -510,7 +502,7 @@ func (downloader *Downloader) handleWaitQueue() {
 	}
 }
 
-func (downloader *Downloader) downloadWithMaxTry(result *downloadResult) (err error) {
+func (downloader *Downloader) downloadPackage(result *downloadResult) (err error) {
 	if err = retryhelper.Retry(result.ctx,
 		func() (err error) {
 			fileSize, err := getFileSize(result.downloadFileName)
@@ -541,8 +533,8 @@ func (downloader *Downloader) downloadWithMaxTry(result *downloadResult) (err er
 		func(retryCount int, delay time.Duration, err error) {
 			log.WithFields(log.Fields{"id": result.id}).Debugf("Retry download in %s", delay)
 		},
-		downloader.config.RetryCount, downloader.config.RetryDelay.Duration, 0); err != nil {
-		return aoserrors.Wrap(ErrNotDownloaded)
+		0, downloader.config.RetryDelay.Duration, downloader.config.MaxRetryDelay.Duration); err != nil {
+		return aoserrors.New("can't download file from any source")
 	}
 
 	return nil
@@ -773,7 +765,7 @@ func getDirSize(path string) (size int64, err error) {
 			size += info.Size()
 		}
 
-		return err
+		return aoserrors.Wrap(err)
 	}); err != nil {
 		return 0, aoserrors.Wrap(err)
 	}

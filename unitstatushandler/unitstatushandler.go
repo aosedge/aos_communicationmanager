@@ -655,8 +655,7 @@ desiredLoop:
 				ctx, result, &desiredComponent, componentStatus); componentErr != nil {
 				componentErr = aoserrors.Wrap(componentErr)
 
-				if strings.Contains(componentErr.Error(), downloader.ErrNotDownloaded.Error()) ||
-					strings.Contains(componentErr.Error(), context.Canceled.Error()) {
+				if strings.Contains(componentErr.Error(), context.Canceled.Error()) {
 					log.WithField("id", componentStatus.ID).Errorf("Download component aborted: %s", componentErr)
 				} else {
 					componentStatus.Status = cloudprotocol.ErrorStatus
@@ -751,8 +750,7 @@ desiredLoop:
 			if layerErr := instance.installLayer(ctx, layerInfo, chains, certs, layerStatus); layerErr != nil {
 				layerErr = aoserrors.Wrap(layerErr)
 
-				if strings.Contains(layerErr.Error(), downloader.ErrNotDownloaded.Error()) ||
-					strings.Contains(layerErr.Error(), context.Canceled.Error()) {
+				if strings.Contains(layerErr.Error(), context.Canceled.Error()) {
 					log.WithFields(log.Fields{
 						"id":     layerStatus.ID,
 						"digest": layerStatus.Digest}).Errorf("Download layer aborted: %s", layerErr)
@@ -855,8 +853,7 @@ func (instance *Instance) updateServices(ctx context.Context, desiredServices []
 			if serviceErr := instance.installService(ctx, serviceInfo, chains, certs, serviceStatus); serviceErr != nil {
 				serviceErr = aoserrors.Wrap(serviceErr)
 
-				if strings.Contains(serviceErr.Error(), downloader.ErrNotDownloaded.Error()) ||
-					strings.Contains(serviceErr.Error(), context.Canceled.Error()) {
+				if strings.Contains(serviceErr.Error(), context.Canceled.Error()) {
 					log.WithFields(log.Fields{
 						"id": serviceStatus.ID}).Errorf("Download service aborted: %s", serviceErr)
 				} else {

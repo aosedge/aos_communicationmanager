@@ -97,8 +97,8 @@ type Downloader struct {
 	DownloadDir            string   `json:"downloadDir"`
 	DecryptDir             string   `json:"decryptDir"`
 	MaxConcurrentDownloads int      `json:"maxConcurrentDownloads"`
-	RetryCount             int      `json:"retryCount"`
 	RetryDelay             Duration `json:"retryDelay"`
+	MaxRetryDelay          Duration `json:"maxRetryDelay"`
 	DownloadPartLimit      int      `json:"downloadPartLimit"`
 }
 
@@ -157,8 +157,8 @@ func New(fileName string) (config *Config, err error) {
 			MaxOfflineMessages: 25},
 		Downloader: Downloader{
 			MaxConcurrentDownloads: 4,
-			RetryCount:             3,
 			RetryDelay:             Duration{1 * time.Minute},
+			MaxRetryDelay:          Duration{30 * time.Minute},
 			DownloadPartLimit:      100,
 		},
 	}

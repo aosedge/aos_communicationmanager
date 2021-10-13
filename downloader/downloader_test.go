@@ -149,7 +149,6 @@ func TestDownload(t *testing.T) {
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
-			RetryCount:             1,
 			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -203,7 +202,6 @@ func TestInterruptResumeDownload(t *testing.T) {
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
-			RetryCount:             1,
 			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -218,8 +216,8 @@ func TestInterruptResumeDownload(t *testing.T) {
 		t.Fatalf("Can't download and decrypt package: %s", err)
 	}
 
-	if err = result.Wait(); err == nil {
-		t.Error("Error expected")
+	if err = result.Wait(); err != nil {
+		t.Errorf("Download error: %s", err)
 	}
 
 	if alertsCnt.alertStarted != 1 {
@@ -232,14 +230,6 @@ func TestInterruptResumeDownload(t *testing.T) {
 
 	if alertsCnt.alertInterrupted == 0 {
 		t.Error("Download interrupted alert was not received")
-	}
-
-	if result, err = downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
-	}
-
-	if err = result.Wait(); err != nil {
-		t.Errorf("Download error: %s", err)
 	}
 
 	if alertsCnt.alertResumed == 0 {
@@ -278,15 +268,11 @@ func TestAvailableSize(t *testing.T) {
 	}
 	defer os.RemoveAll(fileName)
 
-	// Download more than half of the package in 10 second and kill the connection
-	killConnectionIn("localhost", 8001, 10*time.Second)
-
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
-			RetryCount:             1,
 			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -296,7 +282,11 @@ func TestAvailableSize(t *testing.T) {
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
 
-	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cancelDownloadIn(cancel, 10*time.Second)
+
+	result, err := downloadInstance.DownloadAndDecrypt(ctx, packageInfo, nil, nil)
 	if err != nil {
 		t.Fatalf("Can't download and decrypt package: %s", err)
 	}
@@ -339,15 +329,11 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	// Kill first connection and try resume from another server
-	killConnectionIn("localhost", 8001, 10*time.Second)
-
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
-			RetryCount:             1,
 			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -357,7 +343,12 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
 
-	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel first download and try resume from another server
+	cancelDownloadIn(cancel, 10*time.Second)
+
+	result, err := downloadInstance.DownloadAndDecrypt(ctx, packageInfo, nil, nil)
 	if err != nil {
 		t.Fatalf("Can't download and decrypt package: %s", err)
 	}
@@ -408,7 +399,6 @@ func TestConcurrentDownloads(t *testing.T) {
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 5,
-			RetryCount:             1,
 			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -479,7 +469,6 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 3,
-			RetryCount:             1,
 			DownloadPartLimit:      100,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -586,7 +575,6 @@ func TestDownloadPartLimit(t *testing.T) {
 			DownloadDir:            downloadDir,
 			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 3,
-			RetryCount:             1,
 			DownloadPartLimit:      downloadPartLimit,
 		},
 	}, &testCryptoContext{}, &testAlertSender{})
@@ -736,6 +724,16 @@ func cleanup() (err error) {
 	os.RemoveAll(tmpDir)
 
 	return nil
+}
+
+func cancelDownloadIn(cancel context.CancelFunc, delay time.Duration) {
+	go func() {
+		time.Sleep(delay)
+
+		log.Debug("Cancel download")
+
+		cancel()
+	}()
 }
 
 func killConnectionIn(host string, port int16, delay time.Duration) {
