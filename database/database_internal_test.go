@@ -18,6 +18,7 @@
 package database
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -137,6 +138,37 @@ func TestComponentsUpdateInfo(t *testing.T) {
 
 	if len(getUpdateInfo) != 0 {
 		t.Fatalf("Wrong count of update elements 0 != %d", len(getUpdateInfo))
+	}
+}
+
+func TestSotaFotaState(t *testing.T) {
+	fotaState := json.RawMessage("fotaState")
+	sotaState := json.RawMessage("sotaState")
+
+	if err := db.SetFirmwareUpdateState(fotaState); err != nil {
+		t.Fatal("Can't set FOTA state ", err)
+	}
+
+	if err := db.SetSoftwareUpdateState(sotaState); err != nil {
+		t.Fatal("Can't set SOTA state ", err)
+	}
+
+	retFota, err := db.GetFirmwareUpdateState()
+	if err != nil {
+		t.Fatal("Can't get FOTA state ", err)
+	}
+
+	if string(retFota) != string(fotaState) {
+		t.Errorf("Incorrect FOTA state %s", string(retFota))
+	}
+
+	retSota, err := db.GetSoftwareUpdateState()
+	if err != nil {
+		t.Fatal("Can't get SOTA state ", err)
+	}
+
+	if string(retSota) != string(sotaState) {
+		t.Errorf("Incorrect FOTA state %s", string(retSota))
 	}
 }
 

@@ -216,6 +216,82 @@ func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemC
 	return updateInfo, nil
 }
 
+// SetFirmwareUpdateState sets FOTA update state
+func (db *Database) SetFirmwareUpdateState(state json.RawMessage) (err error) {
+	result, err := db.sql.Exec("UPDATE config SET fotaUpdateState = ?", state)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if count == 0 {
+		return errNotExist
+	}
+
+	return nil
+}
+
+// GetFirmwareUpdateState returns FOTA update state
+func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) {
+	stmt, err := db.sql.Prepare("SELECT fotaUpdateState FROM config")
+	if err != nil {
+		return state, aoserrors.Wrap(err)
+	}
+	defer stmt.Close()
+
+	if err = stmt.QueryRow().Scan(&state); err != nil {
+		if err == sql.ErrNoRows {
+			return state, errNotExist
+		}
+
+		return state, aoserrors.Wrap(err)
+	}
+
+	return state, nil
+}
+
+// SetSoftwareUpdateState sets SOTA update state
+func (db *Database) SetSoftwareUpdateState(state json.RawMessage) (err error) {
+	result, err := db.sql.Exec("UPDATE config SET sotaUpdateState = ?", state)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if count == 0 {
+		return errNotExist
+	}
+
+	return nil
+}
+
+// GetSoftwareUpdateState returns SOTA update state
+func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) {
+	stmt, err := db.sql.Prepare("SELECT sotaUpdateState FROM config")
+	if err != nil {
+		return state, aoserrors.Wrap(err)
+	}
+	defer stmt.Close()
+
+	if err = stmt.QueryRow().Scan(&state); err != nil {
+		if err == sql.ErrNoRows {
+			return state, errNotExist
+		}
+
+		return state, aoserrors.Wrap(err)
+	}
+
+	return state, nil
+}
+
 // Close closes database
 func (db *Database) Close() {
 	db.sql.Close()
@@ -243,14 +319,18 @@ func (db *Database) createConfigTable() (err error) {
 	if _, err = db.sql.Exec(
 		`CREATE TABLE config (
 			cursor TEXT,
-			componentsUpdateInfo BLOB)`); err != nil {
+			componentsUpdateInfo BLOB,
+			fotaUpdateState BLOB,
+			sotaUpdateState BLOB)`); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	if _, err = db.sql.Exec(
 		`INSERT INTO config (
 			cursor,
-			componentsUpdateInfo) values(?, ?)`, "", ""); err != nil {
+			componentsUpdateInfo,
+			fotaUpdateState,
+			sotaUpdateState) values(?, ?, ?, ?)`, "", "", "", ""); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
