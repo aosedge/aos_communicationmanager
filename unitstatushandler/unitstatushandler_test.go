@@ -18,100 +18,28 @@
 package unitstatushandler_test
 
 import (
-	"context"
 	"encoding/json"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"
-	"aos_communicationmanager/downloader"
 	"aos_communicationmanager/unitstatushandler"
 )
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Consts
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 const waitStatusTimeout = 5 * time.Second
-
-/*******************************************************************************
- * Types
- ******************************************************************************/
-
-type testSender struct {
-	statusChannel chan cloudprotocol.UnitStatus
-}
-
-type testBoardConfigUpdater struct {
-	boardConfigInfo cloudprotocol.BoardConfigInfo
-	updateVersion   string
-	updateError     error
-}
-
-type testFirmwareUpdater struct {
-	componentsInfo []cloudprotocol.ComponentInfo
-	statusChannel  chan cloudprotocol.ComponentInfo
-	updateError    error
-}
-
-type testSoftwareUpdater struct {
-	servicesInfo []cloudprotocol.ServiceInfo
-	layersInfo   []cloudprotocol.LayerInfo
-	updateError  error
-}
-
-type testDownloader struct {
-}
-
-type testResult struct {
-	fileName string
-}
 
 /***********************************************************************************************************************
  * Vars
  **********************************************************************************************************************/
 
 var cfg = &config.Config{UnitStatusSendTimeout: config.Duration{Duration: 3 * time.Second}}
-var tmpDir string
-
-/***********************************************************************************************************************
- * Init
- **********************************************************************************************************************/
-
-func init() {
-	log.SetFormatter(&log.TextFormatter{
-		DisableTimestamp: false,
-		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
-	log.SetLevel(log.DebugLevel)
-	log.SetOutput(os.Stdout)
-}
-
-/***********************************************************************************************************************
- * Main
- **********************************************************************************************************************/
-func TestMain(m *testing.M) {
-	var err error
-
-	tmpDir, err = ioutil.TempDir("", "cm_")
-	if err != nil {
-		log.Fatalf("Can't create tmp dir: %s", tmpDir)
-	}
-
-	ret := m.Run()
-
-	if err = os.RemoveAll(tmpDir); err != nil {
-		log.Fatalf("Can't remove tmp dir: %s", tmpDir)
-	}
-
-	os.Exit(ret)
-}
 
 /***********************************************************************************************************************
  * Tests
@@ -139,13 +67,13 @@ func TestSendInitialStatus(t *testing.T) {
 		},
 	}
 
-	boardConfigUpdater := newTestBoardConfigUpdater(expectedUnitStatus.BoardConfig[0])
-	fotaUpdater := newTestFirmwareUpdater(expectedUnitStatus.Components)
-	sotaUpdater := newTestSoftwareUpdater(expectedUnitStatus.Services, expectedUnitStatus.Layers)
-	sender := newTestSender()
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(expectedUnitStatus.BoardConfig[0])
+	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(expectedUnitStatus.Components)
+	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(expectedUnitStatus.Layers, expectedUnitStatus.Services)
+	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, &testDownloader{}, sender)
+		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -155,7 +83,7 @@ func TestSendInitialStatus(t *testing.T) {
 		t.Fatalf("Can't set users: %s", err)
 	}
 
-	receivedUnitStatus, err := sender.waitForStatus(waitStatusTimeout)
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
@@ -166,14 +94,14 @@ func TestSendInitialStatus(t *testing.T) {
 }
 
 func TestUpdateBoardConfig(t *testing.T) {
-	boardConfigUpdater := newTestBoardConfigUpdater(
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
-	fotaUpdater := newTestFirmwareUpdater(nil)
-	sotaUpdater := newTestSoftwareUpdater(nil, nil)
-	sender := newTestSender()
+	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, &testDownloader{}, sender)
+		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -183,25 +111,25 @@ func TestUpdateBoardConfig(t *testing.T) {
 		t.Fatalf("Can't set users: %s", err)
 	}
 
-	if _, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	// success update
 
-	boardConfigUpdater.boardConfigInfo = cloudprotocol.BoardConfigInfo{VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus}
+	boardConfigUpdater.BoardConfigInfo = cloudprotocol.BoardConfigInfo{VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus}
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components:  []cloudprotocol.ComponentInfo{},
 		Layers:      []cloudprotocol.LayerInfo{},
 		Services:    []cloudprotocol.ServiceInfo{},
 	}
 
-	boardConfigUpdater.updateVersion = "1.1"
+	boardConfigUpdater.UpdateVersion = "1.1"
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")})
 
-	receivedUnitStatus, err := sender.waitForStatus(waitStatusTimeout)
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
@@ -212,16 +140,16 @@ func TestUpdateBoardConfig(t *testing.T) {
 
 	// failed update
 
-	boardConfigUpdater.updateVersion = "1.2"
-	boardConfigUpdater.updateError = aoserrors.New("some error occurs")
+	boardConfigUpdater.UpdateVersion = "1.2"
+	boardConfigUpdater.UpdateError = aoserrors.New("some error occurs")
 
-	boardConfigUpdater.boardConfigInfo = cloudprotocol.BoardConfigInfo{
-		VendorVersion: "1.2", Status: cloudprotocol.ErrorStatus, Error: boardConfigUpdater.updateError.Error()}
-	expectedUnitStatus.BoardConfig = append(expectedUnitStatus.BoardConfig, boardConfigUpdater.boardConfigInfo)
+	boardConfigUpdater.BoardConfigInfo = cloudprotocol.BoardConfigInfo{
+		VendorVersion: "1.2", Status: cloudprotocol.ErrorStatus, Error: boardConfigUpdater.UpdateError.Error()}
+	expectedUnitStatus.BoardConfig = append(expectedUnitStatus.BoardConfig, boardConfigUpdater.BoardConfigInfo)
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")})
 
-	if receivedUnitStatus, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
@@ -231,18 +159,18 @@ func TestUpdateBoardConfig(t *testing.T) {
 }
 
 func TestUpdateComponents(t *testing.T) {
-	boardConfigUpdater := newTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{
 		VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
-	firmwareUpdater := newTestFirmwareUpdater([]cloudprotocol.ComponentInfo{
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater([]cloudprotocol.ComponentInfo{
 		{ID: "comp0", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 		{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 		{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 	})
-	softwareUpdater := newTestSoftwareUpdater(nil, nil)
-	sender := newTestSender()
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(cfg,
-		boardConfigUpdater, firmwareUpdater, softwareUpdater, &testDownloader{}, sender)
+		boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -252,14 +180,14 @@ func TestUpdateComponents(t *testing.T) {
 		t.Fatalf("Can't set users: %s", err)
 	}
 
-	if _, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components: []cloudprotocol.ComponentInfo{
 			{ID: "comp0", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -276,7 +204,7 @@ func TestUpdateComponents(t *testing.T) {
 		},
 	})
 
-	receivedUnitStatus, err := sender.waitForStatus(waitStatusTimeout)
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
@@ -287,15 +215,15 @@ func TestUpdateComponents(t *testing.T) {
 
 	// failed update
 
-	firmwareUpdater.updateError = aoserrors.New("some error occurs")
+	firmwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components: []cloudprotocol.ComponentInfo{
 			{ID: "comp0", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp1", VendorVersion: "2.0", Status: cloudprotocol.ErrorStatus,
-				Error: firmwareUpdater.updateError.Error()},
+				Error: firmwareUpdater.UpdateError.Error()},
 			{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Layers:   []cloudprotocol.LayerInfo{},
@@ -307,7 +235,7 @@ func TestUpdateComponents(t *testing.T) {
 			{ID: "comp1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2.0"}},
 		}})
 
-	if receivedUnitStatus, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
@@ -317,18 +245,18 @@ func TestUpdateComponents(t *testing.T) {
 }
 
 func TestUpdateLayers(t *testing.T) {
-	boardConfigUpdater := newTestBoardConfigUpdater(
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
-	firmwareUpdater := newTestFirmwareUpdater(nil)
-	softwareUpdater := newTestSoftwareUpdater(nil, []cloudprotocol.LayerInfo{
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.LayerInfo{
 		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	})
-	sender := newTestSender()
+	}, nil)
+	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, &testDownloader{}, sender)
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -338,14 +266,14 @@ func TestUpdateLayers(t *testing.T) {
 		t.Fatalf("Can't set users: %s", err)
 	}
 
-	if _, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components:  []cloudprotocol.ComponentInfo{},
 		Layers: []cloudprotocol.LayerInfo{
 			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
@@ -364,7 +292,7 @@ func TestUpdateLayers(t *testing.T) {
 			{ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
 		}})
 
-	receivedUnitStatus, err := sender.waitForStatus(waitStatusTimeout)
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
@@ -375,18 +303,20 @@ func TestUpdateLayers(t *testing.T) {
 
 	// failed update
 
-	softwareUpdater.updateError = aoserrors.New("some error occurs")
+	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components:  []cloudprotocol.ComponentInfo{},
 		Layers: []cloudprotocol.LayerInfo{
 			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.ErrorStatus, Error: softwareUpdater.updateError.Error()},
+			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.ErrorStatus,
+				Error: softwareUpdater.UpdateError.Error()},
 			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer5", Digest: "digest5", AosVersion: 1, Status: cloudprotocol.ErrorStatus, Error: softwareUpdater.updateError.Error()},
+			{ID: "layer5", Digest: "digest5", AosVersion: 1, Status: cloudprotocol.ErrorStatus,
+				Error: softwareUpdater.UpdateError.Error()},
 		},
 		Services: []cloudprotocol.ServiceInfo{},
 	}
@@ -398,7 +328,7 @@ func TestUpdateLayers(t *testing.T) {
 			{ID: "layer5", Digest: "digest5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
 		}})
 
-	if receivedUnitStatus, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
@@ -408,18 +338,18 @@ func TestUpdateLayers(t *testing.T) {
 }
 
 func TestUpdateServices(t *testing.T) {
-	boardConfigUpdater := newTestBoardConfigUpdater(
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
-	firmwareUpdater := newTestFirmwareUpdater(nil)
-	softwareUpdater := newTestSoftwareUpdater([]cloudprotocol.ServiceInfo{
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, []cloudprotocol.ServiceInfo{
 		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}, nil)
-	sender := newTestSender()
+	})
+	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, &testDownloader{}, sender)
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -429,14 +359,14 @@ func TestUpdateServices(t *testing.T) {
 		t.Fatalf("Can't set users: %s", err)
 	}
 
-	if _, err = sender.waitForStatus(5 * time.Second); err != nil {
+	if _, err = sender.WaitForStatus(5 * time.Second); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components:  []cloudprotocol.ComponentInfo{},
 		Layers:      []cloudprotocol.LayerInfo{},
 		Services: []cloudprotocol.ServiceInfo{
@@ -454,7 +384,7 @@ func TestUpdateServices(t *testing.T) {
 			{ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
 		}})
 
-	receivedUnitStatus, err := sender.waitForStatus(waitStatusTimeout)
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
@@ -465,20 +395,22 @@ func TestUpdateServices(t *testing.T) {
 
 	// failed update
 
-	softwareUpdater.updateError = aoserrors.New("some error occurs")
+	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.boardConfigInfo},
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components:  []cloudprotocol.ComponentInfo{},
 		Layers:      []cloudprotocol.LayerInfo{},
 		Services: []cloudprotocol.ServiceInfo{
 			{ID: "service0", AosVersion: 0, Status: cloudprotocol.ErrorStatus,
-				Error: softwareUpdater.updateError.Error()},
+				Error: softwareUpdater.UpdateError.Error()},
 			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "service2", Status: cloudprotocol.RemovedStatus},
 			{ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "service3", AosVersion: 2, Status: cloudprotocol.ErrorStatus, Error: softwareUpdater.updateError.Error()},
-			{ID: "service4", AosVersion: 2, Status: cloudprotocol.ErrorStatus, Error: softwareUpdater.updateError.Error()},
+			{ID: "service3", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
+				Error: softwareUpdater.UpdateError.Error()},
+			{ID: "service4", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
+				Error: softwareUpdater.UpdateError.Error()},
 		},
 	}
 
@@ -489,7 +421,7 @@ func TestUpdateServices(t *testing.T) {
 			{ID: "service4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2}},
 		}})
 
-	if receivedUnitStatus, err = sender.waitForStatus(waitStatusTimeout); err != nil {
+	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
@@ -498,9 +430,9 @@ func TestUpdateServices(t *testing.T) {
 	}
 }
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Private
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 func compareStatus(len1, len2 int, compare func(index1, index2 int) bool) (err error) {
 	if len1 != len2 {
@@ -570,144 +502,4 @@ func compareUnitStatus(status1, status2 cloudprotocol.UnitStatus) (err error) {
 	}
 
 	return nil
-}
-
-/*******************************************************************************
- * testSender
- ******************************************************************************/
-
-func newTestSender() (sender *testSender) {
-	return &testSender{statusChannel: make(chan cloudprotocol.UnitStatus, 1)}
-}
-
-func (sender *testSender) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error) {
-	sender.statusChannel <- unitStatus
-
-	return nil
-}
-
-func (sender *testSender) waitForStatus(timeout time.Duration) (status cloudprotocol.UnitStatus, err error) {
-	select {
-	case receivedUnitStatus := <-sender.statusChannel:
-		return receivedUnitStatus, nil
-
-	case <-time.After(timeout):
-		return status, aoserrors.New("receive status timeout")
-	}
-}
-
-/*******************************************************************************
- * testBoardConfigUpdater
- ******************************************************************************/
-
-func newTestBoardConfigUpdater(boardConfigInfo cloudprotocol.BoardConfigInfo) (updater *testBoardConfigUpdater) {
-	return &testBoardConfigUpdater{boardConfigInfo: boardConfigInfo}
-}
-
-func (updater *testBoardConfigUpdater) GetStatus() (info cloudprotocol.BoardConfigInfo, err error) {
-	return updater.boardConfigInfo, nil
-}
-
-func (updater *testBoardConfigUpdater) CheckBoardConfig(configJSON json.RawMessage) (version string, err error) {
-	return updater.updateVersion, updater.updateError
-}
-
-func (updater *testBoardConfigUpdater) UpdateBoardConfig(configJSON json.RawMessage) (err error) {
-	return updater.updateError
-}
-
-/*******************************************************************************
- * testFirmwareUpdater
- ******************************************************************************/
-
-func newTestFirmwareUpdater(componentsInfo []cloudprotocol.ComponentInfo) (updater *testFirmwareUpdater) {
-	return &testFirmwareUpdater{componentsInfo: componentsInfo, statusChannel: make(chan cloudprotocol.ComponentInfo)}
-}
-
-func (updater *testFirmwareUpdater) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
-	return updater.componentsInfo, updater.updateError
-}
-
-func (updater *testFirmwareUpdater) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (err error) {
-	for _, component := range components {
-		componentInfo := cloudprotocol.ComponentInfo{
-			ID:            component.ID,
-			AosVersion:    component.AosVersion,
-			VendorVersion: component.VendorVersion,
-			Status:        cloudprotocol.InstalledStatus,
-		}
-
-		if updater.updateError != nil {
-			componentInfo.Status = cloudprotocol.ErrorStatus
-			componentInfo.Error = updater.updateError.Error()
-		}
-
-		updater.statusChannel <- componentInfo
-	}
-
-	return nil
-}
-
-func (updater *testFirmwareUpdater) StatusChannel() (statusChannel <-chan cloudprotocol.ComponentInfo) {
-	return updater.statusChannel
-}
-
-/*******************************************************************************
- * testSoftwareUpdater
- ******************************************************************************/
-
-func newTestSoftwareUpdater(servicesInfo []cloudprotocol.ServiceInfo,
-	layersInfo []cloudprotocol.LayerInfo) (updater *testSoftwareUpdater) {
-	return &testSoftwareUpdater{servicesInfo: servicesInfo, layersInfo: layersInfo}
-}
-
-func (updater *testSoftwareUpdater) SetUsers(users []string) (err error) {
-	return updater.updateError
-}
-
-func (updater *testSoftwareUpdater) GetStatus() (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
-	return updater.servicesInfo, updater.layersInfo, updater.updateError
-}
-
-func (updater *testSoftwareUpdater) InstallService(
-	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
-	return "", updater.updateError
-}
-
-func (updater *testSoftwareUpdater) RemoveService(serviceInfo cloudprotocol.ServiceInfo) (err error) {
-	return updater.updateError
-}
-
-func (updater *testSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error) {
-	return updater.updateError
-}
-
-func (updater *testSoftwareUpdater) RemoveLayer(layerInfo cloudprotocol.LayerInfo) (err error) {
-	return updater.updateError
-}
-
-/*******************************************************************************
- * testSoftwareUpdater
- ******************************************************************************/
-
-func (testDownloader *testDownloader) DownloadAndDecrypt(
-	ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result downloader.Result, err error) {
-
-	file, err := ioutil.TempFile(tmpDir, "*.dec")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	return &testResult{fileName: file.Name()}, nil
-}
-
-func (result *testResult) GetFileName() (fileName string) { return result.fileName }
-
-func (result *testResult) Wait() (err error) { return nil }
-
-func (result *testResult) Release() {
-	os.RemoveAll(result.fileName)
 }
