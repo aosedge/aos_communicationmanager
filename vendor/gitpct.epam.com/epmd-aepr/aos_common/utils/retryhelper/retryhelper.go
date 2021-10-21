@@ -47,7 +47,7 @@ func Retry(ctx context.Context, retryFunc func() error, retryCbk func(retryCount
 		}
 
 		if try < maxTry || maxTry == 0 {
-			if retryCbk != nil {
+			if ctx.Err() == nil && retryCbk != nil {
 				retryCbk(try, delay, err)
 			}
 
