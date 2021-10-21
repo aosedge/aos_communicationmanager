@@ -23,6 +23,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
+	"aos_communicationmanager/cmserver"
 	"aos_communicationmanager/config"
 	"aos_communicationmanager/downloader"
 )
@@ -61,9 +63,10 @@ type TestBoardConfigUpdater struct {
 }
 
 type TestFirmwareUpdater struct {
-	ComponentsInfo []cloudprotocol.ComponentInfo
-	UpdateError    error
-	statusChannel  chan cloudprotocol.ComponentInfo
+	UpdateTime           time.Duration
+	InitComponentsInfo   []cloudprotocol.ComponentInfo
+	UpdateComponentsInfo []cloudprotocol.ComponentInfo
+	UpdateError          error
 }
 
 type TestSoftwareUpdater struct {
@@ -83,6 +86,16 @@ type TestResult struct {
 	downloadTime time.Duration
 	fileName     string
 	err          error
+}
+
+type testStatusHandler struct {
+	downloadTime time.Duration
+	result       map[string]*downloadResult
+}
+
+type TestStorage struct {
+	sotaState json.RawMessage
+	fotaState json.RawMessage
 }
 
 /***********************************************************************************************************************
@@ -215,6 +228,389 @@ func TestDownload(t *testing.T) {
 	}
 }
 
+func TestFirmwareManager(t *testing.T) {
+	type testData struct {
+		testID                  string
+		initState               *firmwareManager
+		initStatus              *cmserver.UpdateStatus
+		desiredStatus           *cloudprotocol.DecodedDesiredStatus
+		downloadTime            time.Duration
+		downloadResult          map[string]*downloadResult
+		updateTime              time.Duration
+		updateComponentStatuses []cloudprotocol.ComponentInfo
+		boardConfigError        error
+		triggerUpdate           bool
+		updateWaitStatuses      []cmserver.UpdateStatus
+	}
+
+	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+		{
+			ID:                "comp1",
+			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "1.0"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+		},
+		{
+			ID:                "comp2",
+			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "2.0"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{2}},
+		},
+	}
+
+	otherUpdateComponents := []cloudprotocol.ComponentInfoFromCloud{
+		{
+			ID:                "comp3",
+			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "3.0"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+		},
+		{
+			ID:                "comp4",
+			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "4.0"},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
+		},
+	}
+
+	data := []testData{
+		{
+			testID:        "success update",
+			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID: {},
+				updateComponents[1].ID: {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID:        "download error",
+			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID: {Error: "download error"},
+				updateComponents[1].ID: {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"}},
+		},
+		{
+			testID:        "update error",
+			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID: {},
+				updateComponents[1].ID: {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.ErrorStatus, Error: "update error"},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate, Error: "update error"}},
+		},
+		{
+			testID: "continue download on startup",
+			initState: &firmwareManager{
+				CurrentState:  stateDownloading,
+				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
+			},
+			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID: {},
+				updateComponents[1].ID: {},
+			},
+			downloadTime: 1 * time.Second,
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID: "continue update on ready to update state",
+			initState: &firmwareManager{
+				CurrentState:  stateReadyToUpdate,
+				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
+				DownloadResult: map[string]*downloadResult{
+					updateComponents[0].ID: {},
+					updateComponents[1].ID: {},
+				},
+				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+					updateComponents[0].ID: {
+						ID:            updateComponents[0].ID,
+						VendorVersion: updateComponents[0].VendorVersion,
+					},
+					updateComponents[1].ID: {
+						ID:            updateComponents[1].ID,
+						VendorVersion: updateComponents[1].VendorVersion,
+					},
+				},
+			},
+			downloadTime: 1 * time.Second,
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID: "continue update on updating state",
+			initState: &firmwareManager{
+				CurrentState:  stateUpdating,
+				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
+				DownloadResult: map[string]*downloadResult{
+					updateComponents[0].ID: {},
+					updateComponents[1].ID: {},
+				},
+				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+					updateComponents[0].ID: {
+						ID:            updateComponents[0].ID,
+						VendorVersion: updateComponents[0].VendorVersion,
+					},
+					updateComponents[1].ID: {
+						ID:            updateComponents[1].ID,
+						VendorVersion: updateComponents[1].VendorVersion,
+					},
+				},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{{State: cmserver.NoUpdate}},
+		},
+		{
+			testID: "same update on ready to update state",
+			initState: &firmwareManager{
+				CurrentState: stateReadyToUpdate,
+				CurrentUpdate: &firmwareUpdate{
+					Schedule:   cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
+					Components: updateComponents},
+				DownloadResult: map[string]*downloadResult{
+					updateComponents[0].ID: {},
+					updateComponents[1].ID: {},
+				},
+				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+					updateComponents[0].ID: {
+						ID:            updateComponents[0].ID,
+						VendorVersion: updateComponents[0].VendorVersion,
+					},
+					updateComponents[1].ID: {
+						ID:            updateComponents[1].ID,
+						VendorVersion: updateComponents[1].VendorVersion,
+					},
+				},
+			},
+			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				Components:   updateComponents,
+				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			triggerUpdate:      true,
+			updateWaitStatuses: []cmserver.UpdateStatus{{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID: "new update on downloading state",
+			initState: &firmwareManager{
+				CurrentState:  stateDownloading,
+				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
+				DownloadResult: map[string]*downloadResult{
+					updateComponents[0].ID: {},
+					updateComponents[1].ID: {},
+				},
+			},
+			initStatus:    &cmserver.UpdateStatus{State: cmserver.Downloading},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: otherUpdateComponents},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID:      {},
+				updateComponents[1].ID:      {},
+				otherUpdateComponents[0].ID: {},
+				otherUpdateComponents[1].ID: {},
+			},
+			downloadTime: 1 * time.Second,
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp3", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp4", VendorVersion: "4.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.NoUpdate, Error: context.Canceled.Error()},
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate},
+			},
+		},
+		{
+			testID: "new update on ready to update state",
+			initState: &firmwareManager{
+				CurrentState: stateReadyToUpdate,
+				CurrentUpdate: &firmwareUpdate{
+					Schedule:   cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
+					Components: updateComponents},
+			},
+			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				Components:   otherUpdateComponents,
+				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
+			},
+			downloadResult: map[string]*downloadResult{
+				otherUpdateComponents[0].ID: {},
+				otherUpdateComponents[1].ID: {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp3", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp4", VendorVersion: "4.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.NoUpdate, Error: context.Canceled.Error()},
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+			},
+		},
+		{
+			testID: "new update on updating state",
+			initState: &firmwareManager{
+				CurrentState: stateUpdating,
+				CurrentUpdate: &firmwareUpdate{
+					Components: updateComponents,
+				},
+				DownloadResult: map[string]*downloadResult{
+					updateComponents[0].ID: {},
+					updateComponents[1].ID: {},
+				},
+				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+					updateComponents[0].ID: {
+						ID:            updateComponents[0].ID,
+						VendorVersion: updateComponents[0].VendorVersion,
+						Status:        cloudprotocol.InstallingStatus,
+					},
+					updateComponents[1].ID: {
+						ID:            updateComponents[1].ID,
+						VendorVersion: updateComponents[1].VendorVersion,
+						Status:        cloudprotocol.InstallingStatus,
+					},
+				},
+			},
+			initStatus:    &cmserver.UpdateStatus{State: cmserver.Updating},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: otherUpdateComponents},
+			downloadResult: map[string]*downloadResult{
+				otherUpdateComponents[0].ID: {},
+				otherUpdateComponents[1].ID: {},
+			},
+			downloadTime: 1 * time.Second,
+			updateTime:   1 * time.Second,
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp3", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp4", VendorVersion: "4.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.NoUpdate},
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate},
+			},
+		},
+		{
+			testID:        "update board config",
+			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID:           "error board config",
+			initStatus:       &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus:    &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
+			boardConfigError: errors.New("board config error"),
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "board config error"}},
+		},
+	}
+
+	firmwareUpdater := NewTestFirmwareUpdater(nil)
+	boardConfigUpdater := NewTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{})
+	statusHandler := newTestStatusHandler()
+	testStorage := NewTestStorage()
+
+	for _, item := range data {
+		t.Logf("Test item: %s", item.testID)
+
+		statusHandler.result = item.downloadResult
+		statusHandler.downloadTime = item.downloadTime
+		firmwareUpdater.UpdateComponentsInfo = item.updateComponentStatuses
+		firmwareUpdater.UpdateTime = item.updateTime
+		boardConfigUpdater.UpdateError = item.boardConfigError
+
+		if err := testStorage.saveFirmwareState(item.initState); err != nil {
+			t.Errorf("Can't save init state: %s", err)
+			continue
+		}
+
+		// Create firmware manager
+
+		firmwareManager, err := newFirmwareManager(statusHandler, firmwareUpdater, boardConfigUpdater, testStorage)
+		if err != nil {
+			t.Errorf("Can't create firmware manager: %s", err)
+			continue
+		}
+
+		// Check init status
+
+		if item.initStatus != nil {
+			if err = compareStatuses(*item.initStatus, firmwareManager.getCurrentStatus()); err != nil {
+				t.Errorf("Wrong init status: %s", err)
+			}
+		}
+
+		// Process desired status
+
+		if item.desiredStatus != nil {
+			if err = firmwareManager.processDesiredStatus(*item.desiredStatus); err != nil {
+				t.Errorf("Process desired status failed: %s", err)
+				goto close
+			}
+		}
+
+		// Trigger update
+
+		if item.triggerUpdate {
+			if err = firmwareManager.startUpdate(); err != nil {
+				t.Errorf("Start update failed: %s", err)
+			}
+		}
+
+		for _, expectedStatus := range item.updateWaitStatuses {
+			if err = waitForUpdateStatus(firmwareManager.statusChannel, expectedStatus); err != nil {
+				t.Errorf("Wait for update status error: %s", err)
+
+				if strings.Contains(err.Error(), "status timeout") {
+					goto close
+				}
+			}
+		}
+
+	close:
+		// Close firmware manager
+
+		if err = firmwareManager.close(); err != nil {
+			t.Errorf("Error closing firmware manager: %s", err)
+		}
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
@@ -272,35 +668,17 @@ func (updater *TestBoardConfigUpdater) UpdateBoardConfig(configJSON json.RawMess
  **********************************************************************************************************************/
 
 func NewTestFirmwareUpdater(componentsInfo []cloudprotocol.ComponentInfo) (updater *TestFirmwareUpdater) {
-	return &TestFirmwareUpdater{ComponentsInfo: componentsInfo, statusChannel: make(chan cloudprotocol.ComponentInfo)}
+	return &TestFirmwareUpdater{InitComponentsInfo: componentsInfo}
 }
 
 func (updater *TestFirmwareUpdater) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
-	return updater.ComponentsInfo, nil
+	return updater.InitComponentsInfo, nil
 }
 
-func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (err error) {
-	for _, component := range components {
-		componentInfo := cloudprotocol.ComponentInfo{
-			ID:            component.ID,
-			AosVersion:    component.AosVersion,
-			VendorVersion: component.VendorVersion,
-			Status:        cloudprotocol.InstalledStatus,
-		}
-
-		if updater.UpdateError != nil {
-			componentInfo.Status = cloudprotocol.ErrorStatus
-			componentInfo.Error = updater.UpdateError.Error()
-		}
-
-		updater.statusChannel <- componentInfo
-	}
-
-	return nil
-}
-
-func (updater *TestFirmwareUpdater) StatusChannel() (statusChannel <-chan cloudprotocol.ComponentInfo) {
-	return updater.statusChannel
+func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (
+	componentsInfo []cloudprotocol.ComponentInfo, err error) {
+	time.Sleep(updater.UpdateTime)
+	return updater.UpdateComponentsInfo, updater.UpdateError
 }
 
 /***********************************************************************************************************************
@@ -394,6 +772,109 @@ func (result *TestResult) Release() {
 }
 
 /***********************************************************************************************************************
+ * testFirmwareStatusHandler
+ **********************************************************************************************************************/
+
+func newTestStatusHandler() (statusHandler *testStatusHandler) {
+	return &testStatusHandler{}
+}
+
+func (statusHandler *testStatusHandler) download(
+	ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
+	continueOnError bool, updateStatus statusNotifier,
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult) {
+	for id := range request {
+		updateStatus(id, cloudprotocol.DownloadingStatus, "")
+	}
+
+	select {
+	case <-time.After(statusHandler.downloadTime):
+		if getDownloadError(statusHandler.result) != "" && !continueOnError {
+			for id := range request {
+				if statusHandler.result[id].Error == "" {
+					statusHandler.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
+				}
+			}
+		}
+
+		for id := range request {
+			if statusHandler.result[id].Error != "" {
+				updateStatus(id, cloudprotocol.ErrorStatus, statusHandler.result[id].Error)
+			} else {
+				updateStatus(id, cloudprotocol.DownloadedStatus, "")
+			}
+		}
+
+		return statusHandler.result
+
+	case <-ctx.Done():
+		for id := range request {
+			statusHandler.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
+			updateStatus(id, cloudprotocol.ErrorStatus, statusHandler.result[id].Error)
+		}
+
+		return result
+	}
+}
+
+func (statusHandler *testStatusHandler) updateComponentStatus(componentInfo cloudprotocol.ComponentInfo) {
+	log.WithFields(log.Fields{
+		"id":      componentInfo.ID,
+		"version": componentInfo.VendorVersion,
+		"status":  componentInfo.Status,
+		"error":   componentInfo.Error,
+	}).Debug("Update component status")
+}
+
+func (statusHandler *testStatusHandler) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigInfo) {
+	log.WithFields(log.Fields{
+		"version": boardConfigInfo.VendorVersion,
+		"status":  boardConfigInfo.Status,
+		"error":   boardConfigInfo.Error,
+	}).Debug("Update board config status")
+}
+
+/***********************************************************************************************************************
+ * testStorage
+ **********************************************************************************************************************/
+
+func NewTestStorage() (storage *TestStorage) {
+	return &TestStorage{}
+}
+
+func (storage *TestStorage) SetFirmwareUpdateState(state json.RawMessage) (err error) {
+	storage.fotaState = state
+	return nil
+}
+
+func (storage *TestStorage) GetFirmwareUpdateState() (state json.RawMessage, err error) {
+	return storage.fotaState, nil
+}
+
+func (storage *TestStorage) SetSoftwareUpdateState(state json.RawMessage) (err error) {
+	storage.sotaState = state
+	return nil
+}
+
+func (storage *TestStorage) GetSoftwareUpdateState() (state json.RawMessage, err error) {
+	return storage.sotaState, nil
+}
+
+func (storage *TestStorage) saveFirmwareState(state *firmwareManager) (err error) {
+	if state == nil {
+		storage.fotaState = nil
+
+		return nil
+	}
+
+	if storage.fotaState, err = json.Marshal(state); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+/***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
@@ -428,4 +909,35 @@ func checkDownloadResult(result map[string]*downloadResult, check map[string]int
 	}
 
 	return nil
+}
+
+func compareStatuses(expectedStatus, comparedStatus cmserver.UpdateStatus) (err error) {
+	if expectedStatus.State != comparedStatus.State {
+		return aoserrors.Errorf("wrong state: %s", comparedStatus.State)
+	}
+
+	if comparedStatus.Error == "" && expectedStatus.Error != "" ||
+		comparedStatus.Error != "" && expectedStatus.Error == "" {
+		return aoserrors.Errorf("wrong error: %s", comparedStatus.Error)
+	}
+
+	if !strings.Contains(comparedStatus.Error, expectedStatus.Error) {
+		return aoserrors.Errorf("wrong error: %s", comparedStatus.Error)
+	}
+
+	return nil
+}
+
+func waitForUpdateStatus(statusChannel <-chan cmserver.UpdateStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+	select {
+	case status := <-statusChannel:
+		if err = compareStatuses(expectedStatus, status); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		return nil
+
+	case <-time.After(waitStatusTimeout):
+		return aoserrors.Errorf("wait for %s status timeout", expectedStatus.State)
+	}
 }

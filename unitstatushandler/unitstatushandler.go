@@ -71,8 +71,8 @@ type BoardConfigUpdater interface {
 // FirmwareUpdater updates system components
 type FirmwareUpdater interface {
 	GetStatus() (componentsInfo []cloudprotocol.ComponentInfo, err error)
-	UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (err error)
-	StatusChannel() (statusChannel <-chan cloudprotocol.ComponentInfo)
+	UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (
+		status []cloudprotocol.ComponentInfo, err error)
 }
 
 // SoftwareUpdater updates services, layers
@@ -82,6 +82,14 @@ type SoftwareUpdater interface {
 	RemoveService(serviceInfo cloudprotocol.ServiceInfo) (err error)
 	InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error)
 	RemoveLayer(layerInfo cloudprotocol.LayerInfo) (err error)
+}
+
+// Storage used to store unit status handler states
+type Storage interface {
+	SetFirmwareUpdateState(state json.RawMessage) (err error)
+	GetFirmwareUpdateState() (state json.RawMessage, err error)
+	SetSoftwareUpdateState(state json.RawMessage) (err error)
+	GetSoftwareUpdateState() (state json.RawMessage, err error)
 }
 
 // Instance instance of unit status handler
@@ -152,8 +160,6 @@ func New(
 	instance.componentStatuses = make(map[string]*itemStatus)
 	instance.layerStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
-
-	go instance.handleComponentStatuses()
 
 	return instance, nil
 }
@@ -589,22 +595,6 @@ func (instance *Instance) updateBoardConfig(config json.RawMessage) (err error) 
 	return nil
 }
 
-func (instance *Instance) handleComponentStatuses() {
-	for {
-		select {
-		case componentInfo, ok := <-instance.firmwareUpdater.StatusChannel():
-			if !ok {
-				return
-			}
-
-			instance.updateComponentStatus(componentInfo)
-
-		case <-instance.ctx.Done():
-			return
-		}
-	}
-}
-
 func (instance *Instance) updateComponents(
 	ctx context.Context, desiredStatus cloudprotocol.DecodedDesiredStatus) (err error) {
 	var (
@@ -683,7 +673,7 @@ desiredLoop:
 	}
 
 	if len(updateComponents) != 0 {
-		if err = instance.firmwareUpdater.UpdateComponents(updateComponents); err != nil {
+		if _, err = instance.firmwareUpdater.UpdateComponents(updateComponents); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
