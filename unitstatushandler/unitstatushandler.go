@@ -63,6 +63,7 @@ type StatusSender interface {
 // BoardConfigUpdater updates board configuration
 type BoardConfigUpdater interface {
 	GetStatus() (boardConfigInfo cloudprotocol.BoardConfigInfo, err error)
+	GetBoardConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error)
 	CheckBoardConfig(configJSON json.RawMessage) (vendorVersion string, err error)
 	UpdateBoardConfig(configJSON json.RawMessage) (err error)
 }

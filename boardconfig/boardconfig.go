@@ -125,6 +125,17 @@ func (instance *Instance) GetStatus() (boardConfigInfo cloudprotocol.BoardConfig
 	return boardConfigInfo, nil
 }
 
+// GetBoardConfigVersion returns board config version
+func (instance *Instance) GetBoardConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error) {
+	boardConfig := BoardConfig{VendorVersion: "unknown"}
+
+	if err = json.Unmarshal(configJSON, &boardConfig); err != nil {
+		return boardConfig.VendorVersion, aoserrors.Wrap(err)
+	}
+
+	return boardConfig.VendorVersion, nil
+}
+
 // CheckBoardConfig checks board config
 func (instance *Instance) CheckBoardConfig(configJSON json.RawMessage) (vendorVersion string, err error) {
 	instance.Lock()
