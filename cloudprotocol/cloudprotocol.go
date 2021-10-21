@@ -428,7 +428,7 @@ type LayerInfoFromCloud struct {
 // ComponentInfoFromCloud decrypted component info
 type ComponentInfoFromCloud struct {
 	ID          string          `json:"id"`
-	Annotations json.RawMessage `json:"annotations"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
 	VersionFromCloud
 	DecryptDataStruct
 }
