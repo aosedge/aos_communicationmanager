@@ -611,6 +611,219 @@ func TestFirmwareManager(t *testing.T) {
 	}
 }
 
+func TestSoftwareManager(t *testing.T) {
+	type testData struct {
+		testID             string
+		initState          *softwareManager
+		initStatus         *cmserver.UpdateStatus
+		desiredStatus      *cloudprotocol.DecodedDesiredStatus
+		downloadTime       time.Duration
+		downloadResult     map[string]*downloadResult
+		triggerUpdate      bool
+		updateError        error
+		updateWaitStatuses []cmserver.UpdateStatus
+	}
+
+	updateLayers := []cloudprotocol.LayerInfoFromCloud{
+		{
+			ID:               "layer1",
+			Digest:           "digest1",
+			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+		},
+		{
+			ID:               "layer2",
+			Digest:           "digest2",
+			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+		},
+	}
+
+	updateServices := []cloudprotocol.ServiceInfoFromCloud{
+		{
+			ID:               "service1",
+			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+		},
+		{
+			ID:               "service2",
+			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+		},
+	}
+
+	data := []testData{
+		{
+			testID:     "success update",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				Layers: updateLayers, Services: updateServices,
+			},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
+				updateServices[0].ID: {}, updateServices[1].ID: {}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID:     "one item download error",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				Layers: updateLayers, Services: updateServices,
+			},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {}, updateLayers[1].Digest: {Error: "download error"},
+				updateServices[0].ID: {}, updateServices[1].ID: {}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate, Error: "download error"},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID:     "all items download error",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				Layers: updateLayers, Services: updateServices,
+			},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {Error: "download error"}, updateLayers[1].Digest: {Error: "download error"},
+				updateServices[0].ID: {Error: "download error"}, updateServices[1].ID: {Error: "download error"}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"}},
+		},
+		{
+			testID:     "update error",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				Layers: updateLayers, Services: updateServices,
+			},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
+				updateServices[0].ID: {}, updateServices[1].ID: {}},
+			updateError: errors.New("update error"),
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate, Error: "update error"}},
+		},
+		{
+			testID: "continue download on startup",
+			initState: &softwareManager{
+				CurrentState: stateDownloading,
+				CurrentUpdate: &softwareUpdate{
+					InstallLayers: updateLayers, InstallServices: updateServices},
+			},
+			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
+				updateServices[0].ID: {}, updateServices[1].ID: {}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+		{
+			testID: "continue update on ready to update state",
+			initState: &softwareManager{
+				CurrentState: stateReadyToUpdate,
+				CurrentUpdate: &softwareUpdate{
+					InstallLayers: updateLayers, InstallServices: updateServices},
+				DownloadResult: map[string]*downloadResult{
+					updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
+					updateServices[0].ID: {}, updateServices[1].ID: {}},
+				LayerStatuses: map[string]*cloudprotocol.LayerInfo{
+					updateLayers[0].Digest: {
+						ID:         updateLayers[0].ID,
+						Digest:     updateLayers[0].Digest,
+						AosVersion: updateLayers[0].AosVersion,
+						Status:     cloudprotocol.InstallingStatus,
+					},
+					updateLayers[1].Digest: {
+						ID:         updateLayers[1].ID,
+						Digest:     updateLayers[1].Digest,
+						AosVersion: updateLayers[1].AosVersion,
+						Status:     cloudprotocol.InstallingStatus,
+					},
+				},
+				ServiceStatuses: map[string]*cloudprotocol.ServiceInfo{
+					updateServices[0].ID: {
+						ID:         updateServices[0].ID,
+						AosVersion: updateServices[0].AosVersion,
+						Status:     cloudprotocol.InstallingStatus,
+					},
+					updateServices[1].ID: {
+						ID:         updateServices[1].ID,
+						AosVersion: updateServices[1].AosVersion,
+						Status:     cloudprotocol.InstallingStatus,
+					},
+				},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
+	}
+
+	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
+	statusHandler := newTestStatusHandler()
+	testStorage := NewTestStorage()
+
+	for _, item := range data {
+		t.Logf("Test item: %s", item.testID)
+
+		statusHandler.result = item.downloadResult
+		statusHandler.downloadTime = item.downloadTime
+		softwareUpdater.UpdateError = item.updateError
+
+		if err := testStorage.saveSoftwareState(item.initState); err != nil {
+			t.Errorf("Can't save init state: %s", err)
+			continue
+		}
+
+		// Create software manager
+
+		softwareManager, err := newSoftwareManager(statusHandler, softwareUpdater, testStorage)
+		if err != nil {
+			t.Errorf("Can't create software manager: %s", err)
+			continue
+		}
+
+		// Check init status
+
+		if item.initStatus != nil {
+			if err = compareStatuses(*item.initStatus, softwareManager.getCurrentStatus()); err != nil {
+				t.Errorf("Wrong init status: %s", err)
+			}
+		}
+
+		// Process desired status
+
+		if item.desiredStatus != nil {
+			if err = softwareManager.processDesiredStatus(*item.desiredStatus); err != nil {
+				t.Errorf("Process desired status failed: %s", err)
+				goto close
+			}
+		}
+
+		// Trigger update
+
+		if item.triggerUpdate {
+			if err = softwareManager.startUpdate(); err != nil {
+				t.Errorf("Start update failed: %s", err)
+			}
+		}
+
+		for _, expectedStatus := range item.updateWaitStatuses {
+			if err = waitForUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
+				t.Errorf("Wait for update status error: %s", err)
+
+				if strings.Contains(err.Error(), "status timeout") {
+					goto close
+				}
+			}
+		}
+
+	close:
+		// Close software manager
+
+		if err = softwareManager.close(); err != nil {
+			t.Errorf("Error closing firmware manager: %s", err)
+		}
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
@@ -834,6 +1047,26 @@ func (statusHandler *testStatusHandler) updateBoardConfigStatus(boardConfigInfo 
 	}).Debug("Update board config status")
 }
 
+func (statusHandler *testStatusHandler) updateLayerStatus(layerInfo cloudprotocol.LayerInfo) {
+	log.WithFields(log.Fields{
+		"id":      layerInfo.ID,
+		"digest":  layerInfo.Digest,
+		"version": layerInfo.AosVersion,
+		"status":  layerInfo.Status,
+		"error":   layerInfo.Error,
+	}).Debug("Update layer status")
+}
+
+func (statusHandler *testStatusHandler) updateServiceStatus(serviceInfo cloudprotocol.ServiceInfo) {
+	log.WithFields(log.Fields{
+		"id":            serviceInfo.ID,
+		"version":       serviceInfo.AosVersion,
+		"stateChecksum": serviceInfo.StateChecksum,
+		"status":        serviceInfo.Status,
+		"error":         serviceInfo.Error,
+	}).Debug("Update service status")
+}
+
 /***********************************************************************************************************************
  * testStorage
  **********************************************************************************************************************/
@@ -868,6 +1101,20 @@ func (storage *TestStorage) saveFirmwareState(state *firmwareManager) (err error
 	}
 
 	if storage.fotaState, err = json.Marshal(state); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (storage *TestStorage) saveSoftwareState(state *softwareManager) (err error) {
+	if state == nil {
+		storage.sotaState = nil
+
+		return nil
+	}
+
+	if storage.sotaState, err = json.Marshal(state); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
