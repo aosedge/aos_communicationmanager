@@ -73,7 +73,8 @@ func TestSendInitialStatus(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(), sender)
+		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -101,11 +102,14 @@ func TestUpdateBoardConfig(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(), sender)
+		cfg, boardConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
 
 	if err = statusHandler.SendUnitStatus(); err != nil {
 		t.Fatalf("Can't set users: %s", err)
@@ -170,11 +174,14 @@ func TestUpdateComponents(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(cfg,
-		boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(), sender)
+		boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
 
 	if err = statusHandler.SendUnitStatus(); err != nil {
 		t.Fatalf("Can't set users: %s", err)
@@ -196,6 +203,8 @@ func TestUpdateComponents(t *testing.T) {
 		Layers:   []cloudprotocol.LayerInfo{},
 		Services: []cloudprotocol.ServiceInfo{},
 	}
+
+	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Components: []cloudprotocol.ComponentInfoFromCloud{
@@ -230,6 +239,8 @@ func TestUpdateComponents(t *testing.T) {
 		Services: []cloudprotocol.ServiceInfo{},
 	}
 
+	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
+
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Components: []cloudprotocol.ComponentInfoFromCloud{
 			{ID: "comp1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2.0"}},
@@ -256,11 +267,14 @@ func TestUpdateLayers(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(), sender)
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
 
 	if err = statusHandler.SendUnitStatus(); err != nil {
 		t.Fatalf("Can't set users: %s", err)
@@ -287,9 +301,17 @@ func TestUpdateLayers(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Layers: []cloudprotocol.LayerInfoFromCloud{
-			{ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0}},
-			{ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
-			{ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
+			{
+				ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+			},
+			{
+				ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+			},
+			{
+				ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}}},
 		}})
 
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
@@ -300,6 +322,8 @@ func TestUpdateLayers(t *testing.T) {
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
+
+	softwareUpdater.LayersInfo = expectedUnitStatus.Layers
 
 	// failed update
 
@@ -323,9 +347,18 @@ func TestUpdateLayers(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Layers: []cloudprotocol.LayerInfoFromCloud{
-			{ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
-			{ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
-			{ID: "layer5", Digest: "digest5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
+			{
+				ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+			},
+			{
+				ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
+			},
+			{
+				ID: "layer5", Digest: "digest5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{5}},
+			},
 		}})
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
@@ -349,11 +382,14 @@ func TestUpdateServices(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(), sender)
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
 
 	if err = statusHandler.SendUnitStatus(); err != nil {
 		t.Fatalf("Can't set users: %s", err)
@@ -379,9 +415,18 @@ func TestUpdateServices(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Services: []cloudprotocol.ServiceInfoFromCloud{
-			{ID: "service0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0}},
-			{ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
-			{ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
+			{
+				ID: "service0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{0}},
+			},
+			{
+				ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+			},
+			{
+				ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+			},
 		}})
 
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
@@ -395,6 +440,7 @@ func TestUpdateServices(t *testing.T) {
 
 	// failed update
 
+	softwareUpdater.ServicesInfo = expectedUnitStatus.Services
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
@@ -416,9 +462,18 @@ func TestUpdateServices(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Services: []cloudprotocol.ServiceInfoFromCloud{
-			{ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1}},
-			{ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2}},
-			{ID: "service4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2}},
+			{
+				ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+			},
+			{
+				ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+			},
+			{
+				ID: "service4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
+			},
 		}})
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
@@ -502,4 +557,21 @@ func compareUnitStatus(status1, status2 cloudprotocol.UnitStatus) (err error) {
 	}
 
 	return nil
+}
+
+func handleUpdateStatus(handler *unitstatushandler.Instance) {
+	for {
+		select {
+		case _, ok := <-handler.GetFOTAStatusChannel():
+			if !ok {
+				return
+			}
+
+		case _, ok := <-handler.GetSOTAStatusChannel():
+			if !ok {
+				return
+			}
+
+		}
+	}
 }

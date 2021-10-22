@@ -147,7 +147,7 @@ func TestDownload(t *testing.T) {
 
 	statusHandler, err := New(&config.Config{},
 		NewTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{}), NewTestFirmwareUpdater(nil),
-		NewTestSoftwareUpdater(nil, nil), testDownloader, NewTestSender())
+		NewTestSoftwareUpdater(nil, nil), testDownloader, NewTestStorage(), NewTestSender())
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}

@@ -38,6 +38,7 @@ import (
 	amqp "aos_communicationmanager/amqphandler"
 	"aos_communicationmanager/boardconfig"
 	"aos_communicationmanager/cloudprotocol"
+	"aos_communicationmanager/cmserver"
 	"aos_communicationmanager/config"
 	"aos_communicationmanager/database"
 	"aos_communicationmanager/downloader"
@@ -76,6 +77,7 @@ type communicationManager struct {
 	umController  *umcontroller.Controller
 	boardConfig   *boardconfig.Instance
 	statusHandler *unitstatushandler.Instance
+	cmServer      *cmserver.CMServer
 }
 
 type journalHook struct {
@@ -181,7 +183,12 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 
 	// Create unit status handler
 	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.boardConfig, cm.umController, cm.smController,
-		cm.downloader, cm.amqp); err != nil {
+		cm.downloader, cm.db, cm.amqp); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	// Create CM server
+	if cm.cmServer, err = cmserver.New(cfg, cm.statusHandler, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -189,6 +196,11 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 }
 
 func (cm *communicationManager) close() {
+	// Close CM server
+	if cm.cmServer != nil {
+		cm.cmServer.Close()
+	}
+
 	// Close unit status handler
 	if cm.statusHandler != nil {
 		cm.statusHandler.Close()
