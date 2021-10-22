@@ -227,7 +227,11 @@ func (server *CMServer) handleChannels() {
 		notification := pb.SchedulerNotifications{}
 
 		select {
-		case fotaStatus := <-server.updatehandler.GetFOTAStatusChannel():
+		case fotaStatus, ok := <-server.updatehandler.GetFOTAStatusChannel():
+			if !ok {
+				break
+			}
+
 			server.Lock()
 
 			server.currentFOTAStatus = fotaStatus
@@ -238,7 +242,11 @@ func (server *CMServer) handleChannels() {
 
 			server.Unlock()
 
-		case sotaStatus := <-server.updatehandler.GetSOTAStatusChannel():
+		case sotaStatus, ok := <-server.updatehandler.GetSOTAStatusChannel():
+			if !ok {
+				break
+			}
+
 			server.Lock()
 
 			server.currentFOTAStatus = sotaStatus
