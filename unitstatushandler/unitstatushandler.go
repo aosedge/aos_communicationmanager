@@ -20,6 +20,9 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
+	"io/ioutil"
+	"os"
+	"path"
 	"strconv"
 	"sync"
 	"time"
@@ -101,6 +104,8 @@ type Instance struct {
 
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
+
+	decryptDir string
 }
 
 type statusDescriptor struct {
@@ -128,6 +133,7 @@ func New(
 		statusSender:     statusSender,
 		downloader:       downloader,
 		sendStatusPeriod: cfg.UnitStatusSendTimeout.Duration,
+		decryptDir:       cfg.Downloader.DecryptDir,
 	}
 
 	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
@@ -181,6 +187,14 @@ func (instance *Instance) Close() (err error) {
 func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) {
 	instance.Lock()
 	defer instance.Unlock()
+
+	if instance.firmwareManager.getCurrentStatus().State == cmserver.NoUpdate &&
+		instance.softwareManager.getCurrentStatus().State == cmserver.NoUpdate &&
+		instance.decryptDir != "" {
+		if err := instance.clearDecryptDir(); err != nil {
+			log.Errorf("Error clearing decrypt dir: %s", err)
+		}
+	}
 
 	if err := instance.firmwareManager.processDesiredStatus(desiredStatus); err != nil {
 		log.Errorf("Error processing firmware desired status: %s", err)
@@ -492,4 +506,23 @@ func (instance *Instance) sendCurrentStatus() {
 		instance.statusTimer.Stop()
 		instance.statusTimer = nil
 	}
+}
+
+func (instance *Instance) clearDecryptDir() (err error) {
+	files, err := ioutil.ReadDir(instance.decryptDir)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, file := range files {
+		fileName := path.Join(instance.decryptDir, file.Name())
+
+		log.WithFields(log.Fields{"file": fileName}).Debug("Remove outdated decrypt file")
+
+		if err = os.RemoveAll(fileName); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
 }
