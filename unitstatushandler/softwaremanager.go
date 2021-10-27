@@ -533,7 +533,12 @@ func (manager *softwareManager) newUpdate(schedule cloudprotocol.ScheduleRule,
 	case "":
 		update.Schedule.Type = cloudprotocol.ForceUpdate
 
-	case cloudprotocol.ForceUpdate, cloudprotocol.TimetableUpdate, cloudprotocol.TriggerUpdate:
+	case cloudprotocol.TimetableUpdate:
+		if err = validateTimetable(update.Schedule.Timetable); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case cloudprotocol.ForceUpdate, cloudprotocol.TriggerUpdate:
 
 	default:
 		return aoserrors.New("wrong update type")

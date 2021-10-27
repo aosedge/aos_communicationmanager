@@ -269,6 +269,21 @@ func TestFirmwareManager(t *testing.T) {
 		},
 	}
 
+	updateTimeSlots := []cloudprotocol.TimeSlot{{
+		Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+		Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 23, 59, 59, 999999, time.Local)},
+	}}
+
+	updateTimetable := []cloudprotocol.TimetableEntry{
+		{DayOfWeek: 1, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 2, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 3, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 4, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 5, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 6, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 7, TimeSlots: updateTimeSlots},
+	}
+
 	data := []testData{
 		{
 			testID:        "success update",
@@ -538,6 +553,27 @@ func TestFirmwareManager(t *testing.T) {
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "board config error"}},
 		},
+		{
+			testID:     "timetable update",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				FOTASchedule: cloudprotocol.ScheduleRule{
+					Type:      cloudprotocol.TimetableUpdate,
+					Timetable: updateTimetable,
+				},
+				Components: updateComponents},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID: {},
+				updateComponents[1].ID: {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
 	}
 
 	firmwareUpdater := NewTestFirmwareUpdater(nil)
@@ -648,6 +684,21 @@ func TestSoftwareManager(t *testing.T) {
 		},
 	}
 
+	updateTimeSlots := []cloudprotocol.TimeSlot{{
+		Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+		Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 23, 59, 59, 999999, time.Local)},
+	}}
+
+	updateTimetable := []cloudprotocol.TimetableEntry{
+		{DayOfWeek: 1, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 2, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 3, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 4, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 5, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 6, TimeSlots: updateTimeSlots},
+		{DayOfWeek: 7, TimeSlots: updateTimeSlots},
+	}
+
 	data := []testData{
 		{
 			testID:     "success update",
@@ -754,6 +805,23 @@ func TestSoftwareManager(t *testing.T) {
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
 		},
+		{
+			testID:     "timetable update",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				SOTASchedule: cloudprotocol.ScheduleRule{
+					Type:      cloudprotocol.TimetableUpdate,
+					Timetable: updateTimetable,
+				},
+				Layers: updateLayers, Services: updateServices,
+			},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
+				updateServices[0].ID: {}, updateServices[1].ID: {}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+		},
 	}
 
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
@@ -820,6 +888,202 @@ func TestSoftwareManager(t *testing.T) {
 
 		if err = softwareManager.close(); err != nil {
 			t.Errorf("Error closing firmware manager: %s", err)
+		}
+	}
+}
+
+func TestTimeTable(t *testing.T) {
+	type testData struct {
+		fromDate  time.Time
+		timetable []cloudprotocol.TimetableEntry
+		result    time.Duration
+		err       error
+	}
+
+	data := []testData{
+		{
+			timetable: []cloudprotocol.TimetableEntry{},
+			err:       errors.New("timetable is empty"),
+		},
+		{
+			timetable: []cloudprotocol.TimetableEntry{{DayOfWeek: 0}},
+			err:       errors.New("invalid day of week value"),
+		},
+		{
+			timetable: []cloudprotocol.TimetableEntry{{DayOfWeek: 1}},
+			err:       errors.New("no time slots"),
+		},
+		{
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 2, 0, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			err: errors.New("start value should contain only time"),
+		},
+		{
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 2, 0, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			err: errors.New("finish value should contain only time"),
+		},
+		{
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 1, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			err: errors.New("start value should be before finish value"),
+		},
+		{
+			fromDate: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local),
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			result: 0,
+		},
+		{
+			fromDate: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local),
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+						},
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 14, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+				{
+					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 16, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 18, 0, 0, 0, time.Local)},
+						},
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 20, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 22, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+				{
+					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			result: 10 * time.Hour,
+		},
+		{
+			fromDate: time.Date(1, 1, 5, 10, 0, 0, 0, time.Local),
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+						},
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 14, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+				{
+					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 16, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 18, 0, 0, 0, time.Local)},
+						},
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 20, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 22, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+				{
+					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+				{
+					DayOfWeek: 4, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+				{
+					DayOfWeek: 5, TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			result: 70 * time.Hour,
+		},
+	}
+
+	for i, item := range data {
+		t.Logf("Item: %d", i)
+
+		availableTime, err := getAvailableTimetableTime(item.fromDate, item.timetable)
+		if err != nil {
+			if item.err == nil {
+				t.Errorf("Can't get available timetable time: %s", err)
+				continue
+			}
+
+			if !strings.Contains(err.Error(), item.err.Error()) {
+				t.Errorf("Wrong error: %s", err)
+			}
+
+			continue
+		}
+
+		if item.err != nil {
+			t.Errorf("Error expected")
+			continue
+		}
+
+		if availableTime != item.result {
+			t.Errorf("Wrong available time: %v", availableTime)
 		}
 	}
 }

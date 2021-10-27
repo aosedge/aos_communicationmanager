@@ -20,6 +20,7 @@ package unitstatushandler
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
@@ -58,6 +59,8 @@ type updateStateMachine struct {
 	fsm        *fsm.FSM
 	wg         sync.WaitGroup
 	cancelFunc context.CancelFunc
+
+	updateTimer *time.Timer
 }
 
 type updateManager interface {
@@ -132,20 +135,30 @@ func (stateMachine *updateStateMachine) sendEvent(event string, managerErr strin
 }
 
 func (stateMachine *updateStateMachine) scheduleUpdate(schedule cloudprotocol.ScheduleRule) {
+	var updateTime time.Duration
+
 	switch schedule.Type {
 	case cloudprotocol.TriggerUpdate:
 		log.Debug("Wait for update trigger")
+		return
 
 	case cloudprotocol.TimetableUpdate:
-		// TODO
+		updateTime, _ = getAvailableTimetableTime(time.Now(), schedule.Timetable)
+
+		log.WithFields(log.Fields{"in": updateTime}).Debug("Schedule timetable update")
 
 	default:
-		go func() {
-			if err := stateMachine.manager.startUpdate(); err != nil {
-				log.Errorf("Can't start update: %s", err)
-			}
-		}()
+		// Schedule forces update by default
+		updateTime = 0
+
+		log.WithFields(log.Fields{"in": updateTime}).Debug("Schedule forced update")
 	}
+
+	stateMachine.updateTimer = time.AfterFunc(updateTime, func() {
+		if err := stateMachine.manager.startUpdate(); err != nil {
+			log.Errorf("Can't start update: %s", err)
+		}
+	})
 }
 
 func (stateMachine *updateStateMachine) finishOperation(ctx context.Context, finishEvent string, operationErr string) {
@@ -198,6 +211,12 @@ func (stateMachine *updateStateMachine) onBeforeEvent(event *fsm.Event) {
 }
 
 func (stateMachine *updateStateMachine) onStateNoUpdate(event *fsm.Event) {
+	// Reset update timer
+	if stateMachine.updateTimer != nil {
+		stateMachine.updateTimer.Stop()
+		stateMachine.updateTimer = nil
+	}
+
 	stateMachine.manager.noUpdate()
 }
 
