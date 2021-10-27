@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+
 	"aos_communicationmanager/config"
 )
 
@@ -433,10 +435,15 @@ type ComponentInfoFromCloud struct {
 	DecryptDataStruct
 }
 
+// Time represents time in format "00:00:00"
+type Time struct {
+	time.Time
+}
+
 // TimeSlot time slot with start and finish time
 type TimeSlot struct {
-	Start  string `json:"start"`
-	Finish string `json:"finish"`
+	Start  Time `json:"start"`
+	Finish Time `json:"finish"`
 }
 
 // TimetableEntry entry for update timetable
@@ -585,4 +592,30 @@ func (layer LayerInfoFromCloud) String() string {
 func (component ComponentInfoFromCloud) String() string {
 	return fmt.Sprintf("{id: %s, annotations: %s, vendorVersion: %s aosVersion: %d, description: %s}",
 		component.ID, component.Annotations, component.VendorVersion, component.AosVersion, component.Description)
+}
+
+// MarshalJSON marshals JSON Time type
+func (t Time) MarshalJSON() (b []byte, err error) {
+	return json.Marshal(t.Format("15:04:05"))
+}
+
+// UnmarshalJSON unmarshals JSON Time type
+func (t *Time) UnmarshalJSON(b []byte) (err error) {
+	var v interface{}
+
+	if err := json.Unmarshal(b, &v); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	switch value := v.(type) {
+	case string:
+		if t.Time, err = time.Parse("15:04:05", value); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		return nil
+
+	default:
+		return aoserrors.Errorf("invalid time value: %v", value)
+	}
 }
