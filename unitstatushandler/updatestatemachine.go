@@ -61,6 +61,9 @@ type updateStateMachine struct {
 	cancelFunc context.CancelFunc
 
 	updateTimer *time.Timer
+	ttlTimer    *time.Timer
+
+	defaultTTL time.Duration
 }
 
 type updateManager interface {
@@ -77,9 +80,10 @@ type updateManager interface {
  **********************************************************************************************************************/
 
 func newUpdateStateMachine(initState string, events []fsm.EventDesc,
-	manager updateManager) (stateMachine *updateStateMachine) {
+	manager updateManager, defaultTTL time.Duration) (stateMachine *updateStateMachine) {
 	stateMachine = &updateStateMachine{
-		manager: manager,
+		manager:    manager,
+		defaultTTL: defaultTTL,
 	}
 
 	stateMachine.fsm = fsm.NewFSM(
@@ -97,12 +101,13 @@ func newUpdateStateMachine(initState string, events []fsm.EventDesc,
 }
 
 func (stateMachine *updateStateMachine) close() (err error) {
+	stateMachine.resetTimers()
 	stateMachine.cancel()
 
 	return nil
 }
 
-func (stateMachine *updateStateMachine) init() (err error) {
+func (stateMachine *updateStateMachine) init(ttlDate time.Time) (err error) {
 	switch stateMachine.fsm.Current() {
 	case stateDownloading:
 		stateMachine.onStateDownloading(nil)
@@ -112,6 +117,10 @@ func (stateMachine *updateStateMachine) init() (err error) {
 
 	case stateUpdating:
 		stateMachine.onStateUpdating(nil)
+	}
+
+	if stateMachine.fsm.Current() != stateNoUpdate && !ttlDate.IsZero() {
+		stateMachine.setTTLTimer(ttlDate.Sub(time.Now()))
 	}
 
 	return nil
@@ -170,6 +179,24 @@ func (stateMachine *updateStateMachine) finishOperation(ctx context.Context, fin
 	stateMachine.sendEvent(finishEvent, operationErr)
 }
 
+func (stateMachine *updateStateMachine) startNewUpdate(ttlTime time.Duration) (ttlDate time.Time, err error) {
+	if ttlTime == 0 {
+		ttlTime = stateMachine.defaultTTL
+	}
+
+	// if TTL is not received and default value is zero then do not set TTL timer
+	if ttlTime != 0 {
+		ttlDate = time.Now().Add(ttlTime)
+		stateMachine.setTTLTimer(ttlTime)
+	}
+
+	if err = stateMachine.sendEvent(eventStartDownload, ""); err != nil {
+		return ttlDate, aoserrors.Wrap(err)
+	}
+
+	return ttlDate, nil
+}
+
 func convertState(state string) (updateState cmserver.UpdateState) {
 	switch state {
 	case stateDownloading:
@@ -189,6 +216,16 @@ func convertState(state string) (updateState cmserver.UpdateState) {
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (stateMachine *updateStateMachine) setTTLTimer(ttlTime time.Duration) {
+	stateMachine.ttlTimer = time.AfterFunc(ttlTime, func() {
+		if stateMachine.canTransit(eventCancel) {
+			if err := stateMachine.sendEvent(eventCancel, aoserrors.New("update timeout").Error()); err != nil {
+				log.Errorf("Can't cancel update: %s", err)
+			}
+		}
+	})
+}
 
 func (stateMachine *updateStateMachine) cancel() {
 	if stateMachine.cancelFunc != nil {
@@ -211,12 +248,7 @@ func (stateMachine *updateStateMachine) onBeforeEvent(event *fsm.Event) {
 }
 
 func (stateMachine *updateStateMachine) onStateNoUpdate(event *fsm.Event) {
-	// Reset update timer
-	if stateMachine.updateTimer != nil {
-		stateMachine.updateTimer.Stop()
-		stateMachine.updateTimer = nil
-	}
-
+	stateMachine.resetTimers()
 	stateMachine.manager.noUpdate()
 }
 
@@ -246,4 +278,18 @@ func (stateMachine *updateStateMachine) onStateUpdating(event *fsm.Event) {
 		defer stateMachine.wg.Done()
 		stateMachine.manager.update(ctx)
 	}()
+}
+
+func (stateMachine *updateStateMachine) resetTimers() {
+	// Reset update timer
+	if stateMachine.updateTimer != nil {
+		stateMachine.updateTimer.Stop()
+		stateMachine.updateTimer = nil
+	}
+
+	// Reset TTL timer
+	if stateMachine.ttlTimer != nil {
+		stateMachine.ttlTimer.Stop()
+		stateMachine.ttlTimer = nil
+	}
 }

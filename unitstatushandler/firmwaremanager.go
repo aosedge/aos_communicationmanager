@@ -24,6 +24,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
@@ -77,6 +78,7 @@ type firmwareManager struct {
 	DownloadResult    map[string]*downloadResult              `json:"downloadResult,omitempty"`
 	CurrentState      string                                  `json:"currentState,omitempty"`
 	UpdateErr         string                                  `json:"updateErr,omitempty"`
+	TTLDate           time.Time                               `json:"ttlDate,omitempty"`
 }
 
 /***********************************************************************************************************************
@@ -85,7 +87,7 @@ type firmwareManager struct {
 
 func newFirmwareManager(statusHandler firmwareStatusHandler,
 	firmwareUpdater FirmwareUpdater, boardConfigUpdater BoardConfigUpdater,
-	storage Storage) (manager *firmwareManager, err error) {
+	storage Storage, defaultTTL time.Duration) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
 		statusChannel:      make(chan cmserver.UpdateStatus, 1),
 		statusHandler:      statusHandler,
@@ -112,9 +114,9 @@ func newFirmwareManager(statusHandler firmwareStatusHandler,
 		{Name: eventStartUpdate, Src: []string{stateReadyToUpdate}, Dst: stateUpdating},
 		// updating state
 		{Name: eventFinishUpdate, Src: []string{stateUpdating}, Dst: stateNoUpdate},
-	}, manager)
+	}, manager, defaultTTL)
 
-	if err = manager.stateMachine.init(); err != nil {
+	if err = manager.stateMachine.init(manager.TTLDate); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -307,7 +309,12 @@ func (manager *firmwareManager) noUpdate() {
 			manager.Lock()
 			defer manager.Unlock()
 
-			manager.stateMachine.sendEvent(eventStartDownload, "")
+			var err error
+
+			if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
+				time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
+				log.Errorf("Can't start new firmware update: %s", err)
+			}
 		}()
 	}
 }
@@ -470,7 +477,8 @@ func (manager *firmwareManager) newUpdate(schedule cloudprotocol.ScheduleRule,
 	case stateNoUpdate:
 		manager.CurrentUpdate = update
 
-		if err = manager.stateMachine.sendEvent(eventStartDownload, ""); err != nil {
+		if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
+			time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
 			return aoserrors.Wrap(err)
 		}
 

@@ -574,6 +574,23 @@ func TestFirmwareManager(t *testing.T) {
 				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
 		},
+		{
+			testID:     "update TTL",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				FOTASchedule: cloudprotocol.ScheduleRule{
+					Type: cloudprotocol.TriggerUpdate,
+					TTL:  3,
+				},
+				Components: updateComponents},
+			downloadResult: map[string]*downloadResult{
+				updateComponents[0].ID: {},
+				updateComponents[1].ID: {},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.NoUpdate, Error: "update timeout"}},
+		},
 	}
 
 	firmwareUpdater := NewTestFirmwareUpdater(nil)
@@ -597,7 +614,8 @@ func TestFirmwareManager(t *testing.T) {
 
 		// Create firmware manager
 
-		firmwareManager, err := newFirmwareManager(statusHandler, firmwareUpdater, boardConfigUpdater, testStorage)
+		firmwareManager, err := newFirmwareManager(statusHandler, firmwareUpdater, boardConfigUpdater,
+			testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create firmware manager: %s", err)
 			continue
@@ -822,6 +840,23 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
 		},
+		{
+			testID:     "update TTL",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+				SOTASchedule: cloudprotocol.ScheduleRule{
+					TTL:  3,
+					Type: cloudprotocol.TriggerUpdate,
+				},
+				Layers: updateLayers, Services: updateServices,
+			},
+			downloadResult: map[string]*downloadResult{
+				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
+				updateServices[0].ID: {}, updateServices[1].ID: {}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.NoUpdate, Error: "update timeout"}},
+		},
 	}
 
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
@@ -842,7 +877,7 @@ func TestSoftwareManager(t *testing.T) {
 
 		// Create software manager
 
-		softwareManager, err := newSoftwareManager(statusHandler, softwareUpdater, testStorage)
+		softwareManager, err := newSoftwareManager(statusHandler, softwareUpdater, testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create software manager: %s", err)
 			continue

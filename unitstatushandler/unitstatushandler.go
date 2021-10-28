@@ -141,12 +141,13 @@ func New(
 	instance.layerStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
 
-	if instance.firmwareManager, err = newFirmwareManager(instance, firmwareUpdater,
-		boardConfigUpdater, storage); err != nil {
+	if instance.firmwareManager, err = newFirmwareManager(instance, firmwareUpdater, boardConfigUpdater,
+		storage, cfg.UMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, softwareUpdater, storage); err != nil {
+	if instance.softwareManager, err = newSoftwareManager(instance, softwareUpdater,
+		storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 

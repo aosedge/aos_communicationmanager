@@ -25,6 +25,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
@@ -83,6 +84,7 @@ type softwareManager struct {
 	DownloadResult  map[string]*downloadResult            `json:"downloadResult,omitempty"`
 	CurrentState    string                                `json:"currentState,omitempty"`
 	UpdateErr       string                                `json:"updateErr,omitempty"`
+	TTLDate         time.Time                             `json:"ttlDate,omitempty"`
 }
 
 /***********************************************************************************************************************
@@ -90,7 +92,7 @@ type softwareManager struct {
  **********************************************************************************************************************/
 
 func newSoftwareManager(statusHandler softwareStatusHandler,
-	softwareUpdater SoftwareUpdater, storage Storage) (manager *softwareManager, err error) {
+	softwareUpdater SoftwareUpdater, storage Storage, defaultTTL time.Duration) (manager *softwareManager, err error) {
 	manager = &softwareManager{
 		statusChannel:   make(chan cmserver.UpdateStatus, 1),
 		statusHandler:   statusHandler,
@@ -118,9 +120,9 @@ func newSoftwareManager(statusHandler softwareStatusHandler,
 		// updating state
 		{Name: eventFinishUpdate, Src: []string{stateUpdating}, Dst: stateNoUpdate},
 		{Name: eventCancel, Src: []string{stateUpdating}, Dst: stateNoUpdate},
-	}, manager)
+	}, manager, defaultTTL)
 
-	if err = manager.stateMachine.init(); err != nil {
+	if err = manager.stateMachine.init(manager.TTLDate); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -343,7 +345,12 @@ func (manager *softwareManager) noUpdate() {
 			manager.Lock()
 			defer manager.Unlock()
 
-			manager.stateMachine.sendEvent(eventStartDownload, "")
+			var err error
+
+			if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
+				time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
+				log.Errorf("Can't start new software update: %s", err)
+			}
 		}()
 	}
 }
@@ -548,7 +555,8 @@ func (manager *softwareManager) newUpdate(schedule cloudprotocol.ScheduleRule,
 	case stateNoUpdate:
 		manager.CurrentUpdate = update
 
-		if err = manager.stateMachine.sendEvent(eventStartDownload, ""); err != nil {
+		if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
+			time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
