@@ -161,6 +161,8 @@ func New(fileName string) (config *Config, err error) {
 			MaxRetryDelay:          Duration{30 * time.Minute},
 			DownloadPartLimit:      100,
 		},
+		SMController: SMController{UpdateTTL: Duration{30 * 24 * time.Hour}},
+		UMController: UMController{UpdateTTL: Duration{30 * 24 * time.Hour}},
 	}
 
 	if err = json.Unmarshal(raw, &config); err != nil {
