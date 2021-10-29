@@ -145,6 +145,11 @@ func (controller *Controller) Close() (err error) {
 	return nil
 }
 
+// WaitForReady waits for connect to all CM's
+func (controller *Controller) WaitForReady() {
+	controller.readyWG.Wait()
+}
+
 // GetStatus returns SM status
 func (controller *Controller) GetStatus() (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {

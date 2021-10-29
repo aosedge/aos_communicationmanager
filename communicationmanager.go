@@ -357,32 +357,26 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	return nil
 }
 
-func (cm *communicationManager) handleMessages() (err error) {
+func (cm *communicationManager) handleMessages(ctx context.Context) {
 	for {
 		select {
 		case message := <-cm.amqp.MessageChannel:
 			if err, ok := message.Data.(error); ok {
-				return aoserrors.Wrap(err)
+				log.Errorf("Receive error: %s", err)
 			}
 
-			if err = cm.processMessage(message); err != nil {
+			if err := cm.processMessage(message); err != nil {
 				log.Errorf("Error processing message: %s", err)
 			}
 
-		case users := <-cm.iam.UsersChangedChannel():
-			log.WithField("users", users).Info("Users changed")
-
-			return nil
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
-func (cm *communicationManager) run(ctx context.Context, serviceDiscoveryURL string) {
+func (cm *communicationManager) handleConnection(ctx context.Context, serviceDiscoveryURL string) {
 	for {
-		if err := cm.smController.SetUsers(cm.iam.GetUsers()); err != nil {
-			log.Errorf("Error setting SM users: %s", err)
-		}
-
 		retryhelper.Retry(ctx,
 			func() (err error) {
 				if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL,
@@ -398,15 +392,57 @@ func (cm *communicationManager) run(ctx context.Context, serviceDiscoveryURL str
 			},
 			0, initReconnectTimeout, maxReconnectTimeout)
 
+		if err := cm.statusHandler.SetUsers(cm.iam.GetUsers()); err != nil {
+			log.Errorf("Can't set users: %s", err)
+		}
+
 		if err := cm.statusHandler.SendUnitStatus(); err != nil {
-			log.Errorf("Error setting status handler users: %s", err)
+			log.Errorf("Can't send unit status: %s", err)
 		}
 
-		if err := cm.handleMessages(); err != nil {
-			log.Errorf("Connection error: %s", err)
-		}
+		cm.handleMessages(ctx)
 
-		cm.amqp.Disconnect()
+		if ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+func (cm *communicationManager) handleUsers(ctx context.Context) {
+	readyChannel := make(chan struct{}, 1)
+
+	go func() {
+		cm.smController.WaitForReady()
+		cm.umController.WaitForReady()
+
+		readyChannel <- struct{}{}
+	}()
+
+	isReady := false
+
+	for {
+		select {
+		case <-readyChannel:
+			if err := cm.statusHandler.SetUsers(cm.iam.GetUsers()); err != nil {
+				log.Errorf("Can't set users: %s", err)
+			}
+
+			isReady = true
+
+		case users := <-cm.iam.UsersChangedChannel():
+			if isReady {
+				if err := cm.statusHandler.SetUsers(users); err != nil {
+					log.Errorf("Can't set users: %s", err)
+				}
+			}
+
+			if err := cm.amqp.Disconnect(); err != nil {
+				log.Errorf("Can't disconnect: %s", err)
+			}
+
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -542,7 +578,8 @@ func main() {
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
-	go cm.run(ctx, cm.getServiceDiscoveryURL(cfg))
+	go cm.handleConnection(ctx, cm.getServiceDiscoveryURL(cfg))
+	go cm.handleUsers(ctx)
 
 	// Handle SIGTERM
 
