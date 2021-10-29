@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -50,6 +51,8 @@ const (
 
 // AmqpHandler structure with all amqp connection info
 type AmqpHandler struct {
+	sync.Mutex
+
 	// MessageChannel channel for amqp messages
 	MessageChannel chan Message
 
@@ -65,6 +68,8 @@ type AmqpHandler struct {
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+
+	wg sync.WaitGroup
 }
 
 // CryptoContext interface to access crypto functions
@@ -133,6 +138,9 @@ func New() (handler *AmqpHandler, err error) {
 
 // Connect connects to cloud
 func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID string, users []string) (err error) {
+	handler.Lock()
+	defer handler.Unlock()
+
 	log.WithFields(log.Fields{"url": sdURL, "users": users}).Debug("AMQP connect")
 
 	handler.cryptoContext = cryptoContext
@@ -160,6 +168,9 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 
 // ConnectRabbit connects directly to RabbitMQ server without service discovery
 func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchange, consumer, queue string) (err error) {
+	handler.Lock()
+	defer handler.Unlock()
+
 	log.WithFields(log.Fields{
 		"host": host,
 		"user": user}).Debug("AMQP direct connect")
@@ -188,6 +199,9 @@ func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchan
 
 // Disconnect disconnects from cloud
 func (handler *AmqpHandler) Disconnect() (err error) {
+	handler.Lock()
+	defer handler.Unlock()
+
 	log.Debug("AMQP disconnect")
 
 	if handler.sendConnection != nil {
@@ -197,6 +211,8 @@ func (handler *AmqpHandler) Disconnect() (err error) {
 	if handler.receiveConnection != nil {
 		handler.receiveConnection.Close()
 	}
+
+	handler.wg.Wait()
 
 	return nil
 }
@@ -387,6 +403,8 @@ func (handler *AmqpHandler) setupSendConnection(scheme string,
 		return aoserrors.Wrap(err)
 	}
 
+	handler.wg.Add(1)
+
 	go handler.runSender(params, amqpChannel)
 
 	return nil
@@ -394,7 +412,11 @@ func (handler *AmqpHandler) setupSendConnection(scheme string,
 
 func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChannel *amqp.Channel) {
 	log.Info("Start AMQP sender")
-	defer log.Info("AMQP sender closed")
+	defer func() {
+		log.Info("AMQP sender closed")
+
+		handler.wg.Done()
+	}()
 
 	errorChannel := handler.sendConnection.NotifyClose(make(chan *amqp.Error, 1))
 	confirmChannel := amqpChannel.NotifyPublish(make(chan amqp.Confirmation, 1))
@@ -502,6 +524,8 @@ func (handler *AmqpHandler) setupReceiveConnection(scheme string,
 
 	handler.receiveConnection = connection
 
+	handler.wg.Add(1)
+
 	go handler.runReceiver(params, deliveryChannel)
 
 	return nil
@@ -509,7 +533,11 @@ func (handler *AmqpHandler) setupReceiveConnection(scheme string,
 
 func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliveryChannel <-chan amqp.Delivery) {
 	log.Info("Start AMQP receiver")
-	defer log.Info("AMQP receiver closed")
+	defer func() {
+		log.Info("AMQP receiver closed")
+
+		handler.wg.Done()
+	}()
 
 	errorChannel := handler.receiveConnection.NotifyClose(make(chan *amqp.Error, 1))
 
