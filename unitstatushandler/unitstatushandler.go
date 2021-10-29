@@ -70,6 +70,7 @@ type FirmwareUpdater interface {
 
 // SoftwareUpdater updates services, layers
 type SoftwareUpdater interface {
+	SetUsers(users []string) (err error)
 	GetStatus() (servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error)
 	InstallService(serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error)
 	RemoveService(serviceInfo cloudprotocol.ServiceInfo) (err error)
@@ -206,7 +207,19 @@ func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.Decod
 	}
 }
 
-// SendUnitStatus sends initial unit status
+// SetUsers sets current users
+func (instance *Instance) SetUsers(users []string) (err error) {
+	instance.Lock()
+	defer instance.Unlock()
+
+	if err = instance.softwareManager.setUsers(users); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+// SendUnitStatus sends unit status
 func (instance *Instance) SendUnitStatus() (err error) {
 	instance.Lock()
 	defer instance.Unlock()

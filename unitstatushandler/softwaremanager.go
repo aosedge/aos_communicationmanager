@@ -77,6 +77,7 @@ type softwareManager struct {
 	actionHandler *action.Handler
 	statusMutex   sync.RWMutex
 	pendingUpdate *softwareUpdate
+	currentUsers  []string
 
 	LayerStatuses   map[string]*cloudprotocol.LayerInfo   `json:"layerStatuses,omitempty"`
 	ServiceStatuses map[string]*cloudprotocol.ServiceInfo `json:"serviceStatuses,omitempty"`
@@ -284,6 +285,29 @@ func (manager *softwareManager) getItemStatuses() (serviceStatuses []cloudprotoc
 	}
 
 	return serviceStatuses, layerStatuses, nil
+}
+
+func (manager *softwareManager) setUsers(users []string) (err error) {
+	manager.Lock()
+	defer manager.Unlock()
+
+	if isUsersEqual(manager.currentUsers, users) {
+		return nil
+	}
+
+	if manager.stateMachine.canTransit(eventCancel) {
+		if err = manager.stateMachine.sendEvent(eventCancel, ""); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	if err = manager.softwareUpdater.SetUsers(users); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	manager.currentUsers = users
+
+	return nil
 }
 
 /***********************************************************************************************************************
@@ -967,4 +991,26 @@ func getLayerUpdateID(layer cloudprotocol.LayerInfoFromCloud) (id string) {
 
 func getServiceUpdateID(service cloudprotocol.ServiceInfoFromCloud) (id string) {
 	return base64.URLEncoding.EncodeToString(service.DecryptDataStruct.Sha256)
+}
+
+func isUsersEqual(users1, users2 []string) (result bool) {
+	if users1 == nil && users2 == nil {
+		return true
+	}
+
+	if users1 == nil || users2 == nil {
+		return false
+	}
+
+	if len(users1) != len(users2) {
+		return false
+	}
+
+	for i := range users1 {
+		if users1[i] != users2[i] {
+			return false
+		}
+	}
+
+	return true
 }
