@@ -1123,6 +1123,60 @@ func TestTimeTable(t *testing.T) {
 	}
 }
 
+func TestSyncExecutor(t *testing.T) {
+	const (
+		numExecuteTasks  = 10
+		numCanceledTasks = 10
+	)
+
+	resultChannel := make(chan int, 1)
+
+	cancelCtx, cancelFunc := context.WithCancel(context.Background())
+
+	for i := 0; i < numExecuteTasks+numCanceledTasks; i++ {
+		ctx := cancelCtx
+
+		if i < numExecuteTasks {
+			ctx = context.Background()
+		}
+
+		value := i
+
+		updateSynchronizer.execute(ctx, func() {
+			time.Sleep(1 * time.Second)
+			resultChannel <- value
+		})
+	}
+
+	cancelFunc()
+
+	index := 0
+
+	for {
+		select {
+		case result := <-resultChannel:
+			log.Debugf("Receive result: %d, index: %d", result, index)
+
+			if result != index {
+				t.Errorf("Wrong result received: %d, index: %d", result, index)
+			}
+
+			if index > numExecuteTasks {
+				t.Errorf("Unexpected result received: %d, index: %d", result, index)
+			}
+
+			index++
+
+		case <-time.After(5 * time.Second):
+			if index < numExecuteTasks {
+				t.Error("Wait execution timeout")
+			}
+
+			return
+		}
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/

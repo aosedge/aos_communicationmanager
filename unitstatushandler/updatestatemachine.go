@@ -18,6 +18,7 @@
 package unitstatushandler
 
 import (
+	"container/list"
 	"context"
 	"sync"
 	"time"
@@ -74,6 +75,18 @@ type updateManager interface {
 	noUpdate()
 	startUpdate() (err error)
 }
+
+type syncExecutor struct {
+	sync.Mutex
+	inProgress bool
+	waitQueue  *list.List
+}
+
+/***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+var updateSynchronizer = newSyncExecutor()
 
 /***********************************************************************************************************************
  * Interface
@@ -274,9 +287,12 @@ func (stateMachine *updateStateMachine) onStateUpdating(event *fsm.Event) {
 
 	stateMachine.wg.Add(1)
 
-	go func() {
+	updateSynchronizer.execute(ctx, func() {
 		defer stateMachine.wg.Done()
 		stateMachine.manager.update(ctx)
+	})
+
+	go func() {
 	}()
 }
 
@@ -292,4 +308,69 @@ func (stateMachine *updateStateMachine) resetTimers() {
 		stateMachine.ttlTimer.Stop()
 		stateMachine.ttlTimer = nil
 	}
+}
+
+/***********************************************************************************************************************
+ * syncExecutor
+ **********************************************************************************************************************/
+
+func newSyncExecutor() (executor *syncExecutor) {
+	executor = &syncExecutor{
+		waitQueue: list.New(),
+	}
+
+	return executor
+}
+
+func (executor *syncExecutor) execute(ctx context.Context, f func()) {
+	executor.Lock()
+	defer executor.Unlock()
+
+	type executeData struct {
+		f func()
+		c chan struct{}
+	}
+
+	if executor.inProgress {
+		channelDone := make(chan struct{}, 1)
+
+		element := executor.waitQueue.PushBack(executeData{f: f, c: channelDone})
+
+		go func() {
+			select {
+			case <-ctx.Done():
+				executor.Lock()
+				defer executor.Unlock()
+
+				executor.waitQueue.Remove(element)
+
+			case <-channelDone:
+			}
+		}()
+
+		return
+	}
+
+	executor.inProgress = true
+
+	go func() {
+		for executeFunc := f; executeFunc != nil; {
+			executeFunc()
+
+			executor.Lock()
+
+			element := executor.waitQueue.Front()
+
+			if element != nil {
+				data := executor.waitQueue.Remove(element).(executeData)
+				data.c <- struct{}{}
+				executeFunc = data.f
+			} else {
+				executor.inProgress = false
+				executeFunc = nil
+			}
+
+			executor.Unlock()
+		}
+	}()
 }
