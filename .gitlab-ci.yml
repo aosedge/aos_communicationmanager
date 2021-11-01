@@ -3,6 +3,7 @@ image: golang:1.14
 stages:
   - build
   - test
+  - dependency
 
 build:
   tags:
@@ -30,3 +31,14 @@ test:
   script:
     - go test $(go list ./... | grep -v "/vendor\|downloader\|alerts") -v -failfast -coverprofile .testCoverage.txt
     - go tool cover -func=.testCoverage.txt
+
+whitesource:
+  only:
+    refs:
+     - master
+     - develop
+  tags:
+    - whitesource_ci
+  stage: dependency
+  script:
+    - java -jar /usr/bin/wss-unified-agent.jar -apiKey $WSS_API_KEY -projectToken $WSS_CM_TOKEN -userKey $WSS_USER_KEY  -c ./ci/wss-cm.conf -d ./ -scanComment $CI_COMMIT_SHORT_SHA
