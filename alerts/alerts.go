@@ -241,7 +241,6 @@ func (instance *Alerts) sendDownloadAlert(source string, payload cloudprotocol.D
 	log.WithFields(log.Fields{
 		"timestamp":       time,
 		"source":          source,
-		"message":         payload.Message,
 		"progress":        payload.Progress,
 		"url":             payload.URL,
 		"downloadedBytes": payload.DownloadedBytes,
