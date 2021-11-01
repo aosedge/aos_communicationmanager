@@ -306,9 +306,8 @@ func (umCtrl *Controller) UpdateComponents(
 				AosVersion: component.AosVersion, URL: component.URLs[0], Annotations: string(component.Annotations),
 				Sha256: component.Sha256, Sha512: component.Sha512, Size: component.Size}
 
-			if !umCtrl.addComponentForUpdateToUm(componentInfo) {
-				log.Warnf("Update unsupported component %s. Skip. ", component.ID)
-				continue
+			if err = umCtrl.addComponentForUpdateToUm(componentInfo); err != nil {
+				return umCtrl.currentComponents, aoserrors.Wrap(err)
 			}
 
 			componentsUpdateInfo = append(componentsUpdateInfo, componentInfo)
@@ -573,27 +572,25 @@ func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 	return nil
 }
 
-func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponent) (added bool) {
+func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponent) (err error) {
 	for i := range umCtrl.connections {
 		for _, id := range umCtrl.connections[i].components {
 			if id == componentInfo.ID {
 				newURL, err := umCtrl.urlTranslator.TranslateURL(umCtrl.connections[i].isLocalClient, componentInfo.URL)
 				if err != nil {
-					log.Error("Can't translate URL: ", err)
-
-					return false
+					return aoserrors.New("can't translate URL")
 				}
 
 				componentInfo.URL = newURL
 
 				umCtrl.connections[i].updatePackages = append(umCtrl.connections[i].updatePackages, componentInfo)
 
-				return true
+				return nil
 			}
 		}
 	}
 
-	return false
+	return aoserrors.Errorf("component id %s not found", componentInfo.ID)
 }
 
 func (umCtrl *Controller) cleanupUpdateData() {
@@ -673,7 +670,7 @@ func (monitor *allConnectionMonitor) stopConnectionTimer() {
  **********************************************************************************************************************/
 
 func (umCtrl *Controller) onEvent(e *fsm.Event) {
-	log.Infof("[CtrlFSM] %s -> %s : Event: %s", e.Src, e.Dst, e.Event)
+	log.Debugf("[CtrlFSM] %s -> %s : Event: %s", e.Src, e.Dst, e.Event)
 }
 
 func (umCtrl *Controller) processIdleState(e *fsm.Event) {
