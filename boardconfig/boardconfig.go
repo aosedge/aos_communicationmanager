@@ -169,6 +169,8 @@ func (instance *Instance) UpdateBoardConfig(configJSON json.RawMessage) (err err
 		return aoserrors.New("invalid vendor version")
 	}
 
+	instance.boardConfig = boardConfig
+
 	if err = instance.client.SetBoardConfig(instance.boardConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
