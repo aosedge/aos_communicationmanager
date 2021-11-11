@@ -150,15 +150,15 @@ func (controller *Controller) WaitForReady() {
 	controller.readyWG.Wait()
 }
 
-// GetStatus returns SM status
-func (controller *Controller) GetStatus() (
+// GetUsersStatus returns SM users status
+func (controller *Controller) GetUsersStatus(users []string) (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	for _, client := range clients {
-		clientServices, clientLayers, err := client.getStatus()
+		clientServices, clientLayers, err := client.getUsersStatus(users)
 		if err != nil {
 			return nil, nil, aoserrors.Wrap(err)
 		}
@@ -170,19 +170,24 @@ func (controller *Controller) GetStatus() (
 	return servicesInfo, layersInfo, nil
 }
 
-// SetUsers sets SM users
-func (controller *Controller) SetUsers(users []string) (err error) {
+// GetAllStatus returns SM all existing layers and services status
+func (controller *Controller) GetAllStatus() (
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	for _, client := range clients {
-		if err = client.setUsers(users); err != nil {
-			return aoserrors.Wrap(err)
+		clientServices, clientLayers, err := client.getAllStatus()
+		if err != nil {
+			return nil, nil, aoserrors.Wrap(err)
 		}
+
+		servicesInfo = append(servicesInfo, clientServices...)
+		layersInfo = append(layersInfo, clientLayers...)
 	}
 
-	return nil
+	return servicesInfo, layersInfo, nil
 }
 
 // CheckBoardConfig checks board config
@@ -250,7 +255,7 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 }
 
 // InstallService requests to install servie
-func (controller *Controller) InstallService(
+func (controller *Controller) InstallService(users []string,
 	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -268,7 +273,7 @@ func (controller *Controller) InstallService(
 			return "", aoserrors.Wrap(err)
 		}
 
-		if stateChecksum, err = client.installService(serviceInfo); err != nil {
+		if stateChecksum, err = client.installService(users, serviceInfo); err != nil {
 			return "", aoserrors.Wrap(err)
 		}
 	}
@@ -277,7 +282,7 @@ func (controller *Controller) InstallService(
 }
 
 // RemoveService remove service request
-func (controller *Controller) RemoveService(serviceInfo cloudprotocol.ServiceInfo) (err error) {
+func (controller *Controller) RemoveService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -285,7 +290,7 @@ func (controller *Controller) RemoveService(serviceInfo cloudprotocol.ServiceInf
 	// TODO: we do not support multiple SM right now, remove service for all SM's
 
 	for _, client := range clients {
-		if err = client.removeService(serviceInfo); err != nil {
+		if err = client.removeService(users, serviceInfo); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -312,23 +317,6 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFrom
 		}
 
 		if err = client.installLayer(layerInfo); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-// RemoveLayer remove layer request
-func (controller *Controller) RemoveLayer(layerInfo cloudprotocol.LayerInfo) (err error) {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	// TODO: we do not support multiple SM right now, remove layer for all SM's
-
-	for _, client := range clients {
-		if err = client.removeLayer(layerInfo); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}

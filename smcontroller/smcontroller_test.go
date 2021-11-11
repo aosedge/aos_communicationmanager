@@ -58,10 +58,12 @@ type testSM struct {
 
 	pb.UnimplementedSMServiceServer
 
-	grpcServer *grpc.Server
-	services   []cloudprotocol.ServiceInfo
-	layers     []cloudprotocol.LayerInfo
-	users      []string
+	grpcServer    *grpc.Server
+	users         []string
+	usersServices []cloudprotocol.ServiceInfo
+	usersLayers   []cloudprotocol.LayerInfo
+	allServices   []cloudprotocol.ServiceInfo
+	allLayers     []cloudprotocol.LayerInfo
 
 	messageChannel chan interface{}
 
@@ -118,19 +120,19 @@ func init() {
  * Tests
  **********************************************************************************************************************/
 
-func TestGetStatus(t *testing.T) {
+func TestGetUsersStatus(t *testing.T) {
 	sm, err := newTestSM(smURL)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %s", err)
 	}
 	defer sm.close()
 
-	sm.services = []cloudprotocol.ServiceInfo{
+	sm.usersServices = []cloudprotocol.ServiceInfo{
 		{ID: "id1", AosVersion: 1, Status: cloudprotocol.InstalledStatus, StateChecksum: "state1"},
 		{ID: "id2", AosVersion: 2, Status: cloudprotocol.InstalledStatus, StateChecksum: "state2"},
 	}
 
-	sm.layers = []cloudprotocol.LayerInfo{
+	sm.usersLayers = []cloudprotocol.LayerInfo{
 		{ID: "id1", AosVersion: 1, Status: cloudprotocol.InstalledStatus, Digest: "digest1"},
 		{ID: "id2", AosVersion: 2, Status: cloudprotocol.InstalledStatus, Digest: "digest2"},
 	}
@@ -143,26 +145,44 @@ func TestGetStatus(t *testing.T) {
 	}
 	defer controller.Close()
 
-	services, layers, err := controller.GetStatus()
+	users := []string{"user1", "user2", "user3"}
+
+	services, layers, err := controller.GetUsersStatus(users)
 	if err != nil {
 		t.Errorf("Error getting current info: %s", err)
 	}
 
-	if !reflect.DeepEqual(services, sm.services) {
+	if !reflect.DeepEqual(users, sm.users) {
+		t.Errorf("Wrong users: %v", sm.users)
+	}
+
+	if !reflect.DeepEqual(services, sm.usersServices) {
 		t.Errorf("Wrong services info: %v", services)
 	}
 
-	if !reflect.DeepEqual(layers, sm.layers) {
+	if !reflect.DeepEqual(layers, sm.usersLayers) {
 		t.Errorf("Wrong layers info: %v", layers)
 	}
 }
 
-func TestSetUsers(t *testing.T) {
+func TestGetAllStatus(t *testing.T) {
 	sm, err := newTestSM(smURL)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %s", err)
 	}
 	defer sm.close()
+
+	sm.allServices = []cloudprotocol.ServiceInfo{
+		{ID: "id1", AosVersion: 1, Status: cloudprotocol.InstalledStatus, StateChecksum: "state1"},
+		{ID: "id2", AosVersion: 2, Status: cloudprotocol.InstalledStatus, StateChecksum: "state2"},
+		{ID: "id3", AosVersion: 3, Status: cloudprotocol.InstalledStatus, StateChecksum: "state3"},
+	}
+
+	sm.allLayers = []cloudprotocol.LayerInfo{
+		{ID: "id1", AosVersion: 1, Status: cloudprotocol.InstalledStatus, Digest: "digest1"},
+		{ID: "id2", AosVersion: 2, Status: cloudprotocol.InstalledStatus, Digest: "digest2"},
+		{ID: "id3", AosVersion: 3, Status: cloudprotocol.InstalledStatus, Digest: "digest3"},
+	}
 
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
@@ -172,14 +192,17 @@ func TestSetUsers(t *testing.T) {
 	}
 	defer controller.Close()
 
-	users := []string{"user1", "user2", "user3"}
-
-	if err = controller.SetUsers(users); err != nil {
-		t.Errorf("Error setting users: %s", err)
+	services, layers, err := controller.GetAllStatus()
+	if err != nil {
+		t.Errorf("Error getting current info: %s", err)
 	}
 
-	if !reflect.DeepEqual(users, sm.users) {
-		t.Errorf("Wrong users: %v", sm.users)
+	if !reflect.DeepEqual(services, sm.allServices) {
+		t.Errorf("Wrong services info: %v", services)
+	}
+
+	if !reflect.DeepEqual(layers, sm.allLayers) {
+		t.Errorf("Wrong layers info: %v", layers)
 	}
 }
 
@@ -289,6 +312,8 @@ func TestInstallServices(t *testing.T) {
 		})
 	}
 
+	users := []string{"user1", "user2", "user3"}
+
 	var wg sync.WaitGroup
 
 	for _, serviceInfo := range installServices {
@@ -297,7 +322,7 @@ func TestInstallServices(t *testing.T) {
 		go func(serviceInfo cloudprotocol.ServiceInfoFromCloud) {
 			defer wg.Done()
 
-			if _, err = controller.InstallService(serviceInfo); err != nil {
+			if _, err = controller.InstallService(users, serviceInfo); err != nil {
 				t.Errorf("Can't install service: %s", err)
 			}
 		}(serviceInfo)
@@ -305,9 +330,13 @@ func TestInstallServices(t *testing.T) {
 
 	wg.Wait()
 
-	sort.Slice(sm.services, func(i, j int) (isLess bool) { return sm.services[i].ID < sm.services[j].ID })
+	if !reflect.DeepEqual(users, sm.users) {
+		t.Errorf("Wrong users: %v", sm.users)
+	}
 
-	if !reflect.DeepEqual(sm.services, expectedResult) {
+	sort.Slice(sm.usersServices, func(i, j int) (isLess bool) { return sm.usersServices[i].ID < sm.usersServices[j].ID })
+
+	if !reflect.DeepEqual(sm.usersServices, expectedResult) {
 		t.Errorf("Wrong services: %v", expectedResult)
 	}
 }
@@ -340,9 +369,11 @@ func TestRemoveServices(t *testing.T) {
 		{ID: "service9", AosVersion: 9, Status: cloudprotocol.InstalledStatus},
 	}
 
-	sm.services = make([]cloudprotocol.ServiceInfo, len(removeServices))
+	sm.usersServices = make([]cloudprotocol.ServiceInfo, len(removeServices))
 
-	copy(removeServices, sm.services)
+	copy(removeServices, sm.usersServices)
+
+	users := []string{"user1", "user2", "user3"}
 
 	var wg sync.WaitGroup
 
@@ -352,7 +383,7 @@ func TestRemoveServices(t *testing.T) {
 		go func(serviceInfo cloudprotocol.ServiceInfo) {
 			defer wg.Done()
 
-			if err = controller.RemoveService(serviceInfo); err != nil {
+			if err = controller.RemoveService(users, serviceInfo); err != nil {
 				t.Errorf("Can't remove service: %s", err)
 			}
 		}(serviceInfo)
@@ -360,8 +391,12 @@ func TestRemoveServices(t *testing.T) {
 
 	wg.Wait()
 
-	if len(sm.services) != 0 {
-		t.Errorf("Wrong services: %v", sm.services)
+	if !reflect.DeepEqual(users, sm.users) {
+		t.Errorf("Wrong users: %v", sm.users)
+	}
+
+	if len(sm.usersServices) != 0 {
+		t.Errorf("Wrong services: %v", sm.usersServices)
 	}
 }
 
@@ -430,63 +465,10 @@ func TestInstallLayers(t *testing.T) {
 
 	wg.Wait()
 
-	sort.Slice(sm.layers, func(i, j int) (isLess bool) { return sm.layers[i].ID < sm.layers[j].ID })
+	sort.Slice(sm.usersLayers, func(i, j int) (isLess bool) { return sm.usersLayers[i].ID < sm.usersLayers[j].ID })
 
-	if !reflect.DeepEqual(sm.layers, expectedResult) {
+	if !reflect.DeepEqual(sm.usersLayers, expectedResult) {
 		t.Errorf("Wrong layers: %v", expectedResult)
-	}
-}
-
-func TestRemoveLayers(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-	defer sm.close()
-
-	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
-	}
-	defer controller.Close()
-
-	removeLayers := []cloudprotocol.LayerInfo{
-		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer1", Digest: "digest1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer2", Digest: "digest2", AosVersion: 2, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer3", Digest: "digest3", AosVersion: 3, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer4", Digest: "digest4", AosVersion: 4, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer5", Digest: "digest5", AosVersion: 5, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer6", Digest: "digest6", AosVersion: 6, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer7", Digest: "digest7", AosVersion: 7, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer8", Digest: "digest8", AosVersion: 8, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer9", Digest: "digest9", AosVersion: 9, Status: cloudprotocol.InstalledStatus},
-	}
-
-	sm.layers = make([]cloudprotocol.LayerInfo, len(removeLayers))
-
-	copy(removeLayers, sm.layers)
-
-	var wg sync.WaitGroup
-
-	for _, layerInfo := range removeLayers {
-		wg.Add(1)
-
-		go func(layerInfo cloudprotocol.LayerInfo) {
-			defer wg.Done()
-
-			if err = controller.RemoveLayer(layerInfo); err != nil {
-				t.Errorf("Can't remove layer: %s", err)
-			}
-		}(layerInfo)
-	}
-
-	wg.Wait()
-
-	if len(sm.layers) != 0 {
-		t.Errorf("Wrong layers: %v", sm.services)
 	}
 }
 
@@ -932,21 +914,33 @@ func (sm *testSM) SubscribeSMNotifications(
 	}
 }
 
-func (sm *testSM) SetUsers(ctx context.Context, request *pb.Users) (response *empty.Empty, err error) {
-	sm.users = request.Users
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) GetStatus(ctx context.Context, request *empty.Empty) (response *pb.SMStatus, err error) {
+func (sm *testSM) GetUsersStatus(ctx context.Context, request *pb.Users) (response *pb.SMStatus, err error) {
 	response = &pb.SMStatus{}
 
-	for _, service := range sm.services {
+	sm.users = request.Users
+
+	for _, service := range sm.usersServices {
 		response.Services = append(response.Services, &pb.ServiceStatus{
 			ServiceId: service.ID, AosVersion: service.AosVersion, StateChecksum: service.StateChecksum})
 	}
 
-	for _, layer := range sm.layers {
+	for _, layer := range sm.usersLayers {
+		response.Layers = append(response.Layers, &pb.LayerStatus{
+			LayerId: layer.ID, AosVersion: layer.AosVersion, Digest: layer.Digest})
+	}
+
+	return response, nil
+}
+
+func (sm *testSM) GetAllStatus(ctx context.Context, request *empty.Empty) (response *pb.SMStatus, err error) {
+	response = &pb.SMStatus{}
+
+	for _, service := range sm.allServices {
+		response.Services = append(response.Services, &pb.ServiceStatus{
+			ServiceId: service.ID, AosVersion: service.AosVersion, StateChecksum: service.StateChecksum})
+	}
+
+	for _, layer := range sm.allLayers {
 		response.Layers = append(response.Layers, &pb.LayerStatus{
 			LayerId: layer.ID, AosVersion: layer.AosVersion, Digest: layer.Digest})
 	}
@@ -991,6 +985,10 @@ func (sm *testSM) InstallService(ctx context.Context,
 	sm.Lock()
 	defer sm.Unlock()
 
+	log.Debug("=== ", request.Users)
+
+	sm.users = request.Users.Users
+
 	serviceInfo := cloudprotocol.ServiceInfo{
 		ID:         request.ServiceId,
 		AosVersion: request.AosVersion,
@@ -1004,13 +1002,13 @@ func (sm *testSM) InstallService(ctx context.Context,
 		StateChecksum: "",
 	}
 
-	for i, service := range sm.services {
+	for i, service := range sm.usersServices {
 		if service.ID == request.ServiceId {
-			sm.services[i] = serviceInfo
+			sm.usersServices[i] = serviceInfo
 		}
 	}
 
-	sm.services = append(sm.services, serviceInfo)
+	sm.usersServices = append(sm.usersServices, serviceInfo)
 
 	return response, nil
 }
@@ -1019,9 +1017,11 @@ func (sm *testSM) RemoveService(ctx context.Context, request *pb.RemoveServiceRe
 	sm.Lock()
 	defer sm.Unlock()
 
-	for i, service := range sm.services {
+	sm.users = request.Users.Users
+
+	for i, service := range sm.usersServices {
 		if service.ID == request.ServiceId {
-			sm.services = append(sm.services[:i], sm.services[i+1:]...)
+			sm.usersServices = append(sm.usersServices[:i], sm.usersServices[i+1:]...)
 			return &empty.Empty{}, nil
 		}
 	}
@@ -1040,29 +1040,15 @@ func (sm *testSM) InstallLayer(ctx context.Context, request *pb.InstallLayerRequ
 		Status:     cloudprotocol.InstalledStatus,
 	}
 
-	for i, layer := range sm.layers {
+	for i, layer := range sm.usersLayers {
 		if layer.ID == request.LayerId {
-			sm.layers[i] = layerInfo
+			sm.usersLayers[i] = layerInfo
 		}
 	}
 
-	sm.layers = append(sm.layers, layerInfo)
+	sm.usersLayers = append(sm.usersLayers, layerInfo)
 
 	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) RemoveLayer(ctx context.Context, request *pb.RemoveLayerRequest) (response *empty.Empty, err error) {
-	sm.Lock()
-	defer sm.Unlock()
-
-	for i, layer := range sm.layers {
-		if layer.Digest == request.Digest {
-			sm.layers = append(sm.layers[:i], sm.layers[i+1:]...)
-			return &empty.Empty{}, nil
-		}
-	}
-
-	return &empty.Empty{}, aoserrors.New("no layer found")
 }
 
 func (sm *testSM) ServiceStateAcceptance(ctx context.Context, request *pb.StateAcceptance) (response *empty.Empty, err error) {

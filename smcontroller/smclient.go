@@ -114,14 +114,14 @@ func (client *smClient) close() (err error) {
 	return nil
 }
 
-func (client *smClient) getStatus() (
+func (client *smClient) getUsersStatus(users []string) (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
-	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Get SM status")
+	log.WithFields(log.Fields{"id": client.cfg.SMID, "users": users}).Debug("Get SM users status")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
 
-	status, err := client.pbClient.GetStatus(ctx, &empty.Empty{})
+	status, err := client.pbClient.GetUsersStatus(ctx, &pb.Users{Users: users})
 	if err != nil {
 		return nil, nil, aoserrors.Wrap(err)
 	}
@@ -147,17 +147,37 @@ func (client *smClient) getStatus() (
 	return servicesInfo, layersInfo, nil
 }
 
-func (client *smClient) setUsers(users []string) (err error) {
-	log.WithFields(log.Fields{"id": client.cfg.SMID, "users": users}).Debug("Set users for SM")
+func (client *smClient) getAllStatus() (
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Get SM all status")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
 
-	if _, err = client.pbClient.SetUsers(ctx, &pb.Users{Users: users}); err != nil {
-		return aoserrors.Wrap(err)
+	status, err := client.pbClient.GetAllStatus(ctx, &empty.Empty{})
+	if err != nil {
+		return nil, nil, aoserrors.Wrap(err)
 	}
 
-	return nil
+	for _, service := range status.Services {
+		servicesInfo = append(servicesInfo, cloudprotocol.ServiceInfo{
+			ID:            service.ServiceId,
+			AosVersion:    service.AosVersion,
+			Status:        cloudprotocol.InstalledStatus,
+			StateChecksum: service.StateChecksum,
+		})
+	}
+
+	for _, layer := range status.Layers {
+		layersInfo = append(layersInfo, cloudprotocol.LayerInfo{
+			ID:         layer.LayerId,
+			AosVersion: layer.AosVersion,
+			Digest:     layer.Digest,
+			Status:     cloudprotocol.InstalledStatus,
+		})
+	}
+
+	return servicesInfo, layersInfo, nil
 }
 
 func (client *smClient) getBoardConfigStatus() (vendorVersion string, err error) {
@@ -215,7 +235,7 @@ func (client *smClient) setBoardConfig(boardConfig clientBoardConfig) (err error
 	return nil
 }
 
-func (client *smClient) installService(
+func (client *smClient) installService(users []string,
 	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateCheckSum string, err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
@@ -230,6 +250,7 @@ func (client *smClient) installService(
 	}
 
 	serviceStatus, err := client.pbClient.InstallService(ctx, &pb.InstallServiceRequest{
+		Users:         &pb.Users{Users: users},
 		Url:           serviceInfo.URLs[0],
 		ServiceId:     serviceInfo.ID,
 		ProviderId:    serviceInfo.ProviderID,
@@ -253,7 +274,7 @@ func (client *smClient) installService(
 	return serviceStatus.StateChecksum, nil
 }
 
-func (client *smClient) removeService(serviceInfo cloudprotocol.ServiceInfo) (err error) {
+func (client *smClient) removeService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
 		"serviceID": serviceInfo.ID}).Debug("Remove SM service")
@@ -262,6 +283,7 @@ func (client *smClient) removeService(serviceInfo cloudprotocol.ServiceInfo) (er
 	defer cancel()
 
 	if _, err = client.pbClient.RemoveService(ctx, &pb.RemoveServiceRequest{
+		Users:      &pb.Users{Users: users},
 		ServiceId:  serviceInfo.ID,
 		AosVersion: serviceInfo.AosVersion,
 	}); err != nil {
@@ -290,26 +312,6 @@ func (client *smClient) installLayer(layerInfo cloudprotocol.LayerInfoFromCloud)
 		Sha256:        layerInfo.Sha256,
 		Sha512:        layerInfo.Sha512,
 		Size:          layerInfo.Size,
-	}); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (client *smClient) removeLayer(layerInfo cloudprotocol.LayerInfo) (err error) {
-	log.WithFields(log.Fields{
-		"id":      client.cfg.SMID,
-		"layerID": layerInfo.ID,
-		"digest":  layerInfo.Digest}).Debug("Remove SM layer")
-
-	ctx, cancel := context.WithTimeout(client.context, smInstallTimeout)
-	defer cancel()
-
-	if _, err = client.pbClient.RemoveLayer(ctx, &pb.RemoveLayerRequest{
-		LayerId:    layerInfo.ID,
-		AosVersion: layerInfo.AosVersion,
-		Digest:     layerInfo.Digest,
 	}); err != nil {
 		return aoserrors.Wrap(err)
 	}
