@@ -19,8 +19,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SMServiceClient interface {
-	SetUsers(ctx context.Context, in *Users, opts ...grpc.CallOption) (*empty.Empty, error)
-	GetStatus(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*SMStatus, error)
+	GetUsersStatus(ctx context.Context, in *Users, opts ...grpc.CallOption) (*SMStatus, error)
+	GetAllStatus(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*SMStatus, error)
 	GetBoardConfigStatus(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*BoardConfigStatus, error)
 	CheckBoardConfig(ctx context.Context, in *BoardConfig, opts ...grpc.CallOption) (*BoardConfigStatus, error)
 	SetBoardConfig(ctx context.Context, in *BoardConfig, opts ...grpc.CallOption) (*empty.Empty, error)
@@ -30,7 +30,6 @@ type SMServiceClient interface {
 	SetServiceState(ctx context.Context, in *ServiceState, opts ...grpc.CallOption) (*empty.Empty, error)
 	OverrideEnvVars(ctx context.Context, in *OverrideEnvVarsRequest, opts ...grpc.CallOption) (*OverrideEnvVarStatus, error)
 	InstallLayer(ctx context.Context, in *InstallLayerRequest, opts ...grpc.CallOption) (*empty.Empty, error)
-	RemoveLayer(ctx context.Context, in *RemoveLayerRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 	SubscribeSMNotifications(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (SMService_SubscribeSMNotificationsClient, error)
 	GetSystemLog(ctx context.Context, in *SystemLogRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 	GetServiceLog(ctx context.Context, in *ServiceLogRequest, opts ...grpc.CallOption) (*empty.Empty, error)
@@ -45,18 +44,18 @@ func NewSMServiceClient(cc grpc.ClientConnInterface) SMServiceClient {
 	return &sMServiceClient{cc}
 }
 
-func (c *sMServiceClient) SetUsers(ctx context.Context, in *Users, opts ...grpc.CallOption) (*empty.Empty, error) {
-	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/servicemanager.v1.SMService/SetUsers", in, out, opts...)
+func (c *sMServiceClient) GetUsersStatus(ctx context.Context, in *Users, opts ...grpc.CallOption) (*SMStatus, error) {
+	out := new(SMStatus)
+	err := c.cc.Invoke(ctx, "/servicemanager.v1.SMService/GetUsersStatus", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sMServiceClient) GetStatus(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*SMStatus, error) {
+func (c *sMServiceClient) GetAllStatus(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*SMStatus, error) {
 	out := new(SMStatus)
-	err := c.cc.Invoke(ctx, "/servicemanager.v1.SMService/GetStatus", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/servicemanager.v1.SMService/GetAllStatus", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -144,15 +143,6 @@ func (c *sMServiceClient) InstallLayer(ctx context.Context, in *InstallLayerRequ
 	return out, nil
 }
 
-func (c *sMServiceClient) RemoveLayer(ctx context.Context, in *RemoveLayerRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
-	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/servicemanager.v1.SMService/RemoveLayer", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *sMServiceClient) SubscribeSMNotifications(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (SMService_SubscribeSMNotificationsClient, error) {
 	stream, err := c.cc.NewStream(ctx, &SMService_ServiceDesc.Streams[0], "/servicemanager.v1.SMService/SubscribeSMNotifications", opts...)
 	if err != nil {
@@ -216,8 +206,8 @@ func (c *sMServiceClient) GetServiceCrashLog(ctx context.Context, in *ServiceLog
 // All implementations must embed UnimplementedSMServiceServer
 // for forward compatibility
 type SMServiceServer interface {
-	SetUsers(context.Context, *Users) (*empty.Empty, error)
-	GetStatus(context.Context, *empty.Empty) (*SMStatus, error)
+	GetUsersStatus(context.Context, *Users) (*SMStatus, error)
+	GetAllStatus(context.Context, *empty.Empty) (*SMStatus, error)
 	GetBoardConfigStatus(context.Context, *empty.Empty) (*BoardConfigStatus, error)
 	CheckBoardConfig(context.Context, *BoardConfig) (*BoardConfigStatus, error)
 	SetBoardConfig(context.Context, *BoardConfig) (*empty.Empty, error)
@@ -227,7 +217,6 @@ type SMServiceServer interface {
 	SetServiceState(context.Context, *ServiceState) (*empty.Empty, error)
 	OverrideEnvVars(context.Context, *OverrideEnvVarsRequest) (*OverrideEnvVarStatus, error)
 	InstallLayer(context.Context, *InstallLayerRequest) (*empty.Empty, error)
-	RemoveLayer(context.Context, *RemoveLayerRequest) (*empty.Empty, error)
 	SubscribeSMNotifications(*empty.Empty, SMService_SubscribeSMNotificationsServer) error
 	GetSystemLog(context.Context, *SystemLogRequest) (*empty.Empty, error)
 	GetServiceLog(context.Context, *ServiceLogRequest) (*empty.Empty, error)
@@ -239,11 +228,11 @@ type SMServiceServer interface {
 type UnimplementedSMServiceServer struct {
 }
 
-func (UnimplementedSMServiceServer) SetUsers(context.Context, *Users) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetUsers not implemented")
+func (UnimplementedSMServiceServer) GetUsersStatus(context.Context, *Users) (*SMStatus, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUsersStatus not implemented")
 }
-func (UnimplementedSMServiceServer) GetStatus(context.Context, *empty.Empty) (*SMStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
+func (UnimplementedSMServiceServer) GetAllStatus(context.Context, *empty.Empty) (*SMStatus, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAllStatus not implemented")
 }
 func (UnimplementedSMServiceServer) GetBoardConfigStatus(context.Context, *empty.Empty) (*BoardConfigStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBoardConfigStatus not implemented")
@@ -272,9 +261,6 @@ func (UnimplementedSMServiceServer) OverrideEnvVars(context.Context, *OverrideEn
 func (UnimplementedSMServiceServer) InstallLayer(context.Context, *InstallLayerRequest) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InstallLayer not implemented")
 }
-func (UnimplementedSMServiceServer) RemoveLayer(context.Context, *RemoveLayerRequest) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RemoveLayer not implemented")
-}
 func (UnimplementedSMServiceServer) SubscribeSMNotifications(*empty.Empty, SMService_SubscribeSMNotificationsServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeSMNotifications not implemented")
 }
@@ -300,38 +286,38 @@ func RegisterSMServiceServer(s grpc.ServiceRegistrar, srv SMServiceServer) {
 	s.RegisterService(&SMService_ServiceDesc, srv)
 }
 
-func _SMService_SetUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SMService_GetUsersStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Users)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SMServiceServer).SetUsers(ctx, in)
+		return srv.(SMServiceServer).GetUsersStatus(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/servicemanager.v1.SMService/SetUsers",
+		FullMethod: "/servicemanager.v1.SMService/GetUsersStatus",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SMServiceServer).SetUsers(ctx, req.(*Users))
+		return srv.(SMServiceServer).GetUsersStatus(ctx, req.(*Users))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SMService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SMService_GetAllStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(empty.Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SMServiceServer).GetStatus(ctx, in)
+		return srv.(SMServiceServer).GetAllStatus(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/servicemanager.v1.SMService/GetStatus",
+		FullMethod: "/servicemanager.v1.SMService/GetAllStatus",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SMServiceServer).GetStatus(ctx, req.(*empty.Empty))
+		return srv.(SMServiceServer).GetAllStatus(ctx, req.(*empty.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -498,24 +484,6 @@ func _SMService_InstallLayer_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SMService_RemoveLayer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RemoveLayerRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SMServiceServer).RemoveLayer(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/servicemanager.v1.SMService/RemoveLayer",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SMServiceServer).RemoveLayer(ctx, req.(*RemoveLayerRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _SMService_SubscribeSMNotifications_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(empty.Empty)
 	if err := stream.RecvMsg(m); err != nil {
@@ -599,12 +567,12 @@ var SMService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*SMServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SetUsers",
-			Handler:    _SMService_SetUsers_Handler,
+			MethodName: "GetUsersStatus",
+			Handler:    _SMService_GetUsersStatus_Handler,
 		},
 		{
-			MethodName: "GetStatus",
-			Handler:    _SMService_GetStatus_Handler,
+			MethodName: "GetAllStatus",
+			Handler:    _SMService_GetAllStatus_Handler,
 		},
 		{
 			MethodName: "GetBoardConfigStatus",
@@ -641,10 +609,6 @@ var SMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InstallLayer",
 			Handler:    _SMService_InstallLayer_Handler,
-		},
-		{
-			MethodName: "RemoveLayer",
-			Handler:    _SMService_RemoveLayer_Handler,
 		},
 		{
 			MethodName: "GetSystemLog",

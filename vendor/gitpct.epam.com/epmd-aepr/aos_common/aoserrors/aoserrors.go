@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright 2021 Renesas Inc.
-// Copyright 2021 EPAM Systems Inc.
+// Copyright (C) 2021 Renesas Electronics Corporation.
+// Copyright (C) 2021 EPAM Systems, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -69,9 +69,9 @@ func Wrap(err error) (retErr error) {
 
 	pc, _, line, ok := runtime.Caller(1)
 	callerInfo := formatCallerInfoString(pc, line, ok)
-	
+
 	return &tracedError{
-	    msg: fmt.Sprintf("%s %s", err, callerInfo),
+		msg: fmt.Sprintf("%s %s", err, callerInfo),
 	}
 }
 

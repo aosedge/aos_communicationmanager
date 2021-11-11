@@ -18,13 +18,13 @@ require (
 	github.com/google/go-tpm v0.3.2
 	github.com/google/uuid v1.3.0
 	github.com/looplab/fsm v0.3.0
-	github.com/mattn/go-sqlite3 v1.10.0
+	github.com/mattn/go-sqlite3 v1.14.9
 	github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d // indirect
 	github.com/shirou/gopsutil v3.21.8+incompatible
 	github.com/sirupsen/logrus v1.8.1
 	github.com/streadway/amqp v1.0.0
 	github.com/tklauser/go-sysconf v0.3.9 // indirect
-	gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211021140404-d3aecaf64120
-	google.golang.org/grpc v1.33.2
+	gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211119160812-d09d4d10f76e
+	google.golang.org/grpc v1.41.0
 	google.golang.org/protobuf v1.27.1
 )

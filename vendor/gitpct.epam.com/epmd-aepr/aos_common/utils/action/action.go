@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright 2019 Renesas Inc.
-// Copyright 2019 EPAM Systems Inc.
+// Copyright (C) 2021 Renesas Electronics Corporation.
+// Copyright (C) 2021 EPAM Systems, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,7 +38,6 @@ type Handler struct {
 
 type action struct {
 	id       string
-	data     interface{}
 	doAction func(id string)
 }
 
@@ -46,6 +45,7 @@ type action struct {
  * Public
  ******************************************************************************/
 
+// New creates new action handler
 func New(maxConcurrentActions int) (handler *Handler) {
 	handler = &Handler{
 		maxConcurrentActions: maxConcurrentActions,
@@ -56,7 +56,8 @@ func New(maxConcurrentActions int) (handler *Handler) {
 	return handler
 }
 
-func (handler *Handler) PutInQueue(id string, doAction func(id string)) {
+// Execute executes action
+func (handler *Handler) Execute(id string, doAction func(id string)) {
 	handler.Lock()
 	defer handler.Unlock()
 
@@ -80,6 +81,7 @@ func (handler *Handler) PutInQueue(id string, doAction func(id string)) {
 	go handler.processAction(handler.workQueue.PushBack(newAction))
 }
 
+// Wait waits all actions are executed
 func (handler *Handler) Wait() {
 	handler.wg.Wait()
 }
@@ -110,12 +112,12 @@ func (handler *Handler) processAction(item *list.Element) {
 
 	handler.workQueue.Remove(item)
 
-	for item := handler.waitQueue.Front(); item != nil; item = item.Next() {
-		if handler.isIDInWorkQueue(item.Value.(action).id) {
+	for waitItem := handler.waitQueue.Front(); waitItem != nil; waitItem = waitItem.Next() {
+		if handler.isIDInWorkQueue(waitItem.Value.(action).id) {
 			continue
 		}
 
-		go handler.processAction(handler.workQueue.PushBack(handler.waitQueue.Remove(item)))
+		go handler.processAction(handler.workQueue.PushBack(handler.waitQueue.Remove(waitItem)))
 
 		break
 	}
