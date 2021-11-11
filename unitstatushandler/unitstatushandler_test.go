@@ -69,7 +69,7 @@ func TestSendInitialStatus(t *testing.T) {
 
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(expectedUnitStatus.BoardConfig[0])
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(expectedUnitStatus.Components)
-	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(expectedUnitStatus.Layers, expectedUnitStatus.Services)
+	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(expectedUnitStatus.Services, expectedUnitStatus.Layers)
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -259,11 +259,11 @@ func TestUpdateLayers(t *testing.T) {
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.LayerInfo{
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, []cloudprotocol.LayerInfo{
 		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}, nil)
+	})
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -323,7 +323,7 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	softwareUpdater.LayersInfo = expectedUnitStatus.Layers
+	softwareUpdater.UsersLayers = expectedUnitStatus.Layers
 
 	// failed update
 
@@ -373,11 +373,11 @@ func TestUpdateServices(t *testing.T) {
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, []cloudprotocol.ServiceInfo{
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceInfo{
 		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	})
+	}, nil)
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -439,7 +439,7 @@ func TestUpdateServices(t *testing.T) {
 
 	// failed update
 
-	softwareUpdater.ServicesInfo = expectedUnitStatus.Services
+	softwareUpdater.UsersServices = expectedUnitStatus.Services
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
@@ -477,6 +477,117 @@ func TestUpdateServices(t *testing.T) {
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+}
+
+func TestUpdateCachedSOTA(t *testing.T) {
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
+		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceInfo{
+		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+	}, []cloudprotocol.LayerInfo{
+		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+	})
+	softwareUpdater.AllServices = []cloudprotocol.ServiceInfo{
+		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+	}
+	softwareUpdater.AllLayers = []cloudprotocol.LayerInfo{
+		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+	}
+	sender := unitstatushandler.NewTestSender()
+	downloader := unitstatushandler.NewTestDownloader()
+
+	statusHandler, err := unitstatushandler.New(
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, downloader,
+		unitstatushandler.NewTestStorage(), sender)
+	if err != nil {
+		t.Fatalf("Can't create unit status handler: %s", err)
+	}
+	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
+
+	if err = statusHandler.SendUnitStatus(); err != nil {
+		t.Fatalf("Can't set users: %s", err)
+	}
+
+	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
+		t.Fatalf("Can't receive unit status: %s", err)
+	}
+
+	expectedUnitStatus := cloudprotocol.UnitStatus{
+		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
+		Components:  []cloudprotocol.ComponentInfo{},
+		Layers: []cloudprotocol.LayerInfo{
+			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "layer3", Digest: "digest3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+		},
+		Services: []cloudprotocol.ServiceInfo{
+			{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "service3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+		},
+	}
+
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+		Services: []cloudprotocol.ServiceInfoFromCloud{
+			{
+				ID: "service0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service0"}, Sha256: []byte{0}},
+			},
+			{
+				ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service1"}, Sha256: []byte{1}},
+			},
+			{
+				ID: "service2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service2"}, Sha256: []byte{2}},
+			},
+			{
+				ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
+			}},
+		Layers: []cloudprotocol.LayerInfoFromCloud{
+			{
+				ID: "layer0", Digest: "digest0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer0"}, Sha256: []byte{0}},
+			},
+			{
+				ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer1"}, Sha256: []byte{1}},
+			},
+			{
+				ID: "layer2", Digest: "digest2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer2"}, Sha256: []byte{2}},
+			},
+			{
+				ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer3"}, Sha256: []byte{3}}},
+		}})
+
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %s", err)
+	}
+
+	for _, url := range downloader.DownloadedURLs {
+		if url == "service1" || url == "service2" || url == "layer1" || url == "layer2" {
+			t.Errorf("Unexpected download URL: %s", url)
+		}
+
+		if url != "service3" && url != "layer3" {
+			t.Errorf("Unexpected download URL: %s", url)
+		}
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {

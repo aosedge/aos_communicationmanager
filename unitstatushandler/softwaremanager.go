@@ -55,13 +55,15 @@ type softwareStatusHandler interface {
 }
 
 type softwareUpdate struct {
-	Schedule        cloudprotocol.ScheduleRule           `json:"schedule,omitempty"`
-	InstallLayers   []cloudprotocol.LayerInfoFromCloud   `json:"installLayers,omitempty"`
-	RemoveLayers    []cloudprotocol.LayerInfo            `json:"removeLayers,omitempty"`
-	InstallServices []cloudprotocol.ServiceInfoFromCloud `json:"installServices,omitempty"`
-	RemoveServices  []cloudprotocol.ServiceInfo          `json:"removeServices,omitempty"`
-	CertChains      []cloudprotocol.CertificateChain     `json:"certChains,omitempty"`
-	Certs           []cloudprotocol.Certificate          `json:"certs,omitempty"`
+	Schedule         cloudprotocol.ScheduleRule           `json:"schedule,omitempty"`
+	DownloadServices []cloudprotocol.ServiceInfoFromCloud `json:"downloadServices,omitempty"`
+	InstallServices  []cloudprotocol.ServiceInfoFromCloud `json:"installServices,omitempty"`
+	RemoveServices   []cloudprotocol.ServiceInfo          `json:"removeServices,omitempty"`
+	DownloadLayers   []cloudprotocol.LayerInfoFromCloud   `json:"downloadLayers,omitempty"`
+	InstallLayers    []cloudprotocol.LayerInfoFromCloud   `json:"installLayers,omitempty"`
+	RemoveLayers     []cloudprotocol.LayerInfo            `json:"removeLayers,omitempty"`
+	CertChains       []cloudprotocol.CertificateChain     `json:"certChains,omitempty"`
+	Certs            []cloudprotocol.Certificate          `json:"certs,omitempty"`
 }
 
 type softwareManager struct {
@@ -156,73 +158,98 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	manager.Lock()
 	defer manager.Unlock()
 
-	installedServices, installedLayers, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
+	update := &softwareUpdate{
+		Schedule:         desiredStatus.SOTASchedule,
+		DownloadServices: make([]cloudprotocol.ServiceInfoFromCloud, 0),
+		InstallServices:  make([]cloudprotocol.ServiceInfoFromCloud, 0),
+		RemoveServices:   make([]cloudprotocol.ServiceInfo, 0),
+		DownloadLayers:   make([]cloudprotocol.LayerInfoFromCloud, 0),
+		InstallLayers:    make([]cloudprotocol.LayerInfoFromCloud, 0),
+		RemoveLayers:     make([]cloudprotocol.LayerInfo, 0),
+		CertChains:       desiredStatus.CertificateChains,
+		Certs:            desiredStatus.Certificates,
+	}
+
+	usersServices, usersLayers, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	installServices := make([]cloudprotocol.ServiceInfoFromCloud, 0)
-	removeServices := make([]cloudprotocol.ServiceInfo, 0)
+	allServices, allLayers, err := manager.softwareUpdater.GetAllStatus()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
 
-desiredServiceLoop:
+desiredServicesLoop:
 	for _, desiredService := range desiredStatus.Services {
-		for _, installedService := range installedServices {
-			if desiredService.ID == installedService.ID && desiredService.AosVersion == installedService.AosVersion &&
-				installedService.Status == cloudprotocol.InstalledStatus {
-				continue desiredServiceLoop
+		for _, usersService := range usersServices {
+			if desiredService.ID == usersService.ID && desiredService.AosVersion == usersService.AosVersion &&
+				usersService.Status == cloudprotocol.InstalledStatus {
+				continue desiredServicesLoop
 			}
 		}
 
-		installServices = append(installServices, desiredService)
+		for _, service := range allServices {
+			if desiredService.ID == service.ID {
+				update.InstallServices = append(update.InstallServices, desiredService)
+				continue desiredServicesLoop
+			}
+		}
+
+		update.DownloadServices = append(update.DownloadServices, desiredService)
 	}
 
-installedServiceLoop:
-	for _, installedService := range installedServices {
-		if installedService.Status != cloudprotocol.InstalledStatus {
+usersServicesLoop:
+	for _, usersService := range usersServices {
+		if usersService.Status != cloudprotocol.InstalledStatus {
 			continue
 		}
 
 		for _, desiredService := range desiredStatus.Services {
-			if installedService.ID == desiredService.ID {
-				continue installedServiceLoop
+			if usersService.ID == desiredService.ID {
+				continue usersServicesLoop
 			}
 		}
 
-		removeServices = append(removeServices, installedService)
+		update.RemoveServices = append(update.RemoveServices, usersService)
 	}
 
-	installLayers := make([]cloudprotocol.LayerInfoFromCloud, 0)
-	removeLayers := make([]cloudprotocol.LayerInfo, 0)
-
-desiredLayerLoop:
+desiredLayersLoop:
 	for _, desiredLayer := range desiredStatus.Layers {
-		for _, installedLayer := range installedLayers {
-			if desiredLayer.Digest == installedLayer.Digest && installedLayer.Status == cloudprotocol.InstalledStatus {
-				continue desiredLayerLoop
+		for _, usersLayer := range usersLayers {
+			if desiredLayer.Digest == usersLayer.Digest && usersLayer.Status == cloudprotocol.InstalledStatus {
+				continue desiredLayersLoop
 			}
 		}
 
-		installLayers = append(installLayers, desiredLayer)
+		for _, layer := range allLayers {
+			if desiredLayer.ID == layer.ID {
+				update.InstallLayers = append(update.InstallLayers, desiredLayer)
+				continue desiredLayersLoop
+			}
+		}
+
+		update.DownloadLayers = append(update.DownloadLayers, desiredLayer)
 	}
 
-installedLayerLoop:
-	for _, installedLayer := range installedLayers {
+usersLayersLoop:
+	for _, installedLayer := range usersLayers {
 		if installedLayer.Status != cloudprotocol.InstalledStatus {
 			continue
 		}
 
 		for _, desiredLayer := range desiredStatus.Layers {
 			if installedLayer.Digest == desiredLayer.Digest {
-				continue installedLayerLoop
+				continue usersLayersLoop
 			}
 		}
 
-		removeLayers = append(removeLayers, installedLayer)
+		update.RemoveLayers = append(update.RemoveLayers, installedLayer)
 	}
 
-	if len(installLayers) != 0 || len(removeLayers) != 0 || len(installServices) != 0 || len(removeServices) != 0 {
-		if err := manager.newUpdate(desiredStatus.SOTASchedule, installServices, removeServices,
-			installLayers, removeLayers, desiredStatus.CertificateChains, desiredStatus.Certificates); err != nil {
+	if len(update.DownloadServices) != 0 || len(update.InstallServices) != 0 || len(update.RemoveServices) != 0 ||
+		len(update.DownloadLayers) != 0 || len(update.InstallLayers) != 0 || len(update.RemoveLayers) != 0 {
+		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -399,7 +426,7 @@ func (manager *softwareManager) download(ctx context.Context) {
 
 	request := make(map[string]cloudprotocol.DecryptDataStruct)
 
-	for _, service := range manager.CurrentUpdate.InstallServices {
+	for _, service := range manager.CurrentUpdate.DownloadServices {
 		log.WithFields(log.Fields{
 			"id":      service.ID,
 			"version": service.AosVersion,
@@ -413,7 +440,7 @@ func (manager *softwareManager) download(ctx context.Context) {
 		}
 	}
 
-	for _, layer := range manager.CurrentUpdate.InstallLayers {
+	for _, layer := range manager.CurrentUpdate.DownloadLayers {
 		log.WithFields(log.Fields{
 			"id":      layer.ID,
 			"digest":  layer.Digest,
@@ -431,6 +458,29 @@ func (manager *softwareManager) download(ctx context.Context) {
 
 	manager.statusMutex.Unlock()
 
+	// Set pending status for install services and layers
+
+	for _, service := range manager.CurrentUpdate.InstallServices {
+		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceInfo{
+			ID:         service.ID,
+			AosVersion: service.AosVersion,
+			Status:     cloudprotocol.PendingStatus,
+		}
+
+		manager.updateServiceStatusByID(service.ID, cloudprotocol.PendingStatus, "", "")
+	}
+
+	for _, layer := range manager.CurrentUpdate.InstallLayers {
+		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerInfo{
+			ID:         layer.ID,
+			AosVersion: layer.AosVersion,
+			Digest:     layer.Digest,
+			Status:     cloudprotocol.PendingStatus,
+		}
+
+		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.PendingStatus, "")
+	}
+
 	// Nothing to download
 	if len(request) == 0 {
 		return
@@ -441,40 +491,40 @@ func (manager *softwareManager) download(ctx context.Context) {
 
 	// Set pending state
 
-	for id, layer := range manager.LayerStatuses {
-		if layer.Status == cloudprotocol.ErrorStatus {
+	for id := range manager.DownloadResult {
+		if layerStatus, ok := manager.LayerStatuses[id]; ok {
+			if layerStatus.Status == cloudprotocol.ErrorStatus {
+				log.WithFields(log.Fields{
+					"id":      layerStatus.ID,
+					"digest":  layerStatus.Digest,
+					"version": layerStatus.AosVersion,
+				}).Errorf("Error downloading layer: %s", layerStatus.Error)
+				continue
+			}
+
 			log.WithFields(log.Fields{
-				"id":      layer.ID,
-				"digest":  layer.Digest,
-				"version": layer.AosVersion,
-			}).Errorf("Error downloading layer: %s", layer.Error)
-			continue
-		}
+				"id":      layerStatus.ID,
+				"digest":  layerStatus.Digest,
+				"version": layerStatus.AosVersion,
+			}).Debug("Layer successfully downloaded")
 
-		log.WithFields(log.Fields{
-			"id":      layer.ID,
-			"digest":  layer.Digest,
-			"version": layer.AosVersion,
-		}).Debug("Layer successfully downloaded")
+			manager.updateLayerStatusByID(id, cloudprotocol.PendingStatus, "")
+		} else if serviceStatus, ok := manager.ServiceStatuses[id]; ok {
+			if serviceStatus.Status == cloudprotocol.ErrorStatus {
+				log.WithFields(log.Fields{
+					"id":      serviceStatus.ID,
+					"version": serviceStatus.AosVersion,
+				}).Errorf("Error downloading service: %s", serviceStatus.Error)
+				continue
+			}
 
-		manager.updateLayerStatusByID(id, cloudprotocol.PendingStatus, "")
-	}
-
-	for id, service := range manager.ServiceStatuses {
-		if service.Status == cloudprotocol.ErrorStatus {
 			log.WithFields(log.Fields{
-				"id":      service.ID,
-				"version": service.AosVersion,
-			}).Errorf("Error downloading service: %s", service.Error)
-			continue
+				"id":      serviceStatus.ID,
+				"version": serviceStatus.AosVersion,
+			}).Debug("Service successfully downloaded")
+
+			manager.updateServiceStatusByID(id, cloudprotocol.PendingStatus, "", "")
 		}
-
-		log.WithFields(log.Fields{
-			"id":      service.ID,
-			"version": service.AosVersion,
-		}).Debug("Service successfully downloaded")
-
-		manager.updateServiceStatusByID(id, cloudprotocol.PendingStatus, "", "")
 	}
 
 	downloadErr = getDownloadError(manager.DownloadResult)
@@ -538,21 +588,8 @@ func (manager *softwareManager) update(ctx context.Context) {
  * Private
  **********************************************************************************************************************/
 
-func (manager *softwareManager) newUpdate(schedule cloudprotocol.ScheduleRule,
-	installServices []cloudprotocol.ServiceInfoFromCloud, removeServices []cloudprotocol.ServiceInfo,
-	installLayers []cloudprotocol.LayerInfoFromCloud, removeLayers []cloudprotocol.LayerInfo,
-	certChains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (err error) {
+func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 	log.Debug("New software update")
-
-	update := &softwareUpdate{
-		Schedule:        schedule,
-		InstallLayers:   installLayers,
-		RemoveLayers:    removeLayers,
-		InstallServices: installServices,
-		RemoveServices:  removeServices,
-		CertChains:      certChains,
-		Certs:           certs,
-	}
 
 	// Set default schedule type
 	switch update.Schedule.Type {
@@ -715,7 +752,10 @@ func (manager *softwareManager) installLayers() (installErr string) {
 		}
 	}
 
-	for _, layer := range manager.CurrentUpdate.InstallLayers {
+	installLayers := make([]cloudprotocol.LayerInfoFromCloud, 0,
+		len(manager.CurrentUpdate.DownloadLayers)+len(manager.CurrentUpdate.InstallLayers))
+
+	for _, layer := range manager.CurrentUpdate.DownloadLayers {
 		downloadInfo, ok := manager.DownloadResult[layer.Digest]
 		if !ok {
 			handleError(layer, aoserrors.New("can't get download result").Error())
@@ -727,6 +767,24 @@ func (manager *softwareManager) installLayers() (installErr string) {
 			continue
 		}
 
+		url := url.URL{
+			Scheme: "file",
+			Path:   downloadInfo.FileName,
+		}
+
+		layer.DecryptDataStruct = cloudprotocol.DecryptDataStruct{
+			URLs:   []string{url.String()},
+			Size:   downloadInfo.FileInfo.Size,
+			Sha256: downloadInfo.FileInfo.Sha256,
+			Sha512: downloadInfo.FileInfo.Sha512,
+		}
+
+		installLayers = append(installLayers, layer)
+	}
+
+	installLayers = append(installLayers, manager.CurrentUpdate.InstallLayers...)
+
+	for _, layer := range installLayers {
 		log.WithFields(log.Fields{
 			"id":         layer.ID,
 			"aosVersion": layer.AosVersion,
@@ -735,20 +793,8 @@ func (manager *softwareManager) installLayers() (installErr string) {
 
 		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.InstallingStatus, "")
 
-		url := url.URL{
-			Scheme: "file",
-			Path:   downloadInfo.FileName,
-		}
-
 		// Create new variable to be captured by action function
 		layerInfo := layer
-
-		layerInfo.DecryptDataStruct = cloudprotocol.DecryptDataStruct{
-			URLs:   []string{url.String()},
-			Size:   downloadInfo.FileInfo.Size,
-			Sha256: downloadInfo.FileInfo.Sha256,
-			Sha512: downloadInfo.FileInfo.Sha512,
-		}
 
 		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) {
 			if err := manager.softwareUpdater.InstallLayer(layerInfo); err != nil {
@@ -788,6 +834,12 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 		}
 		manager.statusMutex.Unlock()
 
+		log.WithFields(log.Fields{
+			"id":         layer.ID,
+			"aosVersion": layer.AosVersion,
+			"digest":     layer.Digest,
+		}).Info("Layer successfully removed")
+
 		// As we do not perform layer deleting, just update status
 		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.RemovedStatus, "")
 	}
@@ -818,7 +870,10 @@ func (manager *softwareManager) installServices() (installErr string) {
 		}
 	}
 
-	for _, service := range manager.CurrentUpdate.InstallServices {
+	installServices := make([]cloudprotocol.ServiceInfoFromCloud, 0,
+		len(manager.CurrentUpdate.DownloadServices)+len(manager.CurrentUpdate.InstallServices))
+
+	for _, service := range manager.CurrentUpdate.DownloadServices {
 		downloadInfo, ok := manager.DownloadResult[service.ID]
 		if !ok {
 			handleError(service, aoserrors.New("can't get download result").Error())
@@ -830,6 +885,24 @@ func (manager *softwareManager) installServices() (installErr string) {
 			continue
 		}
 
+		url := url.URL{
+			Scheme: "file",
+			Path:   downloadInfo.FileName,
+		}
+
+		service.DecryptDataStruct = cloudprotocol.DecryptDataStruct{
+			URLs:   []string{url.String()},
+			Size:   downloadInfo.FileInfo.Size,
+			Sha256: downloadInfo.FileInfo.Sha256,
+			Sha512: downloadInfo.FileInfo.Sha512,
+		}
+
+		installServices = append(installServices, service)
+	}
+
+	installServices = append(installServices, manager.CurrentUpdate.InstallServices...)
+
+	for _, service := range installServices {
 		log.WithFields(log.Fields{
 			"id":         service.ID,
 			"aosVersion": service.AosVersion,
@@ -837,20 +910,8 @@ func (manager *softwareManager) installServices() (installErr string) {
 
 		manager.updateServiceStatusByID(service.ID, cloudprotocol.InstallingStatus, "", "")
 
-		url := url.URL{
-			Scheme: "file",
-			Path:   downloadInfo.FileName,
-		}
-
 		// Create new variable to be captured by action function
 		serviceInfo := service
-
-		serviceInfo.DecryptDataStruct = cloudprotocol.DecryptDataStruct{
-			URLs:   []string{url.String()},
-			Size:   downloadInfo.FileInfo.Size,
-			Sha256: downloadInfo.FileInfo.Sha256,
-			Sha512: downloadInfo.FileInfo.Sha512,
-		}
 
 		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) {
 			stateChecksum, err := manager.softwareUpdater.InstallService(manager.currentUsers, serviceInfo)

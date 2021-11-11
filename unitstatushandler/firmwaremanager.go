@@ -149,12 +149,18 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	manager.Lock()
 	defer manager.Unlock()
 
+	update := &firmwareUpdate{
+		Schedule:    desiredStatus.FOTASchedule,
+		BoardConfig: desiredStatus.BoardConfig,
+		Components:  make([]cloudprotocol.ComponentInfoFromCloud, 0),
+		CertChains:  desiredStatus.CertificateChains,
+		Certs:       desiredStatus.Certificates,
+	}
+
 	installedComponents, err := manager.firmwareUpdater.GetStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
-
-	updateComponents := make([]cloudprotocol.ComponentInfoFromCloud, 0)
 
 desiredLoop:
 	for _, desiredComponent := range desiredStatus.Components {
@@ -166,12 +172,11 @@ desiredLoop:
 			}
 		}
 
-		updateComponents = append(updateComponents, desiredComponent)
+		update.Components = append(update.Components, desiredComponent)
 	}
 
-	if len(desiredStatus.BoardConfig) != 0 || len(updateComponents) != 0 {
-		if err = manager.newUpdate(desiredStatus.FOTASchedule, desiredStatus.BoardConfig, updateComponents,
-			desiredStatus.CertificateChains, desiredStatus.Certificates); err != nil {
+	if len(update.BoardConfig) != 0 || len(update.Components) != 0 {
+		if err = manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -444,18 +449,8 @@ func (manager *firmwareManager) update(ctx context.Context) {
  * Private
  **********************************************************************************************************************/
 
-func (manager *firmwareManager) newUpdate(schedule cloudprotocol.ScheduleRule,
-	boardConfig json.RawMessage, components []cloudprotocol.ComponentInfoFromCloud,
-	certChains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (err error) {
+func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 	log.Debug("New firmware update")
-
-	update := &firmwareUpdate{
-		Schedule:    schedule,
-		BoardConfig: boardConfig,
-		Components:  components,
-		CertChains:  certChains,
-		Certs:       certs,
-	}
 
 	// Set default schedule type
 	switch update.Schedule.Type {

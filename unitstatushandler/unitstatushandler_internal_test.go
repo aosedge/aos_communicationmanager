@@ -70,15 +70,19 @@ type TestFirmwareUpdater struct {
 }
 
 type TestSoftwareUpdater struct {
-	LayersInfo   []cloudprotocol.LayerInfo
-	ServicesInfo []cloudprotocol.ServiceInfo
-	UpdateError  error
+	UsersServices []cloudprotocol.ServiceInfo
+	UsersLayers   []cloudprotocol.LayerInfo
+	AllServices   []cloudprotocol.ServiceInfo
+	AllLayers     []cloudprotocol.LayerInfo
+	UpdateError   error
 }
 
 type TestDownloader struct {
-	errorURL     string
-	downloadErr  error
-	DownloadTime time.Duration
+	DownloadTime   time.Duration
+	DownloadedURLs []string
+
+	errorURL    string
+	downloadErr error
 }
 
 type TestResult struct {
@@ -1251,20 +1255,19 @@ func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.
  * TestSoftwareUpdater
  **********************************************************************************************************************/
 
-func NewTestSoftwareUpdater(
-	layersInfo []cloudprotocol.LayerInfo,
-	servicesInfo []cloudprotocol.ServiceInfo) (updater *TestSoftwareUpdater) {
-	return &TestSoftwareUpdater{LayersInfo: layersInfo, ServicesInfo: servicesInfo}
+func NewTestSoftwareUpdater(usersServices []cloudprotocol.ServiceInfo,
+	usersLayers []cloudprotocol.LayerInfo) (updater *TestSoftwareUpdater) {
+	return &TestSoftwareUpdater{UsersServices: usersServices, UsersLayers: usersLayers}
 }
 
 func (updater *TestSoftwareUpdater) GetUsersStatus(users []string) (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
-	return updater.ServicesInfo, updater.LayersInfo, nil
+	return updater.UsersServices, updater.UsersLayers, nil
 }
 
 func (updater *TestSoftwareUpdater) GetAllStatus() (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
-	return nil, nil, nil
+	return updater.AllServices, updater.AllLayers, nil
 }
 
 func (updater *TestSoftwareUpdater) InstallService(users []string,
@@ -1299,7 +1302,7 @@ func (testDownloader *TestDownloader) DownloadAndDecrypt(
 
 	file, err := ioutil.TempFile(tmpDir, "*.dec")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	defer file.Close()
 
@@ -1308,6 +1311,10 @@ func (testDownloader *TestDownloader) DownloadAndDecrypt(
 	if len(packageInfo.URLs) != 0 {
 		if testDownloader.errorURL == packageInfo.URLs[0] {
 			downloadErr = testDownloader.downloadErr
+		}
+
+		if downloadErr == nil {
+			testDownloader.DownloadedURLs = append(testDownloader.DownloadedURLs, packageInfo.URLs[0])
 		}
 	}
 
