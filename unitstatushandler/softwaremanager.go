@@ -755,7 +755,7 @@ func (manager *softwareManager) installLayers(ctx context.Context) (installErr s
 			Sha512: downloadInfo.FileInfo.Sha512,
 		}
 
-		manager.actionHandler.PutInQueue(layerInfo.Digest, func(digest string) {
+		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) {
 			if err := manager.softwareUpdater.InstallLayer(layerInfo); err != nil {
 				handleError(layerInfo, aoserrors.Wrap(err).Error())
 				return
@@ -822,7 +822,7 @@ func (manager *softwareManager) removeLayers(ctx context.Context) (removeErr str
 		// Create new variable to be captured by action function
 		layerStatus := layer
 
-		manager.actionHandler.PutInQueue(layerStatus.Digest, func(digest string) {
+		manager.actionHandler.Execute(layerStatus.Digest, func(digest string) {
 			if err := manager.softwareUpdater.RemoveLayer(layerStatus); err != nil {
 				handleError(layerStatus, err.Error())
 				return
@@ -900,7 +900,7 @@ func (manager *softwareManager) installServices(ctx context.Context) (installErr
 			Sha512: downloadInfo.FileInfo.Sha512,
 		}
 
-		manager.actionHandler.PutInQueue(serviceInfo.ID, func(serviceID string) {
+		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) {
 			stateChecksum, err := manager.softwareUpdater.InstallService(serviceInfo)
 			if err != nil {
 				handleError(serviceInfo, aoserrors.Wrap(err).Error())
@@ -965,7 +965,7 @@ func (manager *softwareManager) removeServices(ctx context.Context) (removeErr s
 		// Create new variable to be captured by action function
 		serviceStatus := service
 
-		manager.actionHandler.PutInQueue(serviceStatus.ID, func(serviceID string) {
+		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) {
 			if err := manager.softwareUpdater.RemoveService(serviceStatus); err != nil {
 				handleError(serviceStatus, err.Error())
 				return
