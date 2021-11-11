@@ -1257,29 +1257,26 @@ func NewTestSoftwareUpdater(
 	return &TestSoftwareUpdater{LayersInfo: layersInfo, ServicesInfo: servicesInfo}
 }
 
-func (updater *TestSoftwareUpdater) SetUsers(users []string) (err error) {
-	return updater.UpdateError
-}
-
-func (updater *TestSoftwareUpdater) GetStatus() (
+func (updater *TestSoftwareUpdater) GetUsersStatus(users []string) (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
 	return updater.ServicesInfo, updater.LayersInfo, nil
 }
 
-func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error) {
-	return updater.UpdateError
+func (updater *TestSoftwareUpdater) GetAllStatus() (
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+	return nil, nil, nil
 }
 
-func (updater *TestSoftwareUpdater) RemoveLayer(layerInfo cloudprotocol.LayerInfo) (err error) {
-	return updater.UpdateError
-}
-
-func (updater *TestSoftwareUpdater) InstallService(
+func (updater *TestSoftwareUpdater) InstallService(users []string,
 	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
 	return "", updater.UpdateError
 }
 
-func (updater *TestSoftwareUpdater) RemoveService(serviceInfo cloudprotocol.ServiceInfo) (err error) {
+func (updater *TestSoftwareUpdater) RemoveService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
+	return updater.UpdateError
+}
+
+func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error) {
 	return updater.UpdateError
 }
 

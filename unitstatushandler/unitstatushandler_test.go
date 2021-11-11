@@ -334,8 +334,7 @@ func TestUpdateLayers(t *testing.T) {
 		Components:  []cloudprotocol.ComponentInfo{},
 		Layers: []cloudprotocol.LayerInfo{
 			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.ErrorStatus,
-				Error: softwareUpdater.UpdateError.Error()},
+			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus},

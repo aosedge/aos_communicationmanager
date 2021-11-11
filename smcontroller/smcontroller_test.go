@@ -511,8 +511,14 @@ func TestSetServiceState(t *testing.T) {
 	}
 	defer controller.Close()
 
-	if err = controller.SetServiceState(cloudprotocol.UpdateState{Checksum: "checksum"}); err != nil {
+	users := []string{"user1", "user2", "user3"}
+
+	if err = controller.SetServiceState(users, cloudprotocol.UpdateState{Checksum: "checksum"}); err != nil {
 		t.Errorf("Error sending service set service state: %s", err)
+	}
+
+	if !reflect.DeepEqual(users, sm.users) {
+		t.Errorf("Wrong users: %v", sm.users)
 	}
 
 	if sm.stateChecksum != "checksum" {
@@ -1059,6 +1065,7 @@ func (sm *testSM) ServiceStateAcceptance(ctx context.Context, request *pb.StateA
 }
 
 func (sm *testSM) SetServiceState(ctx context.Context, request *pb.ServiceState) (response *empty.Empty, err error) {
+	sm.users = request.Users.Users
 	sm.stateChecksum = request.StateChecksum
 
 	return &empty.Empty{}, nil

@@ -265,11 +265,6 @@ func (umCtrl *Controller) Close() {
 	umCtrl.stopChannel <- true
 }
 
-// WaitForReady waits for all UM's are connected
-func (umCtrl *Controller) WaitForReady() {
-	umCtrl.connectionMonitor.wg.Wait()
-}
-
 // GetStatus returns list of system components information
 func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
 	currentState := umCtrl.fsm.Current()

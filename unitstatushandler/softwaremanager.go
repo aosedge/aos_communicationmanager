@@ -156,7 +156,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	manager.Lock()
 	defer manager.Unlock()
 
-	installedServices, installedLayers, err := manager.softwareUpdater.GetStatus()
+	installedServices, installedLayers, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -251,7 +251,7 @@ func (manager *softwareManager) getItemStatuses() (serviceStatuses []cloudprotoc
 	manager.statusMutex.RLock()
 	defer manager.statusMutex.RUnlock()
 
-	serviceInfo, layerInfo, err := manager.softwareUpdater.GetStatus()
+	serviceInfo, layerInfo, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
 	if err != nil {
 		return nil, nil, aoserrors.Wrap(err)
 	}
@@ -299,10 +299,6 @@ func (manager *softwareManager) setUsers(users []string) (err error) {
 		if err = manager.stateMachine.sendEvent(eventCancel, ""); err != nil {
 			return aoserrors.Wrap(err)
 		}
-	}
-
-	if err = manager.softwareUpdater.SetUsers(users); err != nil {
-		return aoserrors.Wrap(err)
 	}
 
 	manager.currentUsers = users
@@ -491,9 +487,8 @@ func (manager *softwareManager) download(ctx context.Context) {
 		}
 	}
 
-	// All downloads failed and there is nothing to update then cancel
-	if numDownloadErrors == len(manager.DownloadResult) &&
-		len(manager.CurrentUpdate.RemoveLayers) == 0 && len(manager.CurrentUpdate.RemoveServices) == 0 {
+	// All downloads failed and there is nothing to update (not counting remove layers) then cancel
+	if numDownloadErrors == len(manager.DownloadResult) && len(manager.CurrentUpdate.RemoveServices) == 0 {
 		finishEvent = eventCancel
 	}
 }
@@ -777,29 +772,6 @@ func (manager *softwareManager) installLayers() (installErr string) {
 }
 
 func (manager *softwareManager) removeLayers() (removeErr string) {
-	var mutex sync.Mutex
-
-	handleError := func(layer cloudprotocol.LayerInfo, layerErr string) {
-		log.WithFields(log.Fields{
-			"id":         layer.ID,
-			"aosVersion": layer.AosVersion,
-			"digest":     layer.Digest,
-		}).Errorf("Can't remove layer: %s", layerErr)
-
-		if isCancelError(layerErr) {
-			return
-		}
-
-		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.ErrorStatus, layerErr)
-
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		if removeErr == "" {
-			removeErr = layerErr
-		}
-	}
-
 	for _, layer := range manager.CurrentUpdate.RemoveLayers {
 		log.WithFields(log.Fields{
 			"id":         layer.ID,
@@ -813,34 +785,14 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 			ID:         layer.ID,
 			AosVersion: layer.AosVersion,
 			Digest:     layer.Digest,
-			Status:     cloudprotocol.RemovingStatus,
 		}
 		manager.statusMutex.Unlock()
 
-		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.RemovingStatus, "")
-
-		// Create new variable to be captured by action function
-		layerStatus := layer
-
-		manager.actionHandler.Execute(layerStatus.Digest, func(digest string) {
-			if err := manager.softwareUpdater.RemoveLayer(layerStatus); err != nil {
-				handleError(layerStatus, err.Error())
-				return
-			}
-
-			log.WithFields(log.Fields{
-				"id":         layerStatus.ID,
-				"aosVersion": layerStatus.AosVersion,
-				"digest":     layerStatus.Digest,
-			}).Info("Layer successfully removed")
-
-			manager.updateLayerStatusByID(layerStatus.Digest, cloudprotocol.RemovedStatus, "")
-		})
+		// As we do not perform layer deleting, just update status
+		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.RemovedStatus, "")
 	}
 
-	manager.actionHandler.Wait()
-
-	return removeErr
+	return ""
 }
 
 func (manager *softwareManager) installServices() (installErr string) {
@@ -901,7 +853,7 @@ func (manager *softwareManager) installServices() (installErr string) {
 		}
 
 		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) {
-			stateChecksum, err := manager.softwareUpdater.InstallService(serviceInfo)
+			stateChecksum, err := manager.softwareUpdater.InstallService(manager.currentUsers, serviceInfo)
 			if err != nil {
 				handleError(serviceInfo, aoserrors.Wrap(err).Error())
 				return
@@ -966,7 +918,7 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 		serviceStatus := service
 
 		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) {
-			if err := manager.softwareUpdater.RemoveService(serviceStatus); err != nil {
+			if err := manager.softwareUpdater.RemoveService(manager.currentUsers, serviceStatus); err != nil {
 				handleError(serviceStatus, err.Error())
 				return
 			}

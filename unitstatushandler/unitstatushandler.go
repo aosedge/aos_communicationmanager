@@ -70,12 +70,12 @@ type FirmwareUpdater interface {
 
 // SoftwareUpdater updates services, layers
 type SoftwareUpdater interface {
-	SetUsers(users []string) (err error)
-	GetStatus() (servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error)
-	InstallService(serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error)
-	RemoveService(serviceInfo cloudprotocol.ServiceInfo) (err error)
+	GetUsersStatus(users []string) (servicesInfo []cloudprotocol.ServiceInfo,
+		layersInfo []cloudprotocol.LayerInfo, err error)
+	GetAllStatus() (servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error)
+	InstallService(users []string, serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error)
+	RemoveService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error)
 	InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error)
-	RemoveLayer(layerInfo cloudprotocol.LayerInfo) (err error)
 }
 
 // Storage used to store unit status handler states

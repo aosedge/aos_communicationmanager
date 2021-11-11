@@ -305,7 +305,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"serviceID": data.ServiceID,
 			"checksum":  data.Checksum}).Info("Receive update state message")
 
-		if err = cm.smController.SetServiceState(*data); err != nil {
+		if err = cm.smController.SetServiceState(cm.iam.GetUsers(), *data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -409,33 +409,9 @@ func (cm *communicationManager) handleConnection(ctx context.Context, serviceDis
 }
 
 func (cm *communicationManager) handleUsers(ctx context.Context) {
-	readyChannel := make(chan struct{}, 1)
-
-	go func() {
-		cm.smController.WaitForReady()
-		cm.umController.WaitForReady()
-
-		readyChannel <- struct{}{}
-	}()
-
-	isReady := false
-
 	for {
 		select {
-		case <-readyChannel:
-			if err := cm.statusHandler.SetUsers(cm.iam.GetUsers()); err != nil {
-				log.Errorf("Can't set users: %s", err)
-			}
-
-			isReady = true
-
-		case users := <-cm.iam.UsersChangedChannel():
-			if isReady {
-				if err := cm.statusHandler.SetUsers(users); err != nil {
-					log.Errorf("Can't set users: %s", err)
-				}
-			}
-
+		case <-cm.iam.UsersChangedChannel():
 			if err := cm.amqp.Disconnect(); err != nil {
 				log.Errorf("Can't disconnect: %s", err)
 			}

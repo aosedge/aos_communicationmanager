@@ -145,11 +145,6 @@ func (controller *Controller) Close() (err error) {
 	return nil
 }
 
-// WaitForReady waits for connect to all CM's
-func (controller *Controller) WaitForReady() {
-	controller.readyWG.Wait()
-}
-
 // GetUsersStatus returns SM users status
 func (controller *Controller) GetUsersStatus(users []string) (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
@@ -343,7 +338,7 @@ func (controller *Controller) ServiceStateAcceptance(
 }
 
 // SetServiceState sets service state
-func (controller *Controller) SetServiceState(state cloudprotocol.UpdateState) (err error) {
+func (controller *Controller) SetServiceState(users []string, state cloudprotocol.UpdateState) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -351,7 +346,7 @@ func (controller *Controller) SetServiceState(state cloudprotocol.UpdateState) (
 	// TODO: we do not support multiple SM right now, set service state for all SM's
 
 	for _, client := range clients {
-		if err = client.setServiceState(state); err != nil {
+		if err = client.setServiceState(users, state); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}

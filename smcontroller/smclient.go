@@ -344,7 +344,7 @@ func (client *smClient) serviceStateAcceptance(
 	return nil
 }
 
-func (client *smClient) setServiceState(state cloudprotocol.UpdateState) (err error) {
+func (client *smClient) setServiceState(users []string, state cloudprotocol.UpdateState) (err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
 		"serviceID": state.ServiceID,
@@ -354,6 +354,7 @@ func (client *smClient) setServiceState(state cloudprotocol.UpdateState) (err er
 	defer cancel()
 
 	if _, err = client.pbClient.SetServiceState(ctx, &pb.ServiceState{
+		Users:         &pb.Users{Users: users},
 		ServiceId:     state.ServiceID,
 		State:         []byte(state.State),
 		StateChecksum: state.Checksum}); err != nil {
