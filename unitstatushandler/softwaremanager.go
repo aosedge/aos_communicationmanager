@@ -514,25 +514,25 @@ func (manager *softwareManager) update(ctx context.Context) {
 		}()
 	}()
 
-	if errorStr := manager.installLayers(ctx); errorStr != "" {
+	if errorStr := manager.installLayers(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
 		}
 	}
 
-	if errorStr := manager.installServices(ctx); errorStr != "" {
+	if errorStr := manager.installServices(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
 		}
 	}
 
-	if errorStr := manager.removeServices(ctx); errorStr != "" {
+	if errorStr := manager.removeServices(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
 		}
 	}
 
-	if errorStr := manager.removeLayers(ctx); errorStr != "" {
+	if errorStr := manager.removeLayers(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
 		}
@@ -696,7 +696,7 @@ func (manager *softwareManager) saveState() (err error) {
 	return nil
 }
 
-func (manager *softwareManager) installLayers(ctx context.Context) (installErr string) {
+func (manager *softwareManager) installLayers() (installErr string) {
 	var mutex sync.Mutex
 
 	handleError := func(layer cloudprotocol.LayerInfoFromCloud, layerErr string) {
@@ -776,7 +776,7 @@ func (manager *softwareManager) installLayers(ctx context.Context) (installErr s
 	return installErr
 }
 
-func (manager *softwareManager) removeLayers(ctx context.Context) (removeErr string) {
+func (manager *softwareManager) removeLayers() (removeErr string) {
 	var mutex sync.Mutex
 
 	handleError := func(layer cloudprotocol.LayerInfo, layerErr string) {
@@ -843,7 +843,7 @@ func (manager *softwareManager) removeLayers(ctx context.Context) (removeErr str
 	return removeErr
 }
 
-func (manager *softwareManager) installServices(ctx context.Context) (installErr string) {
+func (manager *softwareManager) installServices() (installErr string) {
 	var mutex sync.Mutex
 
 	handleError := func(service cloudprotocol.ServiceInfoFromCloud, serviceErr string) {
@@ -922,7 +922,7 @@ func (manager *softwareManager) installServices(ctx context.Context) (installErr
 	return installErr
 }
 
-func (manager *softwareManager) removeServices(ctx context.Context) (removeErr string) {
+func (manager *softwareManager) removeServices() (removeErr string) {
 	var mutex sync.Mutex
 
 	handleError := func(service cloudprotocol.ServiceInfo, serviceErr string) {
