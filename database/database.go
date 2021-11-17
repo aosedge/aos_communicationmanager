@@ -330,7 +330,7 @@ func (db *Database) createConfigTable() (err error) {
 			cursor,
 			componentsUpdateInfo,
 			fotaUpdateState,
-			sotaUpdateState) values(?, ?, ?, ?)`, "", "", "", ""); err != nil {
+			sotaUpdateState) values(?, ?, ?, ?)`, "", "", json.RawMessage{}, json.RawMessage{}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
