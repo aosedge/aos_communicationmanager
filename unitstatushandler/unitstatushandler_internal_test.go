@@ -274,8 +274,8 @@ func TestFirmwareManager(t *testing.T) {
 	}
 
 	updateTimeSlots := []cloudprotocol.TimeSlot{{
-		Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
-		Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 23, 59, 59, 999999, time.Local)},
+		Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+		Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
 	}}
 
 	updateTimetable := []cloudprotocol.TimetableEntry{
@@ -707,8 +707,8 @@ func TestSoftwareManager(t *testing.T) {
 	}
 
 	updateTimeSlots := []cloudprotocol.TimeSlot{{
-		Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
-		Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 23, 59, 59, 999999, time.Local)},
+		Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+		Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
 	}}
 
 	updateTimetable := []cloudprotocol.TimetableEntry{
@@ -957,8 +957,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 2, 0, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -970,8 +970,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 2, 0, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -983,8 +983,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 1, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -997,8 +997,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1011,32 +1011,32 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 14, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 16, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 18, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 20, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 22, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1049,48 +1049,48 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 14, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 16, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 18, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 20, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 22, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 4, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 5, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(1, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(1, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 					},
 				},

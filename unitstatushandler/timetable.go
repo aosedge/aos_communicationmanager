@@ -51,11 +51,11 @@ func validateTimetable(timetable []cloudprotocol.TimetableEntry) (err error) {
 		}
 
 		for _, slot := range entry.TimeSlots {
-			if year, month, day := slot.Start.Date(); year != 1 || month != 1 || day != 1 {
+			if year, month, day := slot.Start.Date(); year != 0 || month != 1 || day != 1 {
 				return aoserrors.New("start value should contain only time")
 			}
 
-			if year, month, day := slot.Finish.Date(); year != 1 || month != 1 || day != 1 {
+			if year, month, day := slot.Finish.Date(); year != 0 || month != 1 || day != 1 {
 				return aoserrors.New("finish value should contain only time")
 			}
 
