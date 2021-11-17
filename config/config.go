@@ -198,13 +198,7 @@ func New(fileName string) (config *Config, err error) {
 
 // MarshalJSON marshals JSON Duration type
 func (d Duration) MarshalJSON() (b []byte, err error) {
-	t, err := time.Parse("15:04:05", "00:00:00")
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-	t.Add(d.Duration)
-
-	return json.Marshal(t.Add(d.Duration).Format("15:04:05"))
+	return json.Marshal(d.Duration.String())
 }
 
 // UnmarshalJSON unmarshals JSON Duration type
@@ -217,25 +211,16 @@ func (d *Duration) UnmarshalJSON(b []byte) (err error) {
 
 	switch value := v.(type) {
 	case float64:
-		d.Duration = time.Duration(value) * time.Second
+		d.Duration = time.Duration(value)
 		return nil
 
 	case string:
-		tmp, err := time.ParseDuration(value)
+		duration, err := time.ParseDuration(value)
 		if err != nil {
-			t1, err := time.Parse("15:04:05", value)
-			if err != nil {
-				return aoserrors.Wrap(err)
-			}
-			t2, err := time.Parse("15:04:05", "00:00:00")
-			if err != nil {
-				return aoserrors.Wrap(err)
-			}
-
-			tmp = t1.Sub(t2)
+			return aoserrors.Wrap(err)
 		}
 
-		d.Duration = tmp
+		d.Duration = duration
 
 		return nil
 

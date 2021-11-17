@@ -56,23 +56,23 @@ const testConfigContent = `{
 		"downloadPartLimit": 57
 	},
 	"monitoring": {
-		"sendPeriod": "00:05:00",
-		"pollPeriod": "00:00:01",
+		"sendPeriod": "5m",
+		"pollPeriod": "1s",
 		"maxOfflineMessages": 25,
 		"ram": {
-			"minTimeout": "00:00:10",
+			"minTimeout": "10s",
 			"minThreshold": 10,
 			"maxThreshold": 150
 		},
 		"outTraffic": {
-			"minTimeout": "00:00:20",
+			"minTimeout": "20s",
 			"minThreshold": 10,
 			"maxThreshold": 150
 		}
 	},
 	"alerts": {
 		"enableSystemAlerts": true,
-		"sendPeriod": "00:00:20",
+		"sendPeriod": "20s",
 		"maxMessageSize": 1024,
 		"maxOfflineMessages": 32,
 		"filter": ["(test)", "(regexp)"]
@@ -181,7 +181,7 @@ func TestDurationMarshal(t *testing.T) {
 		t.Errorf("Can't marshal: %s", err)
 	}
 
-	if string(result) != `"00:00:32"` {
+	if string(result) != `"32s"` {
 		t.Errorf("Wrong value: %s", result)
 	}
 }
