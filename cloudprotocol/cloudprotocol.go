@@ -20,6 +20,8 @@ package cloudprotocol
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
@@ -601,6 +603,8 @@ func (t Time) MarshalJSON() (b []byte, err error) {
 
 // UnmarshalJSON unmarshals JSON Time type
 func (t *Time) UnmarshalJSON(b []byte) (err error) {
+	const errFormat = "invalid time value: %v"
+
 	var v interface{}
 
 	if err := json.Unmarshal(b, &v); err != nil {
@@ -609,13 +613,39 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 
 	switch value := v.(type) {
 	case string:
-		if t.Time, err = time.Parse("15:04:05", value); err != nil {
-			return aoserrors.Wrap(err)
+		// Convert ISO 8601 to time.Time
+
+		var strFields []string
+
+		if strings.Contains(value, ":") {
+			strFields = strings.Split(strings.TrimLeft(value, "T"), ":")
+		} else {
+			if !strings.HasPrefix(value, "T") {
+				return aoserrors.Errorf(errFormat, value)
+			}
+
+			for i := 1; i < len(value); i = i + 2 {
+				strFields = append(strFields, value[i:i+2])
+			}
 		}
+
+		if len(strFields) == 0 {
+			return aoserrors.Errorf(errFormat, value)
+		}
+
+		intFields := make([]int, 3)
+
+		for i, field := range strFields {
+			if intFields[i], err = strconv.Atoi(field); err != nil {
+				return aoserrors.Errorf(errFormat, value)
+			}
+		}
+
+		t.Time = time.Date(0, 1, 1, intFields[0], intFields[1], intFields[2], 0, time.Local)
 
 		return nil
 
 	default:
-		return aoserrors.Errorf("invalid time value: %v", value)
+		return aoserrors.Errorf(errFormat, value)
 	}
 }

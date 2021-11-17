@@ -30,25 +30,82 @@ import (
  **********************************************************************************************************************/
 
 func TestTimeMarshalign(t *testing.T) {
+	type testData struct {
+		rawJSON  string
+		timeSlot cloudprotocol.TimeSlot
+	}
+
 	var timeSlot cloudprotocol.TimeSlot
 
-	if err := json.Unmarshal([]byte(`{"Start":"01:02:03", "Finish":"04:05:06"}`), &timeSlot); err != nil {
-		t.Fatalf("Can't unmarshal json: %s", err)
+	unmarshalData := []testData{
+		{
+			rawJSON: `{"start":"T01","finish":"T04"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 0, 0, 0, time.Local)}},
+		},
+		{
+			rawJSON: `{"start":"T0102","finish":"T0405"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 0, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 0, 0, time.Local)}},
+		},
+		{
+			rawJSON: `{"start":"T010203","finish":"T040506"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 3, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)}},
+		},
+		{
+			rawJSON: `{"start":"01:02","finish":"04:05"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 0, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 0, 0, time.Local)}},
+		},
+		{
+			rawJSON: `{"start":"01:02:03","finish":"04:05:06"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 3, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)}},
+		},
 	}
 
-	if timeSlot.Start.Hour() != 1 || timeSlot.Start.Minute() != 2 || timeSlot.Start.Second() != 3 {
-		t.Errorf("Wrong time slot start value: %v", timeSlot.Start)
+	for _, item := range unmarshalData {
+		if err := json.Unmarshal([]byte(item.rawJSON), &timeSlot); err != nil {
+			t.Errorf("Can't unmarshal json: %s", err)
+			continue
+		}
+
+		if timeSlot != item.timeSlot {
+			t.Errorf("Wrong time slot value: %v", timeSlot)
+		}
 	}
 
-	timeSlot.Start = cloudprotocol.Time{time.Date(1, 1, 1, 7, 8, 9, 0, time.Local)}
-	timeSlot.Start = cloudprotocol.Time{time.Date(1, 1, 1, 10, 11, 12, 0, time.Local)}
-
-	dataJSON, err := json.Marshal(timeSlot)
-	if err != nil {
-		t.Fatalf("Can't marshal json: %s", err)
+	marshalData := []testData{
+		{
+			rawJSON: `{"start":"01:02:03","finish":"04:05:06"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 3, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)}},
+		},
+		{
+			rawJSON: `{"start":"07:08:09","finish":"10:11:12"}`,
+			timeSlot: cloudprotocol.TimeSlot{
+				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 7, 8, 9, 0, time.Local)},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 11, 12, 0, time.Local)}},
+		},
 	}
 
-	if string(dataJSON) != `{"start":"10:11:12","finish":"04:05:06"}` {
-		t.Errorf("Wrong json data: %s", string(dataJSON))
+	for _, item := range marshalData {
+		rawJSON, err := json.Marshal(item.timeSlot)
+		if err != nil {
+			t.Errorf("Can't marshal json: %s", err)
+			continue
+		}
+
+		if string(rawJSON) != item.rawJSON {
+			t.Errorf("Wrong json data: %s", string(rawJSON))
+		}
 	}
+
 }
