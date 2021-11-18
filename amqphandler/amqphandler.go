@@ -412,6 +412,7 @@ func (handler *AmqpHandler) setupSendConnection(scheme string,
 
 func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChannel *amqp.Channel) {
 	log.Info("Start AMQP sender")
+
 	defer func() {
 		log.Info("AMQP sender closed")
 
@@ -428,7 +429,7 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 		select {
 		case err := <-errorChannel:
 			if err != nil {
-				handler.MessageChannel <- Message{"", err}
+				handler.MessageChannel <- Message{"", aoserrors.New(err.Reason)}
 			}
 
 			return
@@ -467,7 +468,7 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 				UserId:        params.User,
 				Body:          data,
 			}); err != nil {
-			handler.MessageChannel <- Message{"", err}
+			log.Errorf("Error publishing AMQP message: %s", err)
 		}
 
 		// Handle retry packets
@@ -478,10 +479,6 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 				"data":          string(data)}).Warning("AMQP data is not sent. Put into retry queue")
 
 			handler.retryChannel <- message
-		}
-
-		if !ok {
-			handler.MessageChannel <- Message{"", aoserrors.New("receive channel is closed")}
 		}
 	}
 }
@@ -533,6 +530,7 @@ func (handler *AmqpHandler) setupReceiveConnection(scheme string,
 
 func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliveryChannel <-chan amqp.Delivery) {
 	log.Info("Start AMQP receiver")
+
 	defer func() {
 		log.Info("AMQP receiver closed")
 
@@ -545,13 +543,14 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 		select {
 		case err := <-errorChannel:
 			if err != nil {
-				handler.MessageChannel <- Message{"", err}
+				handler.MessageChannel <- Message{"", aoserrors.New(err.Reason)}
 			}
 
 			return
 
 		case delivery, ok := <-deliveryChannel:
 			if !ok {
+				handler.MessageChannel <- Message{"", aoserrors.New("delivery channel is closed")}
 				return
 			}
 

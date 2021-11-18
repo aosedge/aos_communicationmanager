@@ -362,7 +362,8 @@ func (cm *communicationManager) handleMessages(ctx context.Context) {
 		select {
 		case message := <-cm.amqp.MessageChannel:
 			if err, ok := message.Data.(error); ok {
-				log.Errorf("Receive error: %s", err)
+				log.Errorf("AMQP error: %s", err)
+				return
 			}
 
 			if err := cm.processMessage(message); err != nil {
@@ -401,6 +402,10 @@ func (cm *communicationManager) handleConnection(ctx context.Context, serviceDis
 		}
 
 		cm.handleMessages(ctx)
+
+		if err := cm.amqp.Disconnect(); err != nil {
+			log.Errorf("Disconnect error: %s", err)
+		}
 
 		if ctx.Err() != nil {
 			return
