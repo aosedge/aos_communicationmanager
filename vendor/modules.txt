@@ -16,6 +16,7 @@ github.com/cavaliercoder/grab
 ## explicit
 # github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 ## explicit
+github.com/coreos/go-systemd/daemon
 github.com/coreos/go-systemd/journal
 # github.com/coreos/go-systemd/v22 v22.3.2
 ## explicit
