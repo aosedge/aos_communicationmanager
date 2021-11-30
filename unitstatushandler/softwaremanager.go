@@ -190,7 +190,8 @@ desiredServicesLoop:
 		}
 
 		for _, service := range allServices {
-			if desiredService.ID == service.ID {
+			if desiredService.ID == service.ID && desiredService.AosVersion == service.AosVersion &&
+				service.Status == cloudprotocol.InstalledStatus {
 				update.InstallServices = append(update.InstallServices, desiredService)
 				continue desiredServicesLoop
 			}
@@ -223,7 +224,7 @@ desiredLayersLoop:
 		}
 
 		for _, layer := range allLayers {
-			if desiredLayer.ID == layer.ID {
+			if desiredLayer.Digest == layer.Digest && layer.Status == cloudprotocol.InstalledStatus {
 				update.InstallLayers = append(update.InstallLayers, desiredLayer)
 				continue desiredLayersLoop
 			}
