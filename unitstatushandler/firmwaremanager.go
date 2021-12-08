@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -512,7 +513,18 @@ func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 
 func (manager *firmwareManager) updateComponents(ctx context.Context) (componentsErr string) {
 	defer func() {
-		if componentsErr != "" {
+		switch {
+		case strings.Contains(componentsErr, context.Canceled.Error()):
+
+		case componentsErr == "":
+			for _, status := range manager.ComponentStatuses {
+				log.WithFields(log.Fields{
+					"id":      status.ID,
+					"version": status.VendorVersion,
+				}).Info("Component successfully updated")
+			}
+
+		default:
 			for id, status := range manager.ComponentStatuses {
 				if status.Status != cloudprotocol.ErrorStatus {
 					manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus,
@@ -524,15 +536,6 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 					"version": status.VendorVersion,
 				}).Errorf("Error updating component: %s", status.Error)
 			}
-
-			return
-		}
-
-		for _, status := range manager.ComponentStatuses {
-			log.WithFields(log.Fields{
-				"id":      status.ID,
-				"version": status.VendorVersion,
-			}).Info("Component successfully updated")
 		}
 	}()
 
@@ -566,11 +569,17 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 	}
 
 	select {
-	case err := <-manager.asyncUpdate(updateComponents):
-		return err
+	case errStr := <-manager.asyncUpdate(updateComponents):
+		return errStr
 
 	case <-ctx.Done():
-		return ""
+		errStr := ""
+
+		if err := ctx.Err(); err != nil {
+			errStr = err.Error()
+		}
+
+		return errStr
 	}
 }
 
