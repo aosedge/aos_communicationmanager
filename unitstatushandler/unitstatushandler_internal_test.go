@@ -237,6 +237,7 @@ func TestFirmwareManager(t *testing.T) {
 		testID                  string
 		initState               *firmwareManager
 		initStatus              *cmserver.UpdateStatus
+		initComponentStatuses   []cloudprotocol.ComponentInfo
 		desiredStatus           *cloudprotocol.DecodedDesiredStatus
 		downloadTime            time.Duration
 		downloadResult          map[string]*downloadResult
@@ -290,8 +291,12 @@ func TestFirmwareManager(t *testing.T) {
 
 	data := []testData{
 		{
-			testID:        "success update",
-			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			testID:     "success update",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
@@ -306,8 +311,12 @@ func TestFirmwareManager(t *testing.T) {
 				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
 		},
 		{
-			testID:        "download error",
-			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			testID:     "download error",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {Error: "download error"},
@@ -321,8 +330,12 @@ func TestFirmwareManager(t *testing.T) {
 				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"}},
 		},
 		{
-			testID:        "update error",
-			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			testID:     "update error",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
@@ -343,6 +356,10 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
@@ -375,6 +392,10 @@ func TestFirmwareManager(t *testing.T) {
 					},
 				},
 			},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			downloadTime: 1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentInfo{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -401,6 +422,10 @@ func TestFirmwareManager(t *testing.T) {
 						VendorVersion: updateComponents[1].VendorVersion,
 					},
 				},
+			},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentInfo{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -431,6 +456,10 @@ func TestFirmwareManager(t *testing.T) {
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
 				Components:   updateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
@@ -452,7 +481,13 @@ func TestFirmwareManager(t *testing.T) {
 					updateComponents[1].ID: {},
 				},
 			},
-			initStatus:    &cmserver.UpdateStatus{State: cmserver.Downloading},
+			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp4", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID:      {},
@@ -480,6 +515,12 @@ func TestFirmwareManager(t *testing.T) {
 					Components: updateComponents},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp4", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
 				Components:   otherUpdateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
@@ -521,7 +562,13 @@ func TestFirmwareManager(t *testing.T) {
 					},
 				},
 			},
-			initStatus:    &cmserver.UpdateStatus{State: cmserver.Updating},
+			initStatus: &cmserver.UpdateStatus{State: cmserver.Updating},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp4", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
 				otherUpdateComponents[0].ID: {},
@@ -560,6 +607,10 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "timetable update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
 				FOTASchedule: cloudprotocol.ScheduleRule{
 					Type:      cloudprotocol.TimetableUpdate,
@@ -581,6 +632,10 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "update TTL",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentInfo{
+				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
+				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
 				FOTASchedule: cloudprotocol.ScheduleRule{
 					Type: cloudprotocol.TriggerUpdate,
@@ -607,6 +662,7 @@ func TestFirmwareManager(t *testing.T) {
 
 		statusHandler.result = item.downloadResult
 		statusHandler.downloadTime = item.downloadTime
+		firmwareUpdater.InitComponentsInfo = item.initComponentStatuses
 		firmwareUpdater.UpdateComponentsInfo = item.updateComponentStatuses
 		firmwareUpdater.UpdateTime = item.updateTime
 		boardConfigUpdater.UpdateError = item.boardConfigError
