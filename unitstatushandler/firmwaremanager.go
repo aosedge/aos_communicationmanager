@@ -167,14 +167,20 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 desiredLoop:
 	for _, desiredComponent := range desiredStatus.Components {
 		for _, installedComponent := range installedComponents {
-			if desiredComponent.ID == installedComponent.ID &&
-				desiredComponent.VendorVersion == installedComponent.VendorVersion &&
-				installedComponent.Status == cloudprotocol.InstalledStatus {
-				continue desiredLoop
+			if desiredComponent.ID == installedComponent.ID {
+				if desiredComponent.VendorVersion == installedComponent.VendorVersion &&
+					installedComponent.Status == cloudprotocol.InstalledStatus {
+					continue desiredLoop
+				} else {
+					update.Components = append(update.Components, desiredComponent)
+					continue desiredLoop
+				}
 			}
 		}
 
-		update.Components = append(update.Components, desiredComponent)
+		log.WithFields(log.Fields{
+			"id":            desiredComponent.ID,
+			"vendorVersion": desiredComponent.VendorVersion}).Error("Desired component not found")
 	}
 
 	if len(update.BoardConfig) != 0 || len(update.Components) != 0 {
