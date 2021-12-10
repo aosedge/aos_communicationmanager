@@ -20,6 +20,7 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"reflect"
@@ -528,7 +529,7 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 			for id, status := range manager.ComponentStatuses {
 				if status.Status != cloudprotocol.ErrorStatus {
 					manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus,
-						aoserrors.New("update reverted due to error in another component").Error())
+						fmt.Sprintf("update aborted due to error: %s", componentsErr))
 				}
 
 				log.WithFields(log.Fields{
