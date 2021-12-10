@@ -573,7 +573,7 @@ func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponen
 			if id == componentInfo.ID {
 				newURL, err := umCtrl.urlTranslator.TranslateURL(umCtrl.connections[i].isLocalClient, componentInfo.URL)
 				if err != nil {
-					return aoserrors.New("can't translate URL")
+					return aoserrors.Wrap(err)
 				}
 
 				componentInfo.URL = newURL
