@@ -217,6 +217,10 @@ func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.C
 		return nil, aoserrors.Wrap(err)
 	}
 
+	if manager.CurrentState == stateNoUpdate {
+		return info, nil
+	}
+
 	// Get installed info
 
 	for _, item := range info {
@@ -226,10 +230,6 @@ func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.C
 	}
 
 	// Append currently processing info
-
-	if manager.CurrentState == stateNoUpdate {
-		return status, nil
-	}
 
 	for _, item := range manager.ComponentStatuses {
 		status = append(status, *item)
