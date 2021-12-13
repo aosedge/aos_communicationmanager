@@ -224,16 +224,15 @@ func (instance *Instance) SendUnitStatus() (err error) {
 	instance.Lock()
 	defer instance.Unlock()
 
-	log.Debug("Send initial firmware and software statuses")
-
 	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	log.Debug("Send initial firmware and software statuses")
 
 	instance.boardConfigStatus = nil
 	instance.componentStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
 	instance.layerStatuses = make(map[string]*itemStatus)
-
-	instance.statusMutex.Unlock()
 
 	// Get initial board config info
 
@@ -243,7 +242,12 @@ func (instance *Instance) SendUnitStatus() (err error) {
 	}
 
 	for _, status := range boardConfigStatuses {
-		instance.updateBoardConfigStatus(status)
+		log.WithFields(log.Fields{
+			"status":        status.Status,
+			"vendorVersion": status.VendorVersion,
+			"error":         status.Error}).Debug("Initial board config status")
+
+		instance.processBoardConfigStatus(status)
 	}
 
 	// Get initial components info
@@ -254,7 +258,13 @@ func (instance *Instance) SendUnitStatus() (err error) {
 	}
 
 	for _, status := range componentStatuses {
-		instance.updateComponentStatus(status)
+		log.WithFields(log.Fields{
+			"id":            status.ID,
+			"status":        status.Status,
+			"vendorVersion": status.VendorVersion,
+			"error":         status.Error}).Debug("Initial component status")
+
+		instance.processComponentStatus(status)
 	}
 
 	// Get initial services and layers info
@@ -265,11 +275,32 @@ func (instance *Instance) SendUnitStatus() (err error) {
 	}
 
 	for _, status := range serviceStatuses {
-		instance.updateServiceStatus(status)
+		if _, ok := instance.serviceStatuses[status.ID]; !ok {
+			instance.serviceStatuses[status.ID] = &itemStatus{}
+		}
+
+		log.WithFields(log.Fields{
+			"id":         status.ID,
+			"status":     status.Status,
+			"aosVersion": status.AosVersion,
+			"error":      status.Error}).Debug("Initial service status")
+
+		instance.processServiceStatus(status)
 	}
 
 	for _, status := range layerStatuses {
-		instance.updateLayerStatus(status)
+		if _, ok := instance.layerStatuses[status.Digest]; !ok {
+			instance.layerStatuses[status.Digest] = &itemStatus{}
+		}
+
+		log.WithFields(log.Fields{
+			"id":         status.ID,
+			"digest":     status.Digest,
+			"status":     status.Status,
+			"aosVersion": status.AosVersion,
+			"error":      status.Error}).Debug("Initial layer status")
+
+		instance.processLayerStatus(status)
 	}
 
 	instance.sendCurrentStatus()
@@ -386,6 +417,11 @@ func (instance *Instance) updateBoardConfigStatus(boardConfigInfo cloudprotocol.
 		"vendorVersion": boardConfigInfo.VendorVersion,
 		"error":         boardConfigInfo.Error}).Debug("Update board config status")
 
+	instance.processBoardConfigStatus(boardConfigInfo)
+	instance.statusChanged()
+}
+
+func (instance *Instance) processBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigInfo) {
 	instance.updateStatus(&instance.boardConfigStatus, statusDescriptor{&boardConfigInfo})
 }
 
@@ -399,6 +435,11 @@ func (instance *Instance) updateComponentStatus(componentInfo cloudprotocol.Comp
 		"vendorVersion": componentInfo.VendorVersion,
 		"error":         componentInfo.Error}).Debug("Update component status")
 
+	instance.processComponentStatus(componentInfo)
+	instance.statusChanged()
+}
+
+func (instance *Instance) processComponentStatus(componentInfo cloudprotocol.ComponentInfo) {
 	componentStatus, ok := instance.componentStatuses[componentInfo.ID]
 	if !ok {
 		componentStatus = &itemStatus{}
@@ -425,6 +466,17 @@ func (instance *Instance) updateLayerStatus(layerInfo cloudprotocol.LayerInfo) {
 		instance.layerStatuses[layerInfo.Digest] = layerStatus
 	}
 
+	instance.processLayerStatus(layerInfo)
+	instance.statusChanged()
+}
+
+func (instance *Instance) processLayerStatus(layerInfo cloudprotocol.LayerInfo) {
+	layerStatus, ok := instance.layerStatuses[layerInfo.Digest]
+	if !ok {
+		layerStatus = &itemStatus{}
+		instance.layerStatuses[layerInfo.Digest] = layerStatus
+	}
+
 	instance.updateStatus(layerStatus, statusDescriptor{&layerInfo})
 }
 
@@ -438,6 +490,11 @@ func (instance *Instance) updateServiceStatus(serviceInfo cloudprotocol.ServiceI
 		"aosVersion": serviceInfo.AosVersion,
 		"error":      serviceInfo.Error}).Debug("Update service status")
 
+	instance.processServiceStatus(serviceInfo)
+	instance.statusChanged()
+}
+
+func (instance *Instance) processServiceStatus(serviceInfo cloudprotocol.ServiceInfo) {
 	serviceStatus, ok := instance.serviceStatuses[serviceInfo.ID]
 	if !ok {
 		serviceStatus = &itemStatus{}
@@ -452,26 +509,23 @@ func (instance *Instance) statusChanged() {
 		return
 	}
 
-	sendIn := instance.sendStatusPeriod
+	instance.statusTimer = time.AfterFunc(instance.sendStatusPeriod, func() {
+		instance.statusMutex.Lock()
+		defer instance.statusMutex.Unlock()
 
-	instance.statusTimer = time.AfterFunc(sendIn, func() {
 		instance.sendCurrentStatus()
 	})
 }
 
 func (instance *Instance) updateStatus(status *itemStatus, descriptor statusDescriptor) {
-	defer instance.statusChanged()
-
 	if descriptor.getStatus() == cloudprotocol.InstalledStatus {
 		*status = itemStatus{descriptor}
-
 		return
 	}
 
 	for i, element := range *status {
 		if element.getVersion() == descriptor.getVersion() {
 			(*status)[i] = descriptor
-
 			return
 		}
 	}
@@ -480,9 +534,6 @@ func (instance *Instance) updateStatus(status *itemStatus, descriptor statusDesc
 }
 
 func (instance *Instance) sendCurrentStatus() {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
-
 	unitStatus := cloudprotocol.UnitStatus{
 		BoardConfig: make([]cloudprotocol.BoardConfigInfo, 0, len(instance.boardConfigStatus)),
 		Components:  make([]cloudprotocol.ComponentInfo, 0, len(instance.componentStatuses)),
