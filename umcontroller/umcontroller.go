@@ -488,7 +488,11 @@ func (umCtrl *Controller) updateCurrentComponetsStatus(componsStatus []systemCom
 func (umCtrl *Controller) updateComponentElement(component systemComponentStatus) {
 	for i, curElement := range umCtrl.currentComponents {
 		if curElement.ID == component.id && curElement.VendorVersion == component.vendorVersion {
-			if umCtrl.currentComponents[i].Status != component.status {
+			if curElement.Status == cloudprotocol.InstalledStatus && component.status != cloudprotocol.InstalledStatus {
+				break
+			}
+
+			if curElement.Status != component.status {
 				umCtrl.currentComponents[i].Status = component.status
 				umCtrl.currentComponents[i].Error = component.err
 			}
