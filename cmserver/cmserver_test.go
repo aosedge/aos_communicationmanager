@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/cmserver"
 	"aos_communicationmanager/config"
 )
@@ -50,8 +51,8 @@ type testClient struct {
 }
 
 type testUpdateHandler struct {
-	fotaChannel chan cmserver.UpdateStatus
-	sotaChannel chan cmserver.UpdateStatus
+	fotaChannel chan cmserver.UpdateFOTAStatus
+	sotaChannel chan cmserver.UpdateSOTAStatus
 }
 
 /*******************************************************************************
@@ -81,8 +82,8 @@ func TestConnection(t *testing.T) {
 	}
 
 	unitStatusHandler := testUpdateHandler{
-		sotaChannel: make(chan cmserver.UpdateStatus, 10),
-		fotaChannel: make(chan cmserver.UpdateStatus, 10)}
+		sotaChannel: make(chan cmserver.UpdateSOTAStatus, 10),
+		fotaChannel: make(chan cmserver.UpdateFOTAStatus, 10)}
 
 	cmServer, err := cmserver.New(&cmConfig, &unitStatusHandler, true)
 	if err != nil {
@@ -122,7 +123,13 @@ func TestConnection(t *testing.T) {
 		}
 	}
 
-	unitStatusHandler.fotaChannel <- cmserver.UpdateStatus{State: cmserver.ReadyToUpdate}
+	statusFotaNotification := cmserver.UpdateFOTAStatus{
+		Components:   []cloudprotocol.ComponentInfo{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
+		BoardConfig:  &cloudprotocol.BoardConfigInfo{VendorVersion: "bc_version"},
+		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
+	}
+
+	unitStatusHandler.fotaChannel <- statusFotaNotification
 
 	notification, err := stream.Recv()
 	if err != nil {
@@ -138,24 +145,82 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect state: ", status.State.String())
 	}
 
-	unitStatusHandler.sotaChannel <- cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"}
+	if len(status.Components) != 1 {
+		t.Fatal("Incorrect count of components")
+	}
+
+	if status.Components[0].Id != "1234" {
+		t.Error("Incorrect component id")
+	}
+
+	if status.Components[0].VendorVersion != "4321" {
+		t.Error("Incorrect vendor version")
+	}
+
+	if status.Components[0].AosVersion != 123 {
+		t.Error("Incorrect aos version")
+	}
+
+	if status.BoardConfig == nil {
+		t.Fatal("Board Config is nil")
+	}
+
+	if status.BoardConfig.VendorVersion != "bc_version" {
+		t.Error("Incorrect board config version")
+	}
+
+	statusNotification := cmserver.UpdateSOTAStatus{
+		InstallServices: []cloudprotocol.ServiceInfo{{ID: "s1", AosVersion: 42}},
+		InstallLayers:   []cloudprotocol.LayerInfo{{ID: "l1", Digest: "someSha", AosVersion: 42}},
+		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
+	}
+
+	unitStatusHandler.sotaChannel <- statusNotification
 
 	notification, err = stream.Recv()
 	if err != nil {
 		t.Fatalf("Can't receive notification: %s", err)
 	}
 
-	status = notification.GetSotaStatus()
-	if status == nil {
+	sotaStatus := notification.GetSotaStatus()
+	if sotaStatus == nil {
 		t.Fatalf("No SOTA status")
 	}
 
-	if status.State != pb.UpdateState_DOWNLOADING {
+	if sotaStatus.State != pb.UpdateState_DOWNLOADING {
 		t.Error("Incorrect state: ", status.State.String())
 	}
 
-	if status.Error != "SOTA error" {
+	if sotaStatus.Error != "SOTA error" {
 		t.Error("Incorrect error message: ", status.Error)
+	}
+
+	if len(sotaStatus.InstallServices) != 1 {
+		t.Fatal("Incorrect count of services")
+	}
+
+	if sotaStatus.InstallServices[0].Id != "s1" {
+		t.Error("Incorrect service id")
+	}
+
+	if sotaStatus.InstallServices[0].AosVersion != 42 {
+		t.Error("Incorrect service aos version")
+	}
+
+	if len(sotaStatus.InstallLayers) != 1 {
+		t.Fatal("Incorrect count of layers")
+	}
+
+	if sotaStatus.InstallLayers[0].Id != "l1" {
+		t.Error("Incorrect layer id")
+	}
+
+	if sotaStatus.InstallLayers[0].Digest != "someSha" {
+		t.Error("Incorrect layer digest")
+	}
+
+	if sotaStatus.InstallLayers[0].AosVersion != 42 {
+		t.Error("Incorrect layer aos version")
 	}
 
 	client.close()
@@ -185,21 +250,25 @@ func (client *testClient) close() {
 	}
 }
 
-func (handler *testUpdateHandler) GetFOTAStatusChannel() (channel <-chan cmserver.UpdateStatus) {
+func (handler *testUpdateHandler) GetFOTAStatusChannel() (channel <-chan cmserver.UpdateFOTAStatus) {
 	return handler.fotaChannel
 }
 
-func (handler *testUpdateHandler) GetSOTAStatusChannel() (channel <-chan cmserver.UpdateStatus) {
+func (handler *testUpdateHandler) GetSOTAStatusChannel() (channel <-chan cmserver.UpdateSOTAStatus) {
 	return handler.sotaChannel
 }
 
-func (handler *testUpdateHandler) GetFOTAStatus() (status cmserver.UpdateStatus) {
-	return cmserver.UpdateStatus{State: cmserver.NoUpdate}
+func (handler *testUpdateHandler) GetFOTAStatus() (status cmserver.UpdateFOTAStatus) {
+	status.State = cmserver.NoUpdate
+
+	return status
 
 }
 
-func (handler *testUpdateHandler) GetSOTAStatus() (status cmserver.UpdateStatus) {
-	return cmserver.UpdateStatus{State: cmserver.NoUpdate}
+func (handler *testUpdateHandler) GetSOTAStatus() (status cmserver.UpdateSOTAStatus) {
+	status.State = cmserver.NoUpdate
+
+	return status
 }
 
 func (handler *testUpdateHandler) StartFOTAUpdate() (err error) {
