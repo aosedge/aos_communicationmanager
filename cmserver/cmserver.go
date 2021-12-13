@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"
 )
 
@@ -63,12 +64,28 @@ type UpdateStatus struct {
 	Error string
 }
 
+// UpdateFOTAStatus struct with fota parts information
+type UpdateFOTAStatus struct {
+	Components  []cloudprotocol.ComponentInfo
+	BoardConfig *cloudprotocol.BoardConfigInfo
+	UpdateStatus
+}
+
+// UpdateSOTAStatus struct with sota parts information
+type UpdateSOTAStatus struct {
+	InstallServices []cloudprotocol.ServiceInfo
+	RemoveServices  []cloudprotocol.ServiceInfo
+	InstallLayers   []cloudprotocol.LayerInfo
+	RemoveLayers    []cloudprotocol.LayerInfo
+	UpdateStatus
+}
+
 // UpdateHandler interface for SOTA/FOTA update
 type UpdateHandler interface {
-	GetFOTAStatusChannel() (channel <-chan UpdateStatus)
-	GetSOTAStatusChannel() (channel <-chan UpdateStatus)
-	GetFOTAStatus() (status UpdateStatus)
-	GetSOTAStatus() (status UpdateStatus)
+	GetFOTAStatusChannel() (channel <-chan UpdateFOTAStatus)
+	GetSOTAStatusChannel() (channel <-chan UpdateSOTAStatus)
+	GetFOTAStatus() (status UpdateFOTAStatus)
+	GetSOTAStatus() (status UpdateSOTAStatus)
 	StartFOTAUpdate() (err error)
 	StartSOTAUpdate() (err error)
 }
@@ -79,8 +96,8 @@ type CMServer struct {
 	listener   net.Listener
 	pb.UnimplementedUpdateSchedulerServiceServer
 	clients           []pb.UpdateSchedulerService_SubscribeNotificationsServer
-	currentFOTAStatus UpdateStatus
-	currentSOTAStatus UpdateStatus
+	currentFOTAStatus UpdateFOTAStatus
+	currentSOTAStatus UpdateSOTAStatus
 	stopChannel       chan bool
 	updatehandler     UpdateHandler
 	sync.Mutex
@@ -159,7 +176,8 @@ func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.Updat
 
 	// send current status of sota and fota packages
 	fotaNotification := pb.SchedulerNotifications{
-		SchedulerNotification: &pb.SchedulerNotifications_FotaStatus{FotaStatus: server.currentFOTAStatus.getPbStatus()},
+		SchedulerNotification: &pb.SchedulerNotifications_FotaStatus{
+			FotaStatus: server.currentFOTAStatus.convertToPBStatus()},
 	}
 
 	if err = stream.Send(&fotaNotification); err != nil {
@@ -171,7 +189,8 @@ func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.Updat
 	}
 
 	sotaNotification := pb.SchedulerNotifications{
-		SchedulerNotification: &pb.SchedulerNotifications_SotaStatus{SotaStatus: server.currentSOTAStatus.getPbStatus()},
+		SchedulerNotification: &pb.SchedulerNotifications_SotaStatus{
+			SotaStatus: server.currentSOTAStatus.convertToPBStatus()},
 	}
 
 	if err := stream.Send(&sotaNotification); err != nil {
@@ -236,7 +255,8 @@ func (server *CMServer) handleChannels() {
 
 			server.currentFOTAStatus = fotaStatus
 
-			notification.SchedulerNotification = &pb.SchedulerNotifications_FotaStatus{FotaStatus: fotaStatus.getPbStatus()}
+			notification.SchedulerNotification = &pb.SchedulerNotifications_FotaStatus{
+				FotaStatus: fotaStatus.convertToPBStatus()}
 
 			server.notifyAllClients(&notification)
 
@@ -249,9 +269,10 @@ func (server *CMServer) handleChannels() {
 
 			server.Lock()
 
-			server.currentFOTAStatus = sotaStatus
+			server.currentSOTAStatus = sotaStatus
 
-			notification.SchedulerNotification = &pb.SchedulerNotifications_SotaStatus{SotaStatus: sotaStatus.getPbStatus()}
+			notification.SchedulerNotification = &pb.SchedulerNotifications_SotaStatus{
+				SotaStatus: sotaStatus.convertToPBStatus()}
 
 			server.notifyAllClients(&notification)
 
@@ -271,14 +292,55 @@ func (server *CMServer) notifyAllClients(notification *pb.SchedulerNotifications
 	}
 }
 
-func (updateStatus *UpdateStatus) getPbStatus() (pbStatus *pb.UpdateStatus) {
-	pbStatus = new(pb.UpdateStatus)
+func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSOTAStatus) {
+	pbStatus = new(pb.UpdateSOTAStatus)
 
 	pbStatus.Error = updateStatus.Error
 
-	pbStatus.State = [...]pb.UpdateState{
-		pb.UpdateState_NO_UPDATE, pb.UpdateState_DOWNLOADING,
-		pb.UpdateState_READY_TO_UPDATE, pb.UpdateState_UPDATING}[updateStatus.State]
+	pbStatus.State = updateStatus.State.getPbState()
+
+	for _, layer := range updateStatus.InstallLayers {
+		pbStatus.InstallLayers = append(pbStatus.InstallLayers, &pb.LayerInfo{Id: layer.ID,
+			AosVersion: layer.AosVersion, Digest: layer.Digest})
+	}
+
+	for _, layer := range updateStatus.RemoveLayers {
+		pbStatus.RemoveLayers = append(pbStatus.RemoveLayers, &pb.LayerInfo{Id: layer.ID,
+			AosVersion: layer.AosVersion, Digest: layer.Digest})
+	}
+
+	for _, service := range updateStatus.InstallServices {
+		pbStatus.InstallServices = append(pbStatus.InstallServices, &pb.ServiceInfo{Id: service.ID,
+			AosVersion: service.AosVersion})
+	}
+
+	for _, service := range updateStatus.RemoveServices {
+		pbStatus.RemoveServices = append(pbStatus.RemoveServices, &pb.ServiceInfo{Id: service.ID,
+			AosVersion: service.AosVersion})
+	}
 
 	return pbStatus
+}
+
+func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFOTAStatus) {
+	pbStatus = new(pb.UpdateFOTAStatus)
+	pbStatus.Error = updateStatus.Error
+	pbStatus.State = updateStatus.State.getPbState()
+
+	for _, component := range updateStatus.Components {
+		pbStatus.Components = append(pbStatus.Components, &pb.ComponentInfo{Id: component.ID,
+			AosVersion: component.AosVersion, VendorVersion: component.VendorVersion})
+	}
+
+	if updateStatus.BoardConfig != nil {
+		pbStatus.BoardConfig = &pb.BoardConfigInfo{VendorVersion: updateStatus.BoardConfig.VendorVersion}
+	}
+
+	return pbStatus
+}
+
+func (state UpdateState) getPbState() (pbState pb.UpdateState) {
+	return [...]pb.UpdateState{
+		pb.UpdateState_NO_UPDATE, pb.UpdateState_DOWNLOADING,
+		pb.UpdateState_READY_TO_UPDATE, pb.UpdateState_UPDATING}[state]
 }
