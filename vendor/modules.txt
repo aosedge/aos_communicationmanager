@@ -93,7 +93,7 @@ github.com/thales-e-security/pool
 github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.3.0
 github.com/tklauser/numcpus
-# gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211119160812-d09d4d10f76e
+# gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211214093442-5984e598cffa
 ## explicit
 gitpct.epam.com/epmd-aepr/aos_common/aoserrors
 gitpct.epam.com/epmd-aepr/aos_common/api/communicationmanager/v1
