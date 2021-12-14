@@ -63,7 +63,7 @@ type firmwareUpdate struct {
 type firmwareManager struct {
 	sync.Mutex
 
-	statusChannel chan cmserver.UpdateStatus
+	statusChannel chan cmserver.UpdateFOTAStatus
 
 	statusHandler      firmwareStatusHandler
 	firmwareUpdater    FirmwareUpdater
@@ -91,7 +91,7 @@ func newFirmwareManager(statusHandler firmwareStatusHandler,
 	firmwareUpdater FirmwareUpdater, boardConfigUpdater BoardConfigUpdater,
 	storage Storage, defaultTTL time.Duration) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
-		statusChannel:      make(chan cmserver.UpdateStatus, 1),
+		statusChannel:      make(chan cmserver.UpdateFOTAStatus, 1),
 		statusHandler:      statusHandler,
 		firmwareUpdater:    firmwareUpdater,
 		boardConfigUpdater: boardConfigUpdater,
@@ -140,11 +140,32 @@ func (manager *firmwareManager) close() (err error) {
 	return nil
 }
 
-func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateStatus) {
+func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTAStatus) {
+	status.State = convertState(manager.CurrentState)
+	status.Error = manager.UpdateErr
+
+	if status.State == cmserver.NoUpdate || manager.CurrentUpdate == nil {
+		return status
+	}
+
+	for _, component := range manager.CurrentUpdate.Components {
+		status.Components = append(status.Components, cloudprotocol.ComponentInfo{
+			ID: component.ID, AosVersion: component.AosVersion, VendorVersion: component.VendorVersion})
+	}
+
+	if len(manager.CurrentUpdate.BoardConfig) != 0 {
+		version, _ := manager.boardConfigUpdater.GetBoardConfigVersion(manager.CurrentUpdate.BoardConfig)
+		status.BoardConfig = &cloudprotocol.BoardConfigInfo{VendorVersion: version}
+	}
+
+	return status
+}
+
+func (manager *firmwareManager) getCurrentUpdateState() (status cmserver.UpdateState) {
 	manager.Lock()
 	defer manager.Unlock()
 
-	return cmserver.UpdateStatus{State: convertState(manager.CurrentState), Error: manager.UpdateErr}
+	return convertState(manager.CurrentState)
 }
 
 func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) (err error) {
@@ -591,7 +612,7 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 }
 
 func (manager *firmwareManager) sendCurrentStatus() {
-	manager.statusChannel <- cmserver.UpdateStatus{State: convertState(manager.CurrentState), Error: manager.UpdateErr}
+	manager.statusChannel <- manager.getCurrentStatus()
 }
 
 func (manager *firmwareManager) updateComponentStatusByID(id, status, componentErr string) {

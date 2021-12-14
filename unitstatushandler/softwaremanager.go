@@ -69,7 +69,7 @@ type softwareUpdate struct {
 type softwareManager struct {
 	sync.Mutex
 
-	statusChannel chan cmserver.UpdateStatus
+	statusChannel chan cmserver.UpdateSOTAStatus
 
 	statusHandler   softwareStatusHandler
 	softwareUpdater SoftwareUpdater
@@ -97,7 +97,7 @@ type softwareManager struct {
 func newSoftwareManager(statusHandler softwareStatusHandler,
 	softwareUpdater SoftwareUpdater, storage Storage, defaultTTL time.Duration) (manager *softwareManager, err error) {
 	manager = &softwareManager{
-		statusChannel:   make(chan cmserver.UpdateStatus, 1),
+		statusChannel:   make(chan cmserver.UpdateSOTAStatus, 1),
 		statusHandler:   statusHandler,
 		softwareUpdater: softwareUpdater,
 		actionHandler:   action.New(maxConcurrentActions),
@@ -147,11 +147,52 @@ func (manager *softwareManager) close() (err error) {
 	return nil
 }
 
-func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateStatus) {
+func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTAStatus) {
+	status.State = convertState(manager.CurrentState)
+	status.Error = manager.UpdateErr
+
+	if status.State == cmserver.NoUpdate || manager.CurrentUpdate == nil {
+		return status
+	}
+
+	for _, layer := range manager.CurrentUpdate.DownloadLayers {
+		status.InstallLayers = append(status.InstallLayers, cloudprotocol.LayerInfo{
+			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion})
+	}
+
+	for _, layer := range manager.CurrentUpdate.InstallLayers {
+		status.InstallLayers = append(status.InstallLayers, cloudprotocol.LayerInfo{
+			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion})
+	}
+
+	for _, layer := range manager.CurrentUpdate.RemoveLayers {
+		status.RemoveLayers = append(status.InstallLayers, cloudprotocol.LayerInfo{
+			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion})
+	}
+
+	for _, service := range manager.CurrentUpdate.DownloadServices {
+		status.InstallServices = append(status.InstallServices, cloudprotocol.ServiceInfo{
+			ID: service.ID, AosVersion: service.AosVersion})
+	}
+
+	for _, service := range manager.CurrentUpdate.InstallServices {
+		status.InstallServices = append(status.InstallServices, cloudprotocol.ServiceInfo{
+			ID: service.ID, AosVersion: service.AosVersion})
+	}
+
+	for _, service := range manager.CurrentUpdate.RemoveServices {
+		status.RemoveServices = append(status.RemoveServices, cloudprotocol.ServiceInfo{
+			ID: service.ID, AosVersion: service.AosVersion})
+	}
+
+	return status
+}
+
+func (manager *softwareManager) getCurrentUpdateState() (status cmserver.UpdateState) {
 	manager.Lock()
 	defer manager.Unlock()
 
-	return cmserver.UpdateStatus{State: convertState(manager.CurrentState), Error: manager.UpdateErr}
+	return convertState(manager.CurrentState)
 }
 
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) (err error) {
@@ -653,7 +694,7 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 }
 
 func (manager *softwareManager) sendCurrentStatus() {
-	manager.statusChannel <- cmserver.UpdateStatus{State: convertState(manager.CurrentState), Error: manager.UpdateErr}
+	manager.statusChannel <- manager.getCurrentStatus()
 }
 
 func (manager *softwareManager) updateStatusByID(id string, status string, errorStr string) {

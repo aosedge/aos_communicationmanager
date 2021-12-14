@@ -64,14 +64,14 @@ type UpdateStatus struct {
 	Error string
 }
 
-// UpdateFOTAStatus struct with fota parts information
+// UpdateFOTAStatus FOTA update status for update scheduler service
 type UpdateFOTAStatus struct {
 	Components  []cloudprotocol.ComponentInfo
 	BoardConfig *cloudprotocol.BoardConfigInfo
 	UpdateStatus
 }
 
-// UpdateSOTAStatus struct with sota parts information
+// UpdateSOTAStatus SOTA update status for update scheduler service
 type UpdateSOTAStatus struct {
 	InstallServices []cloudprotocol.ServiceInfo
 	RemoveServices  []cloudprotocol.ServiceInfo

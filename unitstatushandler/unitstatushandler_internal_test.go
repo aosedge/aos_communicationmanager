@@ -684,7 +684,7 @@ func TestFirmwareManager(t *testing.T) {
 		// Check init status
 
 		if item.initStatus != nil {
-			if err = compareStatuses(*item.initStatus, firmwareManager.getCurrentStatus()); err != nil {
+			if err = compareStatuses(*item.initStatus, firmwareManager.getCurrentStatus().UpdateStatus); err != nil {
 				t.Errorf("Wrong init status: %s", err)
 			}
 		}
@@ -707,7 +707,7 @@ func TestFirmwareManager(t *testing.T) {
 		}
 
 		for _, expectedStatus := range item.updateWaitStatuses {
-			if err = waitForUpdateStatus(firmwareManager.statusChannel, expectedStatus); err != nil {
+			if err = waitForFOTAUpdateStatus(firmwareManager.statusChannel, expectedStatus); err != nil {
 				t.Errorf("Wait for update status error: %s", err)
 
 				if strings.Contains(err.Error(), "status timeout") {
@@ -946,7 +946,7 @@ func TestSoftwareManager(t *testing.T) {
 		// Check init status
 
 		if item.initStatus != nil {
-			if err = compareStatuses(*item.initStatus, softwareManager.getCurrentStatus()); err != nil {
+			if err = compareStatuses(*item.initStatus, softwareManager.getCurrentStatus().UpdateStatus); err != nil {
 				t.Errorf("Wrong init status: %s", err)
 			}
 		}
@@ -969,7 +969,7 @@ func TestSoftwareManager(t *testing.T) {
 		}
 
 		for _, expectedStatus := range item.updateWaitStatuses {
-			if err = waitForUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
+			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
 				t.Errorf("Wait for update status error: %s", err)
 
 				if strings.Contains(err.Error(), "status timeout") {
@@ -1588,16 +1588,30 @@ func compareStatuses(expectedStatus, comparedStatus cmserver.UpdateStatus) (err 
 	return nil
 }
 
-func waitForUpdateStatus(statusChannel <-chan cmserver.UpdateStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+func waitForFOTAUpdateStatus(statusChannel <-chan cmserver.UpdateFOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
 	select {
 	case status := <-statusChannel:
-		if err = compareStatuses(expectedStatus, status); err != nil {
+		if err = compareStatuses(expectedStatus, status.UpdateStatus); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
 		return nil
 
 	case <-time.After(waitStatusTimeout):
-		return aoserrors.Errorf("wait for %s status timeout", expectedStatus.State)
+		return aoserrors.Errorf("wait for FOTA %s status timeout", expectedStatus.State)
+	}
+}
+
+func waitForSOTAUpdateStatus(statusChannel <-chan cmserver.UpdateSOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+	select {
+	case status := <-statusChannel:
+		if err = compareStatuses(expectedStatus, status.UpdateStatus); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		return nil
+
+	case <-time.After(waitStatusTimeout):
+		return aoserrors.Errorf("wait for SOTA %s status timeout", expectedStatus.State)
 	}
 }
