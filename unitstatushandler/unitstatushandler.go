@@ -190,8 +190,8 @@ func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.Decod
 	instance.Lock()
 	defer instance.Unlock()
 
-	if instance.firmwareManager.getCurrentStatus().State == cmserver.NoUpdate &&
-		instance.softwareManager.getCurrentStatus().State == cmserver.NoUpdate &&
+	if instance.firmwareManager.getCurrentUpdateState() == cmserver.NoUpdate &&
+		instance.softwareManager.getCurrentUpdateState() == cmserver.NoUpdate &&
 		instance.decryptDir != "" {
 		if err := instance.clearDecryptDir(); err != nil {
 			log.Errorf("Error clearing decrypt dir: %s", err)
@@ -309,7 +309,7 @@ func (instance *Instance) SendUnitStatus() (err error) {
 }
 
 // GetFOTAStatusChannel returns FOTA status channels
-func (instance *Instance) GetFOTAStatusChannel() (channel <-chan cmserver.UpdateStatus) {
+func (instance *Instance) GetFOTAStatusChannel() (channel <-chan cmserver.UpdateFOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
 
@@ -317,7 +317,7 @@ func (instance *Instance) GetFOTAStatusChannel() (channel <-chan cmserver.Update
 }
 
 // GetSOTAStatusChannel returns SOTA status channel
-func (instance *Instance) GetSOTAStatusChannel() (channel <-chan cmserver.UpdateStatus) {
+func (instance *Instance) GetSOTAStatusChannel() (channel <-chan cmserver.UpdateSOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
 
@@ -325,7 +325,7 @@ func (instance *Instance) GetSOTAStatusChannel() (channel <-chan cmserver.Update
 }
 
 // GetFOTAStatus returns FOTA current status
-func (instance *Instance) GetFOTAStatus() (status cmserver.UpdateStatus) {
+func (instance *Instance) GetFOTAStatus() (status cmserver.UpdateFOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
 
@@ -333,7 +333,7 @@ func (instance *Instance) GetFOTAStatus() (status cmserver.UpdateStatus) {
 }
 
 // GetSOTAStatus returns SOTA current status
-func (instance *Instance) GetSOTAStatus() (status cmserver.UpdateStatus) {
+func (instance *Instance) GetSOTAStatus() (status cmserver.UpdateSOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
 
