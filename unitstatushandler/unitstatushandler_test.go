@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"

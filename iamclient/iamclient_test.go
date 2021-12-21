@@ -33,10 +33,10 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/aoscloud/aos_common/api/iamanager/v1"
+	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
-	pb "gitpct.epam.com/epmd-aepr/aos_common/api/iamanager/v1"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/cryptutils"
 	"google.golang.org/grpc"
 
 	"aos_communicationmanager/cloudprotocol"

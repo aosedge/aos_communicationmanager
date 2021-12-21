@@ -32,11 +32,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/image"
+	"github.com/aoscloud/aos_common/utils/retryhelper"
 	"github.com/cavaliercoder/grab"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
-	"gitpct.epam.com/epmd-aepr/aos_common/image"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/retryhelper"
 
 	"aos_communicationmanager/alerts"
 	"aos_communicationmanager/cloudprotocol"

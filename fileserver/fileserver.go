@@ -24,8 +24,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/config"
 )

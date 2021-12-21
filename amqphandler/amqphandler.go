@@ -28,9 +28,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
 )

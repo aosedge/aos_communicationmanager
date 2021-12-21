@@ -35,13 +35,13 @@ import (
 	"strings"
 
 	"github.com/ThalesIgnite/crypto11"
+	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/utils/contextreader"
+	"github.com/aoscloud/aos_common/utils/cryptutils"
+	"github.com/aoscloud/aos_common/utils/tpmkey"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/contextreader"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/cryptutils"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/tpmkey"
 
 	"aos_communicationmanager/config"
 )
