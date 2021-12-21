@@ -1,9 +1,9 @@
-# AOS Communication Manager
+# Aos Communication Manager
 
-[![pipeline status](https://gitpct.epam.com/epmd-aepr/aos_communicationmanager/badges/master/pipeline.svg)](https://gitpct.epam.com/epmd-aepr/aos_communicationmanager/commits/master)
-[![coverage report](https://gitpct.epam.com/epmd-aepr/aos_communicationmanager/badges/master/coverage.svg)](https://gitpct.epam.com/epmd-aepr/aos_communicationmanager/commits/master)  
+[![CI](https://github.com/aoscloud/aos_communicationmanager/workflows/CI/badge.svg)](https://github.com/aoscloud/aos_communicationmanager/actions?query=workflow%3ACI)
 
-AOS Communication Manager (CM) is a part of AoS system which responsible of the following tasks:
+
+Aos Communication Manager (CM) is a part of Aos system which responsible of the following tasks:
 
 * communicate with the backend;
 * download, verify and decrypt services, layers and component updates;
@@ -18,9 +18,6 @@ See architecture [document](doc/architecture.md) for more details.
 
 All requires GO packages exist under `vendor` folder. Content of this folder is created with GO modules:
 
-```bash
-export GOPRIVATE=gitpct.epam.com/*
-```
 
 ```bash
 go mod init
@@ -67,7 +64,7 @@ To increase log level use option -v:
 
 ## Required packages
 
-CM needs AoS Identity and Access Manager (IAM) to be running and configured (see aos_iamanager [readme](https://gitpct.epam.com/epmd-aepr/aos_iamanager/blob/master/README.md)) before start.
+CM needs Aos Identity and Access Manager (IAM) to be running and configured (see aos_iamanager [readme](https://gitpct.epam.com/epmd-aepr/aos_iamanager/blob/master/README.md)) before start.
 
 ## Test required packages
 
