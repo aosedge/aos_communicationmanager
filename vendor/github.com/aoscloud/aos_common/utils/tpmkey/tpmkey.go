@@ -26,7 +26,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aoserrors"
 )
 
 /*******************************************************************************

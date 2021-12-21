@@ -1,19 +1,27 @@
-# code.cloudfoundry.org/bytefmt v0.0.0-20210608160410-67692ebc98de
+# code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
 ## explicit
 code.cloudfoundry.org/bytefmt
-# github.com/Microsoft/hcsshim v0.8.22
-## explicit
-# github.com/StackExchange/wmi v1.2.1
-## explicit
-github.com/StackExchange/wmi
 # github.com/ThalesIgnite/crypto11 v1.2.4 => github.com/xen-troops/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
 ## explicit
 github.com/ThalesIgnite/crypto11
+# github.com/aoscloud/aos_common v0.0.0-20211220123623-d23b9d38e838
+## explicit
+github.com/aoscloud/aos_common/aoserrors
+github.com/aoscloud/aos_common/api/communicationmanager/v1
+github.com/aoscloud/aos_common/api/iamanager/v1
+github.com/aoscloud/aos_common/api/servicemanager/v1
+github.com/aoscloud/aos_common/api/updatemanager/v1
+github.com/aoscloud/aos_common/image
+github.com/aoscloud/aos_common/migration
+github.com/aoscloud/aos_common/utils/action
+github.com/aoscloud/aos_common/utils/contextreader
+github.com/aoscloud/aos_common/utils/cryptutils
+github.com/aoscloud/aos_common/utils/retryhelper
+github.com/aoscloud/aos_common/utils/testtools
+github.com/aoscloud/aos_common/utils/tpmkey
 # github.com/cavaliercoder/grab v2.0.0+incompatible
 ## explicit
 github.com/cavaliercoder/grab
-# github.com/containerd/containerd v1.4.9
-## explicit
 # github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 ## explicit
 github.com/coreos/go-systemd/daemon
@@ -23,9 +31,7 @@ github.com/coreos/go-systemd/journal
 github.com/coreos/go-systemd/v22/dbus
 github.com/coreos/go-systemd/v22/internal/dlopen
 github.com/coreos/go-systemd/v22/sdjournal
-# github.com/docker/docker v17.12.0-ce-rc1.0.20200618181300-9dc6525e6118+incompatible
-## explicit
-# github.com/go-ole/go-ole v1.2.5
+# github.com/go-ole/go-ole v1.2.6
 github.com/go-ole/go-ole
 github.com/go-ole/go-ole/oleutil
 # github.com/godbus/dbus/v5 v5.0.4
@@ -70,11 +76,9 @@ github.com/looplab/fsm
 github.com/mattn/go-sqlite3
 # github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f
 github.com/miekg/pkcs11
-# github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d
-## explicit
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/shirou/gopsutil v3.21.8+incompatible
+# github.com/shirou/gopsutil v3.21.11+incompatible
 ## explicit
 github.com/shirou/gopsutil/cpu
 github.com/shirou/gopsutil/disk
@@ -93,21 +97,9 @@ github.com/thales-e-security/pool
 github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.3.0
 github.com/tklauser/numcpus
-# gitpct.epam.com/epmd-aepr/aos_common v0.0.0-20211214093442-5984e598cffa
+# github.com/yusufpapurcu/wmi v1.2.2
 ## explicit
-gitpct.epam.com/epmd-aepr/aos_common/aoserrors
-gitpct.epam.com/epmd-aepr/aos_common/api/communicationmanager/v1
-gitpct.epam.com/epmd-aepr/aos_common/api/iamanager/v1
-gitpct.epam.com/epmd-aepr/aos_common/api/servicemanager/v1
-gitpct.epam.com/epmd-aepr/aos_common/api/updatemanager/v1
-gitpct.epam.com/epmd-aepr/aos_common/image
-gitpct.epam.com/epmd-aepr/aos_common/migration
-gitpct.epam.com/epmd-aepr/aos_common/utils/action
-gitpct.epam.com/epmd-aepr/aos_common/utils/contextreader
-gitpct.epam.com/epmd-aepr/aos_common/utils/cryptutils
-gitpct.epam.com/epmd-aepr/aos_common/utils/retryhelper
-gitpct.epam.com/epmd-aepr/aos_common/utils/testtools
-gitpct.epam.com/epmd-aepr/aos_common/utils/tpmkey
+github.com/yusufpapurcu/wmi
 # golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 golang.org/x/crypto/sha3
 # golang.org/x/net v0.0.0-20210520170846-37e1c6afe023
