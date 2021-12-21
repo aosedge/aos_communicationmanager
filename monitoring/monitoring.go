@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/mem"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"

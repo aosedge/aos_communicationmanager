@@ -25,7 +25,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	pb "gitpct.epam.com/epmd-aepr/aos_common/api/updatemanager/v1"
+	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
 )
 
 /***********************************************************************************************************************

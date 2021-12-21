@@ -29,11 +29,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/utils/retryhelper"
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/coreos/go-systemd/journal"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/retryhelper"
 
 	"aos_communicationmanager/alerts"
 	amqp "aos_communicationmanager/amqphandler"
