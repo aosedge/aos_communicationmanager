@@ -28,9 +28,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/cmserver"

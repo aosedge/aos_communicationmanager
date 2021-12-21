@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
 	log "github.com/sirupsen/logrus"
-	pb "gitpct.epam.com/epmd-aepr/aos_common/api/communicationmanager/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 

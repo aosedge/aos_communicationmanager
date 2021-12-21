@@ -22,9 +22,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/image"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
-	"gitpct.epam.com/epmd-aepr/aos_common/image"
 
 	"aos_communicationmanager/cloudprotocol"
 )

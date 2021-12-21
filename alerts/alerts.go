@@ -30,9 +30,9 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/coreos/go-systemd/v22/sdjournal"
 	log "github.com/sirupsen/logrus"
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
 
 	"aos_communicationmanager/cloudprotocol"
 	"aos_communicationmanager/config"
