@@ -27,8 +27,8 @@ import (
 	"os/exec"
 	"path"
 
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
-	"gitpct.epam.com/epmd-aepr/aos_common/utils/cryptutils"
+	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/utils/cryptutils"
 )
 
 // CreateCSR creates CSR

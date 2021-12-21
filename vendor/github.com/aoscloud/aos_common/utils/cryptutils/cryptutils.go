@@ -30,7 +30,7 @@ import (
 	"path"
 	"reflect"
 
-	"gitpct.epam.com/epmd-aepr/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aoserrors"
 )
 
 /*******************************************************************************
