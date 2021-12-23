@@ -35,7 +35,11 @@ jobs:
           sudo apt install -y libsystemd-dev
           go build
 
-      - name: Test        
+      - name: Test
         run: |
           sudo apt install -y softhsm2 opensc
-          sudo env "PATH=$PATH" go test -v $(go list ./... | grep -v "/vendor\|downloader\|alerts") -failfast
+          sudo env "PATH=$PATH" go test -v $(go list ./... | grep -v "/vendor\|downloader\|alerts") -failfast -coverprofile=coverage.out -covermode=atomic
+          sudo chmod 666 coverage.out
+
+      - name: Code coverage
+        run: bash <(curl -s https://codecov.io/bash)
