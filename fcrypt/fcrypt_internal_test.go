@@ -712,7 +712,7 @@ func TestSymmetricCipherContext_appendPadding(t *testing.T) {
 				t.Errorf("Got unexpected result: error='%v' siz='%v', value on test %#v", err, resultSize, testItem)
 			}
 		} else {
-			if !testItem.ok || resultSize != len(testItem.padded) || bytes.Compare(testItem.padded, testItem.unpadded) != 0 {
+			if !testItem.ok || resultSize != len(testItem.padded) || !bytes.Equal(testItem.padded, testItem.unpadded) {
 				t.Errorf("Got unexpected result: error='%v' siz='%v', value on test %#v", err, resultSize, testItem)
 			}
 		}
@@ -1073,8 +1073,13 @@ func TestVerifySignOfComponent(t *testing.T) {
 		defer tmpFile.Close()
 		defer os.Remove(tmpFile.Name())
 
-		tmpFile.Write(data.FileData)
-		tmpFile.Seek(0, 0)
+		if _, err = tmpFile.Write(data.FileData); err != nil {
+			t.Errorf("Can't write tmp file: %s", err)
+		}
+
+		if _, err = tmpFile.Seek(0, 0); err != nil {
+			t.Errorf("Can't seek tmp file: %s", err)
+		}
 
 		err = signCtx.VerifySign(context.Background(), tmpFile, data.Signs.ChainName, data.Signs.Alg, data.Signs.Value)
 		if err != nil {

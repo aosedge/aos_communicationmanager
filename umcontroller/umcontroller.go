@@ -48,8 +48,6 @@ type Controller struct {
 	eventChannel  chan umCtrlInternalMsg
 	stopChannel   chan bool
 
-	updateDir string
-
 	connections       []umConnection
 	currentComponents []cloudprotocol.ComponentInfo
 	fsm               *fsm.FSM
@@ -162,7 +160,7 @@ const (
 
 // client sates
 const (
-	umIdle     = "IDLE"
+	umIdle     = "IDLE" // nolint // deadcode and varcheck
 	umPrepared = "PREPARED"
 	umUpdated  = "UPDATED"
 	umFailed   = "FAILED"
@@ -254,7 +252,11 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 	go umCtrl.processInternallMessages()
 	umCtrl.connectionMonitor.wg.Add(1)
 	go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
-	go umCtrl.server.Start()
+	go func() {
+		if err := umCtrl.server.Start(); err != nil {
+			log.Errorf("Can't start UM controller server: %s", err)
+		}
+	}()
 
 	return umCtrl, nil
 }
@@ -312,7 +314,8 @@ func (umCtrl *Controller) UpdateComponents(
 
 		if err = umCtrl.storage.SetComponentsUpdateInfo(componentsUpdateInfo); err != nil {
 			go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.Wrap(err))
-			return
+
+			return umCtrl.currentComponents, aoserrors.Wrap(err)
 		}
 
 		umCtrl.generateFSMEvent(evUpdateRequest, nil)
@@ -403,7 +406,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 				}
 			}
 
-			if idExist == true {
+			if idExist {
 				continue
 			}
 
@@ -414,7 +417,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 
 	}
 
-	if umIDfound == false {
+	if !umIDfound {
 		log.Error("Unexpected new UM connection with ID = ", umID)
 		handler.Close()
 		return
@@ -435,8 +438,6 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 	}
 
 	umCtrl.generateFSMEvent(evAllClientsConnected)
-
-	return
 }
 
 func (umCtrl *Controller) handleCloseConnection(umID string) {
@@ -543,11 +544,11 @@ func (umCtrl *Controller) getCurrentUpdateState() (state string) {
 		}
 	}
 
-	if onPrepareState == true {
+	if onPrepareState {
 		return statePrepareUpdate
 	}
 
-	if onApplyState == true {
+	if onApplyState {
 		return stateStartApply
 	}
 
@@ -565,10 +566,14 @@ func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 	}
 
 	for _, component := range updatecomponents {
-		umCtrl.addComponentForUpdateToUm(component)
+		if addErr := umCtrl.addComponentForUpdateToUm(component); addErr != nil {
+			if err == nil {
+				err = aoserrors.Wrap(addErr)
+			}
+		}
 	}
 
-	return nil
+	return err
 }
 
 func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponent) (err error) {
@@ -610,21 +615,17 @@ func (umCtrl *Controller) cleanupUpdateData() {
 	if err := umCtrl.storage.SetComponentsUpdateInfo([]SystemComponent{}); err != nil {
 		log.Error("Can't clean components update info ", err)
 	}
-
-	return
 }
 
-func (umCtrl *Controller) generateFSMEvent(event string, args ...interface{}) (err error) {
-	if umCtrl.operable == false {
-		return aoserrors.New("update controller in shutdown state")
+func (umCtrl *Controller) generateFSMEvent(event string, args ...interface{}) {
+	if !umCtrl.operable {
+		log.Error("Update controller in shutdown state")
+		return
 	}
 
-	err = umCtrl.fsm.Event(event, args...)
-	if err != nil {
+	if err := umCtrl.fsm.Event(event, args...); err != nil {
 		log.Error("Error transaction ", err)
 	}
-
-	return aoserrors.Wrap(err)
 }
 
 func (monitor *allConnectionMonitor) startConnectionTimer(connectionsCount int) {
@@ -768,8 +769,8 @@ func (umCtrl *Controller) processStartRevertState(e *fsm.Event) {
 		}
 	}
 
-	if errAvailable == true {
-		log.Error("Maintain need") //todo think about cyclic  revert
+	if errAvailable {
+		log.Error("System maintenance is required") //todo think about cyclic  revert
 		return
 	}
 

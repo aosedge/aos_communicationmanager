@@ -133,7 +133,7 @@ func (stateMachine *updateStateMachine) init(ttlDate time.Time) (err error) {
 	}
 
 	if stateMachine.fsm.Current() != stateNoUpdate && !ttlDate.IsZero() {
-		stateMachine.setTTLTimer(ttlDate.Sub(time.Now()))
+		stateMachine.setTTLTimer(time.Until(ttlDate))
 	}
 
 	return nil
@@ -189,7 +189,9 @@ func (stateMachine *updateStateMachine) finishOperation(ctx context.Context, fin
 		return
 	}
 
-	stateMachine.sendEvent(finishEvent, operationErr)
+	if err := stateMachine.sendEvent(finishEvent, operationErr); err != nil {
+		log.Errorf("Can't send finish event: %s", err)
+	}
 }
 
 func (stateMachine *updateStateMachine) startNewUpdate(ttlTime time.Duration) (ttlDate time.Time, err error) {

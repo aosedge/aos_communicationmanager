@@ -134,7 +134,7 @@ func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMSe
 
 		pb.RegisterUpdateSchedulerServiceServer(server.grpcServer, server)
 
-		log.Debug("Start update scheduler grpc server")
+		log.Debug("Start update scheduler gRPC server")
 
 		server.clients = []pb.UpdateSchedulerService_SubscribeNotificationsServer{}
 
@@ -143,7 +143,12 @@ func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMSe
 			return server, aoserrors.Wrap(err)
 		}
 
-		go server.grpcServer.Serve(server.listener)
+		go func() {
+			if err := server.grpcServer.Serve(server.listener); err != nil {
+				log.Errorf("Can't serve gRPC server: %s", err)
+			}
+		}()
+
 	}
 
 	go server.handleChannels()
@@ -153,7 +158,7 @@ func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMSe
 
 // Close stops CM server
 func (server *CMServer) Close() {
-	log.Debug("Close update scheduler grpc server")
+	log.Debug("Close update scheduler gRPC server")
 
 	if server.grpcServer != nil {
 		server.grpcServer.Stop()

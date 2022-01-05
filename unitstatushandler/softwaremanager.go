@@ -19,7 +19,6 @@ package unitstatushandler
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/url"
 	"os"
@@ -1038,14 +1037,6 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 	manager.actionHandler.Wait()
 
 	return removeErr
-}
-
-func getLayerUpdateID(layer cloudprotocol.LayerInfoFromCloud) (id string) {
-	return base64.URLEncoding.EncodeToString(layer.DecryptDataStruct.Sha256)
-}
-
-func getServiceUpdateID(service cloudprotocol.ServiceInfoFromCloud) (id string) {
-	return base64.URLEncoding.EncodeToString(service.DecryptDataStruct.Sha256)
 }
 
 func isUsersEqual(users1, users2 []string) (result bool) {
