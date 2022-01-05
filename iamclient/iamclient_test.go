@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	pb "github.com/aoscloud/aos_common/api/iamanager/v1"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -77,8 +78,7 @@ type testSender struct {
 	serial map[string]string
 }
 
-type testCertProvider struct {
-}
+type testCertProvider struct{}
 
 type servicePermissions struct {
 	serviceID   string
@@ -99,7 +99,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -284,7 +285,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 
 	server.certURL = map[string]string{
 		"online":  onlineURL.String(),
-		"offline": offlineURL.String()}
+		"offline": offlineURL.String(),
+	}
 
 	client, err := iamclient.New(&config.Config{IAMServerURL: serverURL}, sender, true)
 	if err != nil {
@@ -361,7 +363,11 @@ func newTestServer(url string) (server *testServer, err error) {
 
 	server.permissionsCache = make(map[string]servicePermissions)
 
-	go server.grpcServer.Serve(listener)
+	go func() {
+		if err := server.grpcServer.Serve(listener); err != nil {
+			log.Errorf("Can't serve gRPC server: %s", err)
+		}
+	}()
 
 	return server, nil
 }
@@ -463,7 +469,9 @@ func (server *testServer) SubscribeUsersChanged(
 			return nil
 
 		case users := <-server.usersChangedChannel:
-			stream.Send(&pb.Users{Users: users})
+			if err := stream.Send(&pb.Users{Users: users}); err != nil {
+				return aoserrors.Wrap(err)
+			}
 		}
 	}
 }

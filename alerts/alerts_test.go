@@ -18,6 +18,7 @@
 package alerts_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -439,7 +440,9 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 
 	for i := 0; i < numMessages; i++ {
 		// One message size is: timestamp 24 + tag "system" 6 + source "servicemanager" 14 + uuid 36 = 80
-		journal.Send(uuid.New().String(), journal.PriErr, nil)
+		if err := journal.Send(uuid.New().String(), journal.PriErr, nil); err != nil {
+			t.Errorf("Can't send journal log: %s", err)
+		}
 	}
 
 	select {
@@ -468,7 +471,10 @@ func TestAlertsMaxOfflineMessages(t *testing.T) {
 	defer alertsHandler.Close()
 
 	for i := 0; i < numMessages; i++ {
-		journal.Send(uuid.New().String(), journal.PriErr, nil)
+		if err := journal.Send(uuid.New().String(), journal.PriErr, nil); err != nil {
+			t.Errorf("Can't send journal log: %s", err)
+		}
+
 		time.Sleep(1500 * time.Millisecond)
 	}
 
@@ -503,7 +509,9 @@ func TestDuplicateAlerts(t *testing.T) {
 	defer alertsHandler.Close()
 
 	for i := 0; i < numMessages; i++ {
-		journal.Send("This is error message", journal.PriErr, nil)
+		if err := journal.Send("This is error message", journal.PriErr, nil); err != nil {
+			t.Errorf("Can't send journal log: %s", err)
+		}
 	}
 
 	select {
@@ -518,7 +526,6 @@ func TestDuplicateAlerts(t *testing.T) {
 }
 
 func TestMessageFilter(t *testing.T) {
-	const numMessages = 3
 	testSender := newTestSender()
 
 	filter := []string{"test", "regexp"}
@@ -749,7 +756,7 @@ func setup() (err error) {
 		log.Fatalf("Error create temporary dir: %s", err)
 	}
 
-	if systemd, err = dbus.NewSystemConnection(); err != nil {
+	if systemd, err = dbus.NewSystemConnectionContext(context.Background()); err != nil {
 		return err
 	}
 
@@ -782,11 +789,11 @@ func createSystemdUnit(serviceType, command, fileName string) (err error) {
 		return err
 	}
 
-	if _, err = systemd.LinkUnitFiles([]string{fileName}, false, true); err != nil {
+	if _, err = systemd.LinkUnitFilesContext(context.Background(), []string{fileName}, false, true); err != nil {
 		return err
 	}
 
-	if err = systemd.Reload(); err != nil {
+	if err = systemd.ReloadContext(context.Background()); err != nil {
 		return err
 	}
 
@@ -796,7 +803,7 @@ func createSystemdUnit(serviceType, command, fileName string) (err error) {
 func startSystemdUnit(name string) (err error) {
 	channel := make(chan string)
 
-	if _, err = systemd.RestartUnit(name, "replace", channel); err != nil {
+	if _, err = systemd.RestartUnitContext(context.Background(), name, "replace", channel); err != nil {
 		return err
 	}
 

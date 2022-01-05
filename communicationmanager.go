@@ -379,7 +379,7 @@ func (cm *communicationManager) handleMessages(ctx context.Context) {
 
 func (cm *communicationManager) handleConnection(ctx context.Context, serviceDiscoveryURL string) {
 	for {
-		retryhelper.Retry(ctx,
+		_ = retryhelper.Retry(ctx,
 			func() (err error) {
 				if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL,
 					cm.iam.GetSystemID(), cm.iam.GetUsers()); err != nil {

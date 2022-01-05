@@ -101,8 +101,6 @@ type clientBoardConfig struct {
  * Vars
  **********************************************************************************************************************/
 
-var tmpDir string
-
 /***********************************************************************************************************************
  * Init
  **********************************************************************************************************************/
@@ -789,7 +787,11 @@ func newTestSM(url string) (sm *testSM, err error) {
 		return nil, err
 	}
 
-	go sm.grpcServer.Serve(listener)
+	go func() {
+		if err := sm.grpcServer.Serve(listener); err != nil {
+			log.Errorf("Can't serve gRPC server: %s", err)
+		}
+	}()
 
 	return sm, nil
 }

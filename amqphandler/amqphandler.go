@@ -307,7 +307,9 @@ func (handler *AmqpHandler) Close() {
 	log.Info("Close AMQP")
 
 	handler.cancelFunc()
-	handler.Disconnect()
+	if err := handler.Disconnect(); err != nil {
+		log.Errorf("Can't disconnect from AMQP server: %s", err)
+	}
 }
 
 /***************************************************************************************************

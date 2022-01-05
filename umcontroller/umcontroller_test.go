@@ -126,13 +126,13 @@ func TestConnection(t *testing.T) {
 
 	umCtrl.Close()
 
-	streamUM1.CloseSend()
+	_ = streamUM1.CloseSend()
 	connUM1.Close()
 
-	streamUM2.CloseSend()
+	_ = streamUM2.CloseSend()
 	connUM2.Close()
 
-	streamUM1_copy.CloseSend()
+	_ = streamUM1_copy.CloseSend()
 	connUM1_copy.Close()
 
 	time.Sleep(1 * time.Second)
@@ -213,7 +213,9 @@ func TestFullUpdate(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func(finChan chan bool) {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+			t.Errorf("Can't update components: %s", err)
+		}
 		finChan <- true
 	}(finishChannel)
 
@@ -345,7 +347,9 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+			t.Errorf("Can't update components: %s", err)
+		}
 		close(finishChannel)
 	}()
 
@@ -493,7 +497,9 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+			t.Errorf("Can't update components: %s", err)
+		}
 		close(finishChannel)
 	}()
 
@@ -664,7 +670,9 @@ func TestRevertOnPrepare(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err == nil {
+			t.Errorf("Should fail")
+		}
 		close(finishChannel)
 	}()
 
@@ -685,19 +693,10 @@ func TestRevertOnPrepare(t *testing.T) {
 	<-um8.notifyTestChan
 	um8.sendState(pb.UmState_FAILED)
 
-	um7Components = []*pb.SystemComponent{
-		{Id: "um7C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um7C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED}}
-
 	um7.step = "revert"
 	um7.continueChan <- true
 	<-um7.notifyTestChan //um7 revert received
 	um7.sendState(pb.UmState_IDLE)
-
-	um8Components = []*pb.SystemComponent{
-		{Id: "um8C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um8C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um8C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR}}
 
 	um8.step = "revert"
 	um8.continueChan <- true
@@ -781,7 +780,9 @@ func TestRevertOnUpdate(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err == nil {
+			t.Errorf("Should fail")
+		}
 		close(finishChannel)
 	}()
 
@@ -828,11 +829,6 @@ func TestRevertOnUpdate(t *testing.T) {
 	um9.continueChan <- true
 	<-um9.notifyTestChan //um9 revert received
 	um9.sendState(pb.UmState_IDLE)
-
-	um10Components = []*pb.SystemComponent{
-		{Id: "um10C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um10C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um10C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR}}
 
 	um10.step = "revert"
 	um10.continueChan <- true
@@ -916,7 +912,9 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+			t.Errorf("Can't update components: %s", err)
+		}
 		close(finishChannel)
 	}()
 
@@ -968,11 +966,6 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um11.continueChan <- true
 	<-um11.notifyTestChan //um11 revert received
 	um11.sendState(pb.UmState_IDLE)
-
-	um12Components = []*pb.SystemComponent{
-		{Id: "um12C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um12C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um12C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR}}
 
 	um12.step = "revert"
 	um12.continueChan <- true
@@ -1056,7 +1049,9 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	finishChannel := make(chan bool)
 
 	go func() {
-		umCtrl.UpdateComponents(updateComponents)
+		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+			t.Errorf("Can't update components: %s", err)
+		}
 		close(finishChannel)
 	}()
 
@@ -1125,11 +1120,6 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um13.continueChan <- true
 	<-um13.notifyTestChan //um13 revert received
 	um13.sendState(pb.UmState_IDLE)
-
-	um14Components = []*pb.SystemComponent{
-		{Id: "um14C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um14C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um14C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR}}
 
 	um14.step = "revert"
 	um14.continueChan <- true
@@ -1274,7 +1264,7 @@ func (um *testUmConnection) sendState(state pb.UmState) {
 func (um *testUmConnection) closeConnection() {
 	um.continueChan <- true
 	um.conn.Close()
-	um.stream.CloseSend()
+	_ = um.stream.CloseSend()
 }
 
 func (translator *testURLTranslator) TranslateURL(isLocal bool, inURL string) (outURL string, err error) {
