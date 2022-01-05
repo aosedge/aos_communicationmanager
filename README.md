@@ -64,7 +64,7 @@ To increase log level use option -v:
 
 ## Required packages
 
-CM needs Aos Identity and Access Manager (IAM) to be running and configured (see aos_iamanager [readme](https://gitpct.epam.com/epmd-aepr/aos_iamanager/blob/master/README.md)) before start.
+CM needs Aos Identity and Access Manager (IAM) to be running and configured (see aos_iamanager [readme](https://github.com/aoscloud/aos_iamanager/blob/main/README.md)) before start.
 
 ## Test required packages
 
