@@ -182,7 +182,7 @@ func (instance *Instance) Close() (err error) {
 		}
 	}
 
-	return nil
+	return err
 }
 
 // ProcessDesiredStatus processes desired status
@@ -398,16 +398,6 @@ func (descriptor *statusDescriptor) getVersion() (version string) {
 	}
 }
 
-func (status *itemStatus) isInstalled() (installed bool, descriptor statusDescriptor) {
-	for _, element := range *status {
-		if element.getStatus() == cloudprotocol.InstalledStatus {
-			return true, element
-		}
-	}
-
-	return false, statusDescriptor{}
-}
-
 func (instance *Instance) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigInfo) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
@@ -460,10 +450,8 @@ func (instance *Instance) updateLayerStatus(layerInfo cloudprotocol.LayerInfo) {
 		"aosVersion": layerInfo.AosVersion,
 		"error":      layerInfo.Error}).Debug("Update layer status")
 
-	layerStatus, ok := instance.layerStatuses[layerInfo.Digest]
-	if !ok {
-		layerStatus = &itemStatus{}
-		instance.layerStatuses[layerInfo.Digest] = layerStatus
+	if _, ok := instance.layerStatuses[layerInfo.Digest]; !ok {
+		instance.layerStatuses[layerInfo.Digest] = &itemStatus{}
 	}
 
 	instance.processLayerStatus(layerInfo)

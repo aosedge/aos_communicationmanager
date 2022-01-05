@@ -83,8 +83,6 @@ type alertsCounter struct {
  * Consts
  **********************************************************************************************************************/
 
-const pythonServerScript = "start.py"
-
 /***********************************************************************************************************************
  * Vars
  **********************************************************************************************************************/
@@ -185,7 +183,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 	if err := setWondershaperLimit("lo", "128"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
-	defer clearWondershaperLimit("lo")
+	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
 
@@ -253,11 +251,13 @@ func TestAvailableSize(t *testing.T) {
 	if err := setWondershaperLimit("lo", "512"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
-	defer clearWondershaperLimit("lo")
+	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	var stat syscall.Statfs_t
 
-	syscall.Statfs(downloadDir, &stat)
+	if err := syscall.Statfs(downloadDir, &stat); err != nil {
+		t.Errorf("Can't make syscall statfs: %s", err)
+	}
 
 	fileName := path.Join(serverDir, "package.txt")
 	// File should be a little less than required due to extra blocks needed by FS
@@ -314,7 +314,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 	if err := setWondershaperLimit("lo", "256"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
-	defer clearWondershaperLimit("lo")
+	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
 
@@ -381,7 +381,7 @@ func TestConcurrentDownloads(t *testing.T) {
 	if err := setWondershaperLimit("lo", "1024"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
-	defer clearWondershaperLimit("lo")
+	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	for i := 0; i < numDownloads; i++ {
 		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), 100*Kilobyte); err != nil {
@@ -444,11 +444,13 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	if err := setWondershaperLimit("lo", "4096"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
-	defer clearWondershaperLimit("lo")
+	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	var stat syscall.Statfs_t
 
-	syscall.Statfs(downloadDir, &stat)
+	if err := syscall.Statfs(downloadDir, &stat); err != nil {
+		t.Errorf("Can't make syscall statfs: %s", err)
+	}
 
 	// Create files half of available size
 	fileSize := (stat.Bavail / 2) * uint64(stat.Bsize)
@@ -547,7 +549,7 @@ func TestDownloadPartLimit(t *testing.T) {
 	if err := setWondershaperLimit("lo", "4096"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
-	defer clearWondershaperLimit("lo")
+	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	var stat syscall.Statfs_t
 
@@ -584,8 +586,6 @@ func TestDownloadPartLimit(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	results := make([]downloader.Result, 0, numDownloads)
-
 	for i := 0; i < numDownloads; i++ {
 		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
 
@@ -594,8 +594,6 @@ func TestDownloadPartLimit(t *testing.T) {
 			t.Errorf("Can't download and decrypt package: %s", err)
 			continue
 		}
-
-		results = append(results, result)
 
 		wg.Add(1)
 
@@ -716,10 +714,10 @@ func setup() (err error) {
 }
 
 func cleanup() (err error) {
-	clearWondershaperLimit("lo")
+	_ = clearWondershaperLimit("lo")
 
-	closeTmpDisk("downloadDir")
-	closeTmpDisk("decryptDir")
+	_ = closeTmpDisk("downloadDir")
+	_ = closeTmpDisk("decryptDir")
 
 	os.RemoveAll(tmpDir)
 

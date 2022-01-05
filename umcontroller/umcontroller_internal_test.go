@@ -91,10 +91,11 @@ func TestNormalUpdate(t *testing.T) {
 	}
 	stream.step = StepPrepare
 
-	components := []SystemComponent{SystemComponent{URL: "file:///path/to/update",
-		VendorVersion: "vendorversion1", AosVersion: 1}}
+	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion1", AosVersion: 1}}
+	if err := handler.PrepareUpdate(components); err != nil {
+		t.Errorf("Can't prepare components: %s", err)
+	}
 
-	handler.PrepareUpdate(components)
 	for {
 		select {
 		case internalEvent := <-eventChannel:
@@ -110,7 +111,10 @@ func TestNormalUpdate(t *testing.T) {
 					break
 				}
 				stream.step = StepUpdate
-				handler.StartUpdate()
+
+				if err := handler.StartUpdate(); err != nil {
+					t.Errorf("Can't start update: %s", err)
+				}
 
 			case StepUpdate:
 				if internalEvent.requestType != umStatusUpdate {
@@ -123,7 +127,10 @@ func TestNormalUpdate(t *testing.T) {
 					break
 				}
 				stream.step = StepApplyUpdate
-				handler.StartApply()
+
+				if err := handler.StartApply(); err != nil {
+					t.Errorf("Can't start apply: %s", err)
+				}
 
 			case StepApplyUpdate:
 				if internalEvent.requestType != umStatusUpdate {
@@ -159,10 +166,11 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 	}
 	stream.step = StepPrepare
 
-	components := []SystemComponent{SystemComponent{URL: "file:///path/to/update",
-		VendorVersion: "vendorversion2", AosVersion: 1}}
+	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion2", AosVersion: 1}}
+	if err := handler.PrepareUpdate(components); err != nil {
+		t.Errorf("Can't prepare components: %s", err)
+	}
 
-	handler.PrepareUpdate(components)
 	for {
 		select {
 		case internalEvent := <-eventChannel:
@@ -174,7 +182,10 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 					break
 				}
 				stream.step = StepRebootOnUpdate
-				handler.StartUpdate()
+
+				if err := handler.StartUpdate(); err != nil {
+					t.Errorf("Can't start update: %s", err)
+				}
 
 			default:
 				log.Warn("Receive ", internalEvent.status.umState)
@@ -183,13 +194,25 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 		case <-stopCh:
 			if stream.step == StepRebootOnUpdate {
 				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UmState_UPDATED)
+				if err != nil {
+					t.Errorf("Can't create UM handler: %s", err)
+				}
+
 				stream.step = StepRebootOnApply
-				handler.StartApply()
+
+				if err := handler.StartApply(); err != nil {
+					t.Errorf("Can't start apply: %s", err)
+				}
+
 				continue
 			}
 
 			if stream.step == StepRebootOnApply {
 				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UmState_IDLE)
+				if err != nil {
+					t.Errorf("Can't create UM handler: %s", err)
+				}
+
 				stream.step = StepFinish
 				stream.continueCh <- true
 				continue
@@ -215,10 +238,11 @@ func TestRevert(t *testing.T) {
 	}
 	stream.step = StepPrepare
 
-	components := []SystemComponent{SystemComponent{URL: "file:///path/to/update",
-		VendorVersion: "vendorversion3", AosVersion: 1}}
+	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion3", AosVersion: 1}}
+	if err := handler.PrepareUpdate(components); err != nil {
+		t.Errorf("Can't prepare components: %s", err)
+	}
 
-	handler.PrepareUpdate(components)
 	for {
 		select {
 		case internalEvent := <-eventChannel:
@@ -230,7 +254,10 @@ func TestRevert(t *testing.T) {
 					break
 				}
 				stream.step = StepUpdate
-				handler.StartUpdate()
+
+				if err := handler.StartUpdate(); err != nil {
+					t.Errorf("Can't start update: %s", err)
+				}
 
 			case StepUpdate:
 				if internalEvent.status.umState != pb.UmState_FAILED.String() {
@@ -239,7 +266,10 @@ func TestRevert(t *testing.T) {
 					break
 				}
 				stream.step = StepRevertUpdate
-				handler.StartRevert()
+
+				if err := handler.StartRevert(); err != nil {
+					t.Errorf("Can't start revert: %s", err)
+				}
 
 			case StepRevertUpdate:
 				if internalEvent.status.umState != pb.UmState_IDLE.String() {
@@ -271,10 +301,11 @@ func TestRevertWithReboot(t *testing.T) {
 	}
 	stream.step = StepPrepare
 
-	components := []SystemComponent{SystemComponent{URL: "file:///path/to/update",
-		VendorVersion: "vendorversion4", AosVersion: 1}}
+	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion4", AosVersion: 1}}
+	if err := handler.PrepareUpdate(components); err != nil {
+		t.Errorf("Can't prepare components: %s", err)
+	}
 
-	handler.PrepareUpdate(components)
 	for {
 		select {
 		case internalEvent := <-eventChannel:
@@ -286,7 +317,10 @@ func TestRevertWithReboot(t *testing.T) {
 					break
 				}
 				stream.step = StepRebootOnUpdate
-				handler.StartUpdate()
+
+				if err := handler.StartUpdate(); err != nil {
+					t.Errorf("Can't start update: %s", err)
+				}
 
 			default:
 				log.Warn("Receive ", internalEvent.status.umState)
@@ -295,13 +329,25 @@ func TestRevertWithReboot(t *testing.T) {
 		case <-stopCh:
 			if stream.step == StepRebootOnUpdate {
 				handler, stopCh, err = newUmHandler("testUM4", &stream, eventChannel, pb.UmState_FAILED)
+				if err != nil {
+					t.Errorf("Can't create um handler: %s", err)
+				}
+
 				stream.step = StepRebootOnRevert
-				handler.StartRevert()
+
+				if err := handler.StartRevert(); err != nil {
+					t.Errorf("Can't start revert: %s", err)
+				}
+
 				continue
 			}
 
 			if stream.step == StepRebootOnRevert {
 				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UmState_IDLE)
+				if err != nil {
+					t.Errorf("Can't create um handler: %s", err)
+				}
+
 				stream.step = StepFinish
 				stream.continueCh <- true
 				continue

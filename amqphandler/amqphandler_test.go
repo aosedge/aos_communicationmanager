@@ -128,10 +128,10 @@ func setup() (err error) {
 
 func cleanup() {
 	if testClient.channel != nil {
-		testClient.channel.QueueDelete(inQueueName, false, false, false)
-		testClient.channel.QueueDelete(outQueueName, false, false, false)
-		testClient.channel.ExchangeDelete(exchangeName, false, false)
-		testClient.channel.Close()
+		_, _ = testClient.channel.QueueDelete(inQueueName, false, false, false)
+		_, _ = testClient.channel.QueueDelete(outQueueName, false, false, false)
+		_ = testClient.channel.ExchangeDelete(exchangeName, false, false)
+		_ = testClient.channel.Close()
 	}
 
 	if testClient.conn != nil {
@@ -321,11 +321,6 @@ func TestReceiveMessages(t *testing.T) {
 		call          func() error
 		data          cloudprotocol.Message
 		getDataType   func() interface{}
-	}
-
-	type messageHeader struct {
-		Version     uint64
-		MessageType string
 	}
 
 	boardConfigData := []cloudprotocol.BoardConfigInfo{{VendorVersion: "1.0", Status: "installed"}}
