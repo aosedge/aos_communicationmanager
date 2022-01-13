@@ -65,7 +65,7 @@ type testUmConnection struct {
 	continueChan   chan bool
 	step           string
 	test           *testing.T
-	umId           string
+	umID           string
 	components     []*pb.SystemComponent
 	conn           *grpc.ClientConn
 }
@@ -123,7 +123,7 @@ func TestConnection(t *testing.T) {
 		t.Errorf("Error connect %s", err)
 	}
 
-	streamUM1_copy, connUM1_copy, err := createClientConnection("umID1", pb.UmState_IDLE, components)
+	streamUM1Copy, connUM1Copy, err := createClientConnection("umID1", pb.UmState_IDLE, components)
 	if err != nil {
 		t.Errorf("Error connect %s", err)
 	}
@@ -147,9 +147,9 @@ func TestConnection(t *testing.T) {
 
 	connUM2.Close()
 
-	_ = streamUM1_copy.CloseSend()
+	_ = streamUM1Copy.CloseSend()
 
-	connUM1_copy.Close()
+	connUM1Copy.Close()
 
 	time.Sleep(1 * time.Second)
 }
@@ -1323,33 +1323,33 @@ func (um *testUmConnection) processMessages() {
 
 		case rebootStep:
 			if err == io.EOF {
-				log.Debug("[test] End of connection ", um.umId)
+				log.Debug("[test] End of connection ", um.umID)
 				return
 			}
 
 			if err != nil {
-				log.Debug("[test] End of connection with error ", err, um.umId)
+				log.Debug("[test] End of connection with error ", err, um.umID)
 				return
 			}
 
 		case prepareStep:
 			if msg.GetPrepareUpdate() == nil {
-				um.test.Error("Expect prepare update request ", um.umId)
+				um.test.Error("Expect prepare update request ", um.umID)
 			}
 
 		case updateStep:
 			if msg.GetStartUpdate() == nil {
-				um.test.Error("Expect start update ", um.umId)
+				um.test.Error("Expect start update ", um.umID)
 			}
 
 		case applyStep:
 			if msg.GetApplyUpdate() == nil {
-				um.test.Error("Expect apply update ", um.umId)
+				um.test.Error("Expect apply update ", um.umID)
 			}
 
 		case revertStep:
 			if msg.GetRevertUpdate() == nil {
-				um.test.Error("Expect revert update ", um.umId)
+				um.test.Error("Expect revert update ", um.umID)
 			}
 
 		default:
@@ -1377,7 +1377,7 @@ func newTestUM(id string, umState pb.UmState, testState string, components []*pb
 		step:           testState,
 		test:           t,
 		stream:         stream,
-		umId:           id,
+		umID:           id,
 		conn:           conn,
 		components:     components,
 	}
@@ -1390,7 +1390,7 @@ func (um *testUmConnection) setComponents(components []*pb.SystemComponent) {
 }
 
 func (um *testUmConnection) sendState(state pb.UmState) {
-	umMsg := &pb.UpdateStatus{UmId: um.umId, UmState: state, Components: um.components}
+	umMsg := &pb.UpdateStatus{UmId: um.umID, UmState: state, Components: um.components}
 
 	if err := um.stream.Send(umMsg); err != nil {
 		um.test.Errorf("Fail send update status message %s", err)

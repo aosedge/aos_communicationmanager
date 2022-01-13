@@ -68,7 +68,7 @@ type testSM struct {
 	messageChannel chan interface{}
 
 	boardConfigVersion string
-	correlationId      string
+	correlationID      string
 	stateChecksum      string
 
 	ctx            context.Context
@@ -547,7 +547,7 @@ func TestServiceStateAcceptance(t *testing.T) {
 		t.Errorf("Error sending service state acceptance: %s", err)
 	}
 
-	if sm.correlationId != "correlation0" || sm.stateChecksum != "checksum" {
+	if sm.correlationID != "correlation0" || sm.stateChecksum != "checksum" {
 		t.Error("Wrong service state acceptance values")
 	}
 }
@@ -904,7 +904,7 @@ func (sm *testSM) SubscribeSMNotifications(
 			case cloudprotocol.NewState:
 				if err = stream.Send(&pb.SMNotifications{SMNotification: &pb.SMNotifications_NewServiceState{
 					NewServiceState: &pb.NewServiceState{
-						CorrelationId: sm.correlationId,
+						CorrelationId: sm.correlationID,
 						ServiceState: &pb.ServiceState{
 							ServiceId:     data.ServiceID,
 							StateChecksum: data.Checksum,
@@ -1144,7 +1144,7 @@ func (sm *testSM) InstallLayer(
 
 func (sm *testSM) ServiceStateAcceptance(
 	ctx context.Context, request *pb.StateAcceptance) (response *empty.Empty, err error) {
-	sm.correlationId = request.CorrelationId
+	sm.correlationID = request.CorrelationId
 	sm.stateChecksum = request.StateChecksum
 
 	return &empty.Empty{}, nil

@@ -76,13 +76,13 @@ func TestOnlyLocalFileServer(t *testing.T) {
 		log.Error("Should be error: file server not available")
 	}
 
-	outUrl, err := fileServer.TranslateURL(true, "/var/1.txt")
+	outURL, err := fileServer.TranslateURL(true, "/var/1.txt")
 	if err != nil {
 		log.Errorf("Can't translate local url: %s", err)
 	}
 
-	if outUrl != "file:///var/1.txt" {
-		log.Errorf("Incorrect translated url: %s", outUrl)
+	if outURL != "file:///var/1.txt" {
+		log.Errorf("Incorrect translated url: %s", outURL)
 	}
 }
 
@@ -97,13 +97,13 @@ func TestFileServer(t *testing.T) {
 
 	defer os.RemoveAll(serverDir)
 
-	outUrl, err := fileServer.TranslateURL(true, "/var/1.txt")
+	outURL, err := fileServer.TranslateURL(true, "/var/1.txt")
 	if err != nil {
 		log.Errorf("Can't translate local url: %s", err)
 	}
 
-	if outUrl != "file:///var/1.txt" {
-		log.Errorf("Incorrect translated url: %s", outUrl)
+	if outURL != "file:///var/1.txt" {
+		log.Errorf("Incorrect translated url: %s", outURL)
 	}
 
 	filename := "testFile.txt"
@@ -112,19 +112,19 @@ func TestFileServer(t *testing.T) {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 
-	outUrl, err = fileServer.TranslateURL(false, filepath.Join(serverDir, filename))
+	outURL, err = fileServer.TranslateURL(false, filepath.Join(serverDir, filename))
 	if err != nil {
 		log.Errorf("Can't translate remote url: %s", err)
 	}
 
-	if outUrl != "http://"+config.FileServerURL+"/"+filename {
-		log.Errorf("Incorrect remote translated url: %s", outUrl)
+	if outURL != "http://"+config.FileServerURL+"/"+filename {
+		log.Errorf("Incorrect remote translated url: %s", outURL)
 	}
 
 	time.Sleep(1 * time.Second)
 
 	// Get the data
-	resp, err := http.Get(outUrl) // nolint // just for tests
+	resp, err := http.Get(outURL) // nolint // just for tests
 	if err != nil {
 		t.Fatalf("Can't download file: %s", err)
 	}
