@@ -50,7 +50,7 @@ const (
  **********************************************************************************************************************/
 
 // AmqpHandler structure with all amqp connection info
-type AmqpHandler struct {
+type AmqpHandler struct { // nolint:stylecheck
 	sync.Mutex
 
 	// MessageChannel channel for amqp messages
