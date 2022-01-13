@@ -436,7 +436,7 @@ func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) {
 	data, _ := json.Marshal(item)
 	instance.alertsSize += len(data)
 
-	if int(instance.alertsSize) <= instance.config.MaxMessageSize {
+	if instance.alertsSize <= instance.config.MaxMessageSize {
 		instance.alerts = append(instance.alerts, item)
 	} else {
 		instance.skippedAlerts++
