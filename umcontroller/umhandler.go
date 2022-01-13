@@ -76,8 +76,8 @@ const (
 
 // NewUmHandler create update manager connection handler
 func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
-	messageChannel chan umCtrlInternalMsg, state pb.UmState) (handler *umHandler, closeChannel chan bool, err error) {
-
+	messageChannel chan umCtrlInternalMsg, state pb.UmState) (handler *umHandler, closeChannel chan bool, err error,
+) {
 	handler = &umHandler{umID: id, stream: umStream, messageChannel: messageChannel}
 	handler.closeChannel = make(chan bool)
 	handler.initialUmState = state.String()
@@ -105,10 +105,14 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 			{Name: eventStartApply, Src: []string{hStateWaitForApply}, Dst: hStateWaitForApplyStatus},
 			{Name: eventIdleState, Src: []string{hStateWaitForApplyStatus, hStateWaitForRevertStatus}, Dst: hStateIdle},
 
-			{Name: eventUpdateError, Src: []string{hStateWaitForPrepareResp, hStateWaitForUpdateStatus},
-				Dst: hStateWaitForRevert},
-			{Name: eventStartRevert, Src: []string{hStateWaitForRevert, hStateWaitForStartUpdate, hStateWaitForApply},
-				Dst: hStateWaitForRevertStatus},
+			{
+				Name: eventUpdateError, Src: []string{hStateWaitForPrepareResp, hStateWaitForUpdateStatus},
+				Dst: hStateWaitForRevert,
+			},
+			{
+				Name: eventStartRevert, Src: []string{hStateWaitForRevert, hStateWaitForStartUpdate, hStateWaitForApply},
+				Dst: hStateWaitForRevertStatus,
+			},
 		},
 		fsm.Callbacks{
 			"enter_" + hStateWaitForPrepareResp:  handler.sendPrepareUpdateRequest,
@@ -219,14 +223,16 @@ func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
 
 	componetForUpdate := []*pb.PrepareComponentInfo{}
 	for _, value := range request.components {
-		componetInfo := pb.PrepareComponentInfo{Id: value.ID,
+		componetInfo := pb.PrepareComponentInfo{
+			Id:            value.ID,
 			VendorVersion: value.VendorVersion,
 			AosVersion:    value.AosVersion,
 			Annotations:   value.Annotations,
 			Url:           value.URL,
 			Sha256:        value.Sha256,
 			Sha512:        value.Sha512,
-			Size:          value.Size}
+			Size:          value.Size,
+		}
 
 		componetForUpdate = append(componetForUpdate, &componetInfo)
 	}

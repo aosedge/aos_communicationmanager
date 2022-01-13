@@ -18,14 +18,15 @@
 package boardconfig_test
 
 import (
-	"github.com/aoscloud/aos_communicationmanager/boardconfig"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
-	"github.com/aoscloud/aos_communicationmanager/config"
 	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/aoscloud/aos_communicationmanager/boardconfig"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/config"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -34,8 +35,7 @@ import (
  * Types
  **********************************************************************************************************************/
 
-type testClient struct {
-}
+type testClient struct{}
 
 /***********************************************************************************************************************
  * Vars
@@ -51,7 +51,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -87,7 +88,7 @@ func TestValidGetStatus(t *testing.T) {
 	"vendorVersion": "1.0.0"
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -118,7 +119,7 @@ func TestInvalidGetStatus(t *testing.T) {
 	something not valid
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -144,7 +145,7 @@ func TestCheckBoardConfig(t *testing.T) {
 		"vendorVersion": "1.0.0"
 	}`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -190,7 +191,7 @@ func TestUpdateBoardConfig(t *testing.T) {
 		"vendorVersion": "1.0.0"
 	}`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 

@@ -182,7 +182,8 @@ func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.Updat
 	// send current status of sota and fota packages
 	fotaNotification := pb.SchedulerNotifications{
 		SchedulerNotification: &pb.SchedulerNotifications_FotaStatus{
-			FotaStatus: server.currentFOTAStatus.convertToPBStatus()},
+			FotaStatus: server.currentFOTAStatus.convertToPBStatus(),
+		},
 	}
 
 	if err = stream.Send(&fotaNotification); err != nil {
@@ -195,7 +196,8 @@ func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.Updat
 
 	sotaNotification := pb.SchedulerNotifications{
 		SchedulerNotification: &pb.SchedulerNotifications_SotaStatus{
-			SotaStatus: server.currentSOTAStatus.convertToPBStatus()},
+			SotaStatus: server.currentSOTAStatus.convertToPBStatus(),
+		},
 	}
 
 	if err := stream.Send(&sotaNotification); err != nil {
@@ -261,7 +263,8 @@ func (server *CMServer) handleChannels() {
 			server.currentFOTAStatus = fotaStatus
 
 			notification.SchedulerNotification = &pb.SchedulerNotifications_FotaStatus{
-				FotaStatus: fotaStatus.convertToPBStatus()}
+				FotaStatus: fotaStatus.convertToPBStatus(),
+			}
 
 			server.notifyAllClients(&notification)
 
@@ -277,7 +280,8 @@ func (server *CMServer) handleChannels() {
 			server.currentSOTAStatus = sotaStatus
 
 			notification.SchedulerNotification = &pb.SchedulerNotifications_SotaStatus{
-				SotaStatus: sotaStatus.convertToPBStatus()}
+				SotaStatus: sotaStatus.convertToPBStatus(),
+			}
 
 			server.notifyAllClients(&notification)
 
@@ -305,23 +309,31 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 	pbStatus.State = updateStatus.State.getPbState()
 
 	for _, layer := range updateStatus.InstallLayers {
-		pbStatus.InstallLayers = append(pbStatus.InstallLayers, &pb.LayerInfo{Id: layer.ID,
-			AosVersion: layer.AosVersion, Digest: layer.Digest})
+		pbStatus.InstallLayers = append(pbStatus.InstallLayers, &pb.LayerInfo{
+			Id:         layer.ID,
+			AosVersion: layer.AosVersion, Digest: layer.Digest,
+		})
 	}
 
 	for _, layer := range updateStatus.RemoveLayers {
-		pbStatus.RemoveLayers = append(pbStatus.RemoveLayers, &pb.LayerInfo{Id: layer.ID,
-			AosVersion: layer.AosVersion, Digest: layer.Digest})
+		pbStatus.RemoveLayers = append(pbStatus.RemoveLayers, &pb.LayerInfo{
+			Id:         layer.ID,
+			AosVersion: layer.AosVersion, Digest: layer.Digest,
+		})
 	}
 
 	for _, service := range updateStatus.InstallServices {
-		pbStatus.InstallServices = append(pbStatus.InstallServices, &pb.ServiceInfo{Id: service.ID,
-			AosVersion: service.AosVersion})
+		pbStatus.InstallServices = append(pbStatus.InstallServices, &pb.ServiceInfo{
+			Id:         service.ID,
+			AosVersion: service.AosVersion,
+		})
 	}
 
 	for _, service := range updateStatus.RemoveServices {
-		pbStatus.RemoveServices = append(pbStatus.RemoveServices, &pb.ServiceInfo{Id: service.ID,
-			AosVersion: service.AosVersion})
+		pbStatus.RemoveServices = append(pbStatus.RemoveServices, &pb.ServiceInfo{
+			Id:         service.ID,
+			AosVersion: service.AosVersion,
+		})
 	}
 
 	return pbStatus
@@ -333,8 +345,10 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 	pbStatus.State = updateStatus.State.getPbState()
 
 	for _, component := range updateStatus.Components {
-		pbStatus.Components = append(pbStatus.Components, &pb.ComponentInfo{Id: component.ID,
-			AosVersion: component.AosVersion, VendorVersion: component.VendorVersion})
+		pbStatus.Components = append(pbStatus.Components, &pb.ComponentInfo{
+			Id:         component.ID,
+			AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
+		})
 	}
 
 	if updateStatus.BoardConfig != nil {
@@ -347,5 +361,6 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 func (state UpdateState) getPbState() (pbState pb.UpdateState) {
 	return [...]pb.UpdateState{
 		pb.UpdateState_NO_UPDATE, pb.UpdateState_DOWNLOADING,
-		pb.UpdateState_READY_TO_UPDATE, pb.UpdateState_UPDATING}[state]
+		pb.UpdateState_READY_TO_UPDATE, pb.UpdateState_UPDATING,
+	}[state]
 }

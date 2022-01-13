@@ -272,11 +272,11 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 -----END CERTIFICATE-----	
 `
 
-	if err = ioutil.WriteFile(path.Join(tmpDir, "online_cert.pem"), []byte(onlineCert), 0644); err != nil {
+	if err = ioutil.WriteFile(path.Join(tmpDir, "online_cert.pem"), []byte(onlineCert), 0o644); err != nil {
 		log.Fatalf("Error create online cert: %s", err)
 	}
 
-	if err = ioutil.WriteFile(path.Join(tmpDir, "offline_cert.pem"), []byte(offlineCert), 0644); err != nil {
+	if err = ioutil.WriteFile(path.Join(tmpDir, "offline_cert.pem"), []byte(offlineCert), 0o644); err != nil {
 		log.Fatalf("Error create offline cert: %s", err)
 	}
 

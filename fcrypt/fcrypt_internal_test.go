@@ -487,67 +487,109 @@ VHEOzvaGk9miP6nBrDfNv7mIkgEKARrjjSpmJasIEU+mNtzeOIEiMtW1EMRc457o
 var pkcs7PaddingTests = []pkcs7PaddingCase{
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16}, 0, true, false, false},
+		[]byte{16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16},
+		0, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15}, 1, true, false, false},
+		[]byte{0, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15},
+		1, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14}, 2, true, false, false},
+		[]byte{0, 0, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14},
+		2, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13}, 3, true, false, false},
+		[]byte{0, 0, 0, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13},
+		3, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12}, 4, true, false, false},
+		[]byte{0, 0, 0, 0, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12},
+		4, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11}, 5, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11},
+		5, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10}, 6, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+		6, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9}, 7, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9},
+		7, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8}, 8, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8},
+		8, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 7, 7, 7, 7, 7}, 9, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 7, 7, 7, 7, 7},
+		9, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 6, 6, 6}, 10, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 6, 6, 6},
+		10, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 5, 5}, 11, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 5, 5},
+		11, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4}, 12, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4},
+		12, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3}, 13, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3},
+		13, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2}, 14, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2},
+		14, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, 15, true, false, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+		15, true, false, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, 15, false, false, true},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+		15, false, false, true,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{11, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16}, 0, false, true, false},
+		[]byte{11, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16},
+		0, false, true, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}, 1, false, true, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+		1, false, true, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}, 1, false, true, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+		1, false, true, false,
+	},
 	{
 		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1, false, true, false},
+		[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		1, false, true, false,
+	},
 }
 
 /***********************************************************************************************************************
@@ -558,7 +600,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -570,7 +613,7 @@ func init() {
 func TestMain(m *testing.M) {
 	var err error
 
-	if err = os.MkdirAll(tmpDir, 0755); err != nil {
+	if err = os.MkdirAll(tmpDir, 0o755); err != nil {
 		log.Fatalf("Error creating tmp dir: %s", err)
 	}
 
@@ -1150,7 +1193,7 @@ func setupFileStorage() (err error) {
 				return err
 			}
 
-			if err := ioutil.WriteFile(certURL.Path, certData.cert, 0644); err != nil {
+			if err := ioutil.WriteFile(certURL.Path, certData.cert, 0o644); err != nil {
 				return err
 			}
 		}
@@ -1161,7 +1204,7 @@ func setupFileStorage() (err error) {
 				return err
 			}
 
-			if err := ioutil.WriteFile(keyURL.Path, certData.key, 0644); err != nil {
+			if err := ioutil.WriteFile(keyURL.Path, certData.key, 0o644); err != nil {
 				return err
 			}
 		}
@@ -1180,7 +1223,8 @@ func clearFileStorage() (err error) {
 
 func execPkcs11Tool(args ...string) (err error) {
 	if output, err := exec.Command("pkcs11-tool", append([]string{
-		"--module", pkcs11LibPath}, args...)...).CombinedOutput(); err != nil {
+		"--module", pkcs11LibPath,
+	}, args...)...).CombinedOutput(); err != nil {
 		return fmt.Errorf("%s (%s)", err, (string(output)))
 	}
 
@@ -1198,7 +1242,7 @@ func pkcs11ImportCert(name string, data []byte) (err error) {
 	id := name
 
 	for i, cert := range certs {
-		if err := ioutil.WriteFile(fileName, cert.Raw, 0644); err != nil {
+		if err := ioutil.WriteFile(fileName, cert.Raw, 0o644); err != nil {
 			return err
 		}
 
@@ -1234,7 +1278,7 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 
 	fileName := path.Join(tmpDir, "data.tmp")
 
-	if err := ioutil.WriteFile(fileName, data, 0644); err != nil {
+	if err := ioutil.WriteFile(fileName, data, 0o644); err != nil {
 		return err
 	}
 
@@ -1289,7 +1333,7 @@ func clearPkcs11Storage() (err error) {
 		return err
 	}
 
-	if err = os.MkdirAll(pkcs11DBPath, 0755); err != nil {
+	if err = os.MkdirAll(pkcs11DBPath, 0o755); err != nil {
 		return err
 	}
 

@@ -150,7 +150,8 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 
 	for _, component := range manager.CurrentUpdate.Components {
 		status.Components = append(status.Components, cloudprotocol.ComponentInfo{
-			ID: component.ID, AosVersion: component.AosVersion, VendorVersion: component.VendorVersion})
+			ID: component.ID, AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
+		})
 	}
 
 	if len(manager.CurrentUpdate.BoardConfig) != 0 {
@@ -201,7 +202,8 @@ desiredLoop:
 
 		log.WithFields(log.Fields{
 			"id":            desiredComponent.ID,
-			"vendorVersion": desiredComponent.VendorVersion}).Error("Desired component not found")
+			"vendorVersion": desiredComponent.VendorVersion,
+		}).Error("Desired component not found")
 	}
 
 	if len(update.BoardConfig) != 0 || len(update.Components) != 0 {
@@ -308,7 +310,8 @@ func (manager *firmwareManager) stateChanged(event, state string, updateErr stri
 
 	log.WithFields(log.Fields{
 		"state": state,
-		"event": event}).Debug("Firmware manager state changed")
+		"event": event,
+	}).Debug("Firmware manager state changed")
 
 	if updateErr != "" {
 		log.Errorf("Firmware update error: %s", updateErr)

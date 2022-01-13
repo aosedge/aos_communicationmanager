@@ -110,8 +110,10 @@ const testConfigContent = `{
  * Vars
  **********************************************************************************************************************/
 
-var tmpDir string
-var testCfg *config.Config
+var (
+	tmpDir  string
+	testCfg *config.Config
+)
 
 /***********************************************************************************************************************
  * Main
@@ -304,7 +306,7 @@ func TestCMServer(t *testing.T) {
  **********************************************************************************************************************/
 
 func createConfigFile(fileName string) (err error) {
-	if err := ioutil.WriteFile(fileName, []byte(testConfigContent), 0644); err != nil {
+	if err := ioutil.WriteFile(fileName, []byte(testConfigContent), 0o644); err != nil {
 		return err
 	}
 

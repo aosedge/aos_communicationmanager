@@ -31,8 +31,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const maxReasonSize = 512
-const unknownInterruptReason = "unknown"
+const (
+	maxReasonSize          = 512
+	unknownInterruptReason = "unknown"
+)
 
 /***********************************************************************************************************************
  * Types
@@ -84,7 +86,7 @@ func (result *downloadResult) storeInterruptReason(reason string) {
 		reason = reason[:maxReasonSize]
 	}
 
-	if err := ioutil.WriteFile(result.interruptFileName, []byte(reason), 0644); err != nil {
+	if err := ioutil.WriteFile(result.interruptFileName, []byte(reason), 0o644); err != nil {
 		log.Errorf("Can't store interrupt reason: %s", err)
 	}
 }

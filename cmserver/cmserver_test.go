@@ -63,7 +63,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -83,7 +84,8 @@ func TestConnection(t *testing.T) {
 
 	unitStatusHandler := testUpdateHandler{
 		sotaChannel: make(chan cmserver.UpdateSOTAStatus, 10),
-		fotaChannel: make(chan cmserver.UpdateFOTAStatus, 10)}
+		fotaChannel: make(chan cmserver.UpdateFOTAStatus, 10),
+	}
 
 	cmServer, err := cmserver.New(&cmConfig, &unitStatusHandler, true)
 	if err != nil {
@@ -263,7 +265,6 @@ func (handler *testUpdateHandler) GetFOTAStatus() (status cmserver.UpdateFOTASta
 	status.State = cmserver.NoUpdate
 
 	return status
-
 }
 
 func (handler *testUpdateHandler) GetSOTAStatus() (status cmserver.UpdateSOTAStatus) {
