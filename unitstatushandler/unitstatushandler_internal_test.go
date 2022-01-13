@@ -20,7 +20,6 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -178,7 +177,7 @@ func TestDownload(t *testing.T) {
 		{
 			request:         map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
 			errorURL:        "1",
-			downloadError:   errors.New("download error"),
+			downloadError:   aoserrors.New("download error"),
 			continueOnError: false,
 			check:           map[string]int{"0": downloadCanceled, "1": downloadError, "2": downloadCanceled},
 			downloadTime:    1 * time.Second,
@@ -186,7 +185,7 @@ func TestDownload(t *testing.T) {
 		{
 			request:         map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
 			errorURL:        "1",
-			downloadError:   errors.New("download error"),
+			downloadError:   aoserrors.New("download error"),
 			continueOnError: true,
 			check:           map[string]int{"0": downloadSuccess, "1": downloadError, "2": downloadSuccess},
 			downloadTime:    1 * time.Second,
@@ -621,7 +620,7 @@ func TestFirmwareManager(t *testing.T) {
 			testID:           "error board config",
 			initStatus:       &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			desiredStatus:    &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
-			boardConfigError: errors.New("board config error"),
+			boardConfigError: aoserrors.New("board config error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "board config error"},
 			},
@@ -865,7 +864,7 @@ func TestSoftwareManager(t *testing.T) {
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
 				updateServices[0].ID: {}, updateServices[1].ID: {},
 			},
-			updateError: errors.New("update error"),
+			updateError: aoserrors.New("update error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
@@ -1048,21 +1047,21 @@ func TestTimeTable(t *testing.T) {
 		fromDate  time.Time
 		timetable []cloudprotocol.TimetableEntry
 		result    time.Duration
-		err       error
+		err       string
 	}
 
 	data := []testData{
 		{
 			timetable: []cloudprotocol.TimetableEntry{},
-			err:       errors.New("timetable is empty"),
+			err:       "timetable is empty",
 		},
 		{
 			timetable: []cloudprotocol.TimetableEntry{{DayOfWeek: 0}},
-			err:       errors.New("invalid day of week value"),
+			err:       "invalid day of week value",
 		},
 		{
 			timetable: []cloudprotocol.TimetableEntry{{DayOfWeek: 1}},
-			err:       errors.New("no time slots"),
+			err:       "no time slots",
 		},
 		{
 			timetable: []cloudprotocol.TimetableEntry{
@@ -1075,7 +1074,7 @@ func TestTimeTable(t *testing.T) {
 					},
 				},
 			},
-			err: errors.New("start value should contain only time"),
+			err: "start value should contain only time",
 		},
 		{
 			timetable: []cloudprotocol.TimetableEntry{
@@ -1088,7 +1087,7 @@ func TestTimeTable(t *testing.T) {
 					},
 				},
 			},
-			err: errors.New("finish value should contain only time"),
+			err: "finish value should contain only time",
 		},
 		{
 			timetable: []cloudprotocol.TimetableEntry{
@@ -1101,7 +1100,7 @@ func TestTimeTable(t *testing.T) {
 					},
 				},
 			},
-			err: errors.New("start value should be before finish value"),
+			err: "start value should be before finish value",
 		},
 		{
 			fromDate: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local),
@@ -1216,19 +1215,19 @@ func TestTimeTable(t *testing.T) {
 
 		availableTime, err := getAvailableTimetableTime(item.fromDate, item.timetable)
 		if err != nil {
-			if item.err == nil {
+			if item.err == "" {
 				t.Errorf("Can't get available timetable time: %s", err)
 				continue
 			}
 
-			if !strings.Contains(err.Error(), item.err.Error()) {
+			if !strings.Contains(err.Error(), item.err) {
 				t.Errorf("Wrong error: %s", err)
 			}
 
 			continue
 		}
 
-		if item.err != nil {
+		if item.err != "" {
 			t.Errorf("Error expected")
 			continue
 		}

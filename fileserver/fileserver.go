@@ -19,6 +19,7 @@ package fileserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -127,7 +128,7 @@ func (fileServer *FileServer) startFileStorage() {
 
 	log.WithField("host", fileServer.server.Addr).Debug("Start file server")
 
-	if err := fileServer.server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := fileServer.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Errorf("Can't start local file server: %s", err)
 	}
 }
