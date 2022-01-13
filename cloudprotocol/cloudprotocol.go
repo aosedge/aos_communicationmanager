@@ -184,7 +184,7 @@ type DesiredStatus struct {
 // RequestServiceCrashLog request service crash log message
 type RequestServiceCrashLog struct {
 	ServiceID string     `json:"serviceId"`
-	LogID     string     `json:"logID"`
+	LogID     string     `json:"logId"`
 	From      *time.Time `json:"from"`
 	Till      *time.Time `json:"till"`
 }
@@ -192,14 +192,14 @@ type RequestServiceCrashLog struct {
 // RequestServiceLog request service log message
 type RequestServiceLog struct {
 	ServiceID string     `json:"serviceId"`
-	LogID     string     `json:"logID"`
+	LogID     string     `json:"logId"`
 	From      *time.Time `json:"from"`
 	Till      *time.Time `json:"till"`
 }
 
 // RequestSystemLog request system log message
 type RequestSystemLog struct {
-	LogID string     `json:"logID"`
+	LogID string     `json:"logId"`
 	From  *time.Time `json:"from"`
 	Till  *time.Time `json:"till"`
 }
@@ -341,7 +341,7 @@ type MonitoringData struct {
 
 // PushLog push service log structure
 type PushLog struct {
-	LogID     string `json:"logID"`
+	LogID     string `json:"logId"`
 	PartCount uint64 `json:"partCount,omitempty"`
 	Part      uint64 `json:"part,omitempty"`
 	Data      []byte `json:"data,omitempty"`
@@ -548,7 +548,7 @@ type OverrideEnvsFromCloud struct {
 type EnvVarInfo struct {
 	ID       string     `json:"id"`
 	Variable string     `json:"variable"`
-	TTL      *time.Time `json:"TTL"`
+	TTL      *time.Time `json:"ttl"`
 }
 
 // OverrideEnvVarsStatus override env status
