@@ -33,7 +33,7 @@ import (
 
 // Crypt configuration structure with crypto attributes
 type Crypt struct {
-	CACert        string `json:"CACert"`
+	CACert        string `json:"caCert"`
 	TpmDevice     string `json:"tpmDevice,omitempty"`
 	Pkcs11Library string `json:"pkcs11Library,omitempty"`
 }
@@ -42,7 +42,7 @@ type Crypt struct {
 type UMController struct {
 	ServerURL string           `json:"serverUrl"`
 	UMClients []UMClientConfig `json:"umClients"`
-	UpdateTTL Duration         `json:"updateTTL"`
+	UpdateTTL Duration         `json:"updateTtl"`
 }
 
 // UMClientConfig update manager config
@@ -112,7 +112,7 @@ type SMConfig struct {
 // SMController SM controller configuration
 type SMController struct {
 	SMList    []SMConfig `json:"smList"`
-	UpdateTTL Duration   `json:"updateTTL"`
+	UpdateTTL Duration   `json:"updateTtl"`
 }
 
 // Config instance
