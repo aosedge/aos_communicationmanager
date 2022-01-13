@@ -258,7 +258,8 @@ func (monitor *Monitor) getCurrentSystemData() {
 	}
 
 	if monitor.trafficMonitor != nil {
-		monitor.dataToSend.Global.InTraffic, monitor.dataToSend.Global.OutTraffic, err = monitor.trafficMonitor.GetSystemTraffic()
+		monitor.dataToSend.Global.InTraffic, monitor.dataToSend.Global.OutTraffic,
+			err = monitor.trafficMonitor.GetSystemTraffic()
 		if err != nil {
 			log.Errorf("Can't get system traffic value: %s", err)
 		}

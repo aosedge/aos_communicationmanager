@@ -167,7 +167,7 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 }
 
 // ConnectRabbit connects directly to RabbitMQ server without service discovery
-func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchange, consumer, queue string) (err error) {
+func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchange, consumer, queue string) error {
 	handler.Lock()
 	defer handler.Unlock()
 
@@ -194,7 +194,7 @@ func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchan
 		},
 	}
 
-	if err = handler.setupConnections("amqp", connectionInfo, nil); err != nil {
+	if err := handler.setupConnections("amqp", connectionInfo, nil); err != nil {
 		return aoserrors.Wrap(err)
 	}
 

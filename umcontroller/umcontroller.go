@@ -173,7 +173,8 @@ const connectionTimeout = 300 * time.Second
  **********************************************************************************************************************/
 
 // New creates new update managers controller
-func New(config *config.Config, storage storage, urlTranslator URLTranslator, insecure bool) (umCtrl *Controller, err error) {
+func New(config *config.Config, storage storage, urlTranslator URLTranslator, insecure bool) (
+	umCtrl *Controller, err error) {
 	umCtrl = &Controller{
 		storage:           storage,
 		urlTranslator:     urlTranslator,

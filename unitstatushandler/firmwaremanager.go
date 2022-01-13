@@ -688,7 +688,8 @@ func (manager *firmwareManager) updateBoardConfig(ctx context.Context) (boardCon
 	return ""
 }
 
-func (manager *firmwareManager) asyncUpdate(updateComponents []cloudprotocol.ComponentInfoFromCloud) (channel <-chan string) {
+func (manager *firmwareManager) asyncUpdate(
+	updateComponents []cloudprotocol.ComponentInfoFromCloud) (channel <-chan string) {
 	finishChannel := make(chan string, 1)
 
 	go func() (errorStr string) {

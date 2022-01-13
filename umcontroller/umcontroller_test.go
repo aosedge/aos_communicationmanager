@@ -231,7 +231,9 @@ func TestFullUpdate(t *testing.T) {
 		finChan <- true
 	}(finishChannel)
 
-	um1Components = append(um1Components, &pb.SystemComponent{Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um1Components = append(um1Components, &pb.SystemComponent{
+		Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING,
+	})
 	um1.setComponents(um1Components)
 
 	um1.step = "prepare"
@@ -239,8 +241,10 @@ func TestFullUpdate(t *testing.T) {
 	<-um1.notifyTestChan // receive prepare
 	um1.sendState(pb.UmState_PREPARED)
 
-	um2Components = append(um2Components, &pb.SystemComponent{Id: "um2C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um2Components = append(um2Components, &pb.SystemComponent{Id: "um2C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um2Components = append(um2Components,
+		&pb.SystemComponent{Id: "um2C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um2Components = append(um2Components,
+		&pb.SystemComponent{Id: "um2C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um2.setComponents(um2Components)
 
 	um2.step = "prepare"
@@ -378,7 +382,8 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	}()
 
 	// prepare UM3
-	um3Components = append(um3Components, &pb.SystemComponent{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um3Components = append(um3Components,
+		&pb.SystemComponent{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um3.setComponents(um3Components)
 
 	um3.step = "prepare"
@@ -387,8 +392,10 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um3.sendState(pb.UmState_PREPARED)
 
 	// prepare UM4
-	um4Components = append(um4Components, &pb.SystemComponent{Id: "um4C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um4Components = append(um4Components, &pb.SystemComponent{Id: "um4C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um4Components = append(um4Components,
+		&pb.SystemComponent{Id: "um4C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um4Components = append(um4Components,
+		&pb.SystemComponent{Id: "um4C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um4.setComponents(um4Components)
 
 	um4.step = "prepare"
@@ -540,7 +547,8 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	}()
 
 	// prepare UM5
-	um5Components = append(um5Components, &pb.SystemComponent{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um5Components = append(um5Components,
+		&pb.SystemComponent{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um5.setComponents(um5Components)
 
 	um5.step = "prepare"
@@ -549,8 +557,10 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um5.sendState(pb.UmState_PREPARED)
 
 	// prepare UM6
-	um6Components = append(um6Components, &pb.SystemComponent{Id: "um6C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um6Components = append(um6Components, &pb.SystemComponent{Id: "um6C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um6Components = append(um6Components,
+		&pb.SystemComponent{Id: "um6C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um6Components = append(um6Components,
+		&pb.SystemComponent{Id: "um6C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um6.setComponents(um6Components)
 
 	um6.step = "prepare"
@@ -724,7 +734,8 @@ func TestRevertOnPrepare(t *testing.T) {
 		close(finishChannel)
 	}()
 
-	um7Components = append(um7Components, &pb.SystemComponent{Id: "um7C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um7Components = append(um7Components,
+		&pb.SystemComponent{Id: "um7C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um7.setComponents(um7Components)
 
 	um7.step = "prepare"
@@ -732,8 +743,10 @@ func TestRevertOnPrepare(t *testing.T) {
 	<-um7.notifyTestChan // receive prepare
 	um7.sendState(pb.UmState_PREPARED)
 
-	um8Components = append(um8Components, &pb.SystemComponent{Id: "um8C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um8Components = append(um8Components, &pb.SystemComponent{Id: "um8C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR})
+	um8Components = append(um8Components,
+		&pb.SystemComponent{Id: "um8C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um8Components = append(um8Components,
+		&pb.SystemComponent{Id: "um8C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR})
 	um8.setComponents(um8Components)
 
 	um8.step = "prepare"
@@ -844,7 +857,8 @@ func TestRevertOnUpdate(t *testing.T) {
 		close(finishChannel)
 	}()
 
-	um9Components = append(um9Components, &pb.SystemComponent{Id: "um9C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um9Components = append(um9Components,
+		&pb.SystemComponent{Id: "um9C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um9.setComponents(um9Components)
 
 	um9.step = "prepare"
@@ -852,8 +866,10 @@ func TestRevertOnUpdate(t *testing.T) {
 	<-um9.notifyTestChan // receive prepare
 	um9.sendState(pb.UmState_PREPARED)
 
-	um10Components = append(um10Components, &pb.SystemComponent{Id: "um10C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um10Components = append(um10Components, &pb.SystemComponent{Id: "um10C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um10Components = append(um10Components,
+		&pb.SystemComponent{Id: "um10C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um10Components = append(um10Components,
+		&pb.SystemComponent{Id: "um10C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um10.setComponents(um10Components)
 
 	um10.step = "prepare"
@@ -988,7 +1004,8 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 		close(finishChannel)
 	}()
 
-	um11Components = append(um11Components, &pb.SystemComponent{Id: "um11C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um11Components = append(um11Components,
+		&pb.SystemComponent{Id: "um11C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um11.setComponents(um11Components)
 
 	um11.step = "prepare"
@@ -996,8 +1013,10 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	<-um11.notifyTestChan // receive prepare
 	um11.sendState(pb.UmState_PREPARED)
 
-	um12Components = append(um12Components, &pb.SystemComponent{Id: "um12C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um12Components = append(um12Components, &pb.SystemComponent{Id: "um12C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um12Components = append(um12Components,
+		&pb.SystemComponent{Id: "um12C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um12Components = append(um12Components,
+		&pb.SystemComponent{Id: "um12C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um12.setComponents(um12Components)
 
 	um12.step = "prepare"
@@ -1137,7 +1156,8 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		close(finishChannel)
 	}()
 
-	um13Components = append(um13Components, &pb.SystemComponent{Id: "um13C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um13Components = append(um13Components,
+		&pb.SystemComponent{Id: "um13C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um13.setComponents(um13Components)
 
 	um13.step = "prepare"
@@ -1145,8 +1165,10 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	<-um13.notifyTestChan // receive prepare
 	um13.sendState(pb.UmState_PREPARED)
 
-	um14Components = append(um14Components, &pb.SystemComponent{Id: "um14C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
-	um14Components = append(um14Components, &pb.SystemComponent{Id: "um14C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um14Components = append(um14Components,
+		&pb.SystemComponent{Id: "um14C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+	um14Components = append(um14Components,
+		&pb.SystemComponent{Id: "um14C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
 	um14.setComponents(um14Components)
 
 	um14.step = "prepare"
@@ -1313,7 +1335,8 @@ func (um *testUmConnection) processMessages() {
  * Private
  ******************************************************************************/
 
-func newTestUM(id string, umState pb.UmState, testState string, components []*pb.SystemComponent, t *testing.T) (umTest *testUmConnection) {
+func newTestUM(id string, umState pb.UmState, testState string, components []*pb.SystemComponent, t *testing.T) (
+	umTest *testUmConnection) {
 	stream, conn, err := createClientConnection(id, umState, components)
 	if err != nil {
 		t.Errorf("Error connect %s", err)

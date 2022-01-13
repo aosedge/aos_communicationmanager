@@ -1645,7 +1645,8 @@ func compareStatuses(expectedStatus, comparedStatus cmserver.UpdateStatus) (err 
 	return nil
 }
 
-func waitForFOTAUpdateStatus(statusChannel <-chan cmserver.UpdateFOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+func waitForFOTAUpdateStatus(
+	statusChannel <-chan cmserver.UpdateFOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
 	select {
 	case status := <-statusChannel:
 		if err = compareStatuses(expectedStatus, status.UpdateStatus); err != nil {
@@ -1659,7 +1660,8 @@ func waitForFOTAUpdateStatus(statusChannel <-chan cmserver.UpdateFOTAStatus, exp
 	}
 }
 
-func waitForSOTAUpdateStatus(statusChannel <-chan cmserver.UpdateSOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+func waitForSOTAUpdateStatus(
+	statusChannel <-chan cmserver.UpdateSOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
 	select {
 	case status := <-statusChannel:
 		if err = compareStatuses(expectedStatus, status.UpdateStatus); err != nil {

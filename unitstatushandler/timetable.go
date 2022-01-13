@@ -68,7 +68,8 @@ func validateTimetable(timetable []cloudprotocol.TimetableEntry) (err error) {
 	return nil
 }
 
-func getAvailableTimetableTime(fromDate time.Time, timetable []cloudprotocol.TimetableEntry) (availableTime time.Duration, err error) {
+func getAvailableTimetableTime(
+	fromDate time.Time, timetable []cloudprotocol.TimetableEntry) (availableTime time.Duration, err error) {
 	defer func() {
 		log.WithFields(log.Fields{"fromDate": fromDate, "availableTime": availableTime}).Debug("Get available timetable time")
 	}()
