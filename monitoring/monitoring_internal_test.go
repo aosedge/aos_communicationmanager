@@ -181,7 +181,7 @@ func TestSystemAlerts(t *testing.T) {
 			},
 		},
 		&testAlerts{callback: func(serviceID, resource string, time time.Time, value uint64) {
-			alertMap[resource] = alertMap[resource] + 1
+			alertMap[resource] += 1
 		}}, nil, testSender)
 	if err != nil {
 		t.Fatalf("Can't create monitoring instance: %s", err)

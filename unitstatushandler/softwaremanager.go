@@ -167,7 +167,7 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 	}
 
 	for _, layer := range manager.CurrentUpdate.RemoveLayers {
-		status.RemoveLayers = append(status.InstallLayers, cloudprotocol.LayerInfo{
+		status.RemoveLayers = append(status.RemoveLayers, cloudprotocol.LayerInfo{
 			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion,
 		})
 	}
