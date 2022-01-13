@@ -134,7 +134,7 @@ func TestDownload(t *testing.T) {
 
 	fileName := path.Join(serverDir, "package.txt")
 
-	if err := ioutil.WriteFile(fileName, []byte("Hello downloader\n"), 0o644); err != nil {
+	if err := ioutil.WriteFile(fileName, []byte("Hello downloader\n"), 0o600); err != nil {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 	defer os.RemoveAll(fileName)

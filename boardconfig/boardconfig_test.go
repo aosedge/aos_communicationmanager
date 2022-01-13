@@ -88,7 +88,7 @@ func TestValidGetStatus(t *testing.T) {
 	"vendorVersion": "1.0.0"
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -119,7 +119,7 @@ func TestInvalidGetStatus(t *testing.T) {
 	something not valid
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -145,7 +145,7 @@ func TestCheckBoardConfig(t *testing.T) {
 		"vendorVersion": "1.0.0"
 	}`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -191,7 +191,7 @@ func TestUpdateBoardConfig(t *testing.T) {
 		"vendorVersion": "1.0.0"
 	}`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o644); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 

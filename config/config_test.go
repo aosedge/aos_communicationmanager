@@ -307,7 +307,7 @@ func TestCMServer(t *testing.T) {
  **********************************************************************************************************************/
 
 func createConfigFile(fileName string) (err error) {
-	if err := ioutil.WriteFile(fileName, []byte(testConfigContent), 0o644); err != nil {
+	if err := ioutil.WriteFile(fileName, []byte(testConfigContent), 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 

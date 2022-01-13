@@ -821,7 +821,7 @@ func createSystemdUnit(serviceType, command, fileName string) (err error) {
 
 	serviceContent := fmt.Sprintf(serviceTemplate, serviceType, command)
 
-	if err = ioutil.WriteFile(fileName, []byte(serviceContent), 0o644); err != nil {
+	if err = ioutil.WriteFile(fileName, []byte(serviceContent), 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
