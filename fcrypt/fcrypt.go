@@ -662,7 +662,7 @@ func parsePkcs11Url(pkcs11Url *url.URL) (library, token, label, id, userPin stri
 
 	for _, field := range strings.Split(pkcs11Url.Opaque, ";") {
 		items := strings.Split(field, "=")
-		if len(items) < 2 {
+		if len(items) < 2 { // nolint:gomnd
 			continue
 		}
 

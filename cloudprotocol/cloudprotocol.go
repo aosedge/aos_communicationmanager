@@ -94,6 +94,12 @@ const (
 	TimetableUpdate = "timetable"
 )
 
+const (
+	// HHMMSS
+	timeFieldCount = 3
+	timeFieldLen   = 2
+)
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -628,8 +634,8 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 				return aoserrors.Errorf(errFormat, value)
 			}
 
-			for i := 1; i < len(value); i = i + 2 {
-				strFields = append(strFields, value[i:i+2])
+			for i := 1; i < len(value); i = i + timeFieldLen {
+				strFields = append(strFields, value[i:i+timeFieldLen])
 			}
 		}
 
@@ -637,7 +643,7 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 			return aoserrors.Errorf(errFormat, value)
 		}
 
-		intFields := make([]int, 3)
+		intFields := make([]int, timeFieldCount)
 
 		for i, field := range strFields {
 			if intFields[i], err = strconv.Atoi(field); err != nil {
