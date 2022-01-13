@@ -289,6 +289,7 @@ func (downloader *Downloader) initAvailableSize() (err error) {
 	}
 
 	downloader.availableSize[downloader.downloadMountPoint] = int64(stat.Bavail) * stat.Bsize
+	// nolint:gomnd
 	downloader.downloadLimit = int64(stat.Blocks) * stat.Bsize * int64(downloader.config.DownloadPartLimit) / 100
 
 	if downloader.downloadMountPoint != downloader.decryptMountPoint {
@@ -699,7 +700,7 @@ func (downloader *Downloader) validateSigns(result *downloadResult) (err error) 
 func (downloader *Downloader) getDownloadStatus(resp *grab.Response) (status alerts.DownloadStatus) {
 	return alerts.DownloadStatus{
 		Source: downloader.moduleID, URL: resp.Request.HTTPRequest.URL.String(),
-		Progress: int(resp.Progress() * 100), DownloadedBytes: uint64(resp.BytesComplete()),
+		Progress: int(resp.Progress() * 100), DownloadedBytes: uint64(resp.BytesComplete()), // nolint:gomnd
 		TotalBytes: uint64(resp.Size),
 	}
 }
@@ -742,7 +743,7 @@ func getMountPoint(dir string) (mountPoint string, err error) {
 		line := scanner.Text()
 
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		if len(fields) < 2 { // nolint:gomnd
 			continue
 		}
 

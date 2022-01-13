@@ -85,7 +85,7 @@ func getAvailableTimetableTime(
 
 	for _, entry := range timetable {
 		// Convert to time.Weekday
-		entryWeekday := time.Weekday((entry.DayOfWeek) % 7)
+		entryWeekday := time.Weekday((entry.DayOfWeek) % 7) // nolint:gomnd
 		fromWeekday := fromDate.Weekday()
 
 		// Get num of days from weekday to entry weekday
