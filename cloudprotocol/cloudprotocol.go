@@ -26,7 +26,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

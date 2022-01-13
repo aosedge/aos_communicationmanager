@@ -22,7 +22,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 type alertCallback func(time time.Time, value uint64)

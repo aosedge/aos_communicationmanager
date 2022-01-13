@@ -40,9 +40,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	"aos_communicationmanager/cloudprotocol"
-	"aos_communicationmanager/config"
-	"aos_communicationmanager/iamclient"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/iamclient"
 )
 
 /***********************************************************************************************************************
