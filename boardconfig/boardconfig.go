@@ -175,7 +175,7 @@ func (instance *Instance) UpdateBoardConfig(configJSON json.RawMessage) (err err
 		return aoserrors.Wrap(err)
 	}
 
-	if err = ioutil.WriteFile(instance.boardConfigFile, configJSON, 0644); err != nil {
+	if err = ioutil.WriteFile(instance.boardConfigFile, configJSON, 0o644); err != nil {
 		return aoserrors.Wrap(err)
 	}
 

@@ -28,7 +28,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/migration"
-	_ "github.com/mattn/go-sqlite3" //ignore lint
+	_ "github.com/mattn/go-sqlite3" // ignore lint
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -74,7 +74,7 @@ func New(config *config.Config) (db *Database, err error) {
 
 	log.WithField("fileName", fileName).Debug("Open database")
 
-	if err = os.MkdirAll(filepath.Dir(fileName), 0755); err != nil {
+	if err = os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
 		return db, aoserrors.Wrap(err)
 	}
 

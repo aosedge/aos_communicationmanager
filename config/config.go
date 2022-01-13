@@ -150,11 +150,13 @@ func New(fileName string) (config *Config, err error) {
 		Monitoring: Monitoring{
 			SendPeriod:         Duration{1 * time.Minute},
 			PollPeriod:         Duration{10 * time.Second},
-			MaxOfflineMessages: 25},
+			MaxOfflineMessages: 25,
+		},
 		Alerts: Alerts{
 			SendPeriod:         Duration{10 * time.Second},
 			MaxMessageSize:     65536,
-			MaxOfflineMessages: 25},
+			MaxOfflineMessages: 25,
+		},
 		Downloader: Downloader{
 			MaxConcurrentDownloads: 4,
 			RetryDelay:             Duration{1 * time.Minute},

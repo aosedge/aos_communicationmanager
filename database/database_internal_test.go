@@ -36,8 +36,10 @@ import (
  * Variables
  **********************************************************************************************************************/
 
-var tmpDir string
-var db *Database
+var (
+	tmpDir string
+	db     *Database
+)
 
 /***********************************************************************************************************************
  * Init
@@ -47,7 +49,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -68,7 +71,9 @@ func TestMain(m *testing.M) {
 		WorkingDir: tmpDir,
 		Migration: config.Migration{
 			MigrationPath:       tmpDir,
-			MergedMigrationPath: tmpDir}})
+			MergedMigrationPath: tmpDir,
+		},
+	})
 	if err != nil {
 		log.Fatalf("Can't create database: %s", err)
 	}
@@ -107,8 +112,10 @@ func TestCursor(t *testing.T) {
 
 func TestComponentsUpdateInfo(t *testing.T) {
 	testData := []umcontroller.SystemComponent{
-		{ID: "component1", VendorVersion: "v1", AosVersion: 1,
-			Annotations: "Some annotation", URL: "url12", Sha512: []byte{1, 3, 90, 42}},
+		{
+			ID: "component1", VendorVersion: "v1", AosVersion: 1,
+			Annotations: "Some annotation", URL: "url12", Sha512: []byte{1, 3, 90, 42},
+		},
 		{ID: "component2", VendorVersion: "v1", AosVersion: 1, URL: "url12", Sha512: []byte{1, 3, 90, 42}},
 	}
 

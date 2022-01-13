@@ -143,7 +143,8 @@ func New(conf config.Crypt, provider CertificateProvider) (cryptoContext *Crypto
 	cryptoContext = &CryptoContext{
 		certProvider:  provider,
 		pkcs11Ctx:     make(map[pkcs11Descriptor]*crypto11.Context),
-		pkcs11Library: conf.Pkcs11Library}
+		pkcs11Library: conf.Pkcs11Library,
+	}
 
 	if conf.CACert != "" {
 		if cryptoContext.rootCertPool, err = cryptutils.GetCaCertPool(conf.CACert); err != nil {

@@ -194,7 +194,8 @@ func (instance *Alerts) SendResourceAlert(source, resource string, time time.Tim
 		"timestamp": time,
 		"source":    source,
 		"resource":  resource,
-		"value":     value}).Debug("Resource alert")
+		"value":     value,
+	}).Debug("Resource alert")
 
 	instance.addAlert(cloudprotocol.AlertItem{
 		Timestamp: time,
@@ -202,7 +203,9 @@ func (instance *Alerts) SendResourceAlert(source, resource string, time time.Tim
 		Source:    source,
 		Payload: cloudprotocol.ResourceAlert{
 			Parameter: resource,
-			Value:     value}})
+			Value:     value,
+		},
+	})
 }
 
 // SendAlert sends alert
@@ -230,7 +233,8 @@ func (instance *Alerts) prepareDownloadAlert(
 		Progress:        strconv.Itoa(downloadStatus.Progress) + "%",
 		URL:             downloadStatus.URL,
 		DownloadedBytes: bytefmt.ByteSize(downloadStatus.DownloadedBytes),
-		TotalBytes:      bytefmt.ByteSize(downloadStatus.TotalBytes)}
+		TotalBytes:      bytefmt.ByteSize(downloadStatus.TotalBytes),
+	}
 
 	return payload
 }
@@ -244,13 +248,15 @@ func (instance *Alerts) sendDownloadAlert(source string, payload cloudprotocol.D
 		"progress":        payload.Progress,
 		"url":             payload.URL,
 		"downloadedBytes": payload.DownloadedBytes,
-		"totalBytes":      payload.TotalBytes}).Debug(payload.Message)
+		"totalBytes":      payload.TotalBytes,
+	}).Debug(payload.Message)
 
 	instance.addAlert(cloudprotocol.AlertItem{
 		Timestamp: time,
 		Tag:       cloudprotocol.AlertTagAosCore,
 		Source:    source,
-		Payload:   payload})
+		Payload:   payload,
+	})
 }
 
 func (instance *Alerts) setupJournal(ctx context.Context) (err error) {
@@ -411,7 +417,8 @@ func (instance *Alerts) processJournal(journal *sdjournal.Journal) (err error) {
 				Timestamp: t,
 				Tag:       tag,
 				Source:    source,
-				Payload:   cloudprotocol.SystemAlert{Message: entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE]}})
+				Payload:   cloudprotocol.SystemAlert{Message: entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE]},
+			})
 		}
 	}
 }

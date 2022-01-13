@@ -100,7 +100,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetOutput(os.Stdout)
 }
 
@@ -295,7 +296,8 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.StateAcceptance:
 		log.WithFields(log.Fields{
 			"serviceID": data.ServiceID,
-			"result":    data.Result}).Info("Receive state acceptance message")
+			"result":    data.Result,
+		}).Info("Receive state acceptance message")
 
 		if err = cm.smController.ServiceStateAcceptance(message.CorrelationID, *data); err != nil {
 			return aoserrors.Wrap(err)
@@ -304,7 +306,8 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.UpdateState:
 		log.WithFields(log.Fields{
 			"serviceID": data.ServiceID,
-			"checksum":  data.Checksum}).Info("Receive update state message")
+			"checksum":  data.Checksum,
+		}).Info("Receive update state message")
 
 		if err = cm.smController.SetServiceState(cm.iam.GetUsers(), *data); err != nil {
 			return aoserrors.Wrap(err)
@@ -314,7 +317,8 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 		log.WithFields(log.Fields{
 			"serviceID": data.ServiceID,
 			"from":      data.From,
-			"till":      data.Till}).Info("Receive request service log message")
+			"till":      data.Till,
+		}).Info("Receive request service log message")
 
 		if err = cm.smController.GetServiceLog(*data); err != nil {
 			return aoserrors.Wrap(err)
@@ -322,7 +326,8 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 
 	case *cloudprotocol.RequestServiceCrashLog:
 		log.WithFields(log.Fields{
-			"serviceID": data.ServiceID}).Info("Receive request service crash log message")
+			"serviceID": data.ServiceID,
+		}).Info("Receive request service crash log message")
 
 		if err = cm.smController.GetServiceCrashLog(*data); err != nil {
 			return aoserrors.Wrap(err)
@@ -331,7 +336,8 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.RequestSystemLog:
 		log.WithFields(log.Fields{
 			"from": data.From,
-			"till": data.Till}).Info("Receive request system log message")
+			"till": data.Till,
+		}).Info("Receive request system log message")
 
 		if err = cm.smController.GetSystemLog(*data); err != nil {
 			return aoserrors.Wrap(err)
@@ -441,7 +447,8 @@ func newJournalHook() (hook *journalHook) {
 			log.ErrorLevel: journal.PriErr,
 			log.FatalLevel: journal.PriCrit,
 			log.PanicLevel: journal.PriEmerg,
-		}}
+		},
+	}
 
 	return hook
 }

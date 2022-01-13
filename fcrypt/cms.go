@@ -51,7 +51,7 @@ type asnOriginatorInfo struct {
 	Crls  asn1.RawValue `asn1:"optional,implicit,tag:1"`
 }
 
-//EncryptedContentInfo User-friendly structures
+// EncryptedContentInfo User-friendly structures
 type EncryptedContentInfo struct {
 	ContentType                asn1.ObjectIdentifier
 	ContentEncryptionAlgorithm pkix.AlgorithmIdentifier

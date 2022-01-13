@@ -185,8 +185,10 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 	}
 
 	for _, client := range config.UMController.UMClients {
-		umCtrl.connections = append(umCtrl.connections, umConnection{umID: client.UMID,
-			isLocalClient: client.IsLocal, updatePriority: client.Priority, handler: nil})
+		umCtrl.connections = append(umCtrl.connections, umConnection{
+			umID:          client.UMID,
+			isLocalClient: client.IsLocal, updatePriority: client.Priority, handler: nil,
+		})
 	}
 
 	sort.Slice(umCtrl.connections, func(i, j int) bool {
@@ -196,26 +198,26 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 	umCtrl.fsm = fsm.NewFSM(
 		stateInit,
 		fsm.Events{
-			//process Idle state
+			// process Idle state
 			{Name: evAllClientsConnected, Src: []string{stateInit}, Dst: stateIdle},
 			{Name: evUpdateRequest, Src: []string{stateIdle}, Dst: statePrepareUpdate},
 			{Name: evContinuePrepare, Src: []string{stateIdle}, Dst: statePrepareUpdate},
 			{Name: evContinueUpdate, Src: []string{stateIdle}, Dst: stateStartUpdate},
 			{Name: evContinueApply, Src: []string{stateIdle}, Dst: stateStartApply},
 			{Name: evContinueRevert, Src: []string{stateIdle}, Dst: stateStartRevert},
-			//process prepare
+			// process prepare
 			{Name: evUmStateUpdated, Src: []string{statePrepareUpdate}, Dst: stateUpdateUmStatusOnPrepareUpdate},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnPrepareUpdate}, Dst: statePrepareUpdate},
-			//process start update
+			// process start update
 			{Name: evUpdatePrepared, Src: []string{statePrepareUpdate}, Dst: stateStartUpdate},
 			{Name: evUmStateUpdated, Src: []string{stateStartUpdate}, Dst: stateUpdateUmStatusOnStartUpdate},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnStartUpdate}, Dst: stateStartUpdate},
-			//process start apply
+			// process start apply
 			{Name: evSystemUpdated, Src: []string{stateStartUpdate}, Dst: stateStartApply},
 			{Name: evUmStateUpdated, Src: []string{stateStartApply}, Dst: stateUpdateUmStatusOnStartApply},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnStartApply}, Dst: stateStartApply},
 			{Name: evApplyComplete, Src: []string{stateStartApply}, Dst: stateIdle},
-			//process revert
+			// process revert
 			{Name: evUpdateFailed, Src: []string{statePrepareUpdate}, Dst: stateStartRevert},
 			{Name: evUpdateFailed, Src: []string{stateStartUpdate}, Dst: stateStartRevert},
 			{Name: evUpdateFailed, Src: []string{stateStartApply}, Dst: stateStartRevert},
@@ -296,12 +298,16 @@ func (umCtrl *Controller) UpdateComponents(
 		componentsUpdateInfo := []SystemComponent{}
 
 		for _, component := range components {
-			componentStatus := systemComponentStatus{id: component.ID, vendorVersion: component.VendorVersion,
-				aosVersion: component.AosVersion, status: cloudprotocol.DownloadedStatus}
+			componentStatus := systemComponentStatus{
+				id: component.ID, vendorVersion: component.VendorVersion,
+				aosVersion: component.AosVersion, status: cloudprotocol.DownloadedStatus,
+			}
 
-			componentInfo := SystemComponent{ID: component.ID, VendorVersion: component.VendorVersion,
+			componentInfo := SystemComponent{
+				ID: component.ID, VendorVersion: component.VendorVersion,
 				AosVersion: component.AosVersion, URL: component.URLs[0], Annotations: string(component.Annotations),
-				Sha256: component.Sha256, Sha512: component.Sha512, Size: component.Size}
+				Sha256: component.Sha256, Sha512: component.Sha512, Size: component.Size,
+			}
 
 			if err = umCtrl.addComponentForUpdateToUm(componentInfo); err != nil {
 				return umCtrl.currentComponents, aoserrors.Wrap(err)
@@ -696,7 +702,6 @@ func (umCtrl *Controller) processIdleState(e *fsm.Event) {
 }
 
 func (umCtrl *Controller) processFaultState(e *fsm.Event) {
-
 }
 
 func (umCtrl *Controller) processPrepareState(e *fsm.Event) {

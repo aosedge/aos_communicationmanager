@@ -197,7 +197,8 @@ func (client *smClient) getBoardConfigStatus() (vendorVersion string, err error)
 func (client *smClient) checkBoardConfig(boardConfig clientBoardConfig) (vendorVersion string, err error) {
 	log.WithFields(log.Fields{
 		"id":            client.cfg.SMID,
-		"vendorVersion": boardConfig.VendorVersion}).Debug("Check SM board config")
+		"vendorVersion": boardConfig.VendorVersion,
+	}).Debug("Check SM board config")
 
 	configJSON, err := json.Marshal(boardConfig)
 	if err != nil {
@@ -218,7 +219,8 @@ func (client *smClient) checkBoardConfig(boardConfig clientBoardConfig) (vendorV
 func (client *smClient) setBoardConfig(boardConfig clientBoardConfig) (err error) {
 	log.WithFields(log.Fields{
 		"id":            client.cfg.SMID,
-		"vendorVersion": boardConfig.VendorVersion}).Debug("Set SM board config")
+		"vendorVersion": boardConfig.VendorVersion,
+	}).Debug("Set SM board config")
 
 	configJSON, err := json.Marshal(boardConfig)
 	if err != nil {
@@ -239,7 +241,8 @@ func (client *smClient) installService(users []string,
 	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateCheckSum string, err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
-		"serviceID": serviceInfo.ID}).Debug("Install SM service")
+		"serviceID": serviceInfo.ID,
+	}).Debug("Install SM service")
 
 	ctx, cancel := context.WithTimeout(client.context, smInstallTimeout)
 	defer cancel()
@@ -262,7 +265,6 @@ func (client *smClient) installService(users []string,
 		Sha512:        serviceInfo.Sha512,
 		Size:          serviceInfo.Size,
 	})
-
 	if err != nil {
 		return "", aoserrors.Wrap(err)
 	}
@@ -277,7 +279,8 @@ func (client *smClient) installService(users []string,
 func (client *smClient) removeService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
-		"serviceID": serviceInfo.ID}).Debug("Remove SM service")
+		"serviceID": serviceInfo.ID,
+	}).Debug("Remove SM service")
 
 	ctx, cancel := context.WithTimeout(client.context, smInstallTimeout)
 	defer cancel()
@@ -297,7 +300,8 @@ func (client *smClient) installLayer(layerInfo cloudprotocol.LayerInfoFromCloud)
 	log.WithFields(log.Fields{
 		"id":      client.cfg.SMID,
 		"layerID": layerInfo.ID,
-		"digest":  layerInfo.Digest}).Debug("Install SM layer")
+		"digest":  layerInfo.Digest,
+	}).Debug("Install SM layer")
 
 	ctx, cancel := context.WithTimeout(client.context, smInstallTimeout)
 	defer cancel()
@@ -327,7 +331,8 @@ func (client *smClient) serviceStateAcceptance(
 		"correlationID": correlationID,
 		"checksum":      stateAcceptance.Checksum,
 		"result":        stateAcceptance.Result,
-		"reason":        stateAcceptance.Reason}).Debug("SM service state acceptance")
+		"reason":        stateAcceptance.Reason,
+	}).Debug("SM service state acceptance")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
@@ -337,7 +342,8 @@ func (client *smClient) serviceStateAcceptance(
 		ServiceId:     stateAcceptance.ServiceID,
 		StateChecksum: stateAcceptance.Checksum,
 		Result:        stateAcceptance.Result,
-		Reason:        stateAcceptance.Reason}); err != nil {
+		Reason:        stateAcceptance.Reason,
+	}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -348,7 +354,8 @@ func (client *smClient) setServiceState(users []string, state cloudprotocol.Upda
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
 		"serviceID": state.ServiceID,
-		"checksum":  state.Checksum}).Debug("SM set service state")
+		"checksum":  state.Checksum,
+	}).Debug("SM set service state")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
@@ -357,7 +364,8 @@ func (client *smClient) setServiceState(users []string, state cloudprotocol.Upda
 		Users:         &pb.Users{Users: users},
 		ServiceId:     state.ServiceID,
 		State:         []byte(state.State),
-		StateChecksum: state.Checksum}); err != nil {
+		StateChecksum: state.Checksum,
+	}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -400,7 +408,8 @@ func (client *smClient) overrideEnvVars(envVars cloudprotocol.DecodedOverrideEnv
 		for _, varStatus := range item.VarStatus {
 			responseItem.Statuses = append(responseItem.Statuses, cloudprotocol.EnvVarStatus{
 				ID:    varStatus.VarId,
-				Error: varStatus.Error})
+				Error: varStatus.Error,
+			})
 		}
 
 		response = append(response, responseItem)
@@ -418,7 +427,8 @@ func (client *smClient) GetSystemLog(logRequest cloudprotocol.RequestSystemLog) 
 		"id":    client.cfg.SMID,
 		"logID": logRequest.LogID,
 		"from":  logRequest.From,
-		"till":  logRequest.Till}).Debug("Get SM system log")
+		"till":  logRequest.Till,
+	}).Debug("Get SM system log")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
@@ -446,7 +456,8 @@ func (client *smClient) GetServiceLog(logRequest cloudprotocol.RequestServiceLog
 		"logID":     logRequest.LogID,
 		"serviceID": logRequest.ServiceID,
 		"from":      logRequest.From,
-		"till":      logRequest.Till}).Debug("Get SM system log")
+		"till":      logRequest.Till,
+	}).Debug("Get SM system log")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
@@ -474,7 +485,8 @@ func (client *smClient) GetServiceCrashLog(logRequest cloudprotocol.RequestServi
 		"logID":     logRequest.LogID,
 		"serviceID": logRequest.ServiceID,
 		"from":      logRequest.From,
-		"till":      logRequest.Till}).Debug("Get SM system log")
+		"till":      logRequest.Till,
+	}).Debug("Get SM system log")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
@@ -533,7 +545,8 @@ func (client *smClient) subscribeSMNotifications() (err error) {
 			log.WithFields(log.Fields{
 				"id":     client.cfg.SMID,
 				"tag":    data.Alert.Tag,
-				"source": data.Alert.Source}).Debug("Receive SM alert")
+				"source": data.Alert.Source,
+			}).Debug("Receive SM alert")
 
 			alertItem := cloudprotocol.AlertItem{
 				Timestamp:  data.Alert.Timestamp.AsTime(),
@@ -605,7 +618,8 @@ func (client *smClient) subscribeSMNotifications() (err error) {
 			log.WithFields(log.Fields{
 				"id":            client.cfg.SMID,
 				"correlationID": data.NewServiceState.CorrelationId,
-				"serviceID":     data.NewServiceState.ServiceState.ServiceId}).Debug("Receive SM new service state")
+				"serviceID":     data.NewServiceState.ServiceState.ServiceId,
+			}).Debug("Receive SM new service state")
 
 			if err = client.messageSender.SendServiceNewState(
 				data.NewServiceState.CorrelationId,
@@ -620,7 +634,8 @@ func (client *smClient) subscribeSMNotifications() (err error) {
 			log.WithFields(log.Fields{
 				"id":        client.cfg.SMID,
 				"serviceID": data.ServiceStateRequest.ServiceId,
-				"default":   data.ServiceStateRequest.Default}).Debug("Receive SM service state request")
+				"default":   data.ServiceStateRequest.Default,
+			}).Debug("Receive SM service state request")
 
 			if err = client.messageSender.SendServiceStateRequest(
 				data.ServiceStateRequest.ServiceId, data.ServiceStateRequest.Default); err != nil {
@@ -632,7 +647,8 @@ func (client *smClient) subscribeSMNotifications() (err error) {
 				"id":        client.cfg.SMID,
 				"logID":     data.Log.LogId,
 				"part":      data.Log.Part,
-				"partCount": data.Log.PartCount}).Debug("Receive SM push log")
+				"partCount": data.Log.PartCount,
+			}).Debug("Receive SM push log")
 
 			if err = client.messageSender.SendLog(cloudprotocol.PushLog{
 				LogID:     data.Log.LogId,

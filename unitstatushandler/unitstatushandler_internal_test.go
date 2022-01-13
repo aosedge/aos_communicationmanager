@@ -116,7 +116,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -180,7 +181,8 @@ func TestDownload(t *testing.T) {
 			downloadError:   errors.New("download error"),
 			continueOnError: false,
 			check:           map[string]int{"0": downloadCanceled, "1": downloadError, "2": downloadCanceled},
-			downloadTime:    1 * time.Second},
+			downloadTime:    1 * time.Second,
+		},
 		{
 			request:         map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
 			errorURL:        "1",
@@ -221,7 +223,8 @@ func TestDownload(t *testing.T) {
 		result := statusHandler.download(ctx, item.request, item.continueOnError,
 			func(id string, status string, componentErr string) {
 				log.WithFields(log.Fields{
-					"id": id, "status": status, "error": componentErr}).Debug("Component download status")
+					"id": id, "status": status, "error": componentErr,
+				}).Debug("Component download status")
 			}, nil, nil)
 
 		if err = checkDownloadResult(result, item.check); err != nil {
@@ -307,8 +310,11 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:     "download error",
@@ -327,7 +333,8 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"}},
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"},
+			},
 		},
 		{
 			testID:     "update error",
@@ -346,8 +353,11 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.ErrorStatus, Error: "update error"},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate, Error: "update error"}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate, Error: "update error"},
+			},
 		},
 		{
 			testID: "continue download on startup",
@@ -370,7 +380,8 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID: "continue update on ready to update state",
@@ -439,7 +450,8 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState: stateReadyToUpdate,
 				CurrentUpdate: &firmwareUpdate{
 					Schedule:   cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
-					Components: updateComponents},
+					Components: updateComponents,
+				},
 				DownloadResult: map[string]*downloadResult{
 					updateComponents[0].ID: {},
 					updateComponents[1].ID: {},
@@ -502,8 +514,10 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate, Error: context.Canceled.Error()},
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
 			},
 		},
 		{
@@ -512,7 +526,8 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState: stateReadyToUpdate,
 				CurrentUpdate: &firmwareUpdate{
 					Schedule:   cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
-					Components: updateComponents},
+					Components: updateComponents,
+				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentInfo{
@@ -535,7 +550,8 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate, Error: context.Canceled.Error()},
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
 			},
 		},
 		{
@@ -584,8 +600,10 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate},
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
 			},
 		},
 		{
@@ -593,8 +611,11 @@ func TestFirmwareManager(t *testing.T) {
 			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			desiredStatus: &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:           "error board config",
@@ -602,7 +623,8 @@ func TestFirmwareManager(t *testing.T) {
 			desiredStatus:    &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
 			boardConfigError: errors.New("board config error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "board config error"}},
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "board config error"},
+			},
 		},
 		{
 			testID:     "timetable update",
@@ -616,7 +638,8 @@ func TestFirmwareManager(t *testing.T) {
 					Type:      cloudprotocol.TimetableUpdate,
 					Timetable: updateTimetable,
 				},
-				Components: updateComponents},
+				Components: updateComponents,
+			},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
@@ -626,8 +649,11 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:     "update TTL",
@@ -641,14 +667,17 @@ func TestFirmwareManager(t *testing.T) {
 					Type: cloudprotocol.TriggerUpdate,
 					TTL:  3,
 				},
-				Components: updateComponents},
+				Components: updateComponents,
+			},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.NoUpdate, Error: "update timeout"}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.NoUpdate, Error: "update timeout"},
+			},
 		},
 	}
 
@@ -786,10 +815,14 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
-				updateServices[0].ID: {}, updateServices[1].ID: {}},
+				updateServices[0].ID: {}, updateServices[1].ID: {},
+			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:     "one item download error",
@@ -799,10 +832,14 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {Error: "download error"},
-				updateServices[0].ID: {}, updateServices[1].ID: {}},
+				updateServices[0].ID: {}, updateServices[1].ID: {},
+			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate, Error: "download error"},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate, Error: "download error"},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:     "all items download error",
@@ -812,9 +849,11 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {Error: "download error"}, updateLayers[1].Digest: {Error: "download error"},
-				updateServices[0].ID: {Error: "download error"}, updateServices[1].ID: {Error: "download error"}},
+				updateServices[0].ID: {Error: "download error"}, updateServices[1].ID: {Error: "download error"},
+			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"}},
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"},
+			},
 		},
 		{
 			testID:     "update error",
@@ -824,35 +863,44 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
-				updateServices[0].ID: {}, updateServices[1].ID: {}},
+				updateServices[0].ID: {}, updateServices[1].ID: {},
+			},
 			updateError: errors.New("update error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate, Error: "update error"}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate, Error: "update error"},
+			},
 		},
 		{
 			testID: "continue download on startup",
 			initState: &softwareManager{
 				CurrentState: stateDownloading,
 				CurrentUpdate: &softwareUpdate{
-					InstallLayers: updateLayers, InstallServices: updateServices},
+					InstallLayers: updateLayers, InstallServices: updateServices,
+				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
-				updateServices[0].ID: {}, updateServices[1].ID: {}},
+				updateServices[0].ID: {}, updateServices[1].ID: {},
+			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID: "continue update on ready to update state",
 			initState: &softwareManager{
 				CurrentState: stateReadyToUpdate,
 				CurrentUpdate: &softwareUpdate{
-					InstallLayers: updateLayers, InstallServices: updateServices},
+					InstallLayers: updateLayers, InstallServices: updateServices,
+				},
 				DownloadResult: map[string]*downloadResult{
 					updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
-					updateServices[0].ID: {}, updateServices[1].ID: {}},
+					updateServices[0].ID: {}, updateServices[1].ID: {},
+				},
 				LayerStatuses: map[string]*cloudprotocol.LayerInfo{
 					updateLayers[0].Digest: {
 						ID:         updateLayers[0].ID,
@@ -881,7 +929,8 @@ func TestSoftwareManager(t *testing.T) {
 				},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Updating}, {State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:     "timetable update",
@@ -895,10 +944,14 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
-				updateServices[0].ID: {}, updateServices[1].ID: {}},
+				updateServices[0].ID: {}, updateServices[1].ID: {},
+			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID:     "update TTL",
@@ -912,10 +965,13 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			downloadResult: map[string]*downloadResult{
 				updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
-				updateServices[0].ID: {}, updateServices[1].ID: {}},
+				updateServices[0].ID: {}, updateServices[1].ID: {},
+			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.ReadyToUpdate},
-				{State: cmserver.NoUpdate, Error: "update timeout"}},
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.NoUpdate, Error: "update timeout"},
+			},
 		},
 	}
 
@@ -1354,8 +1410,8 @@ func (testDownloader *TestDownloader) SetError(url string, err error) {
 
 func (testDownloader *TestDownloader) DownloadAndDecrypt(
 	ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result downloader.Result, err error) {
-
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result downloader.Result, err error,
+) {
 	file, err := ioutil.TempFile(tmpDir, "*.dec")
 	if err != nil {
 		return nil, err
@@ -1378,7 +1434,8 @@ func (testDownloader *TestDownloader) DownloadAndDecrypt(
 		ctx:          ctx,
 		downloadTime: testDownloader.DownloadTime,
 		fileName:     file.Name(),
-		err:          downloadErr}, nil
+		err:          downloadErr,
+	}, nil
 }
 
 func (result *TestResult) GetFileName() (fileName string) { return result.fileName }

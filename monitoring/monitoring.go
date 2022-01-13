@@ -269,7 +269,8 @@ func (monitor *Monitor) getCurrentSystemData() {
 		"RAM":  monitor.dataToSend.Global.RAM,
 		"Disk": monitor.dataToSend.Global.UsedDisk,
 		"IN":   monitor.dataToSend.Global.InTraffic,
-		"OUT":  monitor.dataToSend.Global.OutTraffic}).Debug("Monitoring data")
+		"OUT":  monitor.dataToSend.Global.OutTraffic,
+	}).Debug("Monitoring data")
 }
 
 func (monitor *Monitor) processAlerts() {
