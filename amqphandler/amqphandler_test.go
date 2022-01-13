@@ -287,7 +287,10 @@ func TestSendMessages(t *testing.T) {
 				}
 
 			case *cloudprotocol.RenewCertsNotificationWithPwd:
-				sentMessage := message.Data.(*cloudprotocol.RenewCertsNotification)
+				sentMessage, ok := message.Data.(*cloudprotocol.RenewCertsNotification)
+				if !ok {
+					t.Errorf("Incorrect message data format")
+				}
 
 				if !reflect.DeepEqual(sentMessage.Certificates, data.Certificates) {
 					t.Errorf("Wrong data received: %v %v", sentMessage.Certificates, data.Certificates)

@@ -221,7 +221,11 @@ func (handler *umHandler) receiveData() {
 func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
 	log.Debug("Send prepare request for UMID = ", handler.umID)
 
-	request := e.Args[0].(prepareRequest)
+	request, ok := e.Args[0].(prepareRequest)
+	if !ok {
+		log.Error("Incorrect arg type in prepare update request")
+		return
+	}
 
 	componetForUpdate := []*pb.PrepareComponentInfo{}
 
