@@ -647,7 +647,7 @@ func (downloader *Downloader) decryptPackage(result *downloadResult) (err error)
 	}
 	defer srcFile.Close()
 
-	dstFile, err := os.OpenFile(result.decryptedFileName, os.O_RDWR|os.O_CREATE, 0o644)
+	dstFile, err := os.OpenFile(result.decryptedFileName, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}

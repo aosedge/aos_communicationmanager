@@ -108,7 +108,7 @@ func TestFileServer(t *testing.T) {
 
 	filename := "testFile.txt"
 
-	if err := ioutil.WriteFile(filepath.Join(serverDir, filename), []byte("Hello fileserver"), 0o644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(serverDir, filename), []byte("Hello fileserver"), 0o600); err != nil {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 
@@ -124,7 +124,7 @@ func TestFileServer(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Get the data
-	resp, err := http.Get(outUrl)
+	resp, err := http.Get(outUrl) // nolint // just for tests
 	if err != nil {
 		t.Fatalf("Can't download file: %s", err)
 	}

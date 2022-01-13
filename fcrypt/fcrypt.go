@@ -232,7 +232,7 @@ func (cryptoContext *CryptoContext) CreateSignContext() (signContext SignContext
 
 // GetTLSConfig Provides TLS configuration for HTTPS client
 func (cryptoContext *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) {
-	cfg = &tls.Config{}
+	cfg = &tls.Config{MinVersion: tls.VersionTLS12}
 
 	certURLStr, keyURLStr, err := cryptoContext.certProvider.GetCertificate(onlineCertificate, nil, "")
 	if err != nil {
