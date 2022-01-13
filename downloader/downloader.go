@@ -98,7 +98,8 @@ type AlertSender interface {
 ***********************************************************************************************************************/
 
 // New creates new downloader object
-func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (downloader *Downloader, err error) {
+func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (
+	downloader *Downloader, err error) {
 	log.Debug("Create downloader instance")
 
 	downloader = &Downloader{

@@ -406,7 +406,9 @@ func TestGetCommunicationManagerAlerts(t *testing.T) {
 		messages = append(messages, uuid.New().String())
 	}
 
-	command := fmt.Sprintf("/usr/bin/systemd-cat -p3 /bin/bash -c 'for message in %s ; do echo $message ; done'", strings.Join(messages, " "))
+	command := fmt.Sprintf(
+		"/usr/bin/systemd-cat -p3 /bin/bash -c 'for message in %s ; do echo $message ; done'",
+		strings.Join(messages, " "))
 
 	if err := createSystemdUnit("oneshot", command,
 		path.Join(tmpDir, "aos-communicationmanager.service")); err != nil {
@@ -439,7 +441,8 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 	testSender := newTestSender()
 
 	// the size of one message ~154 bytes:
-	// {"timestamp":"2019-03-28T16:54:58.500221705+02:00","tag":"aosCore","source":"servicemanager","payload":{"message":"884a0472-5ce3-4da6-acff-088ce3959cd3"}}
+	// {"timestamp":"2019-03-28T16:54:58.500221705+02:00","tag":"aosCore","source":"servicemanager",
+	//  "payload":{"message":"884a0472-5ce3-4da6-acff-088ce3959cd3"}}
 	// Set MaxMessageSize to 500 to allow only 3 messages to come
 	const numExpectedMessages = 3
 

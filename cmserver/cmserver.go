@@ -174,7 +174,8 @@ func (server *CMServer) Close() {
 }
 
 // SubscribeNotifications sunscribes on SOTA FOTA packages status changes
-func (server *CMServer) SubscribeNotifications(req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer) (err error) {
+func (server *CMServer) SubscribeNotifications(
+	req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer) (err error) {
 	log.Debug("New CM client subscribed to schedule update notification")
 
 	server.Lock()
