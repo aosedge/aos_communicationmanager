@@ -276,11 +276,11 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 `
 
 	if err = ioutil.WriteFile(path.Join(tmpDir, "online_cert.pem"), []byte(onlineCert), 0o600); err != nil {
-		log.Fatalf("Error create online cert: %s", err)
+		t.Fatalf("Error create online cert: %s", err)
 	}
 
 	if err = ioutil.WriteFile(path.Join(tmpDir, "offline_cert.pem"), []byte(offlineCert), 0o600); err != nil {
-		log.Fatalf("Error create offline cert: %s", err)
+		t.Fatalf("Error create offline cert: %s", err)
 	}
 
 	onlineURL := url.URL{Scheme: "file", Path: path.Join(tmpDir, "online_cert.pem")}

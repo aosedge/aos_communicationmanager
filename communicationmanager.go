@@ -587,5 +587,5 @@ func main() {
 
 	cancelFunc()
 
-	os.Exit(0)
+	defer os.Exit(0)
 }

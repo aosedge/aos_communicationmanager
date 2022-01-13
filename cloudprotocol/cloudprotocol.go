@@ -634,7 +634,7 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 				return aoserrors.Errorf(errFormat, value)
 			}
 
-			for i := 1; i < len(value); i = i + timeFieldLen {
+			for i := 1; i < len(value); i += timeFieldLen {
 				strFields = append(strFields, value[i:i+timeFieldLen])
 			}
 		}
