@@ -1207,7 +1207,7 @@ func setupFileStorage() (err error) {
 				return aoserrors.Wrap(err)
 			}
 
-			if err := ioutil.WriteFile(certURL.Path, certData.cert, 0o644); err != nil {
+			if err := ioutil.WriteFile(certURL.Path, certData.cert, 0o600); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
@@ -1218,7 +1218,7 @@ func setupFileStorage() (err error) {
 				return aoserrors.Wrap(err)
 			}
 
-			if err := ioutil.WriteFile(keyURL.Path, certData.key, 0o644); err != nil {
+			if err := ioutil.WriteFile(keyURL.Path, certData.key, 0o600); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
@@ -1256,7 +1256,7 @@ func pkcs11ImportCert(name string, data []byte) (err error) {
 	id := name
 
 	for i, cert := range certs {
-		if err := ioutil.WriteFile(fileName, cert.Raw, 0o644); err != nil {
+		if err := ioutil.WriteFile(fileName, cert.Raw, 0o600); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -1292,7 +1292,7 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 
 	fileName := path.Join(tmpDir, "data.tmp")
 
-	if err := ioutil.WriteFile(fileName, data, 0o644); err != nil {
+	if err := ioutil.WriteFile(fileName, data, 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
