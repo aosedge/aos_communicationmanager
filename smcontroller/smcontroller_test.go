@@ -848,7 +848,7 @@ func newTestSM(url string) (sm *testSM, err error) {
 
 	listener, err := net.Listen("tcp", url)
 	if err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	go func() {
@@ -1037,7 +1037,7 @@ func (sm *testSM) SetBoardConfig(ctx context.Context, request *pb.BoardConfig) (
 	var boardconfig clientBoardConfig
 
 	if err = json.Unmarshal([]byte(request.BoardConfig), &boardconfig); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	sm.boardConfigVersion = boardconfig.VendorVersion
@@ -1050,7 +1050,7 @@ func (sm *testSM) CheckBoardConfig(
 	var boardconfig clientBoardConfig
 
 	if err = json.Unmarshal([]byte(request.BoardConfig), &boardconfig); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	sm.boardConfigVersion = boardconfig.VendorVersion

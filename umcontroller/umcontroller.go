@@ -580,7 +580,7 @@ func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 		}
 	}
 
-	return err
+	return aoserrors.Wrap(err)
 }
 
 func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponent) (err error) {

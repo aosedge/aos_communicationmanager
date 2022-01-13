@@ -685,21 +685,21 @@ func (instance *testAlertSender) SendDownloadStatusAlert(downloadStatus alerts.D
 func setup() (err error) {
 	tmpDir, err = ioutil.TempDir("", "cm_")
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if downloadDir, err = createTmpDisk("downloadDir", 2); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if decryptDir, err = createTmpDisk("decryptDir", 8); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	serverDir = path.Join(tmpDir, "fileServer")
 
 	if err = os.MkdirAll(serverDir, 0o755); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	go func() {

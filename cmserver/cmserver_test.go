@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -239,7 +240,7 @@ func newTestClient(url string) (client *testClient, err error) {
 	defer cancel()
 
 	if client.connection, err = grpc.DialContext(ctx, url, grpc.WithInsecure(), grpc.WithBlock()); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	client.pbclient = pb.NewUpdateSchedulerServiceClient(client.connection)

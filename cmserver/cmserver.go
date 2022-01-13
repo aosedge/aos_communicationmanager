@@ -192,7 +192,7 @@ func (server *CMServer) SubscribeNotifications(
 
 		log.Error("Can't send FOTA notification: ", err)
 
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	sotaNotification := pb.SchedulerNotifications{
@@ -206,7 +206,7 @@ func (server *CMServer) SubscribeNotifications(
 
 		log.Error("Can't send SOTA notification: ", err)
 
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	server.clients = append(server.clients, stream)
@@ -233,12 +233,12 @@ func (server *CMServer) SubscribeNotifications(
 
 // StartFOTAUpdate triggers FOTA update
 func (server *CMServer) StartFOTAUpdate(ctx context.Context, req *empty.Empty) (ret *empty.Empty, err error) {
-	return &emptypb.Empty{}, server.updatehandler.StartFOTAUpdate()
+	return &emptypb.Empty{}, aoserrors.Wrap(server.updatehandler.StartFOTAUpdate())
 }
 
 // StartSOTAUpdate triggers SOTA update
 func (server *CMServer) StartSOTAUpdate(ctx context.Context, req *empty.Empty) (ret *empty.Empty, err error) {
-	return &emptypb.Empty{}, server.updatehandler.StartSOTAUpdate()
+	return &emptypb.Empty{}, aoserrors.Wrap(server.updatehandler.StartSOTAUpdate())
 }
 
 func (state UpdateState) String() string {
