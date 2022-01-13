@@ -533,7 +533,8 @@ func TestServiceStateAcceptance(t *testing.T) {
 	}
 	defer controller.Close()
 
-	if err = controller.ServiceStateAcceptance("correlation0", cloudprotocol.StateAcceptance{Checksum: "checksum"}); err != nil {
+	if err = controller.ServiceStateAcceptance(
+		"correlation0", cloudprotocol.StateAcceptance{Checksum: "checksum"}); err != nil {
 		t.Errorf("Error sending service state acceptance: %s", err)
 	}
 
@@ -1090,7 +1091,8 @@ func (sm *testSM) InstallService(ctx context.Context,
 	return response, nil
 }
 
-func (sm *testSM) RemoveService(ctx context.Context, request *pb.RemoveServiceRequest) (response *empty.Empty, err error) {
+func (sm *testSM) RemoveService(
+	ctx context.Context, request *pb.RemoveServiceRequest) (response *empty.Empty, err error) {
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -1106,7 +1108,8 @@ func (sm *testSM) RemoveService(ctx context.Context, request *pb.RemoveServiceRe
 	return &empty.Empty{}, aoserrors.New("no service found")
 }
 
-func (sm *testSM) InstallLayer(ctx context.Context, request *pb.InstallLayerRequest) (response *empty.Empty, err error) {
+func (sm *testSM) InstallLayer(
+	ctx context.Context, request *pb.InstallLayerRequest) (response *empty.Empty, err error) {
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -1128,7 +1131,8 @@ func (sm *testSM) InstallLayer(ctx context.Context, request *pb.InstallLayerRequ
 	return &empty.Empty{}, nil
 }
 
-func (sm *testSM) ServiceStateAcceptance(ctx context.Context, request *pb.StateAcceptance) (response *empty.Empty, err error) {
+func (sm *testSM) ServiceStateAcceptance(
+	ctx context.Context, request *pb.StateAcceptance) (response *empty.Empty, err error) {
 	sm.correlationId = request.CorrelationId
 	sm.stateChecksum = request.StateChecksum
 

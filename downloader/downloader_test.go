@@ -618,7 +618,8 @@ func TestDownloadPartLimit(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
-func (context *testCryptoContext) ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (fcrypt.SymmetricContextInterface, error) {
+func (context *testCryptoContext) ImportSessionKey(
+	keyInfo fcrypt.CryptoSessionKeyInfo) (fcrypt.SymmetricContextInterface, error) {
 	return &testSymmetricContext{}, nil
 }
 
@@ -626,8 +627,8 @@ func (context *testCryptoContext) CreateSignContext() (fcrypt.SignContextInterfa
 	return &testSignContext{}, nil
 }
 
-func (context *testSymmetricContext) DecryptFile(ctx context.Context, encryptedFile, decryptedFile *os.File) (err error) {
-	if _, err = io.Copy(decryptedFile, encryptedFile); err != nil {
+func (context *testSymmetricContext) DecryptFile(ctx context.Context, encryptedFile, decryptedFile *os.File) error {
+	if _, err := io.Copy(decryptedFile, encryptedFile); err != nil {
 		return aoserrors.Wrap(err)
 	}
 

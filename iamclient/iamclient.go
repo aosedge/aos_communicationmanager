@@ -162,7 +162,9 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 	var newCerts []cloudprotocol.IssueCertData
 
 	for _, cert := range certInfo {
-		log.WithFields(log.Fields{"type": cert.Type, "serial": cert.Serial, "validTill": cert.ValidTill}).Debug("Renew certificate")
+		log.WithFields(log.Fields{
+			"type": cert.Type, "serial": cert.Serial, "validTill": cert.ValidTill,
+		}).Debug("Renew certificate")
 
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
@@ -231,7 +233,8 @@ func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertDat
 }
 
 // GetCertificate gets certificate by issuer
-func (client *Client) GetCertificate(certType string, issuer []byte, serial string) (certURL, keyURL string, err error) {
+func (client *Client) GetCertificate(
+	certType string, issuer []byte, serial string) (certURL, keyURL string, err error) {
 	log.WithFields(log.Fields{
 		"type":   certType,
 		"issuer": base64.StdEncoding.EncodeToString(issuer),

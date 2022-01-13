@@ -121,7 +121,9 @@ func TestUpdateBoardConfig(t *testing.T) {
 
 	// success update
 
-	boardConfigUpdater.BoardConfigInfo = cloudprotocol.BoardConfigInfo{VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus}
+	boardConfigUpdater.BoardConfigInfo = cloudprotocol.BoardConfigInfo{
+		VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus,
+	}
 	expectedUnitStatus := cloudprotocol.UnitStatus{
 		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
 		Components:  []cloudprotocol.ComponentInfo{},

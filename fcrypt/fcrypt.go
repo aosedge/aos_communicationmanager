@@ -172,10 +172,16 @@ func (cryptoContext *CryptoContext) Close() (err error) {
 	}
 
 	for pkcs11Desc, pkcs11ctx := range cryptoContext.pkcs11Ctx {
-		log.WithFields(log.Fields{"library": pkcs11Desc.library, "token": pkcs11Desc.token}).Debug("Close PKCS11 context")
+		log.WithFields(log.Fields{
+			"library": pkcs11Desc.library,
+			"token":   pkcs11Desc.token,
+		}).Debug("Close PKCS11 context")
 
 		if pkcs11Err := pkcs11ctx.Close(); pkcs11Err != nil {
-			log.WithFields(log.Fields{"library": pkcs11Desc.library, "token": pkcs11Desc.token}).Errorf("Can't PKCS11 context: %s", err)
+			log.WithFields(log.Fields{
+				"library": pkcs11Desc.library,
+				"token":   pkcs11Desc.token,
+			}).Errorf("Can't PKCS11 context: %s", err)
 
 			if err == nil {
 				err = pkcs11Err
@@ -690,7 +696,8 @@ func parsePkcs11Url(pkcs11Url *url.URL) (library, token, label, id, userPin stri
 	return library, token, label, id, userPin, nil
 }
 
-func (cryptoContext *CryptoContext) getPkcs11Context(library, token, userPin string) (pkcs11Ctx *crypto11.Context, err error) {
+func (cryptoContext *CryptoContext) getPkcs11Context(
+	library, token, userPin string) (pkcs11Ctx *crypto11.Context, err error) {
 	log.WithFields(log.Fields{"library": library, "token": token}).Debug("Get PKCS11 context")
 
 	if library == "" && cryptoContext.pkcs11Library == "" {
@@ -775,7 +782,8 @@ func (cryptoContext *CryptoContext) getKeyForEnvelope(keyInfo keyTransRecipientI
 		return key, aoserrors.Wrap(err)
 	}
 
-	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(offlineCertificate, issuer, fmt.Sprintf("%X", keyInfo.Rid.SerialNumber))
+	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(
+		offlineCertificate, issuer, fmt.Sprintf("%X", keyInfo.Rid.SerialNumber))
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
@@ -834,7 +842,8 @@ func (signContext *SignContext) getCertificateByFingerprint(fingerprint string) 
 	return nil
 }
 
-func (symmetricContext *SymmetricCipherContext) encryptFile(ctx context.Context, clearFile, encryptedFile *os.File) (err error) {
+func (symmetricContext *SymmetricCipherContext) encryptFile(
+	ctx context.Context, clearFile, encryptedFile *os.File) (err error) {
 	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
@@ -921,7 +930,8 @@ func (symmetricContext *SymmetricCipherContext) appendPadding(dataIn []byte, dat
 	}
 }
 
-func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (removedSize int, err error) {
+func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (
+	removedSize int, err error) {
 	switch strings.ToUpper(symmetricContext.paddingName) {
 	case "PKCS7PADDING", "PKCS7":
 		if removedSize, err = symmetricContext.removePkcs7Padding(dataIn, dataLen); err != nil {
@@ -935,7 +945,8 @@ func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, da
 	}
 }
 
-func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int) (fullSize int, err error) {
+func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int) (
+	fullSize int, err error) {
 	blockSize := symmetricContext.encrypter.BlockSize()
 	appendSize := blockSize - (dataLen % blockSize)
 
@@ -951,7 +962,8 @@ func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte
 	return fullSize, nil
 }
 
-func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int) (removedSize int, err error) {
+func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int) (
+	removedSize int, err error) {
 	blockLen := symmetricContext.decrypter.BlockSize()
 
 	if dataLen%blockLen != 0 || dataLen == 0 {
