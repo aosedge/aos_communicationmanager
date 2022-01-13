@@ -52,6 +52,7 @@ func (instance *Instance) download(ctx context.Context, request map[string]cloud
 
 	for id := range request {
 		result[id] = &downloadResult{}
+
 		updateStatus(id, cloudprotocol.DownloadingStatus, "")
 	}
 

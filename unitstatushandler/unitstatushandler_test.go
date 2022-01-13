@@ -704,7 +704,6 @@ func handleUpdateStatus(handler *unitstatushandler.Instance) {
 			if !ok {
 				return
 			}
-
 		}
 	}
 }

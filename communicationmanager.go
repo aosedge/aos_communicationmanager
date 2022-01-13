@@ -119,9 +119,8 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 
 	cm = &communicationManager{}
 
+	// Try again after reset
 	if cm.db, err = database.New(cfg); err != nil {
-		// Try again after reset
-
 		log.Errorf("Can't create DB: %s", err)
 
 		if err = reset(cfg); err != nil {
@@ -563,6 +562,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Can't create communication manager: %s", err)
 	}
+
 	defer cm.close()
 
 	// Notify systemd

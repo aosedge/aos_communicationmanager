@@ -547,6 +547,7 @@ func (manager *softwareManager) download(ctx context.Context) {
 					"digest":  layerStatus.Digest,
 					"version": layerStatus.AosVersion,
 				}).Errorf("Error downloading layer: %s", layerStatus.Error)
+
 				continue
 			}
 

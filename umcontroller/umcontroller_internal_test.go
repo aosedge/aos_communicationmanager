@@ -91,6 +91,7 @@ func TestNormalUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("erro create handler %s", err)
 	}
+
 	stream.step = StepPrepare
 
 	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion1", AosVersion: 1}}
@@ -107,11 +108,13 @@ func TestNormalUpdate(t *testing.T) {
 					t.Errorf("Unexpected internl message %d != %d", internalEvent.requestType, umStatusUpdate)
 					break
 				}
+
 				if internalEvent.status.umState != pb.UmState_PREPARED.String() {
 					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
 						pb.UmState_PREPARED.String())
 					break
 				}
+
 				stream.step = StepUpdate
 
 				if err := handler.StartUpdate(); err != nil {
@@ -123,11 +126,13 @@ func TestNormalUpdate(t *testing.T) {
 					t.Errorf("Unexpected internl message %d != %d", internalEvent.requestType, umStatusUpdate)
 					break
 				}
+
 				if internalEvent.status.umState != pb.UmState_UPDATED.String() {
 					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
 						pb.UmState_UPDATED.String())
 					break
 				}
+
 				stream.step = StepApplyUpdate
 
 				if err := handler.StartApply(); err != nil {
@@ -139,11 +144,13 @@ func TestNormalUpdate(t *testing.T) {
 					t.Errorf("Unexpected internl message %d != %d", internalEvent.requestType, umStatusUpdate)
 					break
 				}
+
 				if internalEvent.status.umState != pb.UmState_IDLE.String() {
 					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
 						pb.UmState_IDLE.String())
 					break
 				}
+
 				stream.step = StepFinish
 				stream.continueCh <- true
 			}
@@ -166,6 +173,7 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("error create handler %s", err)
 	}
+
 	stream.step = StepPrepare
 
 	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion2", AosVersion: 1}}
@@ -183,6 +191,7 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 						pb.UmState_PREPARED.String())
 					break
 				}
+
 				stream.step = StepRebootOnUpdate
 
 				if err := handler.StartUpdate(); err != nil {
@@ -217,6 +226,7 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 
 				stream.step = StepFinish
 				stream.continueCh <- true
+
 				continue
 			}
 
@@ -238,6 +248,7 @@ func TestRevert(t *testing.T) {
 	if err != nil {
 		t.Errorf("error create handler %s", err)
 	}
+
 	stream.step = StepPrepare
 
 	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion3", AosVersion: 1}}
@@ -255,6 +266,7 @@ func TestRevert(t *testing.T) {
 						pb.UmState_PREPARED.String())
 					break
 				}
+
 				stream.step = StepUpdate
 
 				if err := handler.StartUpdate(); err != nil {
@@ -267,6 +279,7 @@ func TestRevert(t *testing.T) {
 						pb.UmState_FAILED.String())
 					break
 				}
+
 				stream.step = StepRevertUpdate
 
 				if err := handler.StartRevert(); err != nil {
@@ -279,6 +292,7 @@ func TestRevert(t *testing.T) {
 						pb.UmState_IDLE.String())
 					break
 				}
+
 				stream.step = StepFinish
 				stream.continueCh <- true
 			}
@@ -301,6 +315,7 @@ func TestRevertWithReboot(t *testing.T) {
 	if err != nil {
 		t.Errorf("error create handler %s", err)
 	}
+
 	stream.step = StepPrepare
 
 	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion4", AosVersion: 1}}
@@ -318,6 +333,7 @@ func TestRevertWithReboot(t *testing.T) {
 						pb.UmState_PREPARED.String())
 					break
 				}
+
 				stream.step = StepRebootOnUpdate
 
 				if err := handler.StartUpdate(); err != nil {
@@ -352,6 +368,7 @@ func TestRevertWithReboot(t *testing.T) {
 
 				stream.step = StepFinish
 				stream.continueCh <- true
+
 				continue
 			}
 
@@ -398,7 +415,9 @@ func (stream *normalUpdateStream) Send(msg *pb.CMMessages) (err error) {
 
 func (stream *normalUpdateStream) Recv() (*pb.UpdateStatus, error) {
 	<-stream.continueCh
+
 	var messageToSend *pb.UpdateStatus
+
 	switch stream.step {
 	case StepPrepare:
 		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_PREPARED}
@@ -452,7 +471,9 @@ func (stream *failureUpdateStream) Send(msg *pb.CMMessages) (err error) {
 
 func (stream *failureUpdateStream) Recv() (*pb.UpdateStatus, error) {
 	<-stream.continueCh
+
 	var messageToSend *pb.UpdateStatus
+
 	switch stream.step {
 	case StepPrepare:
 		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_PREPARED}

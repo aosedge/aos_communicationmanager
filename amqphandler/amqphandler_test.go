@@ -601,8 +601,10 @@ func TestReceiveMessages(t *testing.T) {
 
 		select {
 		case delivery := <-testClient.delivery:
-			var rawData json.RawMessage
-			receiveData := cloudprotocol.Message{Data: &rawData}
+			var (
+				rawData     json.RawMessage
+				receiveData = cloudprotocol.Message{Data: &rawData}
+			)
 
 			if err = json.Unmarshal(delivery.Body, &receiveData); err != nil {
 				t.Errorf("Error parsing message: %s", err)

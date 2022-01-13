@@ -454,6 +454,7 @@ func (instance *Alerts) sendAlerts() (err error) {
 			if instance.skippedAlerts != 0 {
 				log.WithField("count", instance.skippedAlerts).Warn("Alerts skipped due to size limit")
 			}
+
 			if instance.duplicatedAlerts != 0 {
 				log.WithField("count", instance.duplicatedAlerts).Warn("Alerts skipped due to duplication")
 			}

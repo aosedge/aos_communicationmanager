@@ -135,6 +135,7 @@ func TestGetSystemID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
+
 	defer server.close()
 
 	server.systemID = "testID"
@@ -155,6 +156,7 @@ func TestGetUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
+
 	defer server.close()
 
 	server.users = []string{"user1", "user2", "user3"}
@@ -191,6 +193,7 @@ func TestRenewCertificatesNotification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
+
 	defer server.close()
 
 	server.csr = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
@@ -222,6 +225,7 @@ func TestInstallCertificates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
+
 	defer server.close()
 
 	// openssl req -newkey rsa:2048 -nodes -keyout online_key.pem -x509 -days 365 -out online_cert.pem -set_serial 1
@@ -317,6 +321,7 @@ func TestGetCertificates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
+
 	defer server.close()
 
 	server.certURL = map[string]string{"online": "onlineCertURL", "offline": "offlineCertURL"}
@@ -356,6 +361,7 @@ func newTestServer(url string) (server *testServer, err error) {
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
+
 	server.grpcServer = grpc.NewServer()
 
 	pb.RegisterIAMProtectedServiceServer(server.grpcServer, server)

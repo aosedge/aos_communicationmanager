@@ -253,7 +253,9 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 	}
 
 	go umCtrl.processInternallMessages()
+
 	umCtrl.connectionMonitor.wg.Add(1)
+
 	go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
 	go func() {
 		if err := umCtrl.server.Start(); err != nil {
@@ -386,6 +388,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 	}
 
 	umIDfound := false
+
 	for i, value := range umCtrl.connections {
 		if value.umID != umID {
 			continue
@@ -406,6 +409,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 
 		for _, newComponent := range status.componsStatus {
 			idExist := false
+
 			for _, value := range umCtrl.connections[i].components {
 				if value == newComponent.id {
 					idExist = true
@@ -421,12 +425,12 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		}
 
 		break
-
 	}
 
 	if !umIDfound {
 		log.Error("Unexpected new UM connection with ID = ", umID)
 		handler.Close()
+
 		return
 	}
 
@@ -449,12 +453,14 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 
 func (umCtrl *Controller) handleCloseConnection(umID string) {
 	log.Debug("Close UM connection umid = ", umID)
+
 	for i, value := range umCtrl.connections {
 		if value.umID == umID {
 			umCtrl.connections[i].handler = nil
 
 			umCtrl.fsm.SetState(stateInit)
 			umCtrl.connectionMonitor.wg.Add(1)
+
 			go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
 
 			return
@@ -464,6 +470,7 @@ func (umCtrl *Controller) handleCloseConnection(umID string) {
 
 func (umCtrl *Controller) updateCurrentComponetsStatus(componsStatus []systemComponentStatus) {
 	log.Debug("Receive components: ", componsStatus)
+
 	for _, value := range componsStatus {
 		if value.status == cloudprotocol.InstalledStatus {
 			toRemove := []int{}
@@ -547,7 +554,6 @@ func (umCtrl *Controller) getCurrentUpdateState() (state string) {
 
 		default:
 			continue
-
 		}
 	}
 
@@ -729,6 +735,7 @@ func (umCtrl *Controller) processPrepareState(e *fsm.Event) {
 
 func (umCtrl *Controller) processStartUpdateState(e *fsm.Event) {
 	log.Debug("processStartUpdateState")
+
 	for i := range umCtrl.connections {
 		if len(umCtrl.connections[i].updatePackages) > 0 {
 			if umCtrl.connections[i].state == umFailed {
@@ -755,6 +762,7 @@ func (umCtrl *Controller) processStartRevertState(e *fsm.Event) {
 
 	for i := range umCtrl.connections {
 		log.Debug(len(umCtrl.connections[i].updatePackages))
+
 		if len(umCtrl.connections[i].updatePackages) > 0 || umCtrl.connections[i].state == umFailed {
 			if umCtrl.connections[i].handler == nil {
 				log.Warnf("Connection to um %s closed", umCtrl.connections[i].umID)
@@ -807,6 +815,7 @@ func (umCtrl *Controller) processStartApplyState(e *fsm.Event) {
 
 func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
 	log.Debug("processUpdateUmState")
+
 	umID := e.Args[0].(string)
 	status := e.Args[1].(umStatus)
 
@@ -814,6 +823,7 @@ func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
 		if v.umID == umID {
 			umCtrl.connections[i].state = status.umState
 			log.Debugf("UMid = %s  state= %s", umID, status.umState)
+
 			break
 		}
 	}

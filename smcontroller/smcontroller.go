@@ -123,6 +123,7 @@ func New(
 
 	for _, smConfig := range cfg.SMController.SMList {
 		controller.readyWG.Add(1)
+
 		go controller.connectClient(smConfig, secureOpt)
 	}
 
@@ -230,9 +231,8 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 		Resources:     boardConfig.Resources,
 	}
 
+	// Check board config version and set if it is different
 	for _, client := range clients {
-		// Check board config version and set if it is different
-
 		currentVendorVersion, err := client.getBoardConfigStatus()
 		if err != nil {
 			return aoserrors.Wrap(err)

@@ -402,6 +402,7 @@ func (client *smClient) overrideEnvVars(envVars cloudprotocol.DecodedOverrideEnv
 	}
 
 	response := []cloudprotocol.EnvVarInfoStatus{}
+
 	for _, item := range envVarStatus.EnvVarStatus {
 		responseItem := cloudprotocol.EnvVarInfoStatus{ServiceID: item.ServiceId, SubjectID: item.SubjectId}
 
