@@ -35,9 +35,9 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
-	"aos_communicationmanager/alerts"
-	"aos_communicationmanager/cloudprotocol"
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/alerts"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /*******************************************************************************

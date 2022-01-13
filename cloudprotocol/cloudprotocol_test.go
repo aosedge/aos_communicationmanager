@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
 /***********************************************************************************************************************

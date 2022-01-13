@@ -29,9 +29,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"aos_communicationmanager/boardconfig"
-	"aos_communicationmanager/cloudprotocol"
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/boardconfig"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

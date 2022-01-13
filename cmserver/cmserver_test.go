@@ -28,9 +28,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"aos_communicationmanager/cloudprotocol"
-	"aos_communicationmanager/cmserver"
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/cmserver"
+	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /*******************************************************************************

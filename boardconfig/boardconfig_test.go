@@ -18,9 +18,9 @@
 package boardconfig_test
 
 import (
-	"aos_communicationmanager/boardconfig"
-	"aos_communicationmanager/cloudprotocol"
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/boardconfig"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/config"
 	"encoding/json"
 	"io/ioutil"
 	"os"

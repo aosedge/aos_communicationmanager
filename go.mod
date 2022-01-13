@@ -1,4 +1,4 @@
-module aos_communicationmanager
+module github.com/aoscloud/aos_communicationmanager
 
 go 1.14
 

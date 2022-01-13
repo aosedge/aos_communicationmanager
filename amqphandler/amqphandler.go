@@ -32,7 +32,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 
-	"aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
 /***********************************************************************************************************************
