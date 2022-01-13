@@ -167,17 +167,17 @@ func TestGetSystemError(t *testing.T) {
 				for _, originMessage := range messages {
 					systemAlert, ok := (alert.Payload.(cloudprotocol.SystemAlert))
 					if !ok {
-						return false, errors.New("wrong alert type")
+						return false, aoserrors.New("wrong alert type")
 					}
 
 					if originMessage == systemAlert.Message {
-						return false, fmt.Errorf("unexpected message: %s", systemAlert.Message)
+						return false, aoserrors.Errorf("unexpected message: %s", systemAlert.Message)
 					}
 				}
 			}
 
 			return false, nil
-		}); err != nil && err != errTimeout {
+		}); err != nil && !errors.Is(err, errTimeout) {
 		t.Errorf("Result failed: %s", err)
 	}
 }
@@ -286,7 +286,7 @@ func TestGetDowloadsStatusAlerts(t *testing.T) {
 
 		receivedAlert, ok := (alert.Payload.(cloudprotocol.DownloadAlert))
 		if !ok {
-			return false, errors.New("wrong alert type")
+			return false, aoserrors.New("wrong alert type")
 		}
 
 		receivedItem := downloadAlert{
@@ -597,11 +597,11 @@ func TestMessageFilter(t *testing.T) {
 			func(alert cloudprotocol.AlertItem) (success bool, err error) {
 				systemAlert, ok := (alert.Payload.(cloudprotocol.SystemAlert))
 				if !ok {
-					return false, errors.New("wrong alert type")
+					return false, aoserrors.New("wrong alert type")
 				}
 
 				if systemAlert.Message != validMessage {
-					return false, errors.New("Receive unexpected alert mesage")
+					return false, aoserrors.New("Receive unexpected alert mesage")
 				}
 
 				return true, nil
@@ -612,7 +612,7 @@ func TestMessageFilter(t *testing.T) {
 			continue
 		}
 
-		if err != errTimeout {
+		if !errors.Is(err, errTimeout) {
 			t.Errorf("Result failed: %s", err)
 		}
 	}
@@ -674,7 +674,7 @@ func TestGetResourceAlerts(t *testing.T) {
 			for i, originItem := range resourceAlerts {
 				receivedAlert, ok := (alert.Payload.(cloudprotocol.ResourceAlert))
 				if !ok {
-					return false, errors.New("wrong alert type")
+					return false, aoserrors.New("wrong alert type")
 				}
 
 				receivedItem := resourceAlert{
@@ -759,7 +759,7 @@ func (sender *testSender) waitAlerts(timeout time.Duration, tag, source string, 
 
 		systemAlert, ok := (alert.Payload.(cloudprotocol.SystemAlert))
 		if !ok {
-			return false, errors.New("wrong alert type")
+			return false, aoserrors.New("wrong alert type")
 		}
 
 		for i, message := range data {
@@ -767,7 +767,7 @@ func (sender *testSender) waitAlerts(timeout time.Duration, tag, source string, 
 				data = append(data[:i], data[i+1:]...)
 
 				if alert.Source != source {
-					return false, fmt.Errorf("wrong alert source: %s", alert.Source)
+					return false, aoserrors.Errorf("wrong alert source: %s", alert.Source)
 				}
 
 				if len(data) == 0 {

@@ -1239,7 +1239,7 @@ func execPkcs11Tool(args ...string) (err error) {
 	if output, err := exec.Command("pkcs11-tool", append([]string{
 		"--module", pkcs11LibPath,
 	}, args...)...).CombinedOutput(); err != nil {
-		return fmt.Errorf("%s (%s)", err, (string(output)))
+		return aoserrors.Errorf("%s (%s)", err, (string(output)))
 	}
 
 	return nil
@@ -1287,7 +1287,7 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 		}
 
 	default:
-		return fmt.Errorf("unsupported key type: %v", reflect.TypeOf(privateKey))
+		return aoserrors.Errorf("unsupported key type: %v", reflect.TypeOf(privateKey))
 	}
 
 	fileName := path.Join(tmpDir, "data.tmp")
