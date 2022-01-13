@@ -32,6 +32,16 @@ import (
 )
 
 /***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+const validTestBoardConfig = `
+ {
+	 "formatVersion": 1,
+	 "vendorVersion": "1.0.0"
+ }`
+
+/***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
@@ -82,13 +92,7 @@ func TestMain(m *testing.M) {
  **********************************************************************************************************************/
 
 func TestValidGetStatus(t *testing.T) {
-	testBoardConfig := `
-{
-	"formatVersion": 1,
-	"vendorVersion": "1.0.0"
-}`
-
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(validTestBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -139,13 +143,7 @@ func TestInvalidGetStatus(t *testing.T) {
 }
 
 func TestCheckBoardConfig(t *testing.T) {
-	testBoardConfig := `
-	{
-		"formatVersion": 1,
-		"vendorVersion": "1.0.0"
-	}`
-
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(validTestBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
@@ -185,13 +183,7 @@ func TestCheckBoardConfig(t *testing.T) {
 }
 
 func TestUpdateBoardConfig(t *testing.T) {
-	testBoardConfig := `
-	{
-		"formatVersion": 1,
-		"vendorVersion": "1.0.0"
-	}`
-
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(validTestBoardConfig), 0o600); err != nil {
 		t.Fatalf("Can't create board config file: %s", err)
 	}
 
