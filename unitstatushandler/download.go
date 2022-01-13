@@ -26,7 +26,7 @@ import (
 	"github.com/aoscloud/aos_common/image"
 	log "github.com/sirupsen/logrus"
 
-	"aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
 /***********************************************************************************************************************

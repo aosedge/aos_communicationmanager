@@ -28,8 +28,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"aos_communicationmanager/config"
-	"aos_communicationmanager/umcontroller"
+	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
 /***********************************************************************************************************************

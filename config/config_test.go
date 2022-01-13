@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	"aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

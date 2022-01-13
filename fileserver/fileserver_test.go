@@ -31,8 +31,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"aos_communicationmanager/config"
-	"aos_communicationmanager/fileserver"
+	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/fileserver"
 )
 
 /***********************************************************************************************************************
