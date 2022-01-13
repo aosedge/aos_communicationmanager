@@ -24,6 +24,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
@@ -74,7 +75,7 @@ func (result *downloadResult) Wait() (err error) {
 
 	close(result.statusChannel)
 
-	return err
+	return aoserrors.Wrap(err)
 }
 
 /***********************************************************************************************************************

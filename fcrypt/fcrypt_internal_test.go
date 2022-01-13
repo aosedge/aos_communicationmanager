@@ -35,6 +35,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
 
@@ -1192,22 +1193,22 @@ func setupFileStorage() (err error) {
 		if certData.cert != nil {
 			certURL, err := url.Parse(certNameToFileURL(name))
 			if err != nil {
-				return err
+				return aoserrors.Wrap(err)
 			}
 
 			if err := ioutil.WriteFile(certURL.Path, certData.cert, 0o644); err != nil {
-				return err
+				return aoserrors.Wrap(err)
 			}
 		}
 
 		if certData.key != nil {
 			keyURL, err := url.Parse(keyNameToFileURL(name))
 			if err != nil {
-				return err
+				return aoserrors.Wrap(err)
 			}
 
 			if err := ioutil.WriteFile(keyURL.Path, certData.key, 0o644); err != nil {
-				return err
+				return aoserrors.Wrap(err)
 			}
 		}
 	}
@@ -1217,7 +1218,7 @@ func setupFileStorage() (err error) {
 
 func clearFileStorage() (err error) {
 	if err = os.RemoveAll(tmpDir); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -1236,7 +1237,7 @@ func execPkcs11Tool(args ...string) (err error) {
 func pkcs11ImportCert(name string, data []byte) (err error) {
 	certs, err := cryptutils.PEMToX509Cert(data)
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	fileName := path.Join(tmpDir, "data.tmp")
@@ -1245,12 +1246,12 @@ func pkcs11ImportCert(name string, data []byte) (err error) {
 
 	for i, cert := range certs {
 		if err := ioutil.WriteFile(fileName, cert.Raw, 0o644); err != nil {
-			return err
+			return aoserrors.Wrap(err)
 		}
 
 		if err = execPkcs11Tool("--token-label", pkcs11Token, "--login", "--pin", pkcs11Pin,
 			"--write-object", fileName, "--type", "cert", "--id", hex.EncodeToString([]byte(id))); err != nil {
-			return err
+			return aoserrors.Wrap(err)
 		}
 
 		id = fmt.Sprintf("%s_%d", name, i)
@@ -1262,7 +1263,7 @@ func pkcs11ImportCert(name string, data []byte) (err error) {
 func pkcs11ImportKey(name string, data []byte) (err error) {
 	key, err := cryptutils.PEMToX509Key(data)
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	switch privateKey := key.(type) {
@@ -1271,7 +1272,7 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 
 	case *ecdsa.PrivateKey:
 		if data, err = x509.MarshalECPrivateKey(privateKey); err != nil {
-			return err
+			return aoserrors.Wrap(err)
 		}
 
 	default:
@@ -1281,12 +1282,12 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 	fileName := path.Join(tmpDir, "data.tmp")
 
 	if err := ioutil.WriteFile(fileName, data, 0o644); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = execPkcs11Tool("--token-label", pkcs11Token, "--login", "--pin", pkcs11Pin,
 		"--write-object", fileName, "--type", "privkey", "--id", hex.EncodeToString([]byte(name))); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -1294,12 +1295,12 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 
 func initPkcs11Slot() (err error) {
 	if err = execPkcs11Tool("--init-token", "--label", pkcs11Token, "--so-pin", "0000"); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = execPkcs11Tool(
 		"--token-label", pkcs11Token, "--so-pin", "0000", "--init-pin", "--pin", pkcs11Pin); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -1307,23 +1308,23 @@ func initPkcs11Slot() (err error) {
 
 func setupPkcs11Storage() (err error) {
 	if err = clearPkcs11Storage(); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = initPkcs11Slot(); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	for name, certData := range testCerts {
 		if certData.cert != nil {
 			if err = pkcs11ImportCert(name, certData.cert); err != nil {
-				return err
+				return aoserrors.Wrap(err)
 			}
 		}
 
 		if certData.key != nil {
 			if err = pkcs11ImportKey(name, certData.key); err != nil {
-				return err
+				return aoserrors.Wrap(err)
 			}
 		}
 	}
@@ -1333,11 +1334,11 @@ func setupPkcs11Storage() (err error) {
 
 func clearPkcs11Storage() (err error) {
 	if err = os.RemoveAll(pkcs11DBPath); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = os.MkdirAll(pkcs11DBPath, 0o755); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil

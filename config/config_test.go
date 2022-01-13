@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -307,7 +308,7 @@ func TestCMServer(t *testing.T) {
 
 func createConfigFile(fileName string) (err error) {
 	if err := ioutil.WriteFile(fileName, []byte(testConfigContent), 0o644); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -315,17 +316,17 @@ func createConfigFile(fileName string) (err error) {
 
 func setup() (err error) {
 	if tmpDir, err = ioutil.TempDir("", "aos_"); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	fileName := path.Join(tmpDir, "aos_communicationmanager.cfg")
 
 	if err = createConfigFile(fileName); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if testCfg, err = config.New(fileName); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -333,7 +334,7 @@ func setup() (err error) {
 
 func cleanup() (err error) {
 	if err := os.RemoveAll(tmpDir); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil

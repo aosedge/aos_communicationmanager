@@ -598,7 +598,12 @@ func (component ComponentInfoFromCloud) String() string {
 
 // MarshalJSON marshals JSON Time type
 func (t Time) MarshalJSON() (b []byte, err error) {
-	return json.Marshal(t.Format("15:04:05"))
+	b, err = json.Marshal(t.Format("15:04:05"))
+	if err != nil {
+		return b, aoserrors.Wrap(err)
+	}
+
+	return b, nil
 }
 
 // UnmarshalJSON unmarshals JSON Time type

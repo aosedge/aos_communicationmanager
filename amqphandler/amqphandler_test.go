@@ -29,6 +29,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
@@ -84,7 +85,7 @@ func init() {
 
 func setup() (err error) {
 	if err = os.MkdirAll("tmp", 0o755); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	amqpURLStr := os.Getenv("AMQP_URL")
@@ -93,35 +94,35 @@ func setup() (err error) {
 	}
 
 	if amqpURL, err = url.Parse(amqpURLStr); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if testClient.conn, err = amqp.Dial(amqpURL.String()); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if testClient.channel, err = testClient.conn.Channel(); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if _, err = testClient.channel.QueueDeclare(inQueueName, false, false, false, false, nil); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if _, err = testClient.channel.QueueDeclare(outQueueName, false, false, false, false, nil); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = testClient.channel.ExchangeDeclare(exchangeName, "fanout", false, false, false, false, nil); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = testClient.channel.QueueBind(inQueueName, "", exchangeName, false, nil); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if testClient.delivery, err = testClient.channel.Consume(inQueueName, "", true, false, false, false, nil); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	testClient.errChannel = testClient.conn.NotifyClose(make(chan *amqp.Error, 1))
@@ -149,12 +150,12 @@ func cleanup() {
 func sendMessage(correlationID string, message interface{}) (err error) {
 	dataJSON, err := json.Marshal(message)
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	log.Debug(string(dataJSON))
 
-	return testClient.channel.Publish(
+	return aoserrors.Wrap(testClient.channel.Publish(
 		"",
 		outQueueName,
 		false,
@@ -163,7 +164,7 @@ func sendMessage(correlationID string, message interface{}) (err error) {
 			CorrelationId: correlationID,
 			ContentType:   "text/plain",
 			Body:          dataJSON,
-		})
+		}))
 }
 
 /***********************************************************************************************************************
@@ -429,12 +430,12 @@ func TestReceiveMessages(t *testing.T) {
 	testData := []messageDesc{
 		{
 			call: func() error {
-				return amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{
+				return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{
 					BoardConfig: boardConfigData,
 					Components:  componentSetupData,
 					Layers:      layersSetupData,
 					Services:    serviceSetupData,
-				})
+				}))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -455,7 +456,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendMonitoringData(monitoringData)
+				return aoserrors.Wrap(amqpHandler.SendMonitoringData(monitoringData))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -472,7 +473,9 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			correlationID: sendNewStateCorrelationID,
 			call: func() error {
-				return amqpHandler.SendServiceNewState(sendNewStateCorrelationID, "service0", "This is state", "12345679")
+				return aoserrors.Wrap(
+					amqpHandler.SendServiceNewState(
+						sendNewStateCorrelationID, "service0", "This is state", "12345679"))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -488,7 +491,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendServiceStateRequest("service1", true)
+				return aoserrors.Wrap(amqpHandler.SendServiceStateRequest("service1", true))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -504,7 +507,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendLog(pushServiceLogData)
+				return aoserrors.Wrap(amqpHandler.SendLog(pushServiceLogData))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -526,7 +529,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendAlerts(alertsData)
+				return aoserrors.Wrap(amqpHandler.SendAlerts(alertsData))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -542,7 +545,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendIssueUnitCerts(issueCerts.Requests)
+				return aoserrors.Wrap(amqpHandler.SendIssueUnitCerts(issueCerts.Requests))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -558,7 +561,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendInstallCertsConfirmation(installCertsConfirmation.Certificates)
+				return aoserrors.Wrap(amqpHandler.SendInstallCertsConfirmation(installCertsConfirmation.Certificates))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
@@ -574,7 +577,7 @@ func TestReceiveMessages(t *testing.T) {
 		},
 		{
 			call: func() error {
-				return amqpHandler.SendOverrideEnvVarsStatus(overrideEnvStatus)
+				return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(overrideEnvStatus))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{

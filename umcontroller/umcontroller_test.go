@@ -28,6 +28,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
 
 	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
@@ -153,14 +154,14 @@ func createClientConnection(clientID string, state pb.UmState,
 
 	conn, err = grpc.Dial(serverURL, opts...)
 	if err != nil {
-		return stream, nil, err
+		return stream, nil, aoserrors.Wrap(err)
 	}
 
 	client := pb.NewUMServiceClient(conn)
 	stream, err = client.RegisterUM(context.Background())
 	if err != nil {
 		log.Errorf("Fail call RegisterUM %s", err)
-		return stream, nil, err
+		return stream, nil, aoserrors.Wrap(err)
 	}
 
 	umMsg := &pb.UpdateStatus{UmId: clientID, UmState: state, Components: components}
@@ -1277,7 +1278,7 @@ func (storage *testStorage) GetComponentsUpdateInfo() (updateInfo []umcontroller
 
 func (storage *testStorage) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComponent) (err error) {
 	storage.updateInfo = updateInfo
-	return err
+	return aoserrors.Wrap(err)
 }
 
 func (um *testUmConnection) processMessages() {

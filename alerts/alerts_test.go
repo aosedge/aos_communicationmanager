@@ -35,6 +35,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_communicationmanager/alerts"
 	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -727,7 +728,7 @@ func (sender *testSender) waitResult(timeout time.Duration,
 			for _, alert := range alerts {
 				success, err := checkAlert(alert)
 				if err != nil {
-					return err
+					return aoserrors.Wrap(err)
 				}
 
 				if success {
@@ -783,7 +784,7 @@ func setup() (err error) {
 	}
 
 	if systemd, err = dbus.NewSystemConnectionContext(context.Background()); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -812,15 +813,15 @@ func createSystemdUnit(serviceType, command, fileName string) (err error) {
 	serviceContent := fmt.Sprintf(serviceTemplate, serviceType, command)
 
 	if err = ioutil.WriteFile(fileName, []byte(serviceContent), 0o644); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if _, err = systemd.LinkUnitFilesContext(context.Background(), []string{fileName}, false, true); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = systemd.ReloadContext(context.Background()); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil
@@ -830,7 +831,7 @@ func startSystemdUnit(name string) (err error) {
 	channel := make(chan string)
 
 	if _, err = systemd.RestartUnitContext(context.Background(), name, "replace", channel); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	<-channel

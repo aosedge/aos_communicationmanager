@@ -720,7 +720,7 @@ func getFileSize(fileName string) (size int64, err error) {
 	if err = syscall.Stat(fileName, &stat); err != nil {
 		if os.IsNotExist(err) {
 			// Plain error returned here explicitly to allow check if file doesn't exist in callers
-			return 0, err
+			return 0, err // nolint:wrapcheck
 		}
 
 		return 0, aoserrors.Wrap(err)
