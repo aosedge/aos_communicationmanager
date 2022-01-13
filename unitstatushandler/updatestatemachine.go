@@ -364,9 +364,16 @@ func (executor *syncExecutor) execute(ctx context.Context, f func()) {
 			element := executor.waitQueue.Front()
 
 			if element != nil {
-				data := executor.waitQueue.Remove(element).(executeData)
-				data.c <- struct{}{}
-				executeFunc = data.f
+				data, ok := executor.waitQueue.Remove(element).(executeData)
+				if !ok {
+					log.Error("Incorrect type in execute data")
+
+					executor.inProgress = false
+					executeFunc = nil
+				} else {
+					data.c <- struct{}{}
+					executeFunc = data.f
+				}
 			} else {
 				executor.inProgress = false
 				executeFunc = nil
