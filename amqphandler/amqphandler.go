@@ -358,7 +358,7 @@ func getConnectionInfo(ctx context.Context, url string,
 
 	var jsonResp cloudprotocol.ServiceDiscoveryResponse
 
-	err = json.Unmarshal(htmlData, &jsonResp) // TODO: add check
+	err = json.Unmarshal(htmlData, &jsonResp)
 	if err != nil {
 		return info, aoserrors.Wrap(err)
 	}

@@ -193,7 +193,7 @@ func (controller *Controller) CheckBoardConfig(boardConfig boardconfig.BoardConf
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, check the same config for all SM's
+	// we do not support multiple SM right now, check the same config for all SM's
 
 	clientBoardConfig := clientBoardConfig{
 		FormatVersion: boardConfig.FormatVersion,
@@ -222,7 +222,7 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, set the same config for all SM's
+	// we do not support multiple SM right now, set the same config for all SM's
 
 	clientBoardConfig := clientBoardConfig{
 		FormatVersion: boardConfig.FormatVersion,
@@ -261,7 +261,7 @@ func (controller *Controller) InstallService(users []string,
 		return "", aoserrors.New("no service URL")
 	}
 
-	// TODO: we do not support multiple SM right now, install same service for all SM's
+	// we do not support multiple SM right now, install same service for all SM's
 
 	for _, client := range clients {
 		if serviceInfo.URLs[0], err = controller.urlTranslator.TranslateURL(
@@ -283,7 +283,7 @@ func (controller *Controller) RemoveService(users []string, serviceInfo cloudpro
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, remove service for all SM's
+	// we do not support multiple SM right now, remove service for all SM's
 
 	for _, client := range clients {
 		if err = client.removeService(users, serviceInfo); err != nil {
@@ -304,7 +304,7 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFrom
 		return aoserrors.New("no layer URL")
 	}
 
-	// TODO: we do not support multiple SM right now, install same layer for all SM's
+	// we do not support multiple SM right now, install same layer for all SM's
 
 	for _, client := range clients {
 		if layerInfo.URLs[0], err = controller.urlTranslator.TranslateURL(
@@ -327,7 +327,7 @@ func (controller *Controller) ServiceStateAcceptance(
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, send service state acceptance for all SM's
+	// we do not support multiple SM right now, send service state acceptance for all SM's
 
 	for _, client := range clients {
 		if err = client.serviceStateAcceptance(correlationID, stateAcceptance); err != nil {
@@ -344,7 +344,7 @@ func (controller *Controller) SetServiceState(users []string, state cloudprotoco
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, set service state for all SM's
+	// we do not support multiple SM right now, set service state for all SM's
 
 	for _, client := range clients {
 		if err = client.setServiceState(users, state); err != nil {
@@ -361,7 +361,7 @@ func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverr
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, override service env vars for all SM's
+	// we do not support multiple SM right now, override service env vars for all SM's
 
 	for _, client := range clients {
 		if err = client.overrideEnvVars(envVars); err != nil {
@@ -378,7 +378,7 @@ func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSyste
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, get system log from all SM's
+	// we do not support multiple SM right now, get system log from all SM's
 
 	for _, client := range clients {
 		if err = client.GetSystemLog(logRequest); err != nil {
@@ -395,7 +395,7 @@ func (controller *Controller) GetServiceLog(logRequest cloudprotocol.RequestServ
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, get service log from all SM's
+	// we do not support multiple SM right now, get service log from all SM's
 
 	for _, client := range clients {
 		if err = client.GetServiceLog(logRequest); err != nil {
@@ -412,7 +412,7 @@ func (controller *Controller) GetServiceCrashLog(logRequest cloudprotocol.Reques
 	clients := controller.clients
 	controller.Unlock()
 
-	// TODO: we do not support multiple SM right now, get service crash log from all SM's
+	// we do not support multiple SM right now, get service crash log from all SM's
 
 	for _, client := range clients {
 		if err = client.GetServiceCrashLog(logRequest); err != nil {

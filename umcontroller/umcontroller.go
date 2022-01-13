@@ -784,7 +784,7 @@ func (umCtrl *Controller) processStartRevertState(e *fsm.Event) {
 	}
 
 	if errAvailable {
-		log.Error("System maintenance is required") //todo think about cyclic  revert
+		log.Error("System maintenance is required") // think about cyclic revert
 		return
 	}
 
