@@ -305,6 +305,7 @@ func (cryptoContext *CryptoContext) ImportSessionKey(
 	}
 
 	algName, _, _ := decodeAlgNames(keyInfo.SymmetricAlgName)
+
 	keySize, ivSize, err := getSymmetricAlgInfo(algName)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -406,8 +407,10 @@ func (signContext *SignContext) VerifySign(
 		return aoserrors.New("sign context not initialized (no certificates)")
 	}
 
-	var chain certificateChainInfo
-	var signCertFingerprint string
+	var (
+		chain               certificateChainInfo
+		signCertFingerprint string
+	)
 
 	// Find chain
 	for _, chainTmp := range signContext.signCertificateChains {
@@ -877,6 +880,7 @@ func (symmetricContext *SymmetricCipherContext) encryptFile(
 			if _, err = contextReader.Read(chunkClear[:currentChunkSize]); err != nil {
 				return aoserrors.Wrap(err)
 			}
+
 			readSize, err = symmetricContext.appendPadding(chunkClear, currentChunkSize)
 			if err != nil {
 				return aoserrors.Wrap(err)
@@ -951,6 +955,7 @@ func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte
 	appendSize := blockSize - (dataLen % blockSize)
 
 	fullSize = dataLen + appendSize
+
 	if dataLen+appendSize > len(dataIn) {
 		return 0, aoserrors.New("no enough space to add padding")
 	}
@@ -987,6 +992,7 @@ func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte
 
 func (symmetricContext *SymmetricCipherContext) loadKey() (err error) {
 	var block cipher.Block
+
 	keySizeBits := 0
 
 	switch strings.ToUpper(symmetricContext.algName) {

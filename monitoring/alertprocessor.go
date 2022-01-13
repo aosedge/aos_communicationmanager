@@ -59,7 +59,6 @@ func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 	if !alert.thresholdTime.IsZero() &&
 		currentTime.Sub(alert.thresholdTime) >= alert.rule.MinTimeout.Duration &&
 		!alert.thresholdDetected {
-
 		log.WithFields(log.Fields{
 			"value": value,
 			"time":  currentTime.Format("Jan 2 15:04:05"),

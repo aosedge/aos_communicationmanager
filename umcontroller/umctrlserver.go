@@ -54,6 +54,7 @@ type umCtrlServer struct {
 // NewServer create update controller server
 func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, insecure bool) (server *umCtrlServer, err error) {
 	log.WithField("host", cfg.UMController.ServerURL).Debug("Start UM server")
+
 	server = &umCtrlServer{controllerCh: ch}
 
 	var opts []grpc.ServerOption

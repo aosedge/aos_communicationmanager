@@ -83,6 +83,7 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 	handler.initialUmState = state.String()
 
 	initFsmState := hStateIdle
+
 	switch state {
 	case pb.UmState_IDLE:
 		initFsmState = hStateIdle
@@ -91,8 +92,9 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 	case pb.UmState_UPDATED:
 		initFsmState = hStateWaitForApply
 	case pb.UmState_FAILED:
-		initFsmState = hStateWaitForRevert
 		log.Error("UM in failure state")
+
+		initFsmState = hStateWaitForRevert
 	}
 
 	handler.FSM = fsm.NewFSM(
@@ -159,20 +161,17 @@ func (handler *umHandler) PrepareUpdate(prepareComponents []SystemComponent) (er
 
 func (handler *umHandler) StartUpdate() (err error) {
 	log.Debug("StartUpdate for UMID ", handler.umID)
-	err = handler.FSM.Event(eventStartUpdate)
-	return aoserrors.Wrap(err)
+	return aoserrors.Wrap(handler.FSM.Event(eventStartUpdate))
 }
 
 func (handler *umHandler) StartApply() (err error) {
 	log.Debug("StartApply for UMID ", handler.umID)
-	err = handler.FSM.Event(eventStartApply)
-	return aoserrors.Wrap(err)
+	return aoserrors.Wrap(handler.FSM.Event(eventStartApply))
 }
 
 func (handler *umHandler) StartRevert() (err error) {
 	log.Debug("StartRevert for UMID ", handler.umID)
-	err = handler.FSM.Event(eventStartRevert)
-	return aoserrors.Wrap(err)
+	return aoserrors.Wrap(handler.FSM.Event(eventStartRevert))
 }
 
 /***********************************************************************************************************************
@@ -195,6 +194,7 @@ func (handler *umHandler) receiveData() {
 		}
 
 		var evt string
+
 		state := statusMsg.GetUmState()
 		switch state {
 		case pb.UmState_IDLE:
@@ -204,14 +204,16 @@ func (handler *umHandler) receiveData() {
 		case pb.UmState_UPDATED:
 			evt = eventUpdateSuccess
 		case pb.UmState_FAILED:
-			evt = eventUpdateError
 			log.Error("Update failure status: ", statusMsg.GetError())
+
+			evt = eventUpdateError
 		}
 
 		err = handler.FSM.Event(evt, getUmStatusFromUmMessage(statusMsg))
 		if err != nil {
 			log.Errorf("Can't make transition umID %s %s", handler.umID, err.Error())
 		}
+
 		continue
 	}
 }
@@ -222,6 +224,7 @@ func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
 	request := e.Args[0].(prepareRequest)
 
 	componetForUpdate := []*pb.PrepareComponentInfo{}
+
 	for _, value := range request.components {
 		componetInfo := pb.PrepareComponentInfo{
 			Id:            value.ID,

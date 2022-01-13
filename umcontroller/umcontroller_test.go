@@ -131,12 +131,15 @@ func TestConnection(t *testing.T) {
 	umCtrl.Close()
 
 	_ = streamUM1.CloseSend()
+
 	connUM1.Close()
 
 	_ = streamUM2.CloseSend()
+
 	connUM2.Close()
 
 	_ = streamUM1_copy.CloseSend()
+
 	connUM1_copy.Close()
 
 	time.Sleep(1 * time.Second)
@@ -158,6 +161,7 @@ func createClientConnection(clientID string, state pb.UmState,
 	}
 
 	client := pb.NewUMServiceClient(conn)
+
 	stream, err = client.RegisterUM(context.Background())
 	if err != nil {
 		log.Errorf("Fail call RegisterUM %s", err)
@@ -169,6 +173,7 @@ func createClientConnection(clientID string, state pb.UmState,
 	if err = stream.Send(umMsg); err != nil {
 		log.Errorf("Fail send update status message %s", err)
 	}
+
 	time.Sleep(1 * time.Second)
 
 	return stream, conn, nil
@@ -286,6 +291,7 @@ func TestFullUpdate(t *testing.T) {
 	um2.sendState(pb.UmState_IDLE)
 
 	time.Sleep(1 * time.Second)
+
 	um1.step = "finish"
 	um2.step = "finish"
 
@@ -379,6 +385,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
+
 		close(finishChannel)
 	}()
 
@@ -441,6 +448,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{Id: "um3C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 		{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
+
 	um3 = newTestUM("testUM3", pb.UmState_IDLE, "init", um3Components, t)
 	go um3.processMessages()
 
@@ -453,6 +461,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{Id: "um4C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 		{Id: "um4C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
+
 	um4 = newTestUM("testUM4", pb.UmState_IDLE, "init", um4Components, t)
 	go um4.processMessages()
 
@@ -544,6 +553,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
+
 		close(finishChannel)
 	}()
 
@@ -629,6 +639,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 		{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
+
 	um5 = newTestUM("testUM5", pb.UmState_IDLE, "init", um5Components, t)
 	go um5.processMessages()
 
@@ -643,6 +654,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{Id: "um6C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 		{Id: "um6C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
+
 	um6 = newTestUM("testUM6", pb.UmState_IDLE, "init", um6Components, t)
 	go um6.processMessages()
 
@@ -732,6 +744,7 @@ func TestRevertOnPrepare(t *testing.T) {
 		if _, err := umCtrl.UpdateComponents(updateComponents); err == nil {
 			t.Errorf("Should fail")
 		}
+
 		close(finishChannel)
 	}()
 
@@ -855,6 +868,7 @@ func TestRevertOnUpdate(t *testing.T) {
 		if _, err := umCtrl.UpdateComponents(updateComponents); err == nil {
 			t.Errorf("Should fail")
 		}
+
 		close(finishChannel)
 	}()
 
@@ -1002,6 +1016,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
+
 		close(finishChannel)
 	}()
 
@@ -1154,6 +1169,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
+
 		close(finishChannel)
 	}()
 
@@ -1283,8 +1299,10 @@ func (storage *testStorage) SetComponentsUpdateInfo(updateInfo []umcontroller.Sy
 
 func (um *testUmConnection) processMessages() {
 	defer func() { um.notifyTestChan <- true }()
+
 	for {
 		<-um.continueChan
+
 		msg, err := um.stream.Recv()
 		if err != nil {
 			return

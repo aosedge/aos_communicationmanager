@@ -311,6 +311,7 @@ func (handler *AmqpHandler) Close() {
 	log.Info("Close AMQP")
 
 	handler.cancelFunc()
+
 	if err := handler.Disconnect(); err != nil {
 		log.Errorf("Can't disconnect from AMQP server: %s", err)
 	}
@@ -430,8 +431,10 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 	confirmChannel := amqpChannel.NotifyPublish(make(chan amqp.Confirmation, 1))
 
 	for {
-		var message Message
-		retry := false
+		var (
+			message Message
+			retry   bool
+		)
 
 		select {
 		case err := <-errorChannel:
@@ -565,8 +568,10 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 				return
 			}
 
-			var rawData json.RawMessage
-			incomingMsg := cloudprotocol.Message{Data: &rawData}
+			var (
+				rawData     json.RawMessage
+				incomingMsg = cloudprotocol.Message{Data: &rawData}
+			)
 
 			if err := json.Unmarshal(delivery.Body, &incomingMsg); err != nil {
 				log.Errorf("Can't parse message header: %s", err)

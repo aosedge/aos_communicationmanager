@@ -106,10 +106,10 @@ func getRecipientInfo(raw asn1.RawValue) (interface{}, error) {
 	switch raw.Tag {
 	case 16:
 		var ktri keyTransRecipientInfo
-		_, err := asn1.Unmarshal(raw.FullBytes, &ktri)
-		if err != nil {
+		if _, err := asn1.Unmarshal(raw.FullBytes, &ktri); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
+
 		return ktri, nil
 
 	default:
@@ -127,12 +127,14 @@ func getEnvelopedData(ed asnEnvelopedData) (*envelopedData, error) {
 	var ret envelopedData
 
 	ret.Version = ed.Version
+
 	oi, err := getOriginatorInfo(ed.OriginatorInfo)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	ret.OriginatorInfo = *oi
+
 	ret.RecipientInfos = make([]interface{}, len(ed.RecipientInfos))
 	for i, recipient := range ed.RecipientInfos {
 		ret.RecipientInfos[i], err = getRecipientInfo(recipient)
@@ -140,6 +142,7 @@ func getEnvelopedData(ed asnEnvelopedData) (*envelopedData, error) {
 			return nil, aoserrors.Wrap(err)
 		}
 	}
+
 	ret.EncryptedContentInfo = ed.EncryptedContentInfo
 
 	return &ret, nil
@@ -149,6 +152,7 @@ func getContentInfo(ci asnContentInfo) (*contentInfo, error) {
 	var ret contentInfo
 
 	ret.OID = ci.OID
+
 	ed, err := getEnvelopedData(ci.EnvelopedData)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)

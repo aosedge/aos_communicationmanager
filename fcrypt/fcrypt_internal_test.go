@@ -659,8 +659,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 
 	for _, testItem := range testSizes {
 		symmetricContext := CreateSymmetricCipherContext()
-		err := symmetricContext.generateKeyAndIV("AES128/CBC")
-		if err != nil {
+		if err := symmetricContext.generateKeyAndIV("AES128/CBC"); err != nil {
 			t.Fatalf("Error creating context: '%v'", err)
 		}
 
@@ -692,6 +691,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error stat file (%v): %v", encFile.Name(), err)
 		}
+
 		if fi.Size() != int64((1+testItem/16)*16) {
 			t.Errorf("Invalid file (%v) size: %v vs %v", encFile.Name(), fi.Size(), int64((1+testItem/16)*16))
 		}
@@ -704,10 +704,13 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error stat file (%v): %v", decFile.Name(), err)
 		}
+
 		if fi.Size() != int64(testItem) {
 			t.Errorf("Invalid file (%v) size: %v vs %v", decFile.Name(), fi.Size(), testItem)
 		}
+
 		test := make([]byte, 64*1024)
+
 		for {
 			readSiz, err := decFile.Read(test)
 			if err != nil {
@@ -717,6 +720,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 					break
 				}
 			}
+
 			for i := 0; i < readSiz; i++ {
 				if test[i] != 0 {
 					t.Errorf("Error decrypted file: non zero byte")
@@ -743,13 +747,17 @@ func TestSymmetricCipherContext_appendPadding(t *testing.T) {
 		if item.skipAddPadding {
 			continue
 		}
-		testItem := &pkcs7PaddingCase{}
-		testItem.unpadded = make([]byte, len(item.unpadded))
-		testItem.padded = make([]byte, len(item.padded))
+
+		testItem := &pkcs7PaddingCase{
+			unpadded:    make([]byte, len(item.unpadded)),
+			padded:      make([]byte, len(item.padded)),
+			unpaddedLen: item.unpaddedLen,
+			ok:          item.ok,
+		}
+
 		copy(testItem.unpadded, item.unpadded)
 		copy(testItem.padded, item.padded)
-		testItem.unpaddedLen = item.unpaddedLen
-		testItem.ok = item.ok
+
 		resultSize, err := symmetricContext.appendPadding(testItem.unpadded, testItem.unpaddedLen)
 		if err != nil {
 			if testItem.ok {
@@ -765,8 +773,7 @@ func TestSymmetricCipherContext_appendPadding(t *testing.T) {
 
 func TestSymmetricCipherContext_getPaddingSize(t *testing.T) {
 	symmetricContext := CreateSymmetricCipherContext()
-	err := symmetricContext.generateKeyAndIV("AES128/CBC")
-	if err != nil {
+	if err := symmetricContext.generateKeyAndIV("AES128/CBC"); err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
 
@@ -774,13 +781,17 @@ func TestSymmetricCipherContext_getPaddingSize(t *testing.T) {
 		if item.skipRemPadding {
 			continue
 		}
-		testItem := &pkcs7PaddingCase{}
-		testItem.unpadded = make([]byte, len(item.unpadded))
-		testItem.padded = make([]byte, len(item.padded))
+
+		testItem := &pkcs7PaddingCase{
+			unpadded:    make([]byte, len(item.unpadded)),
+			padded:      make([]byte, len(item.padded)),
+			unpaddedLen: item.unpaddedLen,
+			ok:          item.ok,
+		}
+
 		copy(testItem.unpadded, item.unpadded)
 		copy(testItem.padded, item.padded)
-		testItem.unpaddedLen = item.unpaddedLen
-		testItem.ok = item.ok
+
 		resultSize, err := symmetricContext.getPaddingSize(testItem.padded, len(testItem.padded))
 		if err != nil {
 			if testItem.ok {
@@ -826,9 +837,8 @@ func TestInvalidParams(t *testing.T) {
 	}
 }
 
+// For testing only
 func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
-	// For testing only
-
 	iv, err := hex.DecodeString(UsedIV)
 	if err != nil {
 		t.Fatalf("Error decode IV: '%v'", err)
@@ -936,6 +946,7 @@ func TestDecryptSessionKeyOAEP(t *testing.T) {
 	if len(chipperContex.key) != len(clearAesKey) {
 		t.Fatalf("Error decrypt key: invalid key len")
 	}
+
 	if !bytes.Equal(chipperContex.key, clearAesKey) {
 		t.Fatalf("Error decrypt key: invalid key")
 	}

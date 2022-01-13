@@ -180,6 +180,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 	if err := setWondershaperLimit("lo", "128"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
+
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
@@ -248,6 +249,7 @@ func TestAvailableSize(t *testing.T) {
 	if err := setWondershaperLimit("lo", "512"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
+
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	var stat syscall.Statfs_t
@@ -311,6 +313,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 	if err := setWondershaperLimit("lo", "256"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
+
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
@@ -366,8 +369,10 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 }
 
 func TestConcurrentDownloads(t *testing.T) {
-	const numDownloads = 10
-	const fileNamePattern = "package%d.txt"
+	const (
+		numDownloads    = 10
+		fileNamePattern = "package%d.txt"
+	)
 
 	alertsCnt = alertsCounter{}
 
@@ -378,6 +383,7 @@ func TestConcurrentDownloads(t *testing.T) {
 	if err := setWondershaperLimit("lo", "1024"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
+
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	for i := 0; i < numDownloads; i++ {
@@ -385,6 +391,7 @@ func TestConcurrentDownloads(t *testing.T) {
 			t.Fatalf("Can't generate file: %s", err)
 		}
 	}
+
 	defer func() {
 		for i := 0; i < numDownloads; i++ {
 			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
@@ -430,6 +437,7 @@ func TestConcurrentDownloads(t *testing.T) {
 
 func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	const numDownloads = 3
+
 	const fileNamePattern = "package%d.txt"
 
 	alertsCnt = alertsCounter{}
@@ -441,6 +449,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	if err := setWondershaperLimit("lo", "4096"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
+
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	var stat syscall.Statfs_t
@@ -457,6 +466,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 			t.Fatalf("Can't generate file: %s", err)
 		}
 	}
+
 	defer func() {
 		for i := 0; i < numDownloads; i++ {
 			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
@@ -533,9 +543,11 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 }
 
 func TestDownloadPartLimit(t *testing.T) {
-	const numDownloads = 10
-	const fileNamePattern = "package%d.txt"
-	const downloadPartLimit = 50
+	const (
+		numDownloads      = 10
+		fileNamePattern   = "package%d.txt"
+		downloadPartLimit = 50
+	)
 
 	alertsCnt = alertsCounter{}
 
@@ -546,6 +558,7 @@ func TestDownloadPartLimit(t *testing.T) {
 	if err := setWondershaperLimit("lo", "4096"); err != nil {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
+
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
 	var stat syscall.Statfs_t
@@ -563,6 +576,7 @@ func TestDownloadPartLimit(t *testing.T) {
 			t.Fatalf("Can't generate file: %s", err)
 		}
 	}
+
 	defer func() {
 		for i := 0; i < numDownloads; i++ {
 			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
@@ -751,6 +765,7 @@ func preparePackageInfo(host, fileName string) (packageInfo cloudprotocol.Decryp
 	packageInfo.URLs = []string{host + fileName}
 
 	filePath := path.Join(serverDir, fileName)
+
 	imageFileInfo, err := image.CreateFileInfo(context.Background(), filePath)
 	if err != nil {
 		log.Error("error CreateFileInfo", err)
@@ -808,6 +823,7 @@ func clearWondershaperLimit(iface string) (err error) {
 
 func createTmpDisk(name string, size uint64) (mountDir string, err error) {
 	fileName := path.Join(tmpDir, name+".ext4")
+
 	defer func() {
 		if err != nil {
 			os.RemoveAll(fileName)
@@ -819,6 +835,7 @@ func createTmpDisk(name string, size uint64) (mountDir string, err error) {
 	if err = os.MkdirAll(mountDir, 0o755); err != nil {
 		return "", aoserrors.Wrap(err)
 	}
+
 	defer func() {
 		if err != nil {
 			os.RemoveAll(mountDir)
