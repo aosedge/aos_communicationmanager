@@ -99,6 +99,7 @@ func TestMain(m *testing.M) {
 
 func TestGetSystemError(t *testing.T) {
 	const numMessages = 5
+
 	testSender := newTestSender()
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
@@ -183,6 +184,7 @@ func TestGetSystemError(t *testing.T) {
 
 func TestGetOfflineSystemError(t *testing.T) {
 	const numMessages = 5
+
 	testSender := newTestSender()
 
 	cursorStorage := &testCursorStorage{}
@@ -197,6 +199,7 @@ func TestGetOfflineSystemError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create alerts: %s", err)
 	}
+
 	alertsHandler.Close()
 
 	// Send offline messages
@@ -298,6 +301,7 @@ func TestGetDowloadsStatusAlerts(t *testing.T) {
 		if receivedItem == originAlert {
 			return true, nil
 		}
+
 		return false, nil
 	}
 
@@ -399,6 +403,7 @@ func TestGetDowloadsStatusAlerts(t *testing.T) {
 
 func TestGetCommunicationManagerAlerts(t *testing.T) {
 	const numMessages = 5
+
 	testSender := newTestSender()
 
 	messages := make([]string, 0, numMessages)
@@ -439,6 +444,7 @@ func TestGetCommunicationManagerAlerts(t *testing.T) {
 
 func TestAlertsMaxMessageSize(t *testing.T) {
 	const numMessages = 5
+
 	testSender := newTestSender()
 
 	// the size of one message ~154 bytes:
@@ -478,6 +484,7 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 
 func TestAlertsMaxOfflineMessages(t *testing.T) {
 	const numMessages = 5
+
 	testSender := newTestSender()
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{
@@ -510,6 +517,7 @@ func TestAlertsMaxOfflineMessages(t *testing.T) {
 			if messageCount != 3 {
 				t.Errorf("Wrong message count received: %d", messageCount)
 			}
+
 			return
 		}
 	}
@@ -517,6 +525,7 @@ func TestAlertsMaxOfflineMessages(t *testing.T) {
 
 func TestDuplicateAlerts(t *testing.T) {
 	const numMessages = 5
+
 	testSender := newTestSender()
 
 	alertsHandler, err := alerts.New(&config.Config{Alerts: config.Alerts{

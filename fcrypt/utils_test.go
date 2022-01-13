@@ -57,6 +57,7 @@ func TestRemovePkcs7Padding(t *testing.T) {
 		if (err == nil) != c.ok {
 			t.Errorf("Got unexpected error %v value on test %#v", err, c)
 		}
+
 		if !bytes.Equal(c.out, out) {
 			t.Errorf("Got unexpected value %#v in test %#v", out, c)
 		}

@@ -95,6 +95,7 @@ func New(config *config.Config, sender Sender, insecure bool) (client *Client, e
 		usersChangedChannel: make(chan []string, usersChangedChannelSize),
 		closeChannel:        make(chan struct{}, 1),
 	}
+
 	defer func() {
 		if err != nil {
 			client.Close()

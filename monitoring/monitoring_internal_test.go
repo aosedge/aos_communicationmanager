@@ -61,6 +61,7 @@ type testSender struct {
 
 func TestAlertProcessor(t *testing.T) {
 	var sourceValue uint64
+
 	destination := make([]uint64, 0, 2)
 
 	alert := createAlertProcessor(
@@ -83,10 +84,13 @@ func TestAlertProcessor(t *testing.T) {
 
 	for i, value := range values {
 		sourceValue = value
+
 		alert.checkAlertDetection(currentTime)
+
 		if alertsCount[i] != len(destination) {
 			t.Errorf("Wrong alert count %d at %d", len(destination), i)
 		}
+
 		currentTime = currentTime.Add(time.Second)
 	}
 }

@@ -148,7 +148,6 @@ func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMSe
 				log.Errorf("Can't serve gRPC server: %s", err)
 			}
 		}()
-
 	}
 
 	go server.handleChannels()

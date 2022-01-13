@@ -617,9 +617,8 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 	}
 
 	switch value := v.(type) {
+	// Convert ISO 8601 to time.Time
 	case string:
-		// Convert ISO 8601 to time.Time
-
 		var strFields []string
 
 		if strings.Contains(value, ":") {
