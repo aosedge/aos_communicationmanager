@@ -68,7 +68,7 @@ type ReceiverInfo struct {
 // CryptoSessionKeyInfo crypto session key info
 type CryptoSessionKeyInfo struct {
 	SessionKey        []byte       `json:"sessionKey"`
-	SessionIV         []byte       `json:"sessionIV"`
+	SessionIV         []byte       `json:"sessionIv"`
 	SymmetricAlgName  string       `json:"symmetricAlgName"`
 	AsymmetricAlgName string       `json:"asymmetricAlgName"`
 	ReceiverInfo      ReceiverInfo `json:"recipientInfo"`
