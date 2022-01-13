@@ -829,8 +829,8 @@ func TestInvalidParams(t *testing.T) {
 
 	keyInfo.SessionKey = encryptedKey
 	keyInfo.SessionIV = []byte{1, 2}
-	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING"
-	keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"
+	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING" // nolint:goconst
+	keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"          // nolint:goconst
 
 	if _, err = cryptoContext.ImportSessionKey(keyInfo); err == nil {
 		t.Fatalf("Import session key not failed")
