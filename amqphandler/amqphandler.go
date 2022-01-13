@@ -657,27 +657,27 @@ func (handler *AmqpHandler) decodeDesiredStatus(
 	}
 
 	if err = handler.decodeData(encodedStatus.BoardConfig, &decodedStatus.BoardConfig); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if err = handler.decodeData(encodedStatus.Services, &decodedStatus.Services); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if err = handler.decodeData(encodedStatus.Layers, &decodedStatus.Layers); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if err = handler.decodeData(encodedStatus.Components, &decodedStatus.Components); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if err = handler.decodeData(encodedStatus.FOTASchedule, &decodedStatus.FOTASchedule); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if err = handler.decodeData(encodedStatus.SOTASchedule, &decodedStatus.SOTASchedule); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	return decodedStatus, nil
@@ -690,7 +690,7 @@ func (handler *AmqpHandler) decodeRenewCertsNotification(
 
 	if len(encodedNotification.UnitSecureData) > 0 {
 		if err = handler.decodeData(encodedNotification.UnitSecureData, &secret); err != nil {
-			return nil, err
+			return nil, aoserrors.Wrap(err)
 		}
 
 		if secret.Version != cloudprotocol.UnitSecretVersion {
@@ -709,7 +709,7 @@ func (handler *AmqpHandler) decodeEnvVars(
 	decodedEnvVars = &cloudprotocol.DecodedOverrideEnvVars{}
 
 	if err = handler.decodeData(encodedEnvVars.OverrideEnvVars, decodedEnvVars); err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 
 	return decodedEnvVars, nil

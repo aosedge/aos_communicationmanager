@@ -354,7 +354,7 @@ func newTestServer(url string) (server *testServer, err error) {
 
 	listener, err := net.Listen("tcp", url)
 	if err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 	server.grpcServer = grpc.NewServer()
 
@@ -582,7 +582,7 @@ func (sender *testSender) SendInstallCertsConfirmation(
 func (provider *testCertProvider) GetCertSerial(certURLStr string) (serial string, err error) {
 	certURL, err := url.Parse(certURLStr)
 	if err != nil {
-		return "", err
+		return "", aoserrors.Wrap(err)
 	}
 
 	var certs []*x509.Certificate
@@ -590,7 +590,7 @@ func (provider *testCertProvider) GetCertSerial(certURLStr string) (serial strin
 	switch certURL.Scheme {
 	case cryptutils.SchemeFile:
 		if certs, err = cryptutils.LoadCertificate(certURL.Path); err != nil {
-			return "", err
+			return "", aoserrors.Wrap(err)
 		}
 
 	default:

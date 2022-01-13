@@ -182,7 +182,7 @@ func (instance *Instance) Close() (err error) {
 		}
 	}
 
-	return err
+	return aoserrors.Wrap(err)
 }
 
 // ProcessDesiredStatus processes desired status

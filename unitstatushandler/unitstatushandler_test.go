@@ -665,28 +665,28 @@ func compareUnitStatus(status1, status2 cloudprotocol.UnitStatus) (err error) {
 		func(index1, index2 int) (result bool) {
 			return status1.BoardConfig[index1] == status2.BoardConfig[index2]
 		}); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = compareStatus(len(status1.Components), len(status2.Components),
 		func(index1, index2 int) (result bool) {
 			return status1.Components[index1] == status2.Components[index2]
 		}); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = compareStatus(len(status1.Layers), len(status2.Layers),
 		func(index1, index2 int) (result bool) {
 			return status1.Layers[index1] == status2.Layers[index2]
 		}); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	if err = compareStatus(len(status1.Services), len(status2.Services),
 		func(index1, index2 int) (result bool) {
 			return status1.Services[index1] == status2.Services[index2]
 		}); err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
 	return nil

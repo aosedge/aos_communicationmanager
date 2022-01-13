@@ -1414,7 +1414,7 @@ func (testDownloader *TestDownloader) DownloadAndDecrypt(
 ) {
 	file, err := ioutil.TempFile(tmpDir, "*.dec")
 	if err != nil {
-		return nil, err
+		return nil, aoserrors.Wrap(err)
 	}
 	defer file.Close()
 

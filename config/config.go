@@ -142,7 +142,7 @@ type Config struct {
 func New(fileName string) (config *Config, err error) {
 	raw, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		return config, err
+		return config, aoserrors.Wrap(err)
 	}
 
 	config = &Config{
@@ -200,7 +200,12 @@ func New(fileName string) (config *Config, err error) {
 
 // MarshalJSON marshals JSON Duration type
 func (d Duration) MarshalJSON() (b []byte, err error) {
-	return json.Marshal(d.Duration.String())
+	b, err = json.Marshal(d.Duration.String())
+	if err != nil {
+		return b, aoserrors.Wrap(err)
+	}
+
+	return b, nil
 }
 
 // UnmarshalJSON unmarshals JSON Duration type

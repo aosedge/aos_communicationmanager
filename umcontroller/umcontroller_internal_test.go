@@ -25,6 +25,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
 )
 
@@ -392,7 +393,7 @@ func (stream *normalUpdateStream) Send(msg *pb.CMMessages) (err error) {
 
 	stream.continueCh <- true
 
-	return err
+	return aoserrors.Wrap(err)
 }
 
 func (stream *normalUpdateStream) Recv() (*pb.UpdateStatus, error) {
@@ -446,7 +447,7 @@ func (stream *failureUpdateStream) Send(msg *pb.CMMessages) (err error) {
 
 	stream.continueCh <- true
 
-	return err
+	return aoserrors.Wrap(err)
 }
 
 func (stream *failureUpdateStream) Recv() (*pb.UpdateStatus, error) {
