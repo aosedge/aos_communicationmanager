@@ -149,7 +149,7 @@ func (db *Database) GetJournalCursor() (cursor string, err error) {
 
 	err = stmt.QueryRow().Scan(&cursor)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return cursor, aoserrors.Wrap(errNotExist)
 		}
 
@@ -194,7 +194,7 @@ func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemC
 	var dataJSON []byte
 
 	if err = stmt.QueryRow().Scan(&dataJSON); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return updateInfo, errNotExist
 		}
 
@@ -244,7 +244,7 @@ func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) 
 	defer stmt.Close()
 
 	if err = stmt.QueryRow().Scan(&state); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return state, errNotExist
 		}
 
@@ -282,7 +282,7 @@ func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) 
 	defer stmt.Close()
 
 	if err = stmt.QueryRow().Scan(&state); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return state, errNotExist
 		}
 

@@ -20,7 +20,6 @@ package iamclient_test
 import (
 	"context"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -392,7 +391,7 @@ func (server *testServer) CreateKey(
 
 	csr, ok := server.csr[req.Type]
 	if !ok {
-		return rsp, errors.New("not found")
+		return rsp, aoserrors.New("not found")
 	}
 
 	rsp.Csr = csr
@@ -406,7 +405,7 @@ func (server *testServer) ApplyCert(
 
 	certURL, ok := server.certURL[req.Type]
 	if !ok {
-		return rsp, errors.New("not found")
+		return rsp, aoserrors.New("not found")
 	}
 
 	rsp.CertUrl = certURL
@@ -420,12 +419,12 @@ func (server *testServer) GetCert(
 
 	certURL, ok := server.certURL[req.Type]
 	if !ok {
-		return rsp, errors.New("not found")
+		return rsp, aoserrors.New("not found")
 	}
 
 	keyURL, ok := server.keyURL[req.Type]
 	if !ok {
-		return rsp, errors.New("not found")
+		return rsp, aoserrors.New("not found")
 	}
 
 	rsp.CertUrl = certURL
@@ -488,7 +487,7 @@ func (server *testServer) RegisterService(
 
 	secret := server.findServiceID(req.ServiceId)
 	if secret != "" {
-		return rsp, fmt.Errorf("service %s is already registered", req.ServiceId)
+		return rsp, aoserrors.Errorf("service %s is already registered", req.ServiceId)
 	}
 
 	secret = randomString()
@@ -510,7 +509,7 @@ func (server *testServer) UnregisterService(
 
 	secret := server.findServiceID(req.ServiceId)
 	if secret == "" {
-		return rsp, fmt.Errorf("service %s is not registered ", req.ServiceId)
+		return rsp, aoserrors.Errorf("service %s is not registered ", req.ServiceId)
 	}
 
 	delete(server.permissionsCache, secret)
@@ -524,12 +523,12 @@ func (server *testServer) GetPermissions(
 
 	funcServersPermissions, ok := server.permissionsCache[req.Secret]
 	if !ok {
-		return rsp, fmt.Errorf("secret not found")
+		return rsp, aoserrors.New("secret not found")
 	}
 
 	permissions, ok := funcServersPermissions.permissions[req.FunctionalServerId]
 	if !ok {
-		return rsp, fmt.Errorf("permissions for functional server not found")
+		return rsp, aoserrors.New("permissions for functional server not found")
 	}
 
 	rsp.Permissions = &pb.Permissions{Permissions: permissions}
@@ -600,7 +599,7 @@ func (provider *testCertProvider) GetCertSerial(certURLStr string) (serial strin
 		}
 
 	default:
-		return "", fmt.Errorf("unsupported schema %s for certificate", certURL.Scheme)
+		return "", aoserrors.Errorf("unsupported schema %s for certificate", certURL.Scheme)
 	}
 
 	return fmt.Sprintf("%X", certs[0].SerialNumber), nil
