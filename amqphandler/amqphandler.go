@@ -173,7 +173,8 @@ func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchan
 
 	log.WithFields(log.Fields{
 		"host": host,
-		"user": user}).Debug("AMQP direct connect")
+		"user": user,
+	}).Debug("AMQP direct connect")
 
 	handler.systemID = systemID
 
@@ -182,13 +183,16 @@ func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchan
 			Host:     host,
 			User:     user,
 			Password: password,
-			Exchange: cloudprotocol.ExchangeParams{Name: exchange}},
+			Exchange: cloudprotocol.ExchangeParams{Name: exchange},
+		},
 		ReceiveParams: cloudprotocol.ReceiveParams{
 			Host:     host,
 			User:     user,
 			Password: password,
 			Consumer: consumer,
-			Queue:    cloudprotocol.QueueInfo{Name: queue}}}
+			Queue:    cloudprotocol.QueueInfo{Name: queue},
+		},
+	}
 
 	if err = handler.setupConnections("amqp", connectionInfo, nil); err != nil {
 		return aoserrors.Wrap(err)
@@ -389,7 +393,8 @@ func (handler *AmqpHandler) setupSendConnection(scheme string,
 	connection, err := amqp.DialConfig(urlRabbitMQ.String(), amqp.Config{
 		TLSClientConfig: tlsConfig,
 		SASL:            nil,
-		Heartbeat:       10 * time.Second})
+		Heartbeat:       10 * time.Second,
+	})
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -451,11 +456,13 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 		if retry {
 			log.WithFields(log.Fields{
 				"correlationID": message.CorrelationID,
-				"data":          string(data)}).Debug("AMQP retry message")
+				"data":          string(data),
+			}).Debug("AMQP retry message")
 		} else {
 			log.WithFields(log.Fields{
 				"correlationID": message.CorrelationID,
-				"data":          string(data)}).Debug("AMQP send message")
+				"data":          string(data),
+			}).Debug("AMQP send message")
 		}
 
 		if err := amqpChannel.Publish(
@@ -478,7 +485,8 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 		if !ok || !confirm.Ack {
 			log.WithFields(log.Fields{
 				"correlationID": message.CorrelationID,
-				"data":          string(data)}).Warning("AMQP data is not sent. Put into retry queue")
+				"data":          string(data),
+			}).Warning("AMQP data is not sent. Put into retry queue")
 
 			handler.retryChannel <- message
 		}
@@ -498,7 +506,8 @@ func (handler *AmqpHandler) setupReceiveConnection(scheme string,
 	connection, err := amqp.DialConfig(urlRabbitMQ.String(), amqp.Config{
 		TLSClientConfig: tlsConfig,
 		SASL:            nil,
-		Heartbeat:       10 * time.Second})
+		Heartbeat:       10 * time.Second,
+	})
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -567,7 +576,8 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 			log.WithFields(log.Fields{
 				"corrlationId": delivery.CorrelationId,
 				"version":      incomingMsg.Header.Version,
-				"type":         incomingMsg.Header.MessageType}).Debug("AMQP received message")
+				"type":         incomingMsg.Header.MessageType,
+			}).Debug("AMQP received message")
 
 			if incomingMsg.Header.Version != cloudprotocol.ProtocolVersion {
 				log.Errorf("Unsupported protocol version: %d", incomingMsg.Header.Version)
@@ -643,7 +653,8 @@ func (handler *AmqpHandler) decodeDesiredStatus(
 	encodedStatus *cloudprotocol.DesiredStatus) (decodedStatus *cloudprotocol.DecodedDesiredStatus, err error) {
 	decodedStatus = &cloudprotocol.DecodedDesiredStatus{
 		CertificateChains: encodedStatus.CertificateChains,
-		Certificates:      encodedStatus.Certificates}
+		Certificates:      encodedStatus.Certificates,
+	}
 
 	if err = handler.decodeData(encodedStatus.BoardConfig, &decodedStatus.BoardConfig); err != nil {
 		return nil, err
@@ -689,7 +700,8 @@ func (handler *AmqpHandler) decodeRenewCertsNotification(
 
 	return &cloudprotocol.RenewCertsNotificationWithPwd{
 		Certificates: encodedNotification.Certificates,
-		Password:     secret.Data.OwnerPassword}, nil
+		Password:     secret.Data.OwnerPassword,
+	}, nil
 }
 
 func (handler *AmqpHandler) decodeEnvVars(
@@ -731,6 +743,8 @@ func (handler *AmqpHandler) createCloudMessage(messageType string, data interfac
 		Header: cloudprotocol.MessageHeader{
 			Version:     cloudprotocol.ProtocolVersion,
 			SystemID:    handler.systemID,
-			MessageType: messageType},
-		Data: data}
+			MessageType: messageType,
+		},
+		Data: data,
+	}
 }

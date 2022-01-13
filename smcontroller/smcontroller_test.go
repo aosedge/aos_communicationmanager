@@ -75,8 +75,7 @@ type testSM struct {
 	cancelFunction context.CancelFunc
 }
 
-type testURLTranslator struct {
-}
+type testURLTranslator struct{}
 
 type testMessageSender struct {
 	messageChannel chan interface{}
@@ -109,7 +108,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -136,7 +136,8 @@ func TestGetUsersStatus(t *testing.T) {
 	}
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -183,7 +184,8 @@ func TestGetAllStatus(t *testing.T) {
 	}
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -212,7 +214,8 @@ func TestCheckBoardConfig(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -240,7 +243,8 @@ func TestSetBoardConfig(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -270,7 +274,8 @@ func TestInstallServices(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -278,26 +283,46 @@ func TestInstallServices(t *testing.T) {
 	defer controller.Close()
 
 	installServices := []cloudprotocol.ServiceInfoFromCloud{
-		{ID: "service0", ProviderID: "provider0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url0"}}},
-		{ID: "service1", ProviderID: "provider1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url1"}}},
-		{ID: "service2", ProviderID: "provider2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url2"}}},
-		{ID: "service3", ProviderID: "provider3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 3},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url3"}}},
-		{ID: "service4", ProviderID: "provider4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 4},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url4"}}},
-		{ID: "service5", ProviderID: "provider5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 5},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url5"}}},
-		{ID: "service6", ProviderID: "provider6", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 6},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url6"}}},
-		{ID: "service7", ProviderID: "provider7", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 7},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url7"}}},
-		{ID: "service8", ProviderID: "provider8", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 8},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url8"}}},
-		{ID: "service9", ProviderID: "provider9", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 9},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url9"}}},
+		{
+			ID: "service0", ProviderID: "provider0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url0"}},
+		},
+		{
+			ID: "service1", ProviderID: "provider1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url1"}},
+		},
+		{
+			ID: "service2", ProviderID: "provider2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url2"}},
+		},
+		{
+			ID: "service3", ProviderID: "provider3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 3},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url3"}},
+		},
+		{
+			ID: "service4", ProviderID: "provider4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 4},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url4"}},
+		},
+		{
+			ID: "service5", ProviderID: "provider5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 5},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url5"}},
+		},
+		{
+			ID: "service6", ProviderID: "provider6", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 6},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url6"}},
+		},
+		{
+			ID: "service7", ProviderID: "provider7", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 7},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url7"}},
+		},
+		{
+			ID: "service8", ProviderID: "provider8", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 8},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url8"}},
+		},
+		{
+			ID: "service9", ProviderID: "provider9", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 9},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url9"}},
+		},
 	}
 
 	expectedResult := []cloudprotocol.ServiceInfo{}
@@ -347,7 +372,8 @@ func TestRemoveServices(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -406,7 +432,8 @@ func TestInstallLayers(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -414,26 +441,46 @@ func TestInstallLayers(t *testing.T) {
 	defer controller.Close()
 
 	installLayers := []cloudprotocol.LayerInfoFromCloud{
-		{ID: "layer0", Digest: "digest0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url0"}}},
-		{ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url1"}}},
-		{ID: "layer2", Digest: "digest2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url2"}}},
-		{ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 3},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url3"}}},
-		{ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 4},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url4"}}},
-		{ID: "layer5", Digest: "digest5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 5},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url5"}}},
-		{ID: "layer6", Digest: "digest6", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 6},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url6"}}},
-		{ID: "layer7", Digest: "digest7", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 7},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url7"}}},
-		{ID: "layer8", Digest: "digest8", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 8},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url8"}}},
-		{ID: "layer9", Digest: "digest9", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 9},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url9"}}},
+		{
+			ID: "layer0", Digest: "digest0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url0"}},
+		},
+		{
+			ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url1"}},
+		},
+		{
+			ID: "layer2", Digest: "digest2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url2"}},
+		},
+		{
+			ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 3},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url3"}},
+		},
+		{
+			ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 4},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url4"}},
+		},
+		{
+			ID: "layer5", Digest: "digest5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 5},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url5"}},
+		},
+		{
+			ID: "layer6", Digest: "digest6", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 6},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url6"}},
+		},
+		{
+			ID: "layer7", Digest: "digest7", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 7},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url7"}},
+		},
+		{
+			ID: "layer8", Digest: "digest8", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 8},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url8"}},
+		},
+		{
+			ID: "layer9", Digest: "digest9", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 9},
+			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"url9"}},
+		},
 	}
 
 	expectedResult := []cloudprotocol.LayerInfo{}
@@ -478,7 +525,8 @@ func TestServiceStateAcceptance(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -502,7 +550,8 @@ func TestSetServiceState(t *testing.T) {
 	defer sm.close()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -534,7 +583,8 @@ func TestOverrideEnvVars(t *testing.T) {
 	messageSender := newTestMessageSender()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		messageSender, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -543,11 +593,14 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	envVars := []cloudprotocol.OverrideEnvsFromCloud{
 		{ServiceID: "service0", SubjectID: "subject0", EnvVars: []cloudprotocol.EnvVarInfo{
-			{ID: "id0", Variable: "var0"}}},
+			{ID: "id0", Variable: "var0"},
+		}},
 		{ServiceID: "service1", SubjectID: "subject1", EnvVars: []cloudprotocol.EnvVarInfo{
-			{ID: "id1", Variable: "var1"}}},
+			{ID: "id1", Variable: "var1"},
+		}},
 		{ServiceID: "service2", SubjectID: "subject2", EnvVars: []cloudprotocol.EnvVarInfo{
-			{ID: "id2", Variable: "var2"}}},
+			{ID: "id2", Variable: "var2"},
+		}},
 	}
 
 	expectedStatus := []cloudprotocol.EnvVarInfoStatus{}
@@ -591,7 +644,8 @@ func TestSMNotifications(t *testing.T) {
 	monitoringSender := newTestMonitoringSender()
 
 	controller, err := smcontroller.New(&config.Config{
-		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}}},
+		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
+	},
 		messageSender, alertSender, monitoringSender, &testURLTranslator{}, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
@@ -624,15 +678,21 @@ func TestSMNotifications(t *testing.T) {
 	// Test alerts
 
 	testAlerts := []interface{}{
-		cloudprotocol.AlertItem{Timestamp: time.Now().UTC(), Tag: "tag0", Source: "source0", AosVersion: 0,
-			Payload: &cloudprotocol.SystemAlert{Message: "system alert"}},
-		cloudprotocol.AlertItem{Timestamp: time.Now().UTC(), Tag: "tag1", Source: "source1", AosVersion: 1,
-			Payload: &cloudprotocol.ResourceAlert{Parameter: "param0", Value: 123}},
-		cloudprotocol.AlertItem{Timestamp: time.Now().UTC(), Tag: "tag2", Source: "source2", AosVersion: 1,
+		cloudprotocol.AlertItem{
+			Timestamp: time.Now().UTC(), Tag: "tag0", Source: "source0", AosVersion: 0,
+			Payload: &cloudprotocol.SystemAlert{Message: "system alert"},
+		},
+		cloudprotocol.AlertItem{
+			Timestamp: time.Now().UTC(), Tag: "tag1", Source: "source1", AosVersion: 1,
+			Payload: &cloudprotocol.ResourceAlert{Parameter: "param0", Value: 123},
+		},
+		cloudprotocol.AlertItem{
+			Timestamp: time.Now().UTC(), Tag: "tag2", Source: "source2", AosVersion: 1,
 			Payload: &cloudprotocol.ResourceValidateAlert{Type: "type0", Message: []cloudprotocol.ResourceValidateError{
 				{Name: "name0", Errors: []string{"error0", "error1", "error2"}},
 				{Name: "name1", Errors: []string{"error3", "error4", "error5"}},
-			}}},
+			}},
+		},
 	}
 
 	for _, sendMessage := range testAlerts {
@@ -653,17 +713,21 @@ func TestSMNotifications(t *testing.T) {
 	// Test monitoring
 
 	testMonitoringData := []interface{}{
-		cloudprotocol.MonitoringData{Timestamp: time.Now().UTC(),
+		cloudprotocol.MonitoringData{
+			Timestamp: time.Now().UTC(),
 			Global: cloudprotocol.GlobalMonitoringData{
-				RAM: 10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50},
+				RAM: 10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50,
+			},
 			ServicesData: []cloudprotocol.ServiceMonitoringData{
 				{ServiceID: "service0", RAM: 60, CPU: 70, InTraffic: 80, OutTraffic: 90},
 				{ServiceID: "service1", RAM: 61, CPU: 71, InTraffic: 81, OutTraffic: 91},
 			},
 		},
-		cloudprotocol.MonitoringData{Timestamp: time.Now().UTC(),
+		cloudprotocol.MonitoringData{
+			Timestamp: time.Now().UTC(),
 			Global: cloudprotocol.GlobalMonitoringData{
-				RAM: 11, CPU: 21, UsedDisk: 31, InTraffic: 41, OutTraffic: 51},
+				RAM: 11, CPU: 21, UsedDisk: 31, InTraffic: 41, OutTraffic: 51,
+			},
 			ServicesData: []cloudprotocol.ServiceMonitoringData{
 				{ServiceID: "service2", RAM: 62, CPU: 72, InTraffic: 83, OutTraffic: 92},
 				{ServiceID: "service3", RAM: 63, CPU: 73, InTraffic: 83, OutTraffic: 93},
@@ -685,7 +749,6 @@ func TestSMNotifications(t *testing.T) {
 			continue
 		}
 	}
-
 }
 
 /*******************************************************************************
@@ -871,7 +934,8 @@ func (sm *testSM) SubscribeSMNotifications(
 							Cpu:        serviceData.CPU,
 							UsedDisk:   serviceData.UsedDisk,
 							InTraffic:  serviceData.InTraffic,
-							OutTraffic: serviceData.OutTraffic})
+							OutTraffic: serviceData.OutTraffic,
+						})
 				}
 
 				if err = stream.Send(&pb.SMNotifications{SMNotification: notification}); err != nil {
@@ -910,7 +974,8 @@ func (sm *testSM) SubscribeSMNotifications(
 				}
 
 				if err = stream.Send(&pb.SMNotifications{
-					SMNotification: &pb.SMNotifications_Alert{Alert: &pbAlert}}); err != nil {
+					SMNotification: &pb.SMNotifications_Alert{Alert: &pbAlert},
+				}); err != nil {
 					return aoserrors.Wrap(err)
 				}
 
@@ -929,12 +994,14 @@ func (sm *testSM) GetUsersStatus(ctx context.Context, request *pb.Users) (respon
 
 	for _, service := range sm.usersServices {
 		response.Services = append(response.Services, &pb.ServiceStatus{
-			ServiceId: service.ID, AosVersion: service.AosVersion, StateChecksum: service.StateChecksum})
+			ServiceId: service.ID, AosVersion: service.AosVersion, StateChecksum: service.StateChecksum,
+		})
 	}
 
 	for _, layer := range sm.usersLayers {
 		response.Layers = append(response.Layers, &pb.LayerStatus{
-			LayerId: layer.ID, AosVersion: layer.AosVersion, Digest: layer.Digest})
+			LayerId: layer.ID, AosVersion: layer.AosVersion, Digest: layer.Digest,
+		})
 	}
 
 	return response, nil
@@ -945,12 +1012,14 @@ func (sm *testSM) GetAllStatus(ctx context.Context, request *empty.Empty) (respo
 
 	for _, service := range sm.allServices {
 		response.Services = append(response.Services, &pb.ServiceStatus{
-			ServiceId: service.ID, AosVersion: service.AosVersion, StateChecksum: service.StateChecksum})
+			ServiceId: service.ID, AosVersion: service.AosVersion, StateChecksum: service.StateChecksum,
+		})
 	}
 
 	for _, layer := range sm.allLayers {
 		response.Layers = append(response.Layers, &pb.LayerStatus{
-			LayerId: layer.ID, AosVersion: layer.AosVersion, Digest: layer.Digest})
+			LayerId: layer.ID, AosVersion: layer.AosVersion, Digest: layer.Digest,
+		})
 	}
 
 	return response, nil
@@ -1080,7 +1149,8 @@ func (sm *testSM) OverrideEnvVars(ctx context.Context,
 	for _, item := range request.EnvVars {
 		envVarStatus := &pb.EnvVarStatus{
 			ServiceId: item.ServiceId,
-			SubjectId: item.SubjectId}
+			SubjectId: item.SubjectId,
+		}
 
 		for _, envVar := range item.Vars {
 			envVarStatus.VarStatus = append(envVarStatus.VarStatus, &pb.VarStatus{

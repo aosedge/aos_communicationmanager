@@ -59,8 +59,10 @@ type backendClient struct {
  * Vars
  **********************************************************************************************************************/
 
-var testClient backendClient
-var amqpURL *url.URL
+var (
+	testClient backendClient
+	amqpURL    *url.URL
+)
 
 /***********************************************************************************************************************
  * Init
@@ -70,7 +72,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -80,7 +83,7 @@ func init() {
  **********************************************************************************************************************/
 
 func setup() (err error) {
-	if err = os.MkdirAll("tmp", 0755); err != nil {
+	if err = os.MkdirAll("tmp", 0o755); err != nil {
 		return err
 	}
 
@@ -159,7 +162,8 @@ func sendMessage(correlationID string, message interface{}) (err error) {
 		amqp.Publishing{
 			CorrelationId: correlationID,
 			ContentType:   "text/plain",
-			Body:          dataJSON})
+			Body:          dataJSON,
+		})
 }
 
 /***********************************************************************************************************************
@@ -167,7 +171,6 @@ func sendMessage(correlationID string, message interface{}) (err error) {
  **********************************************************************************************************************/
 
 func TestMain(m *testing.M) {
-
 	if err := setup(); err != nil {
 		log.Fatalf("Error creating service images: %s", err)
 	}
@@ -200,37 +203,48 @@ func TestSendMessages(t *testing.T) {
 	testData := []*cloudprotocol.Message{
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.StateAcceptanceType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.StateAcceptanceType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.StateAcceptance{
-				ServiceID: "service0", Checksum: "0123456890", Result: "accepted", Reason: "just because"},
+				ServiceID: "service0", Checksum: "0123456890", Result: "accepted", Reason: "just because",
+			},
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.UpdateStateType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.UpdateStateType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.UpdateState{
-				ServiceID: "service1", Checksum: "0993478847", State: "This is new state"},
+				ServiceID: "service1", Checksum: "0993478847", State: "This is new state",
+			},
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.RequestServiceLogType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.RequestServiceLogType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.RequestServiceLog{
-				ServiceID: "service2", LogID: uuid.New().String(), From: &time.Time{}, Till: &time.Time{}},
+				ServiceID: "service2", LogID: uuid.New().String(), From: &time.Time{}, Till: &time.Time{},
+			},
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.RequestServiceCrashLogType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.RequestServiceCrashLogType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.RequestServiceCrashLog{
-				ServiceID: "service3", LogID: uuid.New().String()},
+				ServiceID: "service3", LogID: uuid.New().String(),
+			},
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.RequestSystemLogType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.RequestSystemLogType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.RequestSystemLog{
-				LogID: uuid.New().String(), From: &time.Time{}, Till: &time.Time{}},
+				LogID: uuid.New().String(), From: &time.Time{}, Till: &time.Time{},
+			},
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.RenewCertsNotificationType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.RenewCertsNotificationType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.RenewCertsNotification{
 				Certificates: []cloudprotocol.RenewCertData{
 					{Type: "online", Serial: "1234", ValidTill: time.Now().UTC()},
@@ -239,7 +253,8 @@ func TestSendMessages(t *testing.T) {
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.IssuedUnitCertsType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.IssuedUnitCertsType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.IssuedUnitCerts{
 				Certificates: []cloudprotocol.IssuedCertData{
 					{Type: "online", CertificateChain: "123456"},
@@ -248,7 +263,8 @@ func TestSendMessages(t *testing.T) {
 		},
 		{
 			Header: cloudprotocol.MessageHeader{
-				MessageType: cloudprotocol.OverrideEnvVarsType, Version: cloudprotocol.ProtocolVersion},
+				MessageType: cloudprotocol.OverrideEnvVarsType, Version: cloudprotocol.ProtocolVersion,
+			},
 			Data: &cloudprotocol.OverrideEnvVars{},
 		},
 	}
@@ -345,12 +361,14 @@ func TestReceiveMessages(t *testing.T) {
 
 	monitoringData := cloudprotocol.MonitoringData{Timestamp: time.Now().UTC()}
 	monitoringData.Global = cloudprotocol.GlobalMonitoringData{
-		RAM: 1024, CPU: 50, UsedDisk: 2048, InTraffic: 8192, OutTraffic: 4096}
+		RAM: 1024, CPU: 50, UsedDisk: 2048, InTraffic: 8192, OutTraffic: 4096,
+	}
 	monitoringData.ServicesData = []cloudprotocol.ServiceMonitoringData{
 		{ServiceID: "service0", RAM: 1024, CPU: 50, UsedDisk: 100000},
 		{ServiceID: "service1", RAM: 128, CPU: 60, UsedDisk: 200000},
 		{ServiceID: "service2", RAM: 256, CPU: 70, UsedDisk: 300000},
-		{ServiceID: "service3", RAM: 512, CPU: 80, UsedDisk: 400000}}
+		{ServiceID: "service3", RAM: 512, CPU: 80, UsedDisk: 400000},
+	}
 
 	sendNewStateCorrelationID := uuid.New().String()
 
@@ -359,7 +377,8 @@ func TestReceiveMessages(t *testing.T) {
 		PartCount: 2,
 		Part:      1,
 		Data:      []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-		Error:     "Error"}
+		Error:     "Error",
+	}
 
 	alertsData := cloudprotocol.Alerts{
 		cloudprotocol.AlertItem{
@@ -386,21 +405,26 @@ func TestReceiveMessages(t *testing.T) {
 	overrideEnvStatus := []cloudprotocol.EnvVarInfoStatus{
 		{ServiceID: "service0", SubjectID: "subject1", Statuses: []cloudprotocol.EnvVarStatus{
 			{ID: "1234"},
-			{ID: "345", Error: "some error"}}},
+			{ID: "345", Error: "some error"},
+		}},
 		{ServiceID: "service1", SubjectID: "subject1", Statuses: []cloudprotocol.EnvVarStatus{
-			{ID: "0000"}}}}
+			{ID: "0000"},
+		}},
+	}
 
 	issueCerts := cloudprotocol.IssueUnitCerts{
 		Requests: []cloudprotocol.IssueCertData{
 			{Type: "online", Csr: "This is online CSR"},
 			{Type: "offline", Csr: "This is offline CSR"},
-		}}
+		},
+	}
 
 	installCertsConfirmation := cloudprotocol.InstallUnitCertsConfirmation{
 		Certificates: []cloudprotocol.InstallCertData{
 			{Type: "online", Serial: "1234", Status: "ok", Description: "This is online cert"},
 			{Type: "offline", Serial: "1234", Status: "ok", Description: "This is offline cert"},
-		}}
+		},
+	}
 
 	testData := []messageDesc{
 		{
@@ -416,13 +440,15 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.UnitStatusType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
 				Data: &cloudprotocol.UnitStatus{
 					BoardConfig: boardConfigData,
 					Components:  componentSetupData,
 					Layers:      layersSetupData,
 					Services:    serviceSetupData,
-				}},
+				},
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.UnitStatus{}
 			},
@@ -435,8 +461,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.MonitoringDataType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &monitoringData},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &monitoringData,
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.MonitoringData{}
 			},
@@ -450,8 +478,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.NewStateType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &cloudprotocol.NewState{ServiceID: "service0", Checksum: "12345679", State: "This is state"}},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &cloudprotocol.NewState{ServiceID: "service0", Checksum: "12345679", State: "This is state"},
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.NewState{}
 			},
@@ -464,8 +494,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.StateRequestType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &cloudprotocol.StateRequest{ServiceID: "service1", Default: true}},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &cloudprotocol.StateRequest{ServiceID: "service1", Default: true},
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.StateRequest{}
 			},
@@ -478,13 +510,16 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.PushLogType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
 				Data: &cloudprotocol.PushLog{
 					LogID:     pushServiceLogData.LogID,
 					PartCount: pushServiceLogData.PartCount,
 					Part:      pushServiceLogData.Part,
 					Data:      pushServiceLogData.Data,
-					Error:     pushServiceLogData.Error}},
+					Error:     pushServiceLogData.Error,
+				},
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.PushLog{}
 			},
@@ -497,8 +532,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.AlertsType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &alertsData},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &alertsData,
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.Alerts{}
 			},
@@ -511,8 +548,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.IssueUnitCertsType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &issueCerts},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &issueCerts,
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.IssueUnitCerts{}
 			},
@@ -525,8 +564,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.InstallUnitCertsConfirmationType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &installCertsConfirmation},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &installCertsConfirmation,
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.InstallUnitCertsConfirmation{}
 			},
@@ -539,8 +580,10 @@ func TestReceiveMessages(t *testing.T) {
 				Header: cloudprotocol.MessageHeader{
 					MessageType: cloudprotocol.OverrideEnvVarsStatusType,
 					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion},
-				Data: &cloudprotocol.OverrideEnvVarsStatus{OverrideEnvVarsStatus: overrideEnvStatus}},
+					Version:     cloudprotocol.ProtocolVersion,
+				},
+				Data: &cloudprotocol.OverrideEnvVarsStatus{OverrideEnvVarsStatus: overrideEnvStatus},
+			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.OverrideEnvVarsStatus{}
 			},

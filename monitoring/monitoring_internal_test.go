@@ -37,7 +37,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -72,7 +73,8 @@ func TestAlertProcessor(t *testing.T) {
 		config.AlertRule{
 			MinTimeout:   config.Duration{Duration: 3 * time.Second},
 			MinThreshold: 80,
-			MaxThreshold: 90})
+			MaxThreshold: 90,
+		})
 
 	values := []uint64{50, 91, 79, 92, 93, 94, 95, 94, 79, 91, 92, 93, 94, 32, 91, 92, 93, 94, 95, 96}
 	alertsCount := []int{0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3}
@@ -99,7 +101,9 @@ func TestPeriodicReport(t *testing.T) {
 			EnableSystemMonitoring: true,
 			MaxOfflineMessages:     10,
 			SendPeriod:             config.Duration{Duration: sendDuration},
-			PollPeriod:             config.Duration{Duration: 1 * time.Second}}},
+			PollPeriod:             config.Duration{Duration: 1 * time.Second},
+		},
+	},
 		nil, nil, testSender)
 	if err != nil {
 		t.Fatalf("Can't create monitoring instance: %s", err)
@@ -148,23 +152,30 @@ func TestSystemAlerts(t *testing.T) {
 				CPU: &config.AlertRule{
 					MinTimeout:   config.Duration{},
 					MinThreshold: 0,
-					MaxThreshold: 0},
+					MaxThreshold: 0,
+				},
 				RAM: &config.AlertRule{
 					MinTimeout:   config.Duration{},
 					MinThreshold: 0,
-					MaxThreshold: 0},
+					MaxThreshold: 0,
+				},
 				UsedDisk: &config.AlertRule{
 					MinTimeout:   config.Duration{},
 					MinThreshold: 0,
-					MaxThreshold: 0},
+					MaxThreshold: 0,
+				},
 				InTraffic: &config.AlertRule{
 					MinTimeout:   config.Duration{},
 					MinThreshold: 0,
-					MaxThreshold: 0},
+					MaxThreshold: 0,
+				},
 				OutTraffic: &config.AlertRule{
 					MinTimeout:   config.Duration{},
 					MinThreshold: 0,
-					MaxThreshold: 0}}},
+					MaxThreshold: 0,
+				},
+			},
+		},
 		&testAlerts{callback: func(serviceID, resource string, time time.Time, value uint64) {
 			alertMap[resource] = alertMap[resource] + 1
 		}}, nil, testSender)

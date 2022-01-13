@@ -42,31 +42,36 @@ func TestTimeMarshalign(t *testing.T) {
 			rawJSON: `{"start":"T01","finish":"T04"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 0, 0, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 0, 0, 0, time.Local)},
+			},
 		},
 		{
 			rawJSON: `{"start":"T0102","finish":"T0405"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 0, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 0, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 0, 0, time.Local)},
+			},
 		},
 		{
 			rawJSON: `{"start":"T010203","finish":"T040506"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 3, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)},
+			},
 		},
 		{
 			rawJSON: `{"start":"01:02","finish":"04:05"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 0, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 0, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 0, 0, time.Local)},
+			},
 		},
 		{
 			rawJSON: `{"start":"01:02:03","finish":"04:05:06"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 3, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)},
+			},
 		},
 	}
 
@@ -86,13 +91,15 @@ func TestTimeMarshalign(t *testing.T) {
 			rawJSON: `{"start":"01:02:03","finish":"04:05:06"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 2, 3, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 4, 5, 6, 0, time.Local)},
+			},
 		},
 		{
 			rawJSON: `{"start":"07:08:09","finish":"10:11:12"}`,
 			timeSlot: cloudprotocol.TimeSlot{
 				Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 7, 8, 9, 0, time.Local)},
-				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 11, 12, 0, time.Local)}},
+				Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 11, 12, 0, time.Local)},
+			},
 		},
 	}
 
@@ -107,5 +114,4 @@ func TestTimeMarshalign(t *testing.T) {
 			t.Errorf("Wrong json data: %s", string(rawJSON))
 		}
 	}
-
 }

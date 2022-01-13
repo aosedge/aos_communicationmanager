@@ -59,17 +59,13 @@ const (
  * Types
  **********************************************************************************************************************/
 
-type testCryptoContext struct {
-}
+type testCryptoContext struct{}
 
-type testSymmetricContext struct {
-}
+type testSymmetricContext struct{}
 
-type testSignContext struct {
-}
+type testSignContext struct{}
 
-type testAlertSender struct {
-}
+type testAlertSender struct{}
 
 type alertsCounter struct {
 	alertStarted     int
@@ -104,7 +100,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -137,7 +134,7 @@ func TestDownload(t *testing.T) {
 
 	fileName := path.Join(serverDir, "package.txt")
 
-	if err := ioutil.WriteFile(fileName, []byte("Hello downloader\n"), 0644); err != nil {
+	if err := ioutil.WriteFile(fileName, []byte("Hello downloader\n"), 0o644); err != nil {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 	defer os.RemoveAll(fileName)
@@ -700,7 +697,7 @@ func setup() (err error) {
 
 	serverDir = path.Join(tmpDir, "fileServer")
 
-	if err = os.MkdirAll(serverDir, 0755); err != nil {
+	if err = os.MkdirAll(serverDir, 0o755); err != nil {
 		return err
 	}
 
@@ -791,7 +788,7 @@ func generateFile(fileName string, size uint64) (err error) {
 	return nil
 }
 
-//Set traffic limit for interface
+// Set traffic limit for interface
 func setWondershaperLimit(iface string, limit string) (err error) {
 	if output, err := exec.Command("wondershaper", "-a", iface, "-d", limit).CombinedOutput(); err != nil {
 		return aoserrors.Errorf("%s (%s)", err, (string(output)))
@@ -818,7 +815,7 @@ func createTmpDisk(name string, size uint64) (mountDir string, err error) {
 
 	mountDir = path.Join(tmpDir, name)
 
-	if err = os.MkdirAll(mountDir, 0755); err != nil {
+	if err = os.MkdirAll(mountDir, 0o755); err != nil {
 		return "", aoserrors.Wrap(err)
 	}
 	defer func() {

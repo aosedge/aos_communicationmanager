@@ -53,7 +53,8 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: false,
 		TimestampFormat:  "2006-01-02 15:04:05.000",
-		FullTimestamp:    true})
+		FullTimestamp:    true,
+	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
 }
@@ -107,7 +108,7 @@ func TestFileServer(t *testing.T) {
 
 	filename := "testFile.txt"
 
-	if err := ioutil.WriteFile(filepath.Join(serverDir, filename), []byte("Hello fileserver"), 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(serverDir, filename), []byte("Hello fileserver"), 0o644); err != nil {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 

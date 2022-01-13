@@ -62,7 +62,8 @@ func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 
 		log.WithFields(log.Fields{
 			"value": value,
-			"time":  currentTime.Format("Jan 2 15:04:05")}).Debugf("%s alert", alert.name)
+			"time":  currentTime.Format("Jan 2 15:04:05"),
+		}).Debugf("%s alert", alert.name)
 
 		alert.thresholdDetected = true
 

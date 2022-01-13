@@ -97,7 +97,8 @@ func New(
 		alertSender:      alertSender,
 		monitoringSender: monitoringSender,
 		urlTranslator:    urlTranslator,
-		clients:          make(map[string]*smClient)}
+		clients:          make(map[string]*smClient),
+	}
 	controller.context, controller.cancelFunction = context.WithCancel(context.Background())
 
 	defer func() {
@@ -369,7 +370,6 @@ func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverr
 	}
 
 	return nil
-
 }
 
 // GetSystemLog requests system log from SM
@@ -435,7 +435,7 @@ func (controller *Controller) waitAndLock() {
 func (controller *Controller) connectClient(smConfig config.SMConfig, secureOpt grpc.DialOption) {
 	defer controller.readyWG.Done()
 
-	var connectChannel = make(chan struct{}, 1)
+	connectChannel := make(chan struct{}, 1)
 
 	controller.clientsWG.Add(1)
 
