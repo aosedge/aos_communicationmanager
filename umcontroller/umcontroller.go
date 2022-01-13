@@ -816,8 +816,17 @@ func (umCtrl *Controller) processStartApplyState(e *fsm.Event) {
 func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
 	log.Debug("processUpdateUmState")
 
-	umID := e.Args[0].(string)
-	status := e.Args[1].(umStatus)
+	umID, ok := e.Args[0].(string)
+	if !ok {
+		log.Error("Incorrect UM ID in update state")
+		return
+	}
+
+	status, ok := e.Args[1].(umStatus)
+	if !ok {
+		log.Error("Incorrect UM status in update state")
+		return
+	}
 
 	for i, v := range umCtrl.connections {
 		if v.umID == umID {
@@ -834,7 +843,11 @@ func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
 }
 
 func (umCtrl *Controller) processError(e *fsm.Event) {
-	umCtrl.updateError = e.Args[0].(error)
+	var ok bool
+
+	if umCtrl.updateError, ok = e.Args[0].(error); !ok {
+		umCtrl.updateError = aoserrors.New("unknown error")
+	}
 
 	log.Error("Update error: ", umCtrl.updateError)
 

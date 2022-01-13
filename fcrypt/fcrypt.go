@@ -465,7 +465,10 @@ func (signContext *SignContext) VerifySign(
 
 	switch signAlgName {
 	case "RSA":
-		publicKey := signCert.PublicKey.(*rsa.PublicKey)
+		publicKey, ok := signCert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return aoserrors.New("incorrect RSA public key data type")
+		}
 
 		switch signPadding {
 		case "PKCS1v1_5":

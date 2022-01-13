@@ -221,7 +221,7 @@ func (downloader *Downloader) addToQueue(result *downloadResult) (err error) {
 
 	downloader.currentDownloads[result.id] = result
 
-	go func() { _ =  downloader.process(result) }()
+	go func() { _ = downloader.process(result) }()
 
 	return nil
 }
@@ -479,7 +479,8 @@ func (downloader *Downloader) handleWaitQueue() {
 			return
 		}
 
-		result := firstElement.Value.(*downloadResult)
+		result, _ := firstElement.Value.(*downloadResult)
+
 		downloader.waitQueue.Remove(firstElement)
 
 		log.WithFields(log.Fields{"id": result.id}).Debug("Take download from wait queue")
