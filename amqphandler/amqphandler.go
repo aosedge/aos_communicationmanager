@@ -352,7 +352,7 @@ func getConnectionInfo(ctx context.Context, url string,
 		return info, aoserrors.Wrap(err)
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return info, aoserrors.Errorf("%s: %s", resp.Status, string(htmlData))
 	}
 

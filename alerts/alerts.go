@@ -392,6 +392,7 @@ func (instance *Alerts) processJournal(journal *sdjournal.Journal) (err error) {
 			tag = cloudprotocol.AlertTagAosCore
 		}
 
+		// nolint:gomnd
 		t := time.Unix(int64(entry.RealtimeTimestamp/1000000),
 			int64((entry.RealtimeTimestamp%1000000)*1000))
 
