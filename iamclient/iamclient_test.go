@@ -538,7 +538,7 @@ func (server *testServer) GetPermissions(
 }
 
 func (server *testServer) EncryptDisk(context.Context, *pb.EncryptDiskRequest) (*empty.Empty, error) {
-	return nil, nil
+	return &empty.Empty{}, nil
 }
 
 func (server *testServer) findServiceID(serviceID string) (secret string) {
