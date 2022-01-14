@@ -32,6 +32,7 @@ jobs:
 
       - name: Build
         run: |
+          sudo apt update --fix-missing
           sudo apt install -y libsystemd-dev
           go build
 
