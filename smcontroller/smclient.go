@@ -90,8 +90,7 @@ func newSMClient(ctx context.Context, cfg config.SMConfig,
 		}
 	}()
 
-	if client.connection, err = grpc.DialContext(
-		client.context, client.cfg.ServerURL, secureOpt, grpc.WithBlock()); err != nil {
+	if client.connection, err = grpc.DialContext(ctx, client.cfg.ServerURL, secureOpt, grpc.WithBlock()); err != nil {
 		return client, aoserrors.Wrap(err)
 	}
 
