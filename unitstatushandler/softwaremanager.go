@@ -212,8 +212,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		DownloadLayers:   make([]cloudprotocol.LayerInfoFromCloud, 0),
 		InstallLayers:    make([]cloudprotocol.LayerInfoFromCloud, 0),
 		RemoveLayers:     make([]cloudprotocol.LayerInfo, 0),
-		CertChains:       desiredStatus.CertificateChains,
-		Certs:            desiredStatus.Certificates,
+		CertChains:       desiredStatus.CertificateChains, Certs: desiredStatus.Certificates,
 	}
 
 	usersServices, usersLayers, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
@@ -467,67 +466,7 @@ func (manager *softwareManager) download(ctx context.Context) {
 
 	manager.DownloadResult = nil
 
-	manager.statusMutex.Lock()
-
-	manager.LayerStatuses = make(map[string]*cloudprotocol.LayerInfo)
-	manager.ServiceStatuses = make(map[string]*cloudprotocol.ServiceInfo)
-
-	request := make(map[string]cloudprotocol.DecryptDataStruct)
-
-	for _, service := range manager.CurrentUpdate.DownloadServices {
-		log.WithFields(log.Fields{
-			"id":      service.ID,
-			"version": service.AosVersion,
-		}).Debug("Download service")
-
-		request[service.ID] = service.DecryptDataStruct
-		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceInfo{
-			ID:         service.ID,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.DownloadingStatus,
-		}
-	}
-
-	for _, layer := range manager.CurrentUpdate.DownloadLayers {
-		log.WithFields(log.Fields{
-			"id":      layer.ID,
-			"digest":  layer.Digest,
-			"version": layer.AosVersion,
-		}).Debug("Download layer")
-
-		request[layer.Digest] = layer.DecryptDataStruct
-		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerInfo{
-			ID:         layer.ID,
-			AosVersion: layer.AosVersion,
-			Digest:     layer.Digest,
-			Status:     cloudprotocol.DownloadingStatus,
-		}
-	}
-
-	manager.statusMutex.Unlock()
-
-	// Set pending status for install services and layers
-
-	for _, service := range manager.CurrentUpdate.InstallServices {
-		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceInfo{
-			ID:         service.ID,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.PendingStatus,
-		}
-
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.PendingStatus, "", "")
-	}
-
-	for _, layer := range manager.CurrentUpdate.InstallLayers {
-		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerInfo{
-			ID:         layer.ID,
-			AosVersion: layer.AosVersion,
-			Digest:     layer.Digest,
-			Status:     cloudprotocol.PendingStatus,
-		}
-
-		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.PendingStatus, "")
-	}
+	request := manager.prepareDownloadRequest()
 
 	// Nothing to download
 	if len(request) == 0 {
@@ -590,6 +529,72 @@ func (manager *softwareManager) download(ctx context.Context) {
 	if numDownloadErrors == len(manager.DownloadResult) && len(manager.CurrentUpdate.RemoveServices) == 0 {
 		finishEvent = eventCancel
 	}
+}
+
+func (manager *softwareManager) prepareDownloadRequest() (request map[string]cloudprotocol.DecryptDataStruct) {
+	request = make(map[string]cloudprotocol.DecryptDataStruct)
+
+	manager.statusMutex.Lock()
+
+	manager.LayerStatuses = make(map[string]*cloudprotocol.LayerInfo)
+	manager.ServiceStatuses = make(map[string]*cloudprotocol.ServiceInfo)
+
+	for _, service := range manager.CurrentUpdate.DownloadServices {
+		log.WithFields(log.Fields{
+			"id":      service.ID,
+			"version": service.AosVersion,
+		}).Debug("Download service")
+
+		request[service.ID] = service.DecryptDataStruct
+		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceInfo{
+			ID:         service.ID,
+			AosVersion: service.AosVersion,
+			Status:     cloudprotocol.DownloadingStatus,
+		}
+	}
+
+	for _, layer := range manager.CurrentUpdate.DownloadLayers {
+		log.WithFields(log.Fields{
+			"id":      layer.ID,
+			"digest":  layer.Digest,
+			"version": layer.AosVersion,
+		}).Debug("Download layer")
+
+		request[layer.Digest] = layer.DecryptDataStruct
+		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerInfo{
+			ID:         layer.ID,
+			AosVersion: layer.AosVersion,
+			Digest:     layer.Digest,
+			Status:     cloudprotocol.DownloadingStatus,
+		}
+	}
+
+	manager.statusMutex.Unlock()
+
+	// Set pending status for install services and layers
+
+	for _, service := range manager.CurrentUpdate.InstallServices {
+		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceInfo{
+			ID:         service.ID,
+			AosVersion: service.AosVersion,
+			Status:     cloudprotocol.PendingStatus,
+		}
+
+		manager.updateServiceStatusByID(service.ID, cloudprotocol.PendingStatus, "", "")
+	}
+
+	for _, layer := range manager.CurrentUpdate.InstallLayers {
+		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerInfo{
+			ID:         layer.ID,
+			AosVersion: layer.AosVersion,
+			Digest:     layer.Digest,
+			Status:     cloudprotocol.PendingStatus,
+		}
+
+		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.PendingStatus, "")
+	}
+
+	return request
 }
 
 func (manager *softwareManager) readyToUpdate() {
