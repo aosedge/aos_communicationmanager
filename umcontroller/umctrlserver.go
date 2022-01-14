@@ -18,6 +18,7 @@
 package umcontroller
 
 import (
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -109,7 +110,7 @@ func (server *umCtrlServer) Stop() {
 // RegisterUM stop update controller server call back.
 func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (err error) {
 	statusMsg, err := stream.Recv()
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		log.Warn("Unexpected end of UM stream")
 	}
 

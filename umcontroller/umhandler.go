@@ -18,6 +18,7 @@
 package umcontroller
 
 import (
+	"errors"
 	"io"
 
 	"github.com/looplab/fsm"
@@ -183,7 +184,7 @@ func (handler *umHandler) receiveData() {
 
 	for {
 		statusMsg, err := handler.stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			log.Debug("End of connection ", handler.umID)
 			return
 		}
