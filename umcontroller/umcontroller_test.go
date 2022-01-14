@@ -19,6 +19,7 @@ package umcontroller_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"reflect"
@@ -1322,7 +1323,7 @@ func (um *testUmConnection) processMessages() {
 			fallthrough
 
 		case rebootStep:
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				log.Debug("[test] End of connection ", um.umID)
 				return
 			}
