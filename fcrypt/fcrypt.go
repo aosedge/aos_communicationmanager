@@ -408,61 +408,24 @@ func (signContext *SignContext) VerifySign(
 		return aoserrors.New("sign context not initialized (no certificates)")
 	}
 
-	var (
-		chain               certificateChainInfo
-		signCertFingerprint string
-	)
-
-	// Find chain
-	for _, chainTmp := range signContext.signCertificateChains {
-		if chainTmp.name == chainName {
-			chain = chainTmp
-			signCertFingerprint = chain.fingerprints[0]
-
-			break
-		}
-	}
-
-	if chain.name == "" || len(chain.name) == 0 {
-		return aoserrors.New("unknown chain name")
-	}
-
-	signCert := signContext.getCertificateByFingerprint(signCertFingerprint)
-
-	if signCert == nil {
-		return aoserrors.New("signing certificate is absent")
+	signCert, chain, err := signContext.getSignCertificate(chainName)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
 	signAlgName, signHash, signPadding := decodeSignAlgNames(algName)
 
-	var hashFunc crypto.Hash
-
-	switch strings.ToUpper(signHash) {
-	case "SHA256":
-		hashFunc = crypto.SHA256
-	case "SHA384":
-		hashFunc = crypto.SHA384
-	case "SHA512":
-		hashFunc = crypto.SHA512
-	case "SHA512/224":
-		hashFunc = crypto.SHA512_224
-	case "SHA512/256":
-		hashFunc = crypto.SHA512_256
-	default:
-		return aoserrors.New("unknown or unsupported hashing algorithm: " + signHash)
+	hashFunc, err := getHashFuncBySignHash(signHash)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
 	hash := hashFunc.New()
-
-	contextReader := contextreader.New(ctx, f)
-
-	if _, err = io.Copy(hash, contextReader); err != nil {
+	if _, err = io.Copy(hash, contextreader.New(ctx, f)); err != nil {
 		log.Errorf("Error hashing file: %s", err)
 
 		return aoserrors.Wrap(err)
 	}
-
-	hashValue := hash.Sum(nil)
 
 	switch signAlgName {
 	case "RSA":
@@ -473,12 +436,12 @@ func (signContext *SignContext) VerifySign(
 
 		switch signPadding {
 		case "PKCS1v1_5":
-			if err = rsa.VerifyPKCS1v15(publicKey, hashFunc.HashFunc(), hashValue, signValue); err != nil {
+			if err = rsa.VerifyPKCS1v15(publicKey, hashFunc.HashFunc(), hash.Sum(nil), signValue); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
 		case "PSS":
-			if err = rsa.VerifyPSS(publicKey, hashFunc.HashFunc(), hashValue, signValue, nil); err != nil {
+			if err = rsa.VerifyPSS(publicKey, hashFunc.HashFunc(), hash.Sum(nil), signValue, nil); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
@@ -1042,4 +1005,48 @@ func (symmetricContext *SymmetricCipherContext) loadKey() (err error) {
 
 func (symmetricContext *SymmetricCipherContext) isReady() bool {
 	return symmetricContext.encrypter != nil || symmetricContext.decrypter != nil
+}
+
+func (signContext *SignContext) getSignCertificate(
+	chainName string) (signCert *x509.Certificate, chain certificateChainInfo, err error) {
+	var signCertFingerprint string
+
+	// Find chain
+	for _, chainTmp := range signContext.signCertificateChains {
+		if chainTmp.name == chainName {
+			chain = chainTmp
+			signCertFingerprint = chain.fingerprints[0]
+
+			break
+		}
+	}
+
+	if chain.name == "" || len(chain.name) == 0 {
+		return nil, chain, aoserrors.New("unknown chain name")
+	}
+
+	signCert = signContext.getCertificateByFingerprint(signCertFingerprint)
+
+	if signCert == nil {
+		return nil, chain, aoserrors.New("signing certificate is absent")
+	}
+
+	return signCert, chain, nil
+}
+
+func getHashFuncBySignHash(hash string) (hashFunc crypto.Hash, err error) {
+	switch strings.ToUpper(hash) {
+	case "SHA256":
+		return crypto.SHA256, nil
+	case "SHA384":
+		return crypto.SHA384, nil
+	case "SHA512":
+		return crypto.SHA512, nil
+	case "SHA512/224":
+		return crypto.SHA512_224, nil
+	case "SHA512/256":
+		return crypto.SHA512_256, nil
+	default:
+		return hashFunc, aoserrors.New("unknown or unsupported hashing algorithm: " + hash)
+	}
 }

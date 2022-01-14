@@ -62,9 +62,7 @@ func (instance *Instance) download(ctx context.Context, request map[string]cloud
 	var wg sync.WaitGroup
 
 	handleError := func(id string, err error) {
-		errorStr := aoserrors.Wrap(err).Error()
-
-		if !isCancelError(errorStr) {
+		if errorStr := aoserrors.Wrap(err).Error(); !isCancelError(errorStr) {
 			result[id].Error = errorStr
 			updateStatus(id, cloudprotocol.ErrorStatus, errorStr)
 		}

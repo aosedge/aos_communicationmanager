@@ -531,126 +531,145 @@ func (client *smClient) subscribeSMNotifications() (err error) {
 
 		switch data := notification.SMNotification.(type) {
 		case *pb.SMNotifications_Alert:
-			log.WithFields(log.Fields{
-				"id":     client.cfg.SMID,
-				"tag":    data.Alert.Tag,
-				"source": data.Alert.Source,
-			}).Debug("Receive SM alert")
-
-			alertItem := cloudprotocol.AlertItem{
-				Timestamp:  data.Alert.Timestamp.AsTime(),
-				Tag:        data.Alert.Tag,
-				Source:     data.Alert.Source,
-				AosVersion: data.Alert.AosVersion,
-			}
-
-			switch data := data.Alert.Payload.(type) {
-			case *pb.Alert_SystemAlert:
-				alertItem.Payload = &cloudprotocol.SystemAlert{Message: data.SystemAlert.Message}
-
-			case *pb.Alert_ResourceAlert:
-				alertItem.Payload = &cloudprotocol.ResourceAlert{
-					Parameter: data.ResourceAlert.Parameter,
-					Value:     data.ResourceAlert.Value,
-				}
-
-			case *pb.Alert_ResourceValidateAlert:
-				resourceValidate := &cloudprotocol.ResourceValidateAlert{
-					Type: data.ResourceValidateAlert.Type,
-				}
-
-				for _, resourceError := range data.ResourceValidateAlert.Errors {
-					resourceValidate.Message = append(resourceValidate.Message, cloudprotocol.ResourceValidateError{
-						Name:   resourceError.Name,
-						Errors: resourceError.ErrorMsg,
-					})
-				}
-
-				alertItem.Payload = resourceValidate
-			}
-
-			if err = client.alertSender.SendAlert(alertItem); err != nil {
-				log.Errorf("Can't send alert: %s", err)
-			}
+			client.processAlertNotification(data)
 
 		case *pb.SMNotifications_Monitoring:
-			log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Receive SM monitoring")
-
-			monitoringData := cloudprotocol.MonitoringData{
-				Timestamp: data.Monitoring.Timestamp.AsTime(),
-				Global: cloudprotocol.GlobalMonitoringData{
-					RAM:        data.Monitoring.SystemMonitoring.Ram,
-					CPU:        data.Monitoring.SystemMonitoring.Cpu,
-					UsedDisk:   data.Monitoring.SystemMonitoring.UsedDisk,
-					InTraffic:  data.Monitoring.SystemMonitoring.InTraffic,
-					OutTraffic: data.Monitoring.SystemMonitoring.OutTraffic,
-				},
-			}
-
-			for _, serviceMonitoring := range data.Monitoring.ServiceMonitoring {
-				monitoringData.ServicesData = append(monitoringData.ServicesData,
-					cloudprotocol.ServiceMonitoringData{
-						ServiceID:  serviceMonitoring.ServiceId,
-						RAM:        serviceMonitoring.Ram,
-						CPU:        serviceMonitoring.Cpu,
-						UsedDisk:   serviceMonitoring.UsedDisk,
-						InTraffic:  serviceMonitoring.InTraffic,
-						OutTraffic: serviceMonitoring.OutTraffic,
-					})
-			}
-
-			if err = client.monitoringSender.SendMonitoringData(monitoringData); err != nil {
-				log.Errorf("Can't send monitoring data: %s", err)
-			}
+			client.processMonitoringNotification(data)
 
 		case *pb.SMNotifications_NewServiceState:
-			log.WithFields(log.Fields{
-				"id":            client.cfg.SMID,
-				"correlationID": data.NewServiceState.CorrelationId,
-				"serviceID":     data.NewServiceState.ServiceState.ServiceId,
-			}).Debug("Receive SM new service state")
-
-			if err = client.messageSender.SendServiceNewState(
-				data.NewServiceState.CorrelationId,
-				data.NewServiceState.ServiceState.ServiceId,
-				string(data.NewServiceState.ServiceState.State),
-				data.NewServiceState.ServiceState.StateChecksum,
-			); err != nil {
-				log.Errorf("Can't send service new state: %s", err)
-			}
+			client.processNewServiceSateNotification(data)
 
 		case *pb.SMNotifications_ServiceStateRequest:
-			log.WithFields(log.Fields{
-				"id":        client.cfg.SMID,
-				"serviceID": data.ServiceStateRequest.ServiceId,
-				"default":   data.ServiceStateRequest.Default,
-			}).Debug("Receive SM service state request")
-
-			if err = client.messageSender.SendServiceStateRequest(
-				data.ServiceStateRequest.ServiceId, data.ServiceStateRequest.Default); err != nil {
-				log.Errorf("Can't send service state request: %s", err)
-			}
+			client.processServiceSateRequestNotification(data)
 
 		case *pb.SMNotifications_Log:
-			log.WithFields(log.Fields{
-				"id":        client.cfg.SMID,
-				"logID":     data.Log.LogId,
-				"part":      data.Log.Part,
-				"partCount": data.Log.PartCount,
-			}).Debug("Receive SM push log")
-
-			if err = client.messageSender.SendLog(cloudprotocol.PushLog{
-				LogID:     data.Log.LogId,
-				PartCount: data.Log.PartCount,
-				Part:      data.Log.Part,
-				Data:      data.Log.Data,
-				Error:     data.Log.Error,
-			}); err != nil {
-				log.Errorf("Can't send log: %s", err)
-			}
-
+			client.processSMLogNotification(data)
 		default:
 			log.Warnf("Receive unsupported SM notification: %s", reflect.TypeOf(data))
 		}
+	}
+}
+
+func (client *smClient) processAlertNotification(data *pb.SMNotifications_Alert) {
+	log.WithFields(log.Fields{
+		"id":     client.cfg.SMID,
+		"tag":    data.Alert.Tag,
+		"source": data.Alert.Source,
+	}).Debug("Receive SM alert")
+
+	alertItem := cloudprotocol.AlertItem{
+		Timestamp:  data.Alert.Timestamp.AsTime(),
+		Tag:        data.Alert.Tag,
+		Source:     data.Alert.Source,
+		AosVersion: data.Alert.AosVersion,
+	}
+
+	switch data := data.Alert.Payload.(type) {
+	case *pb.Alert_SystemAlert:
+		alertItem.Payload = &cloudprotocol.SystemAlert{Message: data.SystemAlert.Message}
+
+	case *pb.Alert_ResourceAlert:
+		alertItem.Payload = &cloudprotocol.ResourceAlert{
+			Parameter: data.ResourceAlert.Parameter,
+			Value:     data.ResourceAlert.Value,
+		}
+
+	case *pb.Alert_ResourceValidateAlert:
+		resourceValidate := &cloudprotocol.ResourceValidateAlert{
+			Type: data.ResourceValidateAlert.Type,
+		}
+
+		for _, resourceError := range data.ResourceValidateAlert.Errors {
+			resourceValidate.Message = append(resourceValidate.Message, cloudprotocol.ResourceValidateError{
+				Name:   resourceError.Name,
+				Errors: resourceError.ErrorMsg,
+			})
+		}
+
+		alertItem.Payload = resourceValidate
+	}
+
+	if err := client.alertSender.SendAlert(alertItem); err != nil {
+		log.Errorf("Can't send alert: %s", err)
+	}
+}
+
+func (client *smClient) processMonitoringNotification(data *pb.SMNotifications_Monitoring) {
+	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Receive SM monitoring")
+
+	monitoringData := cloudprotocol.MonitoringData{
+		Timestamp: data.Monitoring.Timestamp.AsTime(),
+		Global: cloudprotocol.GlobalMonitoringData{
+			RAM:        data.Monitoring.SystemMonitoring.Ram,
+			CPU:        data.Monitoring.SystemMonitoring.Cpu,
+			UsedDisk:   data.Monitoring.SystemMonitoring.UsedDisk,
+			InTraffic:  data.Monitoring.SystemMonitoring.InTraffic,
+			OutTraffic: data.Monitoring.SystemMonitoring.OutTraffic,
+		},
+	}
+
+	for _, serviceMonitoring := range data.Monitoring.ServiceMonitoring {
+		monitoringData.ServicesData = append(monitoringData.ServicesData,
+			cloudprotocol.ServiceMonitoringData{
+				ServiceID:  serviceMonitoring.ServiceId,
+				RAM:        serviceMonitoring.Ram,
+				CPU:        serviceMonitoring.Cpu,
+				UsedDisk:   serviceMonitoring.UsedDisk,
+				InTraffic:  serviceMonitoring.InTraffic,
+				OutTraffic: serviceMonitoring.OutTraffic,
+			})
+	}
+
+	if err := client.monitoringSender.SendMonitoringData(monitoringData); err != nil {
+		log.Errorf("Can't send monitoring data: %s", err)
+	}
+}
+
+func (client *smClient) processNewServiceSateNotification(data *pb.SMNotifications_NewServiceState) {
+	log.WithFields(log.Fields{
+		"id":            client.cfg.SMID,
+		"correlationID": data.NewServiceState.CorrelationId,
+		"serviceID":     data.NewServiceState.ServiceState.ServiceId,
+	}).Debug("Receive SM new service state")
+
+	if err := client.messageSender.SendServiceNewState(
+		data.NewServiceState.CorrelationId,
+		data.NewServiceState.ServiceState.ServiceId,
+		string(data.NewServiceState.ServiceState.State),
+		data.NewServiceState.ServiceState.StateChecksum,
+	); err != nil {
+		log.Errorf("Can't send service new state: %s", err)
+	}
+}
+
+func (client *smClient) processServiceSateRequestNotification(data *pb.SMNotifications_ServiceStateRequest) {
+	log.WithFields(log.Fields{
+		"id":        client.cfg.SMID,
+		"serviceID": data.ServiceStateRequest.ServiceId,
+		"default":   data.ServiceStateRequest.Default,
+	}).Debug("Receive SM service state request")
+
+	if err := client.messageSender.SendServiceStateRequest(
+		data.ServiceStateRequest.ServiceId, data.ServiceStateRequest.Default); err != nil {
+		log.Errorf("Can't send service state request: %s", err)
+	}
+}
+
+func (client *smClient) processSMLogNotification(data *pb.SMNotifications_Log) {
+	log.WithFields(log.Fields{
+		"id":        client.cfg.SMID,
+		"logID":     data.Log.LogId,
+		"part":      data.Log.Part,
+		"partCount": data.Log.PartCount,
+	}).Debug("Receive SM push log")
+
+	if err := client.messageSender.SendLog(cloudprotocol.PushLog{
+		LogID:     data.Log.LogId,
+		PartCount: data.Log.PartCount,
+		Part:      data.Log.Part,
+		Data:      data.Log.Data,
+		Error:     data.Log.Error,
+	}); err != nil {
+		log.Errorf("Can't send log: %s", err)
 	}
 }
