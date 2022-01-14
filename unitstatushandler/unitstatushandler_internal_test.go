@@ -722,7 +722,7 @@ func TestFirmwareManager(t *testing.T) {
 		if item.desiredStatus != nil {
 			if err = firmwareManager.processDesiredStatus(*item.desiredStatus); err != nil {
 				t.Errorf("Process desired status failed: %s", err)
-				goto close
+				goto closeFM
 			}
 		}
 
@@ -739,12 +739,12 @@ func TestFirmwareManager(t *testing.T) {
 				t.Errorf("Wait for update status error: %s", err)
 
 				if strings.Contains(err.Error(), "status timeout") {
-					goto close
+					goto closeFM
 				}
 			}
 		}
 
-	close:
+	closeFM:
 		// Close firmware manager
 
 		if err = firmwareManager.close(); err != nil {
@@ -1011,7 +1011,7 @@ func TestSoftwareManager(t *testing.T) {
 		if item.desiredStatus != nil {
 			if err = softwareManager.processDesiredStatus(*item.desiredStatus); err != nil {
 				t.Errorf("Process desired status failed: %s", err)
-				goto close
+				goto closeSM
 			}
 		}
 
@@ -1028,12 +1028,12 @@ func TestSoftwareManager(t *testing.T) {
 				t.Errorf("Wait for update status error: %s", err)
 
 				if strings.Contains(err.Error(), "status timeout") {
-					goto close
+					goto closeSM
 				}
 			}
 		}
 
-	close:
+	closeSM:
 		// Close software manager
 
 		if err = softwareManager.close(); err != nil {
