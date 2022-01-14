@@ -90,7 +90,7 @@ type journalHook struct {
  **********************************************************************************************************************/
 
 // GitSummary provided by govvv at compile-time.
-var GitSummary = "Unknown"
+var GitSummary = "Unknown" // nolint:gochecknoglobals
 
 /***********************************************************************************************************************
  * Init
