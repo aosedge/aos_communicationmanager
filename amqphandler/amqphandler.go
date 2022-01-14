@@ -88,7 +88,7 @@ type Message struct {
  * Variables
  **********************************************************************************************************************/
 
-var messageMap = map[string]func() interface{}{
+var messageMap = map[string]func() interface{}{ // nolint:gochecknoglobals
 	cloudprotocol.DesiredStatusType: func() interface{} {
 		return &cloudprotocol.DesiredStatus{}
 	},
