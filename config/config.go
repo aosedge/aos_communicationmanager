@@ -31,40 +31,40 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// Crypt configuration structure with crypto attributes
+// Crypt configuration structure with crypto attributes.
 type Crypt struct {
 	CACert        string `json:"caCert"`
 	TpmDevice     string `json:"tpmDevice,omitempty"`
 	Pkcs11Library string `json:"pkcs11Library,omitempty"`
 }
 
-// UMController configuration for update controller
+// UMController configuration for update controller.
 type UMController struct {
 	ServerURL string           `json:"serverUrl"`
 	UMClients []UMClientConfig `json:"umClients"`
 	UpdateTTL Duration         `json:"updateTtl"`
 }
 
-// UMClientConfig update manager config
+// UMClientConfig update manager config.
 type UMClientConfig struct {
 	UMID     string `json:"umId"`
 	Priority uint32 `json:"priority"`
 	IsLocal  bool   `json:"isLocal,omitempty"`
 }
 
-// Duration represents duration in format "00:00:00"
+// Duration represents duration in format "00:00:00".
 type Duration struct {
 	time.Duration
 }
 
-// AlertRule describes alert rule
+// AlertRule describes alert rule.
 type AlertRule struct {
 	MinTimeout   Duration `json:"minTimeout"`
 	MinThreshold uint64   `json:"minThreshold"`
 	MaxThreshold uint64   `json:"maxThreshold"`
 }
 
-// Monitoring configuration for system monitoring
+// Monitoring configuration for system monitoring.
 type Monitoring struct {
 	EnableSystemMonitoring bool       `json:"enableSystemMonitoring"`
 	MaxOfflineMessages     int        `json:"maxOfflineMessages"`
@@ -77,7 +77,7 @@ type Monitoring struct {
 	OutTraffic             *AlertRule `json:"outTraffic"`
 }
 
-// Alerts configuration for alerts
+// Alerts configuration for alerts.
 type Alerts struct {
 	EnableSystemAlerts bool     `json:"enableSystemAlerts"`
 	SendPeriod         Duration `json:"sendPeriod"`
@@ -86,13 +86,13 @@ type Alerts struct {
 	Filter             []string `json:"filter"`
 }
 
-// Migration struct represents path for db migration
+// Migration struct represents path for db migration.
 type Migration struct {
 	MigrationPath       string `json:"migrationPath"`
 	MergedMigrationPath string `json:"mergedMigrationPath"`
 }
 
-// Downloader downloader configuration
+// Downloader downloader configuration.
 type Downloader struct {
 	DownloadDir            string   `json:"downloadDir"`
 	DecryptDir             string   `json:"decryptDir"`
@@ -102,20 +102,20 @@ type Downloader struct {
 	DownloadPartLimit      int      `json:"downloadPartLimit"`
 }
 
-// SMConfig SM configuration
+// SMConfig SM configuration.
 type SMConfig struct {
 	SMID      string `json:"smId"`
 	ServerURL string `json:"serverUrl"`
 	IsLocal   bool   `json:"isLocal,omitempty"`
 }
 
-// SMController SM controller configuration
+// SMController SM controller configuration.
 type SMController struct {
 	SMList    []SMConfig `json:"smList"`
 	UpdateTTL Duration   `json:"updateTtl"`
 }
 
-// Config instance
+// Config instance.
 type Config struct {
 	Crypt                 Crypt        `json:"fcrypt"`
 	CertStorage           string       `json:"certStorage"`
@@ -138,7 +138,7 @@ type Config struct {
  * Public
  **********************************************************************************************************************/
 
-// New creates new config object
+// New creates new config object.
 func New(fileName string) (config *Config, err error) {
 	raw, err := ioutil.ReadFile(fileName)
 	if err != nil {
@@ -198,7 +198,7 @@ func New(fileName string) (config *Config, err error) {
 	return config, nil
 }
 
-// MarshalJSON marshals JSON Duration type
+// MarshalJSON marshals JSON Duration type.
 func (d Duration) MarshalJSON() (b []byte, err error) {
 	b, err = json.Marshal(d.Duration.String())
 	if err != nil {
@@ -208,7 +208,7 @@ func (d Duration) MarshalJSON() (b []byte, err error) {
 	return b, nil
 }
 
-// UnmarshalJSON unmarshals JSON Duration type
+// UnmarshalJSON unmarshals JSON Duration type.
 func (d *Duration) UnmarshalJSON(b []byte) (err error) {
 	var v interface{}
 

@@ -33,13 +33,13 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-// ProtocolVersion specifies supported protocol version
+// ProtocolVersion specifies supported protocol version.
 const ProtocolVersion = 3
 
-// UnitSecretVersion specifies supported version of UnitSecret message
+// UnitSecretVersion specifies supported version of UnitSecret message.
 const UnitSecretVersion = 2
 
-// Cloud message types
+// Cloud message types.
 const (
 	DesiredStatusType          = "desiredStatus"
 	RequestServiceCrashLogType = "requestServiceCrashLog"
@@ -54,7 +54,7 @@ const (
 	OverrideEnvVarsType        = "overrideEnvVars"
 )
 
-// Device message types
+// Device message types.
 const (
 	AlertsType                       = "alerts"
 	MonitoringDataType               = "monitoringData"
@@ -67,14 +67,14 @@ const (
 	OverrideEnvVarsStatusType        = "overrideEnvVarsStatus"
 )
 
-// Alert tags
+// Alert tags.
 const (
 	AlertTagSystemError = "systemError"
 	AlertTagResource    = "resourceAlert"
 	AlertTagAosCore     = "aosCore"
 )
 
-// Unit statuses
+// Unit statuses.
 const (
 	UnknownStatus     = "unknown"
 	PendingStatus     = "pending"
@@ -87,7 +87,7 @@ const (
 	ErrorStatus       = "error"
 )
 
-// SOTA/FOTA schedule type
+// SOTA/FOTA schedule type.
 const (
 	ForceUpdate     = "force"
 	TriggerUpdate   = "trigger"
@@ -95,7 +95,7 @@ const (
 )
 
 const (
-	// HHMMSS
+	// HHMMSS.
 	timeFieldCount = 3
 	timeFieldLen   = 2
 )
@@ -104,37 +104,37 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// Message structure for AOS messages
+// Message structure for AOS messages.
 type Message struct {
 	Header MessageHeader `json:"header"`
 	Data   interface{}   `json:"data"`
 }
 
-// MessageHeader message header
+// MessageHeader message header.
 type MessageHeader struct {
 	Version     uint64 `json:"version"`
 	SystemID    string `json:"systemId"`
 	MessageType string `json:"messageType"`
 }
 
-// ServiceDiscoveryRequest service discovery request
+// ServiceDiscoveryRequest service discovery request.
 type ServiceDiscoveryRequest struct {
 	Users []string `json:"users"`
 }
 
-// ServiceDiscoveryResponse service discovery response
+// ServiceDiscoveryResponse service discovery response.
 type ServiceDiscoveryResponse struct {
 	Version    uint64         `json:"version"`
 	Connection ConnectionInfo `json:"connection"`
 }
 
-// ConnectionInfo AMQP connection info
+// ConnectionInfo AMQP connection info.
 type ConnectionInfo struct {
 	SendParams    SendParams    `json:"sendParams"`
 	ReceiveParams ReceiveParams `json:"receiveParams"`
 }
 
-// SendParams AMQP send parameters
+// SendParams AMQP send parameters.
 type SendParams struct {
 	Host      string         `json:"host"`
 	User      string         `json:"user"`
@@ -144,7 +144,7 @@ type SendParams struct {
 	Exchange  ExchangeParams `json:"exchange"`
 }
 
-// ExchangeParams AMQP exchange parameters
+// ExchangeParams AMQP exchange parameters.
 type ExchangeParams struct {
 	Name       string `json:"name"`
 	Durable    bool   `json:"durable"`
@@ -153,7 +153,7 @@ type ExchangeParams struct {
 	NoWait     bool   `json:"noWait"`
 }
 
-// ReceiveParams AMQP receive parameters
+// ReceiveParams AMQP receive parameters.
 type ReceiveParams struct {
 	Host      string    `json:"host"`
 	User      string    `json:"user"`
@@ -166,7 +166,7 @@ type ReceiveParams struct {
 	Queue     QueueInfo `json:"queue"`
 }
 
-// QueueInfo AMQP queue info
+// QueueInfo AMQP queue info.
 type QueueInfo struct {
 	Name             string `json:"name"`
 	Durable          bool   `json:"durable"`
@@ -175,7 +175,7 @@ type QueueInfo struct {
 	NoWait           bool   `json:"noWait"`
 }
 
-// DesiredStatus desired status message
+// DesiredStatus desired status message.
 type DesiredStatus struct {
 	BoardConfig       []byte             `json:"boardConfig"`
 	Services          []byte             `json:"services"`
@@ -187,7 +187,7 @@ type DesiredStatus struct {
 	Certificates      []Certificate      `json:"certificates,omitempty"`
 }
 
-// RequestServiceCrashLog request service crash log message
+// RequestServiceCrashLog request service crash log message.
 type RequestServiceCrashLog struct {
 	ServiceID string     `json:"serviceId"`
 	LogID     string     `json:"logId"`
@@ -195,7 +195,7 @@ type RequestServiceCrashLog struct {
 	Till      *time.Time `json:"till"`
 }
 
-// RequestServiceLog request service log message
+// RequestServiceLog request service log message.
 type RequestServiceLog struct {
 	ServiceID string     `json:"serviceId"`
 	LogID     string     `json:"logId"`
@@ -203,14 +203,14 @@ type RequestServiceLog struct {
 	Till      *time.Time `json:"till"`
 }
 
-// RequestSystemLog request system log message
+// RequestSystemLog request system log message.
 type RequestSystemLog struct {
 	LogID string     `json:"logId"`
 	From  *time.Time `json:"from"`
 	Till  *time.Time `json:"till"`
 }
 
-// StateAcceptance state acceptance message
+// StateAcceptance state acceptance message.
 type StateAcceptance struct {
 	ServiceID string `json:"serviceId"`
 	Checksum  string `json:"checksum"`
@@ -218,7 +218,7 @@ type StateAcceptance struct {
 	Reason    string `json:"reason"`
 }
 
-// DecryptionInfo update decryption info
+// DecryptionInfo update decryption info.
 type DecryptionInfo struct {
 	BlockAlg     string `json:"blockAlg"`
 	BlockIv      []byte `json:"blockIv"`
@@ -230,7 +230,7 @@ type DecryptionInfo struct {
 	} `json:"receiverInfo"`
 }
 
-// Signs message signature
+// Signs message signature.
 type Signs struct {
 	ChainName        string   `json:"chainName"`
 	Alg              string   `json:"alg"`
@@ -239,19 +239,19 @@ type Signs struct {
 	OcspValues       []string `json:"ocspValues"`
 }
 
-// CertificateChain  certificate chain
+// CertificateChain  certificate chain.
 type CertificateChain struct {
 	Name         string   `json:"name"`
 	Fingerprints []string `json:"fingerprints"`
 }
 
-// Certificate certificate structure
+// Certificate certificate structure.
 type Certificate struct {
 	Fingerprint string `json:"fingerprint"`
 	Certificate []byte `json:"certificate"`
 }
 
-// DecryptDataStruct struct contains how to decrypt data
+// DecryptDataStruct struct contains how to decrypt data.
 type DecryptDataStruct struct {
 	URLs           []string        `json:"urls"`
 	Sha256         []byte          `json:"sha256"`
@@ -261,19 +261,19 @@ type DecryptDataStruct struct {
 	Signs          *Signs          `json:"signs,omitempty"`
 }
 
-// UpdateState state update message
+// UpdateState state update message.
 type UpdateState struct {
 	ServiceID string `json:"serviceId"`
 	Checksum  string `json:"stateChecksum"`
 	State     string `json:"state"`
 }
 
-// SystemAlert system alert structure
+// SystemAlert system alert structure.
 type SystemAlert struct {
 	Message string `json:"message"`
 }
 
-// DownloadAlert download alert structure
+// DownloadAlert download alert structure.
 type DownloadAlert struct {
 	Message         string `json:"message"`
 	Progress        string `json:"progress"`
@@ -282,25 +282,25 @@ type DownloadAlert struct {
 	TotalBytes      string `json:"totalBytes"`
 }
 
-// ResourceAlert resource alert structure
+// ResourceAlert resource alert structure.
 type ResourceAlert struct {
 	Parameter string `json:"parameter"`
 	Value     uint64 `json:"value"`
 }
 
-// ResourceValidateError resource validate error structure
+// ResourceValidateError resource validate error structure.
 type ResourceValidateError struct {
 	Name   string   `json:"name"`
 	Errors []string `json:"error"`
 }
 
-// ResourceValidateAlert resource validate alert structure
+// ResourceValidateAlert resource validate alert structure.
 type ResourceValidateAlert struct {
 	Type    string                  `json:"type"`
 	Message []ResourceValidateError `json:"message"`
 }
 
-// AlertItem alert item structure
+// AlertItem alert item structure.
 type AlertItem struct {
 	Timestamp  time.Time   `json:"timestamp"`
 	Tag        string      `json:"tag"`
@@ -309,17 +309,17 @@ type AlertItem struct {
 	Payload    interface{} `json:"payload"`
 }
 
-// Alerts alerts message structure
+// Alerts alerts message structure.
 type Alerts []AlertItem
 
-// NewState new state structure
+// NewState new state structure.
 type NewState struct {
 	ServiceID string `json:"serviceId"`
 	Checksum  string `json:"stateChecksum"`
 	State     string `json:"state"`
 }
 
-// GlobalMonitoringData global monitoring data for service
+// GlobalMonitoringData global monitoring data for service.
 type GlobalMonitoringData struct {
 	RAM        uint64 `json:"ram"`
 	CPU        uint64 `json:"cpu"`
@@ -328,7 +328,7 @@ type GlobalMonitoringData struct {
 	OutTraffic uint64 `json:"outTraffic"`
 }
 
-// ServiceMonitoringData monitoring data for service
+// ServiceMonitoringData monitoring data for service.
 type ServiceMonitoringData struct {
 	ServiceID  string `json:"serviceId"`
 	RAM        uint64 `json:"ram"`
@@ -338,14 +338,14 @@ type ServiceMonitoringData struct {
 	OutTraffic uint64 `json:"outTraffic"`
 }
 
-// MonitoringData monitoring data structure
+// MonitoringData monitoring data structure.
 type MonitoringData struct {
 	Timestamp    time.Time               `json:"timestamp"`
 	Global       GlobalMonitoringData    `json:"global"`
 	ServicesData []ServiceMonitoringData `json:"servicesData"`
 }
 
-// PushLog push service log structure
+// PushLog push service log structure.
 type PushLog struct {
 	LogID     string `json:"logId"`
 	PartCount uint64 `json:"partCount,omitempty"`
@@ -354,13 +354,13 @@ type PushLog struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// StateRequest state request structure
+// StateRequest state request structure.
 type StateRequest struct {
 	ServiceID string `json:"serviceId"`
 	Default   bool   `json:"default"`
 }
 
-// UnitStatus unit status structure
+// UnitStatus unit status structure.
 type UnitStatus struct {
 	BoardConfig []BoardConfigInfo `json:"boardConfig"`
 	Services    []ServiceInfo     `json:"services"`
@@ -368,14 +368,14 @@ type UnitStatus struct {
 	Components  []ComponentInfo   `json:"components"`
 }
 
-// BoardConfigInfo board config information
+// BoardConfigInfo board config information.
 type BoardConfigInfo struct {
 	VendorVersion string `json:"vendorVersion"`
 	Status        string `json:"status"`
 	Error         string `json:"error,omitempty"`
 }
 
-// ServiceInfo struct with service information
+// ServiceInfo struct with service information.
 type ServiceInfo struct {
 	ID            string `json:"id"`
 	AosVersion    uint64 `json:"aosVersion"`
@@ -384,7 +384,7 @@ type ServiceInfo struct {
 	StateChecksum string `json:"stateChecksum,omitempty"`
 }
 
-// LayerInfo struct with layer info and status
+// LayerInfo struct with layer info and status.
 type LayerInfo struct {
 	ID         string `json:"id"`
 	AosVersion uint64 `json:"aosVersion"`
@@ -393,7 +393,7 @@ type LayerInfo struct {
 	Error      string `json:"error,omitempty"`
 }
 
-// ComponentInfo struct with system component info and status
+// ComponentInfo struct with system component info and status.
 type ComponentInfo struct {
 	ID            string `json:"id"`
 	AosVersion    uint64 `json:"aosVersion"`
@@ -402,7 +402,7 @@ type ComponentInfo struct {
 	Error         string `json:"error,omitempty"`
 }
 
-// ServiceAlertRules define service monitoring alerts rules
+// ServiceAlertRules define service monitoring alerts rules.
 type ServiceAlertRules struct {
 	RAM        *config.AlertRule `json:"ram,omitempty"`
 	CPU        *config.AlertRule `json:"cpu,omitempty"`
@@ -411,14 +411,14 @@ type ServiceAlertRules struct {
 	OutTraffic *config.AlertRule `json:"outTraffic,omitempty"`
 }
 
-// VersionFromCloud common version structure
+// VersionFromCloud common version structure.
 type VersionFromCloud struct {
 	AosVersion    uint64 `json:"aosVersion"`
 	VendorVersion string `json:"vendorVersion"`
 	Description   string `json:"description"`
 }
 
-// ServiceInfoFromCloud decrypted service info
+// ServiceInfoFromCloud decrypted service info.
 type ServiceInfoFromCloud struct {
 	ID         string `json:"id"`
 	ProviderID string `json:"providerId"`
@@ -427,7 +427,7 @@ type ServiceInfoFromCloud struct {
 	DecryptDataStruct
 }
 
-// LayerInfoFromCloud decrypted layer info
+// LayerInfoFromCloud decrypted layer info.
 type LayerInfoFromCloud struct {
 	ID     string `json:"id"`
 	Digest string `json:"digest"`
@@ -435,7 +435,7 @@ type LayerInfoFromCloud struct {
 	DecryptDataStruct
 }
 
-// ComponentInfoFromCloud decrypted component info
+// ComponentInfoFromCloud decrypted component info.
 type ComponentInfoFromCloud struct {
 	ID          string          `json:"id"`
 	Annotations json.RawMessage `json:"annotations,omitempty"`
@@ -443,31 +443,31 @@ type ComponentInfoFromCloud struct {
 	DecryptDataStruct
 }
 
-// Time represents time in format "00:00:00"
+// Time represents time in format "00:00:00".
 type Time struct {
 	time.Time
 }
 
-// TimeSlot time slot with start and finish time
+// TimeSlot time slot with start and finish time.
 type TimeSlot struct {
 	Start  Time `json:"start"`
 	Finish Time `json:"finish"`
 }
 
-// TimetableEntry entry for update timetable
+// TimetableEntry entry for update timetable.
 type TimetableEntry struct {
 	DayOfWeek uint       `json:"dayOfWeek"`
 	TimeSlots []TimeSlot `json:"timeSlots"`
 }
 
-// ScheduleRule rule for performing schedule update
+// ScheduleRule rule for performing schedule update.
 type ScheduleRule struct {
 	TTL       uint64           `json:"ttl"`
 	Type      string           `json:"type"`
 	Timetable []TimetableEntry `json:"timetable"`
 }
 
-// DecodedDesiredStatus decoded desired status
+// DecodedDesiredStatus decoded desired status.
 type DecodedDesiredStatus struct {
 	BoardConfig       json.RawMessage
 	Layers            []LayerInfoFromCloud
@@ -479,48 +479,48 @@ type DecodedDesiredStatus struct {
 	Certificates      []Certificate
 }
 
-// RenewCertData renew certificate data
+// RenewCertData renew certificate data.
 type RenewCertData struct {
 	Type      string    `json:"type"`
 	Serial    string    `json:"serial"`
 	ValidTill time.Time `json:"validTill"`
 }
 
-// RenewCertsNotification renew certificate notification from cloud
+// RenewCertsNotification renew certificate notification from cloud.
 type RenewCertsNotification struct {
 	Certificates   []RenewCertData `json:"certificates"`
 	UnitSecureData []byte          `json:"unitSecureData"`
 }
 
-// RenewCertsNotificationWithPwd renew certificate notification from cloud with extracted pwd
+// RenewCertsNotificationWithPwd renew certificate notification from cloud with extracted pwd.
 type RenewCertsNotificationWithPwd struct {
 	Certificates []RenewCertData `json:"certificates"`
 	Password     string          `json:"password"`
 }
 
-// IssueCertData issue certificate data
+// IssueCertData issue certificate data.
 type IssueCertData struct {
 	Type string `json:"type"`
 	Csr  string `json:"csr"`
 }
 
-// IssueUnitCerts issue unit certificates request
+// IssueUnitCerts issue unit certificates request.
 type IssueUnitCerts struct {
 	Requests []IssueCertData `json:"requests"`
 }
 
-// IssuedCertData issued unit certificate data
+// IssuedCertData issued unit certificate data.
 type IssuedCertData struct {
 	Type             string `json:"type"`
 	CertificateChain string `json:"certificateChain"`
 }
 
-// IssuedUnitCerts issued unit certificates info
+// IssuedUnitCerts issued unit certificates info.
 type IssuedUnitCerts struct {
 	Certificates []IssuedCertData `json:"certificates"`
 }
 
-// InstallCertData install certificate data
+// InstallCertData install certificate data.
 type InstallCertData struct {
 	Type        string `json:"type"`
 	Serial      string `json:"serial"`
@@ -528,54 +528,54 @@ type InstallCertData struct {
 	Description string `json:"description,omitempty"`
 }
 
-// InstallUnitCertsConfirmation install unit certificates confirmation
+// InstallUnitCertsConfirmation install unit certificates confirmation.
 type InstallUnitCertsConfirmation struct {
 	Certificates []InstallCertData `json:"certificates"`
 }
 
-// OverrideEnvVars request to override service environment variables
+// OverrideEnvVars request to override service environment variables.
 type OverrideEnvVars struct {
 	OverrideEnvVars []byte `json:"overrideEnvVars"`
 }
 
-// DecodedOverrideEnvVars decoded service environment variables
+// DecodedOverrideEnvVars decoded service environment variables.
 type DecodedOverrideEnvVars struct {
 	OverrideEnvVars []OverrideEnvsFromCloud `json:"overrideEnvVars"`
 }
 
-// OverrideEnvsFromCloud struct with envs and related service and user
+// OverrideEnvsFromCloud struct with envs and related service and user.
 type OverrideEnvsFromCloud struct {
 	ServiceID string       `json:"serviceId"`
 	SubjectID string       `json:"subjectId"`
 	EnvVars   []EnvVarInfo `json:"envVars"`
 }
 
-// EnvVarInfo env info with id and time to live
+// EnvVarInfo env info with id and time to live.
 type EnvVarInfo struct {
 	ID       string     `json:"id"`
 	Variable string     `json:"variable"`
 	TTL      *time.Time `json:"ttl"`
 }
 
-// OverrideEnvVarsStatus override env status
+// OverrideEnvVarsStatus override env status.
 type OverrideEnvVarsStatus struct {
 	OverrideEnvVarsStatus []EnvVarInfoStatus `json:"overrideEnvVarsStatus"`
 }
 
-// EnvVarInfoStatus struct with envs status and related service and user
+// EnvVarInfoStatus struct with envs status and related service and user.
 type EnvVarInfoStatus struct {
 	ServiceID string         `json:"serviceId"`
 	SubjectID string         `json:"subjectId"`
 	Statuses  []EnvVarStatus `json:"statuses"`
 }
 
-// EnvVarStatus env status with error message
+// EnvVarStatus env status with error message.
 type EnvVarStatus struct {
 	ID    string `json:"id"`
 	Error string `json:"error,omitempty"`
 }
 
-// UnitSecret keeps unit secret used to decode secure device password
+// UnitSecret keeps unit secret used to decode secure device password.
 type UnitSecret struct {
 	Version int `json:"version"`
 	Data    struct {
@@ -602,7 +602,7 @@ func (component ComponentInfoFromCloud) String() string {
 		component.ID, component.Annotations, component.VendorVersion, component.AosVersion, component.Description)
 }
 
-// MarshalJSON marshals JSON Time type
+// MarshalJSON marshals JSON Time type.
 func (t Time) MarshalJSON() (b []byte, err error) {
 	b, err = json.Marshal(t.Format("15:04:05"))
 	if err != nil {
@@ -612,7 +612,7 @@ func (t Time) MarshalJSON() (b []byte, err error) {
 	return b, nil
 }
 
-// UnmarshalJSON unmarshals JSON Time type
+// UnmarshalJSON unmarshals JSON Time type.
 func (t *Time) UnmarshalJSON(b []byte) (err error) {
 	const errFormat = "invalid time value: %v"
 

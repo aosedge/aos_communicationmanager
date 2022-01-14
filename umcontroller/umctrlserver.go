@@ -37,7 +37,7 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// UmCtrlServer gRPC update managers controller server
+// UmCtrlServer gRPC update managers controller server.
 type umCtrlServer struct {
 	pb.UnimplementedUMServiceServer
 
@@ -51,7 +51,7 @@ type umCtrlServer struct {
  * public
  **********************************************************************************************************************/
 
-// NewServer create update controller server
+// NewServer create update controller server.
 func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, insecure bool) (server *umCtrlServer, err error) {
 	log.WithField("host", cfg.UMController.ServerURL).Debug("Start UM server")
 
@@ -79,7 +79,7 @@ func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, insecure bool) (se
 	return server, nil
 }
 
-// Start start update controller server
+// Start start update controller server.
 func (server *umCtrlServer) Start() (err error) {
 	server.listener, err = net.Listen("tcp", server.url)
 	if err != nil {
@@ -95,7 +95,7 @@ func (server *umCtrlServer) Start() (err error) {
 	return nil
 }
 
-// Stop stop update controller server
+// Stop stop update controller server.
 func (server *umCtrlServer) Stop() {
 	if server.grpcServer != nil {
 		server.grpcServer.Stop()
@@ -106,7 +106,7 @@ func (server *umCtrlServer) Stop() {
 	}
 }
 
-// RegisterUM stop update controller server call back
+// RegisterUM stop update controller server call back.
 func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (err error) {
 	statusMsg, err := stream.Recv()
 	if err == io.EOF {

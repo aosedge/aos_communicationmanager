@@ -44,7 +44,7 @@ const connectClientTimeout = 1 * time.Minute
  * Types
  **********************************************************************************************************************/
 
-// Controller SM controller instance
+// Controller SM controller instance.
 type Controller struct {
 	sync.Mutex
 
@@ -59,22 +59,22 @@ type Controller struct {
 	cancelFunction   context.CancelFunc
 }
 
-// URLTranslator translates URL from local to remote if required
+// URLTranslator translates URL from local to remote if required.
 type URLTranslator interface {
 	TranslateURL(isLocal bool, inURL string) (outURL string, err error)
 }
 
-// AlertSender sends alert
+// AlertSender sends alert.
 type AlertSender interface {
 	SendAlert(alert cloudprotocol.AlertItem) (err error)
 }
 
-// MonitoringSender sends monitoring data
+// MonitoringSender sends monitoring data.
 type MonitoringSender interface {
 	SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error)
 }
 
-// MessageSender sends messages to the cloud
+// MessageSender sends messages to the cloud.
 type MessageSender interface {
 	SendServiceNewState(correlationID, serviceID, state, checksum string) (err error)
 	SendServiceStateRequest(serviceID string, defaultState bool) (err error)
@@ -86,7 +86,7 @@ type MessageSender interface {
  * Public
  **********************************************************************************************************************/
 
-// New creates new SM controller
+// New creates new SM controller.
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
 	urlTranslator URLTranslator, insecure bool) (controller *Controller, err error) {
@@ -130,7 +130,7 @@ func New(
 	return controller, nil
 }
 
-// Close closes SM controller
+// Close closes SM controller.
 func (controller *Controller) Close() (err error) {
 	log.Debug("Close SM controller")
 
@@ -147,7 +147,7 @@ func (controller *Controller) Close() (err error) {
 	return nil
 }
 
-// GetUsersStatus returns SM users status
+// GetUsersStatus returns SM users status.
 func (controller *Controller) GetUsersStatus(users []string) (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
 	controller.waitAndLock()
@@ -167,7 +167,7 @@ func (controller *Controller) GetUsersStatus(users []string) (
 	return servicesInfo, layersInfo, nil
 }
 
-// GetAllStatus returns SM all existing layers and services status
+// GetAllStatus returns SM all existing layers and services status.
 func (controller *Controller) GetAllStatus() (
 	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
 	controller.waitAndLock()
@@ -187,7 +187,7 @@ func (controller *Controller) GetAllStatus() (
 	return servicesInfo, layersInfo, nil
 }
 
-// CheckBoardConfig checks board config
+// CheckBoardConfig checks board config.
 func (controller *Controller) CheckBoardConfig(boardConfig boardconfig.BoardConfig) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -216,7 +216,7 @@ func (controller *Controller) CheckBoardConfig(boardConfig boardconfig.BoardConf
 	return nil
 }
 
-// SetBoardConfig sets board config
+// SetBoardConfig sets board config.
 func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -250,7 +250,7 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 	return nil
 }
 
-// InstallService requests to install servie
+// InstallService requests to install servie.
 func (controller *Controller) InstallService(users []string,
 	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
 	controller.waitAndLock()
@@ -277,7 +277,7 @@ func (controller *Controller) InstallService(users []string,
 	return stateChecksum, nil
 }
 
-// RemoveService remove service request
+// RemoveService remove service request.
 func (controller *Controller) RemoveService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -294,7 +294,7 @@ func (controller *Controller) RemoveService(users []string, serviceInfo cloudpro
 	return nil
 }
 
-// InstallLayer install layer request
+// InstallLayer install layer request.
 func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -320,7 +320,7 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFrom
 	return nil
 }
 
-// ServiceStateAcceptance handles service state acceptance
+// ServiceStateAcceptance handles service state acceptance.
 func (controller *Controller) ServiceStateAcceptance(
 	correlationID string, stateAcceptance cloudprotocol.StateAcceptance) (err error) {
 	controller.waitAndLock()
@@ -338,7 +338,7 @@ func (controller *Controller) ServiceStateAcceptance(
 	return nil
 }
 
-// SetServiceState sets service state
+// SetServiceState sets service state.
 func (controller *Controller) SetServiceState(users []string, state cloudprotocol.UpdateState) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -355,7 +355,7 @@ func (controller *Controller) SetServiceState(users []string, state cloudprotoco
 	return nil
 }
 
-// OverrideEnvVars overrides service env vars
+// OverrideEnvVars overrides service env vars.
 func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverrideEnvVars) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -372,7 +372,7 @@ func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverr
 	return nil
 }
 
-// GetSystemLog requests system log from SM
+// GetSystemLog requests system log from SM.
 func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSystemLog) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -389,7 +389,7 @@ func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSyste
 	return nil
 }
 
-// GetServiceLog requests service log from SM
+// GetServiceLog requests service log from SM.
 func (controller *Controller) GetServiceLog(logRequest cloudprotocol.RequestServiceLog) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
@@ -406,7 +406,7 @@ func (controller *Controller) GetServiceLog(logRequest cloudprotocol.RequestServ
 	return nil
 }
 
-// GetServiceCrashLog requests service crash log from SM
+// GetServiceCrashLog requests service crash log from SM.
 func (controller *Controller) GetServiceCrashLog(logRequest cloudprotocol.RequestServiceCrashLog) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
