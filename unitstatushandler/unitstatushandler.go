@@ -40,7 +40,7 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// Downloader downloads packages
+// Downloader downloads packages.
 type Downloader interface {
 	DownloadAndDecrypt(
 		ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
@@ -48,12 +48,12 @@ type Downloader interface {
 		certs []cloudprotocol.Certificate) (result downloader.Result, err error)
 }
 
-// StatusSender sends unit status to cloud
+// StatusSender sends unit status to cloud.
 type StatusSender interface {
 	SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error)
 }
 
-// BoardConfigUpdater updates board configuration
+// BoardConfigUpdater updates board configuration.
 type BoardConfigUpdater interface {
 	GetStatus() (boardConfigInfo cloudprotocol.BoardConfigInfo, err error)
 	GetBoardConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error)
@@ -61,14 +61,14 @@ type BoardConfigUpdater interface {
 	UpdateBoardConfig(configJSON json.RawMessage) (err error)
 }
 
-// FirmwareUpdater updates system components
+// FirmwareUpdater updates system components.
 type FirmwareUpdater interface {
 	GetStatus() (componentsInfo []cloudprotocol.ComponentInfo, err error)
 	UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (
 		status []cloudprotocol.ComponentInfo, err error)
 }
 
-// SoftwareUpdater updates services, layers
+// SoftwareUpdater updates services, layers.
 type SoftwareUpdater interface {
 	GetUsersStatus(users []string) (servicesInfo []cloudprotocol.ServiceInfo,
 		layersInfo []cloudprotocol.LayerInfo, err error)
@@ -78,7 +78,7 @@ type SoftwareUpdater interface {
 	InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error)
 }
 
-// Storage used to store unit status handler states
+// Storage used to store unit status handler states.
 type Storage interface {
 	SetFirmwareUpdateState(state json.RawMessage) (err error)
 	GetFirmwareUpdateState() (state json.RawMessage, err error)
@@ -86,7 +86,7 @@ type Storage interface {
 	GetSoftwareUpdateState() (state json.RawMessage, err error)
 }
 
-// Instance instance of unit status handler
+// Instance instance of unit status handler.
 type Instance struct {
 	sync.Mutex
 
@@ -119,7 +119,7 @@ type itemStatus []statusDescriptor
  * Public
  **********************************************************************************************************************/
 
-// New creates new unit status handler instance
+// New creates new unit status handler instance.
 func New(
 	cfg *config.Config,
 	boardConfigUpdater BoardConfigUpdater,
@@ -155,7 +155,7 @@ func New(
 	return instance, nil
 }
 
-// Close closes unit status handler
+// Close closes unit status handler.
 func (instance *Instance) Close() (err error) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -185,7 +185,7 @@ func (instance *Instance) Close() (err error) {
 	return aoserrors.Wrap(err)
 }
 
-// ProcessDesiredStatus processes desired status
+// ProcessDesiredStatus processes desired status.
 func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -207,7 +207,7 @@ func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.Decod
 	}
 }
 
-// SetUsers sets current users
+// SetUsers sets current users.
 func (instance *Instance) SetUsers(users []string) (err error) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -219,7 +219,7 @@ func (instance *Instance) SetUsers(users []string) (err error) {
 	return nil
 }
 
-// SendUnitStatus sends unit status
+// SendUnitStatus sends unit status.
 func (instance *Instance) SendUnitStatus() (err error) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -312,7 +312,7 @@ func (instance *Instance) SendUnitStatus() (err error) {
 	return nil
 }
 
-// GetFOTAStatusChannel returns FOTA status channels
+// GetFOTAStatusChannel returns FOTA status channels.
 func (instance *Instance) GetFOTAStatusChannel() (channel <-chan cmserver.UpdateFOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -320,7 +320,7 @@ func (instance *Instance) GetFOTAStatusChannel() (channel <-chan cmserver.Update
 	return instance.firmwareManager.statusChannel
 }
 
-// GetSOTAStatusChannel returns SOTA status channel
+// GetSOTAStatusChannel returns SOTA status channel.
 func (instance *Instance) GetSOTAStatusChannel() (channel <-chan cmserver.UpdateSOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -328,7 +328,7 @@ func (instance *Instance) GetSOTAStatusChannel() (channel <-chan cmserver.Update
 	return instance.softwareManager.statusChannel
 }
 
-// GetFOTAStatus returns FOTA current status
+// GetFOTAStatus returns FOTA current status.
 func (instance *Instance) GetFOTAStatus() (status cmserver.UpdateFOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -336,7 +336,7 @@ func (instance *Instance) GetFOTAStatus() (status cmserver.UpdateFOTAStatus) {
 	return instance.firmwareManager.getCurrentStatus()
 }
 
-// GetSOTAStatus returns SOTA current status
+// GetSOTAStatus returns SOTA current status.
 func (instance *Instance) GetSOTAStatus() (status cmserver.UpdateSOTAStatus) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -344,7 +344,7 @@ func (instance *Instance) GetSOTAStatus() (status cmserver.UpdateSOTAStatus) {
 	return instance.softwareManager.getCurrentStatus()
 }
 
-// StartFOTAUpdate triggers FOTA update
+// StartFOTAUpdate triggers FOTA update.
 func (instance *Instance) StartFOTAUpdate() (err error) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -352,7 +352,7 @@ func (instance *Instance) StartFOTAUpdate() (err error) {
 	return instance.firmwareManager.startUpdate()
 }
 
-// StartSOTAUpdate triggers SOTA update
+// StartSOTAUpdate triggers SOTA update.
 func (instance *Instance) StartSOTAUpdate() (err error) {
 	instance.Lock()
 	defer instance.Unlock()

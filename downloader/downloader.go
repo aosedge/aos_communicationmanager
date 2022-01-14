@@ -60,13 +60,13 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// CryptoContext interface to access crypto functions
+// CryptoContext interface to access crypto functions.
 type CryptoContext interface {
 	ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (symmetricContext fcrypt.SymmetricContextInterface, err error)
 	CreateSignContext() (signContext fcrypt.SignContextInterface, err error)
 }
 
-// Downloader instance
+// Downloader instance.
 type Downloader struct {
 	sync.Mutex
 
@@ -84,7 +84,7 @@ type Downloader struct {
 	downloadSize       int64
 }
 
-// AlertSender provdes alert sender interface
+// AlertSender provdes alert sender interface.
 type AlertSender interface {
 	SendDownloadStartedAlert(downloadStatus alerts.DownloadStatus)
 	SendDownloadFinishedAlert(downloadStatus alerts.DownloadStatus, code int)
@@ -97,7 +97,7 @@ type AlertSender interface {
 * Public
 ***********************************************************************************************************************/
 
-// New creates new downloader object
+// New creates new downloader object.
 func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (
 	downloader *Downloader, err error) {
 	log.Debug("Create downloader instance")
@@ -131,7 +131,7 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 	return downloader, nil
 }
 
-// DownloadAndDecrypt downloads, decrypts and verifies package
+// DownloadAndDecrypt downloads, decrypts and verifies package.
 func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result Result, err error) {
 	downloader.Lock()

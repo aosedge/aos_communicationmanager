@@ -52,18 +52,18 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// CursorStorage provides API to set and get journal cursor
+// CursorStorage provides API to set and get journal cursor.
 type CursorStorage interface {
 	SetJournalCursor(cursor string) (err error)
 	GetJournalCursor() (cursor string, err error)
 }
 
-// Sender sends alerts to the cloud
+// Sender sends alerts to the cloud.
 type Sender interface {
 	SendAlerts(alerts cloudprotocol.Alerts) (err error)
 }
 
-// Alerts instance
+// Alerts instance.
 type Alerts struct {
 	sync.Mutex
 
@@ -82,7 +82,7 @@ type Alerts struct {
 	cancelFunction context.CancelFunc
 }
 
-// DownloadStatus download status structure
+// DownloadStatus download status structure.
 type DownloadStatus struct {
 	Source          string
 	URL             string
@@ -95,7 +95,7 @@ type DownloadStatus struct {
  * Public
  **********************************************************************************************************************/
 
-// New creates new alerts object
+// New creates new alerts object.
 func New(config *config.Config, sender Sender, cursorStorage CursorStorage) (instance *Alerts, err error) {
 	log.Debug("Create alerts instance")
 
@@ -148,7 +148,7 @@ func New(config *config.Config, sender Sender, cursorStorage CursorStorage) (ins
 	return instance, nil
 }
 
-// SendDownloadStartedAlert sends download started status alert
+// SendDownloadStartedAlert sends download started status alert.
 func (instance *Alerts) SendDownloadStartedAlert(downloadStatus DownloadStatus) {
 	message := "Download started"
 	payload := instance.prepareDownloadAlert(downloadStatus, message)
@@ -156,7 +156,7 @@ func (instance *Alerts) SendDownloadStartedAlert(downloadStatus DownloadStatus) 
 	instance.sendDownloadAlert(downloadStatus.Source, payload)
 }
 
-// SendDownloadFinishedAlert sends download finished status alert
+// SendDownloadFinishedAlert sends download finished status alert.
 func (instance *Alerts) SendDownloadFinishedAlert(downloadStatus DownloadStatus, code int) {
 	message := "Download finished code: " + strconv.Itoa(code)
 	payload := instance.prepareDownloadAlert(downloadStatus, message)
@@ -164,7 +164,7 @@ func (instance *Alerts) SendDownloadFinishedAlert(downloadStatus DownloadStatus,
 	instance.sendDownloadAlert(downloadStatus.Source, payload)
 }
 
-// SendDownloadInterruptedAlert sends download interrupted status alert
+// SendDownloadInterruptedAlert sends download interrupted status alert.
 func (instance *Alerts) SendDownloadInterruptedAlert(downloadStatus DownloadStatus, reason string) {
 	message := "Download interrupted reason: " + reason
 	payload := instance.prepareDownloadAlert(downloadStatus, message)
@@ -172,7 +172,7 @@ func (instance *Alerts) SendDownloadInterruptedAlert(downloadStatus DownloadStat
 	instance.sendDownloadAlert(downloadStatus.Source, payload)
 }
 
-// SendDownloadResumedAlert sends download resumed status alert
+// SendDownloadResumedAlert sends download resumed status alert.
 func (instance *Alerts) SendDownloadResumedAlert(downloadStatus DownloadStatus, reason string) {
 	message := "Download resumed reason: " + reason
 	payload := instance.prepareDownloadAlert(downloadStatus, message)
@@ -180,7 +180,7 @@ func (instance *Alerts) SendDownloadResumedAlert(downloadStatus DownloadStatus, 
 	instance.sendDownloadAlert(downloadStatus.Source, payload)
 }
 
-// SendDownloadStatusAlert sends download status alert
+// SendDownloadStatusAlert sends download status alert.
 func (instance *Alerts) SendDownloadStatusAlert(downloadStatus DownloadStatus) {
 	message := "Download status"
 	payload := instance.prepareDownloadAlert(downloadStatus, message)
@@ -188,7 +188,7 @@ func (instance *Alerts) SendDownloadStatusAlert(downloadStatus DownloadStatus) {
 	instance.sendDownloadAlert(downloadStatus.Source, payload)
 }
 
-// SendResourceAlert sends resource alert
+// SendResourceAlert sends resource alert.
 func (instance *Alerts) SendResourceAlert(source, resource string, time time.Time, value uint64) {
 	log.WithFields(log.Fields{
 		"timestamp": time,
@@ -208,14 +208,14 @@ func (instance *Alerts) SendResourceAlert(source, resource string, time time.Tim
 	})
 }
 
-// SendAlert sends alert
+// SendAlert sends alert.
 func (instance *Alerts) SendAlert(alert cloudprotocol.AlertItem) (err error) {
 	instance.addAlert(alert)
 
 	return nil
 }
 
-// Close closes logging
+// Close closes logging.
 func (instance *Alerts) Close() {
 	log.Debug("Close alerts instance")
 

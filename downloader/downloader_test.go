@@ -109,6 +109,7 @@ func init() {
 /***********************************************************************************************************************
  * Main
  **********************************************************************************************************************/
+
 func TestMain(m *testing.M) {
 	var err error
 
@@ -238,7 +239,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 }
 
 // The test checks if available disk size is counted properly after resuming
-// download and takes into account files that already have been partially downloaded
+// download and takes into account files that already have been partially downloaded.
 func TestAvailableSize(t *testing.T) {
 	alertsCnt = alertsCounter{}
 
@@ -804,7 +805,7 @@ func generateFile(fileName string, size uint64) (err error) {
 	return nil
 }
 
-// Set traffic limit for interface
+// Set traffic limit for interface.
 func setWondershaperLimit(iface string, limit string) (err error) {
 	if output, err := exec.Command("wondershaper", "-a", iface, "-d", limit).CombinedOutput(); err != nil {
 		return aoserrors.Errorf("%s (%s)", err, (string(output)))

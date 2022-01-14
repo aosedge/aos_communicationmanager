@@ -35,7 +35,7 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// FileServer file server instance
+// FileServer file server instance.
 type FileServer struct {
 	server *http.Server
 }
@@ -53,7 +53,7 @@ const (
  * public
  **********************************************************************************************************************/
 
-// New creates file server
+// New creates file server.
 func New(cfg *config.Config) (fileServer *FileServer, err error) {
 	if err = os.MkdirAll(cfg.Downloader.DecryptDir, 0o755); err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -73,7 +73,7 @@ func New(cfg *config.Config) (fileServer *FileServer, err error) {
 	return fileServer, nil
 }
 
-// Close closes file server
+// Close closes file server.
 func (fileServer *FileServer) Close() (err error) {
 	if fileServer.server != nil {
 		if shutdownErr := fileServer.server.Shutdown(context.Background()); shutdownErr != nil {
@@ -92,7 +92,7 @@ func (fileServer *FileServer) Close() (err error) {
 	return aoserrors.Wrap(err)
 }
 
-// TranslateURL convert image path url (file:// or http://)
+// TranslateURL convert image path url (file:// or http://).
 func (fileServer *FileServer) TranslateURL(isLocal bool, inURL string) (outURL string, err error) {
 	if !isLocal {
 		if fileServer.server == nil {

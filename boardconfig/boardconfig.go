@@ -40,7 +40,7 @@ type FileSystemMount struct {
 	Options     []string `json:"options,omitempty"`
 }
 
-// DeviceResource describes Device available resource
+// DeviceResource describes Device available resource.
 type DeviceResource struct {
 	Name        string   `json:"name"`
 	SharedCount int      `json:"sharedCount,omitempty"`
@@ -48,13 +48,13 @@ type DeviceResource struct {
 	HostDevices []string `json:"hostDevices"`
 }
 
-// Host struct represent entry in /etc/hosts
+// Host struct represent entry in /etc/hosts.
 type Host struct {
 	IP       string `json:"ip"`
 	Hostname string `json:"hostname"`
 }
 
-// BoardResource describes other board resource
+// BoardResource describes other board resource.
 type BoardResource struct {
 	Name   string            `json:"name"`
 	Groups []string          `json:"groups,omitempty"`
@@ -63,7 +63,7 @@ type BoardResource struct {
 	Hosts  []Host            `json:"hosts,omitempty"`
 }
 
-// BoardConfig resources that are proviced by Cloud for using at AOS services
+// BoardConfig resources that are proviced by Cloud for using at AOS services.
 type BoardConfig struct {
 	FormatVersion uint64           `json:"formatVersion"`
 	VendorVersion string           `json:"vendorVersion"`
@@ -71,7 +71,7 @@ type BoardConfig struct {
 	Resources     []BoardResource  `json:"resources"`
 }
 
-// Instance board config instance
+// Instance board config instance.
 type Instance struct {
 	sync.Mutex
 
@@ -81,7 +81,7 @@ type Instance struct {
 	boardConfigError error
 }
 
-// Client client board config interface
+// Client client board config interface.
 type Client interface {
 	CheckBoardConfig(boardConfig BoardConfig) (err error)
 	SetBoardConfig(boardConfig BoardConfig) (err error)
@@ -91,7 +91,7 @@ type Client interface {
  * Public
  **********************************************************************************************************************/
 
-// New creates new board config instance
+// New creates new board config instance.
 func New(cfg *config.Config, client Client) (instance *Instance, err error) {
 	instance = &Instance{
 		client:          client,
@@ -103,7 +103,7 @@ func New(cfg *config.Config, client Client) (instance *Instance, err error) {
 	return instance, nil
 }
 
-// GetStatus returns board config status
+// GetStatus returns board config status.
 func (instance *Instance) GetStatus() (boardConfigInfo cloudprotocol.BoardConfigInfo, err error) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -125,7 +125,7 @@ func (instance *Instance) GetStatus() (boardConfigInfo cloudprotocol.BoardConfig
 	return boardConfigInfo, nil
 }
 
-// GetBoardConfigVersion returns board config version
+// GetBoardConfigVersion returns board config version.
 func (instance *Instance) GetBoardConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error) {
 	boardConfig := BoardConfig{VendorVersion: "unknown"}
 
@@ -136,7 +136,7 @@ func (instance *Instance) GetBoardConfigVersion(configJSON json.RawMessage) (ven
 	return boardConfig.VendorVersion, nil
 }
 
-// CheckBoardConfig checks board config
+// CheckBoardConfig checks board config.
 func (instance *Instance) CheckBoardConfig(configJSON json.RawMessage) (vendorVersion string, err error) {
 	instance.Lock()
 	defer instance.Unlock()
@@ -154,7 +154,7 @@ func (instance *Instance) CheckBoardConfig(configJSON json.RawMessage) (vendorVe
 	return vendorVersion, nil
 }
 
-// UpdateBoardConfig updates board config
+// UpdateBoardConfig updates board config.
 func (instance *Instance) UpdateBoardConfig(configJSON json.RawMessage) (err error) {
 	instance.Lock()
 	defer instance.Unlock()

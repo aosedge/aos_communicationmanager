@@ -59,7 +59,7 @@ var errNotExist = errors.New("entry does not exist")
  * Types
  **********************************************************************************************************************/
 
-// Database structure with database information
+// Database structure with database information.
 type Database struct {
 	sql *sql.DB
 }
@@ -68,7 +68,7 @@ type Database struct {
  * Public
  **********************************************************************************************************************/
 
-// New creates new database handle
+// New creates new database handle.
 func New(config *config.Config) (db *Database, err error) {
 	fileName := path.Join(config.WorkingDir, dbFileName)
 
@@ -120,7 +120,7 @@ func New(config *config.Config) (db *Database, err error) {
 	return db, nil
 }
 
-// SetJournalCursor stores system logger cursor
+// SetJournalCursor stores system logger cursor.
 func (db *Database) SetJournalCursor(cursor string) (err error) {
 	result, err := db.sql.Exec("UPDATE config SET cursor = ?", cursor)
 	if err != nil {
@@ -139,7 +139,7 @@ func (db *Database) SetJournalCursor(cursor string) (err error) {
 	return nil
 }
 
-// GetJournalCursor retrieves logger cursor
+// GetJournalCursor retrieves logger cursor.
 func (db *Database) GetJournalCursor() (cursor string, err error) {
 	stmt, err := db.sql.Prepare("SELECT cursor FROM config")
 	if err != nil {
@@ -159,7 +159,7 @@ func (db *Database) GetJournalCursor() (cursor string, err error) {
 	return cursor, nil
 }
 
-// SetComponentsUpdateInfo store update data for update managers
+// SetComponentsUpdateInfo store update data for update managers.
 func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComponent) (err error) {
 	dataJSON, err := json.Marshal(&updateInfo)
 	if err != nil {
@@ -183,7 +183,7 @@ func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComp
 	return nil
 }
 
-// GetComponentsUpdateInfo returns update data for system components
+// GetComponentsUpdateInfo returns update data for system components.
 func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemComponent, err error) {
 	stmt, err := db.sql.Prepare("SELECT componentsUpdateInfo FROM config")
 	if err != nil {
@@ -216,7 +216,7 @@ func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemC
 	return updateInfo, nil
 }
 
-// SetFirmwareUpdateState sets FOTA update state
+// SetFirmwareUpdateState sets FOTA update state.
 func (db *Database) SetFirmwareUpdateState(state json.RawMessage) (err error) {
 	result, err := db.sql.Exec("UPDATE config SET fotaUpdateState = ?", state)
 	if err != nil {
@@ -235,7 +235,7 @@ func (db *Database) SetFirmwareUpdateState(state json.RawMessage) (err error) {
 	return nil
 }
 
-// GetFirmwareUpdateState returns FOTA update state
+// GetFirmwareUpdateState returns FOTA update state.
 func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) {
 	stmt, err := db.sql.Prepare("SELECT fotaUpdateState FROM config")
 	if err != nil {
@@ -254,7 +254,7 @@ func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) 
 	return state, nil
 }
 
-// SetSoftwareUpdateState sets SOTA update state
+// SetSoftwareUpdateState sets SOTA update state.
 func (db *Database) SetSoftwareUpdateState(state json.RawMessage) (err error) {
 	result, err := db.sql.Exec("UPDATE config SET sotaUpdateState = ?", state)
 	if err != nil {
@@ -273,7 +273,7 @@ func (db *Database) SetSoftwareUpdateState(state json.RawMessage) (err error) {
 	return nil
 }
 
-// GetSoftwareUpdateState returns SOTA update state
+// GetSoftwareUpdateState returns SOTA update state.
 func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) {
 	stmt, err := db.sql.Prepare("SELECT sotaUpdateState FROM config")
 	if err != nil {
@@ -292,7 +292,7 @@ func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) 
 	return state, nil
 }
 
-// Close closes database
+// Close closes database.
 func (db *Database) Close() {
 	db.sql.Close()
 }

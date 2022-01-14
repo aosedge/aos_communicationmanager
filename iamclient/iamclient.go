@@ -50,7 +50,7 @@ const usersChangedChannelSize = 1
  * Types
  **********************************************************************************************************************/
 
-// Client IAM client instance
+// Client IAM client instance.
 type Client struct {
 	sync.Mutex
 
@@ -67,13 +67,13 @@ type Client struct {
 	usersChangedChannel chan []string
 }
 
-// Sender provides API to send messages to the cloud
+// Sender provides API to send messages to the cloud.
 type Sender interface {
 	SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error)
 	SendInstallCertsConfirmation(confirmations []cloudprotocol.InstallCertData) (err error)
 }
 
-// CertificateProvider provides certificate info
+// CertificateProvider provides certificate info.
 type CertificateProvider interface {
 	GetCertSerial(certURL string) (serial string, err error)
 }
@@ -82,7 +82,7 @@ type CertificateProvider interface {
  * Public
  **********************************************************************************************************************/
 
-// New creates new IAM client
+// New creates new IAM client.
 func New(config *config.Config, sender Sender, insecure bool) (client *Client, err error) {
 	log.Debug("Connecting to IAM...")
 
@@ -140,12 +140,12 @@ func New(config *config.Config, sender Sender, insecure bool) (client *Client, e
 	return client, nil
 }
 
-// GetSystemID returns system ID
+// GetSystemID returns system ID.
 func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
 }
 
-// GetUsers returns current users
+// GetUsers returns current users.
 func (client *Client) GetUsers() (users []string) {
 	client.Lock()
 	defer client.Unlock()
@@ -153,12 +153,12 @@ func (client *Client) GetUsers() (users []string) {
 	return client.users
 }
 
-// UsersChangedChannel returns users changed channel
+// UsersChangedChannel returns users changed channel.
 func (client *Client) UsersChangedChannel() (channel <-chan []string) {
 	return client.usersChangedChannel
 }
 
-// RenewCertificatesNotification renew certificates notification
+// RenewCertificatesNotification renew certificates notification.
 func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloudprotocol.RenewCertData) (err error) {
 	var newCerts []cloudprotocol.IssueCertData
 
@@ -191,7 +191,7 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 	return nil
 }
 
-// InstallCertificates applies new issued certificates
+// InstallCertificates applies new issued certificates.
 func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertData,
 	certProvider CertificateProvider) (err error) {
 	var confirmations []cloudprotocol.InstallCertData
@@ -233,7 +233,7 @@ func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertDat
 	return nil
 }
 
-// GetCertificate gets certificate by issuer
+// GetCertificate gets certificate by issuer.
 func (client *Client) GetCertificate(
 	certType string, issuer []byte, serial string) (certURL, keyURL string, err error) {
 	log.WithFields(log.Fields{
@@ -257,7 +257,7 @@ func (client *Client) GetCertificate(
 	return response.CertUrl, response.KeyUrl, nil
 }
 
-// Close closes IAM client
+// Close closes IAM client.
 func (client *Client) Close() (err error) {
 	if client.connection != nil {
 		client.closeChannel <- struct{}{}

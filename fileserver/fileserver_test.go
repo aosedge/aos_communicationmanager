@@ -135,7 +135,7 @@ func TestFileServer(t *testing.T) {
 	// Write the body to file
 	_, err = io.Copy(&buffer, resp.Body)
 	if err != nil {
-		t.Fatalf("Can't get data from responce: %s", err)
+		t.Fatalf("Can't get data from response: %s", err)
 	}
 
 	if buffer.String() != "Hello fileserver" {

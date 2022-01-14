@@ -101,7 +101,7 @@ type testUpgradeFileInfo struct {
 	Signs    *testUpgradeSigns
 }
 
-// UpgradeMetadata upgrade metadata
+// UpgradeMetadata upgrade metadata.
 type testUpgradeMetadata struct {
 	Data              []testUpgradeFileInfo         `json:"data"`
 	CertificateChains []testUpgradeCertificateChain `json:"certificateChains,omitempty"`
@@ -125,12 +125,12 @@ type testCertificateProvider struct {
 var (
 	// Symmetric encryption done with
 	// openssl aes-128-cbc -a -e -p -nosalt -in plaintext.sh -out encrypted.txt
-	// echo '6B86B273FF34FCE19D6B804EFF5A3F57' | perl -e 'print pack "H*", <STDIN>' > aes.key
+	// echo '6B86B273FF34FCE19D6B804EFF5A3F57' | perl -e 'print pack "H*", <STDIN>' > aes.key.
 	ClearAesKey = "6B86B273FF34FCE19D6B804EFF5A3F57"
 	UsedIV      = "47ADA4EAA22F1D49C01E52DDB7875B4B"
 
 	// openssl rsautl -encrypt -certin -inkey ./offline_certificate.pem -in aes.key -out aes.key.enc
-	// base64 ./aes.key.enc
+	// base64 ./aes.key.enc.
 	EncryptedKeyPkcs = `Tu2LjQY142xBey2iPNTE1r0UmH/059IHFelnvbdkUbtkwh23H6T5UNXmEweWzuImv10Bo+cxDq0c
 69+hkj81PYLdnVTefiNGvyVAlta1se4uTeA28hQuGu1Egsqjsu/zagfZImTDZvysWQ5+u5Ucku0i
 hTtR3E31D+CtwQeBoS4o23a8VW2m8p+wHt3wsKP1ekESvKZcvVNDQjD/oVho+TR03Eeqn8R4U05v
@@ -138,7 +138,7 @@ idEIjmTK1HqJoy3sGQei1PRFHxN2QMHcdwmt70l33Z39qWA5K5UJAR+lkgL8aH3NpLeFrhJxp/X5
 R6sYwcoRj4QBrGzAX2BAQ3l/eRpT8ptU/dGc4A==`
 
 	// openssl rsautl -encrypt -oaep -certin -inkey ./offline_certificate.pem -in aes.key -out aes.key.oaep.enc
-	// base64 ./aes.key.oaep.enc
+	// base64 ./aes.key.oaep.enc.
 	EncryptedKeyOaep = `lRCdwX8okje6nlBdMZyythM6/CTWZvpRILw7f9GnoWUZH2B0SblHNYtryf8RPONef8UgZ0rSfpnw
 Ezke/wGWZ7OdMtXr9vLz5t0AlxwUZFq9/WcstWg4UwB11fIDZkZN/pnDL2BB0/iweJfLHteUtz3A
 YvghkaCW2FrFXMeEnaT9b+YRPi8RTFeg8HAJ8IzLx20dGMA6eAqFI9q0ksIV+6tZwKDAeEM6ywpH
@@ -837,7 +837,7 @@ func TestInvalidParams(t *testing.T) {
 	}
 }
 
-// For testing only
+// For testing only.
 func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
 	iv, err := hex.DecodeString(UsedIV)
 	if err != nil {

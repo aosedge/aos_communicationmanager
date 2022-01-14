@@ -39,7 +39,7 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-// Update states
+// Update states.
 const (
 	NoUpdate UpdateState = iota
 	Downloading
@@ -55,23 +55,23 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// UpdateState type for update state
+// UpdateState type for update state.
 type UpdateState int
 
-// UpdateStatus represents SOTA/FOTA status
+// UpdateStatus represents SOTA/FOTA status.
 type UpdateStatus struct {
 	State UpdateState
 	Error string
 }
 
-// UpdateFOTAStatus FOTA update status for update scheduler service
+// UpdateFOTAStatus FOTA update status for update scheduler service.
 type UpdateFOTAStatus struct {
 	Components  []cloudprotocol.ComponentInfo
 	BoardConfig *cloudprotocol.BoardConfigInfo
 	UpdateStatus
 }
 
-// UpdateSOTAStatus SOTA update status for update scheduler service
+// UpdateSOTAStatus SOTA update status for update scheduler service.
 type UpdateSOTAStatus struct {
 	InstallServices []cloudprotocol.ServiceInfo
 	RemoveServices  []cloudprotocol.ServiceInfo
@@ -80,7 +80,7 @@ type UpdateSOTAStatus struct {
 	UpdateStatus
 }
 
-// UpdateHandler interface for SOTA/FOTA update
+// UpdateHandler interface for SOTA/FOTA update.
 type UpdateHandler interface {
 	GetFOTAStatusChannel() (channel <-chan UpdateFOTAStatus)
 	GetSOTAStatusChannel() (channel <-chan UpdateSOTAStatus)
@@ -90,7 +90,7 @@ type UpdateHandler interface {
 	StartSOTAUpdate() (err error)
 }
 
-// CMServer CM server instance
+// CMServer CM server instance.
 type CMServer struct {
 	grpcServer *grpc.Server
 	listener   net.Listener
@@ -107,7 +107,7 @@ type CMServer struct {
  * Public
  **********************************************************************************************************************/
 
-// New creates new IAM server instance
+// New creates new IAM server instance.
 func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMServer, err error) {
 	server = &CMServer{
 		currentFOTAStatus: handler.GetFOTAStatus(),
@@ -155,7 +155,7 @@ func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMSe
 	return server, nil
 }
 
-// Close stops CM server
+// Close stops CM server.
 func (server *CMServer) Close() {
 	log.Debug("Close update scheduler gRPC server")
 
@@ -172,7 +172,7 @@ func (server *CMServer) Close() {
 	server.stopChannel <- true
 }
 
-// SubscribeNotifications sunscribes on SOTA FOTA packages status changes
+// SubscribeNotifications sunscribes on SOTA FOTA packages status changes.
 func (server *CMServer) SubscribeNotifications(
 	req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer) (err error) {
 	log.Debug("New CM client subscribed to schedule update notification")
@@ -230,12 +230,12 @@ func (server *CMServer) SubscribeNotifications(
 	return nil
 }
 
-// StartFOTAUpdate triggers FOTA update
+// StartFOTAUpdate triggers FOTA update.
 func (server *CMServer) StartFOTAUpdate(ctx context.Context, req *empty.Empty) (ret *empty.Empty, err error) {
 	return &emptypb.Empty{}, aoserrors.Wrap(server.updatehandler.StartFOTAUpdate())
 }
 
-// StartSOTAUpdate triggers SOTA update
+// StartSOTAUpdate triggers SOTA update.
 func (server *CMServer) StartSOTAUpdate(ctx context.Context, req *empty.Empty) (ret *empty.Empty, err error) {
 	return &emptypb.Empty{}, aoserrors.Wrap(server.updatehandler.StartSOTAUpdate())
 }
