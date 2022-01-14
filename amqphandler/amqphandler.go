@@ -589,69 +589,73 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 				continue
 			}
 
-			messageType, ok := messageMap[incomingMsg.Header.MessageType]
-			if !ok {
-				log.Warnf("AMQP unsupported message type: %s", incomingMsg.Header.MessageType)
-				continue
-			}
-
-			data := messageType()
-
-			if err := json.Unmarshal(rawData, data); err != nil {
-				log.Errorf("Can't parse message body: %s", err)
-				continue
-			}
-
-			switch incomingMsg.Header.MessageType {
-			case cloudprotocol.DesiredStatusType:
-				encodedStatus, ok := data.(*cloudprotocol.DesiredStatus)
-				if !ok {
-					log.Error("Wrong data type: expect desired status")
-					continue
-				}
-
-				decodedStatus, err := handler.decodeDesiredStatus(encodedStatus)
-				if err != nil {
-					log.Errorf("Can't decode desired status: %s", err)
-					continue
-				}
-
-				data = decodedStatus
-
-			case cloudprotocol.RenewCertsNotificationType:
-				notification, ok := data.(*cloudprotocol.RenewCertsNotification)
-				if !ok {
-					log.Error("Wrong data type: expect renew certificate notification")
-					continue
-				}
-
-				notificationWithPwd, err := handler.decodeRenewCertsNotification(notification)
-				if err != nil {
-					log.Errorf("Can't decode renew certificate notification: %s", err)
-					continue
-				}
-
-				data = notificationWithPwd
-
-			case cloudprotocol.OverrideEnvVarsType:
-				encodedEnvVars, ok := data.(*cloudprotocol.OverrideEnvVars)
-				if !ok {
-					log.Error("Wrong data type: expect override env")
-					continue
-				}
-
-				decodedEnvVars, err := handler.decodeEnvVars(encodedEnvVars)
-				if err != nil {
-					log.Errorf("Can't decode env vars: %s", err)
-					continue
-				}
-
-				data = decodedEnvVars
-			}
-
-			handler.MessageChannel <- Message{delivery.CorrelationId, data}
+			handler.processReceivedMessages(rawData, delivery.CorrelationId, incomingMsg.Header.MessageType)
 		}
 	}
+}
+
+func (handler *AmqpHandler) processReceivedMessages(rawData json.RawMessage, correlationID, messageType string) {
+	messageTypeFunc, ok := messageMap[messageType]
+	if !ok {
+		log.Warnf("AMQP unsupported message type: %s", messageType)
+		return
+	}
+
+	decodedData := messageTypeFunc()
+
+	if err := json.Unmarshal(rawData, decodedData); err != nil {
+		log.Errorf("Can't parse message body: %s", err)
+		return
+	}
+
+	switch messageType {
+	case cloudprotocol.DesiredStatusType:
+		encodedStatus, ok := decodedData.(*cloudprotocol.DesiredStatus)
+		if !ok {
+			log.Error("Wrong data type: expect desired status")
+			return
+		}
+
+		decodedStatus, err := handler.decodeDesiredStatus(encodedStatus)
+		if err != nil {
+			log.Errorf("Can't decode desired status: %s", err)
+			return
+		}
+
+		decodedData = decodedStatus
+
+	case cloudprotocol.RenewCertsNotificationType:
+		notification, ok := decodedData.(*cloudprotocol.RenewCertsNotification)
+		if !ok {
+			log.Error("Wrong data type: expect renew certificate notification")
+			return
+		}
+
+		notificationWithPwd, err := handler.decodeRenewCertsNotification(notification)
+		if err != nil {
+			log.Errorf("Can't decode renew certificate notification: %s", err)
+			return
+		}
+
+		decodedData = notificationWithPwd
+
+	case cloudprotocol.OverrideEnvVarsType:
+		encodedEnvVars, ok := decodedData.(*cloudprotocol.OverrideEnvVars)
+		if !ok {
+			log.Error("Wrong data type: expect override env")
+			return
+		}
+
+		decodedEnvVars, err := handler.decodeEnvVars(encodedEnvVars)
+		if err != nil {
+			log.Errorf("Can't decode env vars: %s", err)
+			return
+		}
+
+		decodedData = decodedEnvVars
+	}
+
+	handler.MessageChannel <- Message{correlationID, decodedData}
 }
 
 func (handler *AmqpHandler) decodeDesiredStatus(
