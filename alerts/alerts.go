@@ -264,60 +264,9 @@ func (instance *Alerts) setupJournal(ctx context.Context) (err error) {
 		return aoserrors.New("cursor storage is not set")
 	}
 
-	journal, err := sdjournal.NewJournal()
+	journal, err := instance.prepareJournal()
 	if err != nil {
 		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.AddMatch("PRIORITY=0"); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.AddMatch("PRIORITY=1"); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.AddMatch("PRIORITY=2"); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.AddMatch("PRIORITY=3"); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.AddDisjunction(); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.AddMatch("_SYSTEMD_UNIT=init.scope"); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = journal.SeekTail(); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if _, err = journal.Previous(); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	cursor, err := instance.cursorStorage.GetJournalCursor()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if cursor != "" {
-		if err = journal.SeekCursor(cursor); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if _, err = journal.Next(); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	} else {
-		if err = instance.storeCurrentCursor(journal); err != nil {
-			return aoserrors.Wrap(err)
-		}
 	}
 
 	go func() {
@@ -357,6 +306,66 @@ func (instance *Alerts) setupJournal(ctx context.Context) (err error) {
 	}()
 
 	return nil
+}
+
+func (instance *Alerts) prepareJournal() (journal *sdjournal.Journal, err error) {
+	journal, err = sdjournal.NewJournal()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.AddMatch("PRIORITY=0"); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.AddMatch("PRIORITY=1"); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.AddMatch("PRIORITY=2"); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.AddMatch("PRIORITY=3"); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.AddDisjunction(); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.AddMatch("_SYSTEMD_UNIT=init.scope"); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err = journal.SeekTail(); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if _, err = journal.Previous(); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	cursor, err := instance.cursorStorage.GetJournalCursor()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if cursor != "" {
+		if err = journal.SeekCursor(cursor); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if _, err = journal.Next(); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+	} else {
+		if err = instance.storeCurrentCursor(journal); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+	}
+
+	return journal, nil
 }
 
 func (instance *Alerts) processJournal(journal *sdjournal.Journal) (err error) {
