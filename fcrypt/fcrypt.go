@@ -861,9 +861,11 @@ func (symmetricContext *SymmetricCipherContext) encryptFile(
 		return aoserrors.Wrap(err)
 	}
 
-	fileSize := inputFileStat.Size()
-	writtenSize := int64(0)
-	readSize := 0
+	var (
+		fileSize    = inputFileStat.Size()
+		writtenSize = int64(0)
+		readSize    int
+	)
 
 	if _, err = clearFile.Seek(0, io.SeekStart); err != nil {
 		return aoserrors.Wrap(err)
@@ -996,9 +998,10 @@ func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte
 }
 
 func (symmetricContext *SymmetricCipherContext) loadKey() (err error) {
-	var block cipher.Block
-
-	keySizeBits := 0
+	var (
+		block       cipher.Block
+		keySizeBits int
+	)
 
 	switch strings.ToUpper(symmetricContext.algName) {
 	case "AES128", "AES192", "AES256":
