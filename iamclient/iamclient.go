@@ -160,7 +160,7 @@ func (client *Client) UsersChangedChannel() (channel <-chan []string) {
 
 // RenewCertificatesNotification renew certificates notification.
 func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloudprotocol.RenewCertData) (err error) {
-	var newCerts []cloudprotocol.IssueCertData
+	newCerts := make([]cloudprotocol.IssueCertData, 0, len(certInfo))
 
 	for _, cert := range certInfo {
 		log.WithFields(log.Fields{
@@ -194,9 +194,9 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 // InstallCertificates applies new issued certificates.
 func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertData,
 	certProvider CertificateProvider) (err error) {
-	var confirmations []cloudprotocol.InstallCertData
+	confirmations := make([]cloudprotocol.InstallCertData, len(certInfo))
 
-	for _, cert := range certInfo {
+	for i, cert := range certInfo {
 		log.WithFields(log.Fields{"type": cert.Type}).Debug("Install certificate")
 
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -219,7 +219,7 @@ func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertDat
 			log.WithFields(log.Fields{"type": cert.Type}).Errorf("Can't install certificate: %s", err)
 		}
 
-		confirmations = append(confirmations, certConfirmation)
+		confirmations[i] = certConfirmation
 	}
 
 	if len(confirmations) == 0 {
