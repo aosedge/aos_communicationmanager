@@ -39,22 +39,22 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// ResourceAlertSender interface to send resource alerts
+// ResourceAlertSender interface to send resource alerts.
 type ResourceAlertSender interface {
 	SendResourceAlert(source, resource string, time time.Time, value uint64)
 }
 
-// TrafficMonitor provides traffic statistics
+// TrafficMonitor provides traffic statistics.
 type TrafficMonitor interface {
 	GetSystemTraffic() (inputTraffic, outputTraffic uint64, err error)
 }
 
-// Sender sends alerts to the cloud
+// Sender sends alerts to the cloud.
 type Sender interface {
 	SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error)
 }
 
-// Monitor instance
+// Monitor instance.
 type Monitor struct {
 	sync.Mutex
 
@@ -81,7 +81,7 @@ type Monitor struct {
  * Public
  **********************************************************************************************************************/
 
-// New creates new monitor instance
+// New creates new monitor instance.
 func New(config *config.Config, resourceAlerts ResourceAlertSender,
 	trafficMonitor TrafficMonitor, sender Sender) (monitor *Monitor, err error) {
 	log.Debug("Create monitor")
@@ -176,7 +176,7 @@ func New(config *config.Config, resourceAlerts ResourceAlertSender,
 	return monitor, nil
 }
 
-// SendMonitoringData sends monitoring data
+// SendMonitoringData sends monitoring data.
 func (monitor *Monitor) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error) {
 	monitor.Lock()
 	defer monitor.Unlock()
@@ -186,7 +186,7 @@ func (monitor *Monitor) SendMonitoringData(monitoringData cloudprotocol.Monitori
 	return nil
 }
 
-// Close closes monitor instance
+// Close closes monitor instance.
 func (monitor *Monitor) Close() {
 	log.Debug("Close monitor")
 
@@ -282,7 +282,7 @@ func (monitor *Monitor) processAlerts() {
 	}
 }
 
-// getSystemCPUUsage returns CPU usage in parcent
+// getSystemCPUUsage returns CPU usage in parcent.
 func getSystemCPUUsage() (cpuUse float64, err error) {
 	v, err := cpu.Percent(0, false)
 	if err != nil {
@@ -294,7 +294,7 @@ func getSystemCPUUsage() (cpuUse float64, err error) {
 	return cpuUse, nil
 }
 
-// getSystemRAMUsage returns RAM usage in bytes
+// getSystemRAMUsage returns RAM usage in bytes.
 func getSystemRAMUsage() (ram uint64, err error) {
 	v, err := mem.VirtualMemory()
 	if err != nil {
@@ -304,7 +304,7 @@ func getSystemRAMUsage() (ram uint64, err error) {
 	return v.Used, nil
 }
 
-// getSystemDiskUsage returns disc usage in bytes
+// getSystemDiskUsage returns disc usage in bytes.
 func getSystemDiskUsage(path string) (discUse uint64, err error) {
 	v, err := disk.Usage(path)
 	if err != nil {

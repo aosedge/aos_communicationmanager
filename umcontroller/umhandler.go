@@ -74,7 +74,7 @@ const (
  * Public
  **********************************************************************************************************************/
 
-// NewUmHandler create update manager connection handler
+// NewUmHandler create update manager connection handler.
 func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 	messageChannel chan umCtrlInternalMsg, state pb.UmState) (handler *umHandler, closeChannel chan bool, err error,
 ) {
@@ -138,7 +138,7 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 	return handler, handler.closeChannel, aoserrors.Wrap(err)
 }
 
-// Close close connection
+// Close close connection.
 func (handler *umHandler) Close() {
 	log.Debug("Close umhandler with UMID = ", handler.umID)
 	handler.closeChannel <- true
@@ -148,7 +148,7 @@ func (handler *umHandler) GetInitilState() (state string) {
 	return handler.initialUmState
 }
 
-// Close close connection
+// Close close connection.
 func (handler *umHandler) PrepareUpdate(prepareComponents []SystemComponent) (err error) {
 	log.Debug("PrepareUpdate for UMID ", handler.umID)
 

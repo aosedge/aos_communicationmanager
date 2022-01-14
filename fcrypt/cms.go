@@ -51,7 +51,7 @@ type asnOriginatorInfo struct {
 	Crls  asn1.RawValue `asn1:"optional,implicit,tag:1"`
 }
 
-// EncryptedContentInfo User-friendly structures
+// EncryptedContentInfo User-friendly structures.
 type EncryptedContentInfo struct {
 	ContentType                asn1.ObjectIdentifier
 	ContentEncryptionAlgorithm pkix.AlgorithmIdentifier
@@ -169,7 +169,7 @@ func decryptCMSKey(ktri *keyTransRecipientInfo, decrypter crypto.Decrypter) (sym
 	}
 
 	if ktri.KeyEncryptionAlgorithm.Parameters.Tag != asn1.TagNull {
-		return nil, aoserrors.New("extra paramaters for RSA algorithm found")
+		return nil, aoserrors.New("extra parameters for RSA algorithm found")
 	}
 
 	symmetrickey, err = decrypter.Decrypt(nil, ktri.EncryptedKey, nil)

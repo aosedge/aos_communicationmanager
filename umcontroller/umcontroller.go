@@ -35,12 +35,12 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// URLTranslator translates local URL to remote
+// URLTranslator translates local URL to remote.
 type URLTranslator interface {
 	TranslateURL(isLocal bool, inURL string) (outURL string, err error)
 }
 
-// Controller update managers controller
+// Controller update managers controller.
 type Controller struct {
 	storage       storage
 	server        *umCtrlServer
@@ -58,7 +58,7 @@ type Controller struct {
 	updateError error
 }
 
-// SystemComponent information about system component update
+// SystemComponent information about system component update.
 type SystemComponent struct {
 	ID            string `json:"id"`
 	VendorVersion string `json:"vendorVersion"`
@@ -123,7 +123,7 @@ const (
 	umStatusUpdate
 )
 
-// FSM states
+// FSM states.
 const (
 	stateInit                          = "init"
 	stateIdle                          = "idle"
@@ -138,7 +138,7 @@ const (
 	stateUpdateUmStatusOnRevert        = "updateUmStatusOnRevert"
 )
 
-// FSM events
+// FSM events.
 const (
 	evAllClientsConnected = "allClientsConnected"
 	evConnectionTimeout   = "connectionTimeout"
@@ -158,7 +158,7 @@ const (
 	evSystemReverted = "systemReverted"
 )
 
-// client sates
+// client sates.
 const (
 	umIdle     = "IDLE" // nolint // deadcode and varcheck
 	umPrepared = "PREPARED"
@@ -172,7 +172,7 @@ const connectionTimeout = 300 * time.Second
  * Public
  **********************************************************************************************************************/
 
-// New creates new update managers controller
+// New creates new update managers controller.
 func New(config *config.Config, storage storage, urlTranslator URLTranslator, insecure bool) (
 	umCtrl *Controller, err error) {
 	umCtrl = &Controller{
@@ -266,13 +266,13 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 	return umCtrl, nil
 }
 
-// Close close server
+// Close close server.
 func (umCtrl *Controller) Close() {
 	umCtrl.operable = false
 	umCtrl.stopChannel <- true
 }
 
-// GetStatus returns list of system components information
+// GetStatus returns list of system components information.
 func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
 	currentState := umCtrl.fsm.Current()
 	if currentState != stateInit {
@@ -284,7 +284,7 @@ func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err e
 	return umCtrl.currentComponents, nil
 }
 
-// UpdateComponents updates components
+// UpdateComponents updates components.
 func (umCtrl *Controller) UpdateComponents(
 	components []cloudprotocol.ComponentInfoFromCloud) (status []cloudprotocol.ComponentInfo, err error) {
 	log.Debug("Update components")
@@ -399,7 +399,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		umIDfound = true
 
 		if value.handler != nil {
-			log.Warn("Connection already availabe umID = ", umID)
+			log.Warn("Connection already available umID = ", umID)
 			value.handler.Close()
 		}
 

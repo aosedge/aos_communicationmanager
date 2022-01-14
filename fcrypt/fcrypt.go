@@ -59,13 +59,13 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// ReceiverInfo receiver info
+// ReceiverInfo receiver info.
 type ReceiverInfo struct {
 	Serial string
 	Issuer []byte
 }
 
-// CryptoSessionKeyInfo crypto session key info
+// CryptoSessionKeyInfo crypto session key info.
 type CryptoSessionKeyInfo struct {
 	SessionKey        []byte       `json:"sessionKey"`
 	SessionIV         []byte       `json:"sessionIv"`
@@ -74,7 +74,7 @@ type CryptoSessionKeyInfo struct {
 	ReceiverInfo      ReceiverInfo `json:"recipientInfo"`
 }
 
-// CryptoContext crypto context
+// CryptoContext crypto context.
 type CryptoContext struct {
 	rootCertPool  *x509.CertPool
 	tpmDevice     io.ReadWriteCloser
@@ -83,12 +83,12 @@ type CryptoContext struct {
 	certProvider  CertificateProvider
 }
 
-// SymmetricContextInterface interface for SymmetricCipherContext
+// SymmetricContextInterface interface for SymmetricCipherContext.
 type SymmetricContextInterface interface {
 	DecryptFile(ctx context.Context, encryptedFile, clearFile *os.File) (err error)
 }
 
-// SymmetricCipherContext symmetric cipher context
+// SymmetricCipherContext symmetric cipher context.
 type SymmetricCipherContext struct {
 	key         []byte
 	iv          []byte
@@ -99,21 +99,21 @@ type SymmetricCipherContext struct {
 	encrypter   cipher.BlockMode
 }
 
-// SignContext sign context
+// SignContext sign context.
 type SignContext struct {
 	cryptoContext         *CryptoContext
 	signCertificates      []certificateInfo
 	signCertificateChains []certificateChainInfo
 }
 
-// SignContextInterface interface for SignContext
+// SignContextInterface interface for SignContext.
 type SignContextInterface interface {
 	AddCertificate(fingerprint string, asn1Bytes []byte) (err error)
 	AddCertificateChain(name string, fingerprints []string) (err error)
 	VerifySign(ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error)
 }
 
-// CertificateProvider interface to get certificate
+// CertificateProvider interface to get certificate.
 type CertificateProvider interface {
 	GetCertificate(certType string, issuer []byte, serial string) (certURL, ketURL string, err error)
 }
@@ -137,7 +137,7 @@ type pkcs11Descriptor struct {
  * Public
  **********************************************************************************************************************/
 
-// New create context for crypto operations
+// New create context for crypto operations.
 func New(conf config.Crypt, provider CertificateProvider) (cryptoContext *CryptoContext, err error) {
 	// Create context
 	cryptoContext = &CryptoContext{
@@ -161,7 +161,7 @@ func New(conf config.Crypt, provider CertificateProvider) (cryptoContext *Crypto
 	return cryptoContext, nil
 }
 
-// Close closes crypto context
+// Close closes crypto context.
 func (cryptoContext *CryptoContext) Close() (err error) {
 	if cryptoContext.tpmDevice != nil {
 		if tpmErr := cryptoContext.tpmDevice.Close(); tpmErr != nil {
@@ -192,7 +192,7 @@ func (cryptoContext *CryptoContext) Close() (err error) {
 	return aoserrors.Wrap(err)
 }
 
-// GetOrganization returns online certificate origanizarion names
+// GetOrganization returns online certificate origanizarion names.
 func (cryptoContext *CryptoContext) GetOrganization() (names []string, err error) {
 	certURLStr, _, err := cryptoContext.certProvider.GetCertificate(onlineCertificate, nil, "")
 	if err != nil {
@@ -211,7 +211,7 @@ func (cryptoContext *CryptoContext) GetOrganization() (names []string, err error
 	return certs[0].Subject.Organization, nil
 }
 
-// GetCertSerial returns certificate serial number
+// GetCertSerial returns certificate serial number.
 func (cryptoContext *CryptoContext) GetCertSerial(certURL string) (serial string, err error) {
 	certs, err := cryptoContext.loadCertificateByURL(certURL)
 	if err != nil {
@@ -221,7 +221,7 @@ func (cryptoContext *CryptoContext) GetCertSerial(certURL string) (serial string
 	return fmt.Sprintf("%X", certs[0].SerialNumber), nil
 }
 
-// CreateSignContext creates sign context
+// CreateSignContext creates sign context.
 func (cryptoContext *CryptoContext) CreateSignContext() (signContext SignContextInterface, err error) {
 	if cryptoContext == nil || cryptoContext.rootCertPool == nil {
 		return nil, aoserrors.New("asymmetric context not initialized")
@@ -230,7 +230,7 @@ func (cryptoContext *CryptoContext) CreateSignContext() (signContext SignContext
 	return &SignContext{cryptoContext: cryptoContext}, nil
 }
 
-// GetTLSConfig Provides TLS configuration for HTTPS client
+// GetTLSConfig Provides TLS configuration for HTTPS client.
 func (cryptoContext *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) {
 	cfg = &tls.Config{MinVersion: tls.VersionTLS12}
 
@@ -260,7 +260,7 @@ func (cryptoContext *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) 
 	return cfg, nil
 }
 
-// DecryptMetadata decrypt envelope
+// DecryptMetadata decrypt envelope.
 func (cryptoContext *CryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
 	ci, err := unmarshallCMS(input)
 	if err != nil {
@@ -288,7 +288,7 @@ func (cryptoContext *CryptoContext) DecryptMetadata(input []byte) (output []byte
 	return output, aoserrors.New("can't decrypt metadata")
 }
 
-// ImportSessionKey function retrieves a symmetric key from crypto context
+// ImportSessionKey function retrieves a symmetric key from crypto context.
 func (cryptoContext *CryptoContext) ImportSessionKey(
 	keyInfo CryptoSessionKeyInfo) (symContext SymmetricContextInterface, err error) {
 	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(
@@ -358,7 +358,7 @@ func (cryptoContext *CryptoContext) ImportSessionKey(
 	return ctxSym, nil
 }
 
-// AddCertificate adds certificate to context
+// AddCertificate adds certificate to context.
 func (signContext *SignContext) AddCertificate(fingerprint string, asn1Bytes []byte) error {
 	fingerUpper := strings.ToUpper(fingerprint)
 
@@ -382,7 +382,7 @@ func (signContext *SignContext) AddCertificate(fingerprint string, asn1Bytes []b
 	return nil
 }
 
-// AddCertificateChain adds certificate chain to context
+// AddCertificateChain adds certificate chain to context.
 func (signContext *SignContext) AddCertificateChain(name string, fingerprints []string) error {
 	if len(fingerprints) == 0 {
 		return aoserrors.New("can't add certificate chain with empty fingerprint list")
@@ -401,7 +401,7 @@ func (signContext *SignContext) AddCertificateChain(name string, fingerprints []
 	return nil
 }
 
-// VerifySign verifies signature
+// VerifySign verifies signature.
 func (signContext *SignContext) VerifySign(
 	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error) {
 	if len(signContext.signCertificateChains) == 0 || len(signContext.signCertificates) == 0 {
@@ -518,12 +518,12 @@ func (signContext *SignContext) VerifySign(
 	return nil
 }
 
-// CreateSymmetricCipherContext creates symmetric cipher context
+// CreateSymmetricCipherContext creates symmetric cipher context.
 func CreateSymmetricCipherContext() (symContext *SymmetricCipherContext) {
 	return &SymmetricCipherContext{}
 }
 
-// DecryptFile decrypts file
+// DecryptFile decrypts file.
 func (symmetricContext *SymmetricCipherContext) DecryptFile(
 	ctx context.Context, encryptedFile, clearFile *os.File) (err error) {
 	if !symmetricContext.isReady() {

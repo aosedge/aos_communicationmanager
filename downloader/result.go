@@ -41,7 +41,7 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// Result download result interface
+// Result download result interface.
 type Result interface {
 	GetFileName() (fileName string)
 	Wait() (err error)

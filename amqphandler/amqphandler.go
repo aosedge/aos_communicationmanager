@@ -49,7 +49,7 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// AmqpHandler structure with all amqp connection info
+// AmqpHandler structure with all amqp connection info.
 type AmqpHandler struct { // nolint:stylecheck
 	sync.Mutex
 
@@ -72,13 +72,13 @@ type AmqpHandler struct { // nolint:stylecheck
 	wg sync.WaitGroup
 }
 
-// CryptoContext interface to access crypto functions
+// CryptoContext interface to access crypto functions.
 type CryptoContext interface {
 	GetTLSConfig() (config *tls.Config, err error)
 	DecryptMetadata(input []byte) (output []byte, err error)
 }
 
-// Message AMQP message with correlation ID
+// Message AMQP message with correlation ID.
 type Message struct {
 	CorrelationID string
 	Data          interface{}
@@ -122,7 +122,7 @@ var messageMap = map[string]func() interface{}{
  * Public
  **********************************************************************************************************************/
 
-// New creates new amqp object
+// New creates new amqp object.
 func New() (handler *AmqpHandler, err error) {
 	log.Debug("New AMQP")
 
@@ -136,7 +136,7 @@ func New() (handler *AmqpHandler, err error) {
 	return handler, nil
 }
 
-// Connect connects to cloud
+// Connect connects to cloud.
 func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID string, users []string) (err error) {
 	handler.Lock()
 	defer handler.Unlock()
@@ -166,7 +166,7 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 	return nil
 }
 
-// ConnectRabbit connects directly to RabbitMQ server without service discovery
+// ConnectRabbit connects directly to RabbitMQ server without service discovery.
 func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchange, consumer, queue string) error {
 	handler.Lock()
 	defer handler.Unlock()
@@ -201,7 +201,7 @@ func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchan
 	return nil
 }
 
-// Disconnect disconnects from cloud
+// Disconnect disconnects from cloud.
 func (handler *AmqpHandler) Disconnect() (err error) {
 	handler.Lock()
 	defer handler.Unlock()
@@ -221,7 +221,7 @@ func (handler *AmqpHandler) Disconnect() (err error) {
 	return nil
 }
 
-// SendUnitStatus sends unit status
+// SendUnitStatus sends unit status.
 func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error) {
 	unitStatusMsg := handler.createCloudMessage(cloudprotocol.UnitStatusType, unitStatus)
 
@@ -230,7 +230,7 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 	return nil
 }
 
-// SendMonitoringData sends monitoring data
+// SendMonitoringData sends monitoring data.
 func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error) {
 	monitoringMsg := handler.createCloudMessage(cloudprotocol.MonitoringDataType, monitoringData)
 
@@ -239,7 +239,7 @@ func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.Moni
 	return nil
 }
 
-// SendServiceNewState sends new state message
+// SendServiceNewState sends new state message.
 func (handler *AmqpHandler) SendServiceNewState(correlationID, serviceID, state, checksum string) (err error) {
 	newStateMsg := handler.createCloudMessage(cloudprotocol.NewStateType,
 		cloudprotocol.NewState{ServiceID: serviceID, State: state, Checksum: checksum})
@@ -249,7 +249,7 @@ func (handler *AmqpHandler) SendServiceNewState(correlationID, serviceID, state,
 	return nil
 }
 
-// SendServiceStateRequest sends state request message
+// SendServiceStateRequest sends state request message.
 func (handler *AmqpHandler) SendServiceStateRequest(serviceID string, defaultState bool) (err error) {
 	stateRequestMsg := handler.createCloudMessage(cloudprotocol.StateRequestType,
 		cloudprotocol.StateRequest{ServiceID: serviceID, Default: defaultState})
@@ -259,7 +259,7 @@ func (handler *AmqpHandler) SendServiceStateRequest(serviceID string, defaultSta
 	return nil
 }
 
-// SendLog sends system or service logs
+// SendLog sends system or service logs.
 func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) (err error) {
 	serviceLogMsg := handler.createCloudMessage(cloudprotocol.PushLogType, serviceLog)
 
@@ -268,7 +268,7 @@ func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) (err error
 	return nil
 }
 
-// SendAlerts sends alerts message
+// SendAlerts sends alerts message.
 func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) (err error) {
 	alertMsg := handler.createCloudMessage(cloudprotocol.AlertsType, alerts)
 
@@ -277,7 +277,7 @@ func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) (err error) 
 	return nil
 }
 
-// SendIssueUnitCerts sends request to issue new certificates
+// SendIssueUnitCerts sends request to issue new certificates.
 func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {
 	request := handler.createCloudMessage(
 		cloudprotocol.IssueUnitCertsType, cloudprotocol.IssueUnitCerts{Requests: requests})
@@ -287,7 +287,7 @@ func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCer
 	return nil
 }
 
-// SendInstallCertsConfirmation sends install certificates confirmation
+// SendInstallCertsConfirmation sends install certificates confirmation.
 func (handler *AmqpHandler) SendInstallCertsConfirmation(
 	confirmations []cloudprotocol.InstallCertData) (err error) {
 	response := handler.createCloudMessage(cloudprotocol.InstallUnitCertsConfirmationType,
@@ -298,7 +298,7 @@ func (handler *AmqpHandler) SendInstallCertsConfirmation(
 	return nil
 }
 
-// SendOverrideEnvVarsStatus overrides env vars status
+// SendOverrideEnvVarsStatus overrides env vars status.
 func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs []cloudprotocol.EnvVarInfoStatus) (err error) {
 	handler.sendChannel <- Message{"", handler.createCloudMessage(cloudprotocol.OverrideEnvVarsStatusType,
 		cloudprotocol.OverrideEnvVarsStatus{OverrideEnvVarsStatus: envs})}
@@ -306,7 +306,7 @@ func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs []cloudprotocol.EnvVa
 	return nil
 }
 
-// Close closes all amqp connection
+// Close closes all amqp connection.
 func (handler *AmqpHandler) Close() {
 	log.Info("Close AMQP")
 
@@ -321,7 +321,7 @@ func (handler *AmqpHandler) Close() {
  * Private
  **************************************************************************************************/
 
-// service discovery implementation
+// service discovery implementation.
 func getConnectionInfo(ctx context.Context, url string,
 	request cloudprotocol.Message, tlsConfig *tls.Config) (info cloudprotocol.ConnectionInfo, err error) {
 	reqJSON, err := json.Marshal(request)
