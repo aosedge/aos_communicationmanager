@@ -457,26 +457,9 @@ func (client *smClient) GetServiceLog(logRequest cloudprotocol.RequestServiceLog
 		"serviceID": logRequest.ServiceID,
 		"from":      logRequest.From,
 		"till":      logRequest.Till,
-	}).Debug("Get SM system log")
+	}).Debug("Get service system log")
 
-	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
-	defer cancel()
-
-	request := &pb.ServiceLogRequest{LogId: logRequest.LogID, ServiceId: logRequest.ServiceID}
-
-	if logRequest.From != nil {
-		request.From = timestamppb.New(*logRequest.From)
-	}
-
-	if logRequest.Till != nil {
-		request.Till = timestamppb.New(*logRequest.Till)
-	}
-
-	if _, err = client.pbClient.GetServiceLog(ctx, request); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
+	return aoserrors.Wrap(client.sendGetLogRequest(logRequest, client.pbClient.GetServiceLog))
 }
 
 func (client *smClient) GetServiceCrashLog(logRequest cloudprotocol.RequestServiceCrashLog) (err error) {
@@ -486,26 +469,10 @@ func (client *smClient) GetServiceCrashLog(logRequest cloudprotocol.RequestServi
 		"serviceID": logRequest.ServiceID,
 		"from":      logRequest.From,
 		"till":      logRequest.Till,
-	}).Debug("Get SM system log")
+	}).Debug("Get service crash log")
 
-	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
-	defer cancel()
-
-	request := &pb.ServiceLogRequest{LogId: logRequest.LogID, ServiceId: logRequest.ServiceID}
-
-	if logRequest.From != nil {
-		request.From = timestamppb.New(*logRequest.From)
-	}
-
-	if logRequest.Till != nil {
-		request.Till = timestamppb.New(*logRequest.Till)
-	}
-
-	if _, err = client.pbClient.GetServiceCrashLog(ctx, request); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
+	return aoserrors.Wrap(
+		client.sendGetLogRequest((cloudprotocol.RequestServiceLog)(logRequest), client.pbClient.GetServiceCrashLog))
 }
 
 func (client *smClient) handleSMNotifications() {
@@ -524,6 +491,28 @@ func (client *smClient) handleSMNotifications() {
 		case <-time.After(smReconnectTimeout):
 		}
 	}
+}
+
+func (client *smClient) sendGetLogRequest(logRequest cloudprotocol.RequestServiceLog,
+	pbCall func(context.Context, *pb.ServiceLogRequest, ...grpc.CallOption) (*empty.Empty, error)) (err error) {
+	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
+	defer cancel()
+
+	request := &pb.ServiceLogRequest{LogId: logRequest.LogID, ServiceId: logRequest.ServiceID}
+
+	if logRequest.From != nil {
+		request.From = timestamppb.New(*logRequest.From)
+	}
+
+	if logRequest.Till != nil {
+		request.Till = timestamppb.New(*logRequest.Till)
+	}
+
+	if _, err = pbCall(ctx, request); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
 }
 
 func (client *smClient) subscribeSMNotifications() (err error) {
