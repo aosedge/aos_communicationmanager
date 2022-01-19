@@ -2,7 +2,7 @@ module github.com/aoscloud/aos_communicationmanager
 
 go 1.14
 
-replace github.com/ThalesIgnite/crypto11 => github.com/xen-troops/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
+replace github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
