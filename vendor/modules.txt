@@ -1,7 +1,7 @@
 # code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
 ## explicit
 code.cloudfoundry.org/bytefmt
-# github.com/ThalesIgnite/crypto11 v1.2.4 => github.com/xen-troops/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
+# github.com/ThalesIgnite/crypto11 v1.2.4 => github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
 ## explicit
 github.com/ThalesIgnite/crypto11
 # github.com/aoscloud/aos_common v0.0.0-20211220123623-d23b9d38e838
@@ -201,4 +201,4 @@ google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/emptypb
 google.golang.org/protobuf/types/known/timestamppb
-# github.com/ThalesIgnite/crypto11 => github.com/xen-troops/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
+# github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
