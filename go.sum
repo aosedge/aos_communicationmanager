@@ -46,6 +46,8 @@ github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRF
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/aoscloud/aos_common v0.0.0-20211220123623-d23b9d38e838 h1:RhT3pWZXQRXIQseclbEM8WN/1krlcdlAI+CzxMOHt/I=
 github.com/aoscloud/aos_common v0.0.0-20211220123623-d23b9d38e838/go.mod h1:Wm2EHzH1luRIjtYtcxIODj1kenM4QlezswWiqoP4fs4=
+github.com/aoscloud/aos_common v0.0.0-20220131091851-03b512e6deff h1:t5m21jtL312jdaAhWp258Inp1RuTNtjrZ2YgEdM7nPQ=
+github.com/aoscloud/aos_common v0.0.0-20220131091851-03b512e6deff/go.mod h1:Wm2EHzH1luRIjtYtcxIODj1kenM4QlezswWiqoP4fs4=
 github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450 h1:RCWB1RG/HMtHshiAE7uAW8SjC//D6BNFi0BTl0FAvRY=
 github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450/go.mod h1:ILDKtnCKiQ7zRoNxcp36Y1ZR8LBPmR2E23+wTQe/MlE=
 github.com/apache/arrow/go/arrow v0.0.0-20200601151325-b2287a20f230/go.mod h1:QNYViu/X0HXDHw7m3KXzWSVXIbfUvJqBFe6Gj8/pYA0=

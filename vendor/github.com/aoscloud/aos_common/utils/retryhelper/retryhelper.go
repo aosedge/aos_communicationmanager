@@ -28,9 +28,11 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const defaultMaxTry = 3
-const defaultRetryDelay = 1 * time.Second
-const defaultMaxRetryDelay = 1 * time.Minute
+const (
+	defaultMaxTry        = 3
+	defaultRetryDelay    = 1 * time.Second
+	defaultMaxRetryDelay = 1 * time.Minute
+)
 
 /***********************************************************************************************************************
  * Public
@@ -53,12 +55,12 @@ func Retry(ctx context.Context, retryFunc func() error, retryCbk func(retryCount
 
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return aoserrors.Wrap(ctx.Err())
 
 			case <-time.After(delay):
 			}
 
-			delay = delay * 2
+			delay *= 2
 
 			if maxDelay != 0 && delay > maxDelay {
 				delay = maxDelay
@@ -75,12 +77,12 @@ func Retry(ctx context.Context, retryFunc func() error, retryCbk func(retryCount
 	return aoserrors.Wrap(err)
 }
 
-// DefaultRetry performs operation default number of times with default delay
+// DefaultRetry performs operation default number of times with default delay.
 func DefaultRetry(ctx context.Context, retryFunc func() error) (err error) {
-	return Retry(context.Background(), retryFunc, nil, defaultMaxTry, defaultRetryDelay, 0)
+	return Retry(ctx, retryFunc, nil, defaultMaxTry, defaultRetryDelay, 0)
 }
 
-// DefaultInfinitRetry performs operation default number of times with default delay
+// DefaultInfinitRetry performs operation default number of times with default delay.
 func DefaultInfinitRetry(ctx context.Context, retryFunc func() error,
 	retryCbk func(retryCount int, delay time.Duration, err error)) (err error) {
 	return Retry(ctx, retryFunc, retryCbk, 0, defaultRetryDelay, defaultMaxRetryDelay)
