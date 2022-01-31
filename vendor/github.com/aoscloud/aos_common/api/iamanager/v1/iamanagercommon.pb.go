@@ -114,6 +114,53 @@ func (x *Users) GetUsers() []string {
 	return nil
 }
 
+type Subjects struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Subjects []string `protobuf:"bytes,1,rep,name=subjects,proto3" json:"subjects,omitempty"`
+}
+
+func (x *Subjects) Reset() {
+	*x = Subjects{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_iamanager_v1_iamanagercommon_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Subjects) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Subjects) ProtoMessage() {}
+
+func (x *Subjects) ProtoReflect() protoreflect.Message {
+	mi := &file_iamanager_v1_iamanagercommon_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Subjects.ProtoReflect.Descriptor instead.
+func (*Subjects) Descriptor() ([]byte, []int) {
+	return file_iamanager_v1_iamanagercommon_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Subjects) GetSubjects() []string {
+	if x != nil {
+		return x.Subjects
+	}
+	return nil
+}
+
 var File_iamanager_v1_iamanagercommon_proto protoreflect.FileDescriptor
 
 var file_iamanager_v1_iamanagercommon_proto_rawDesc = []byte{
@@ -131,8 +178,10 @@ var file_iamanager_v1_iamanagercommon_proto_rawDesc = []byte{
 	0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18,
 	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01,
 	0x22, 0x1d, 0x0a, 0x05, 0x55, 0x73, 0x65, 0x72, 0x73, 0x12, 0x14, 0x0a, 0x05, 0x75, 0x73, 0x65,
-	0x72, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x05, 0x75, 0x73, 0x65, 0x72, 0x73, 0x62,
-	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x72, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x05, 0x75, 0x73, 0x65, 0x72, 0x73, 0x22,
+	0x26, 0x0a, 0x08, 0x53, 0x75, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x73, 0x12, 0x1a, 0x0a, 0x08, 0x73,
+	0x75, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x08, 0x73,
+	0x75, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -147,14 +196,15 @@ func file_iamanager_v1_iamanagercommon_proto_rawDescGZIP() []byte {
 	return file_iamanager_v1_iamanagercommon_proto_rawDescData
 }
 
-var file_iamanager_v1_iamanagercommon_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_iamanager_v1_iamanagercommon_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_iamanager_v1_iamanagercommon_proto_goTypes = []interface{}{
 	(*Permissions)(nil), // 0: iamanager.v1.Permissions
 	(*Users)(nil),       // 1: iamanager.v1.Users
-	nil,                 // 2: iamanager.v1.Permissions.PermissionsEntry
+	(*Subjects)(nil),    // 2: iamanager.v1.Subjects
+	nil,                 // 3: iamanager.v1.Permissions.PermissionsEntry
 }
 var file_iamanager_v1_iamanagercommon_proto_depIdxs = []int32{
-	2, // 0: iamanager.v1.Permissions.permissions:type_name -> iamanager.v1.Permissions.PermissionsEntry
+	3, // 0: iamanager.v1.Permissions.permissions:type_name -> iamanager.v1.Permissions.PermissionsEntry
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -192,6 +242,18 @@ func file_iamanager_v1_iamanagercommon_proto_init() {
 				return nil
 			}
 		}
+		file_iamanager_v1_iamanagercommon_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Subjects); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -199,7 +261,7 @@ func file_iamanager_v1_iamanagercommon_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_iamanager_v1_iamanagercommon_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

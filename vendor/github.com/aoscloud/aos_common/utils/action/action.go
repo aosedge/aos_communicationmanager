@@ -20,13 +20,15 @@ package action
 import (
 	"container/list"
 	"sync"
+
+	"github.com/aoscloud/aos_common/aoserrors"
 )
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Types
- ******************************************************************************/
+ **********************************************************************************************************************/
 
-// Handler action handler
+// Handler action handler.
 type Handler struct {
 	sync.Mutex
 
@@ -36,16 +38,20 @@ type Handler struct {
 	workQueue            *list.List
 }
 
+// Func action function type.
+type Func func(id string) (err error)
+
 type action struct {
 	id       string
-	doAction func(id string)
+	doAction Func
+	channel  chan error
 }
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Public
- ******************************************************************************/
+ **********************************************************************************************************************/
 
-// New creates new action handler
+// New creates new action handler.
 func New(maxConcurrentActions int) (handler *Handler) {
 	handler = &Handler{
 		maxConcurrentActions: maxConcurrentActions,
@@ -56,8 +62,8 @@ func New(maxConcurrentActions int) (handler *Handler) {
 	return handler
 }
 
-// Execute executes action
-func (handler *Handler) Execute(id string, doAction func(id string)) {
+// Execute executes action.
+func (handler *Handler) Execute(id string, doAction Func) (channel <-chan error) {
 	handler.Lock()
 	defer handler.Unlock()
 
@@ -66,29 +72,27 @@ func (handler *Handler) Execute(id string, doAction func(id string)) {
 	newAction := action{
 		id:       id,
 		doAction: doAction,
+		channel:  make(chan error, 1),
 	}
 
-	if handler.isIDInWorkQueue(newAction.id) {
+	if handler.isIDInWorkQueue(newAction.id) ||
+		(handler.workQueue.Len() >= handler.maxConcurrentActions && handler.maxConcurrentActions != 0) {
 		handler.waitQueue.PushBack(newAction)
-		return
+	} else {
+		go handler.processAction(handler.workQueue.PushBack(newAction))
 	}
 
-	if handler.workQueue.Len() >= handler.maxConcurrentActions {
-		handler.waitQueue.PushBack(newAction)
-		return
-	}
-
-	go handler.processAction(handler.workQueue.PushBack(newAction))
+	return newAction.channel
 }
 
-// Wait waits all actions are executed
+// Wait waits all actions are executed.
 func (handler *Handler) Wait() {
 	handler.wg.Wait()
 }
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Private
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 func (handler *Handler) isIDInWorkQueue(id string) (result bool) {
 	for item := handler.workQueue.Front(); item != nil; item = item.Next() {
@@ -103,9 +107,17 @@ func (handler *Handler) isIDInWorkQueue(id string) (result bool) {
 func (handler *Handler) processAction(item *list.Element) {
 	defer handler.wg.Done()
 
-	currentAction := item.Value.(action)
+	var actionError error
 
-	currentAction.doAction(currentAction.id)
+	currentAction, ok := item.Value.(action)
+	if ok {
+		actionError = currentAction.doAction(currentAction.id)
+	} else {
+		actionError = aoserrors.New("wrong action type")
+	}
+
+	currentAction.channel <- actionError
+	close(currentAction.channel)
 
 	handler.Lock()
 	defer handler.Unlock()
@@ -113,7 +125,12 @@ func (handler *Handler) processAction(item *list.Element) {
 	handler.workQueue.Remove(item)
 
 	for waitItem := handler.waitQueue.Front(); waitItem != nil; waitItem = waitItem.Next() {
-		if handler.isIDInWorkQueue(waitItem.Value.(action).id) {
+		waitAction, ok := waitItem.Value.(action)
+		if !ok {
+			continue
+		}
+
+		if handler.isIDInWorkQueue(waitAction.id) {
 			continue
 		}
 
