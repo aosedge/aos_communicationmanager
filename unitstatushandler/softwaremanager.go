@@ -870,10 +870,10 @@ func (manager *softwareManager) installLayers() (installErr string) {
 		// Create new variable to be captured by action function
 		layerInfo := layer
 
-		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) {
+		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) error {
 			if err := manager.softwareUpdater.InstallLayer(layerInfo); err != nil {
 				handleError(layerInfo, aoserrors.Wrap(err).Error())
-				return
+				return aoserrors.Wrap(err)
 			}
 
 			log.WithFields(log.Fields{
@@ -883,6 +883,8 @@ func (manager *softwareManager) installLayers() (installErr string) {
 			}).Info("Layer successfully installed")
 
 			manager.updateLayerStatusByID(layerInfo.Digest, cloudprotocol.InstalledStatus, "")
+
+			return nil
 		})
 	}
 
@@ -987,11 +989,11 @@ func (manager *softwareManager) installServices() (installErr string) {
 		// Create new variable to be captured by action function
 		serviceInfo := service
 
-		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) {
+		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) error {
 			stateChecksum, err := manager.softwareUpdater.InstallService(manager.currentUsers, serviceInfo)
 			if err != nil {
 				handleError(serviceInfo, aoserrors.Wrap(err).Error())
-				return
+				return aoserrors.Wrap(err)
 			}
 
 			log.WithFields(log.Fields{
@@ -1001,6 +1003,8 @@ func (manager *softwareManager) installServices() (installErr string) {
 			}).Info("Service successfully installed")
 
 			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "", stateChecksum)
+
+			return nil
 		})
 	}
 
@@ -1052,10 +1056,10 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 		// Create new variable to be captured by action function
 		serviceStatus := service
 
-		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) {
+		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) error {
 			if err := manager.softwareUpdater.RemoveService(manager.currentUsers, serviceStatus); err != nil {
 				handleError(serviceStatus, err.Error())
-				return
+				return aoserrors.Wrap(err)
 			}
 
 			log.WithFields(log.Fields{
@@ -1064,6 +1068,8 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 			}).Info("Service successfully removed")
 
 			manager.updateServiceStatusByID(serviceStatus.ID, cloudprotocol.RemovedStatus, "", "")
+
+			return nil
 		})
 	}
 
