@@ -7,7 +7,7 @@ replace github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.2.5-
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
 	github.com/ThalesIgnite/crypto11 v1.2.4
-	github.com/aoscloud/aos_common v0.0.0-20211220123623-d23b9d38e838
+	github.com/aoscloud/aos_common v0.0.0-20220131091851-03b512e6deff
 	github.com/cavaliercoder/grab v2.0.0+incompatible
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/coreos/go-systemd/v22 v22.3.2

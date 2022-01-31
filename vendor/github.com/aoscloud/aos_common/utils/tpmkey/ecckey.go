@@ -27,26 +27,26 @@ import (
 	"github.com/aoscloud/aos_common/aoserrors"
 )
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Public
- ******************************************************************************/
+ **********************************************************************************************************************/
 
-// MakePersistent moves key to TPM persistent storage
+// MakePersistent moves key to TPM persistent storage.
 func (key *eccKey) MakePersistent(persistentHandle tpmutil.Handle) (err error) {
 	return aoserrors.Wrap(makePersistent(&key.tpmKey, persistentHandle))
 }
 
-// Public returns public key
+// Public returns public key.
 func (key *eccKey) Public() (publicKey crypto.PublicKey) {
 	return key.publicKey
 }
 
-// Password returns key password
+// Password returns key password.
 func (key *eccKey) Password() (password string) {
 	return key.password
 }
 
-// Sign signs digest with the private key
+// Sign signs digest with the private key.
 func (key *eccKey) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 	alg := tpm2.AlgECDSA
 

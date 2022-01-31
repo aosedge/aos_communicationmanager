@@ -4,7 +4,7 @@ code.cloudfoundry.org/bytefmt
 # github.com/ThalesIgnite/crypto11 v1.2.4 => github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
 ## explicit
 github.com/ThalesIgnite/crypto11
-# github.com/aoscloud/aos_common v0.0.0-20211220123623-d23b9d38e838
+# github.com/aoscloud/aos_common v0.0.0-20220131091851-03b512e6deff
 ## explicit
 github.com/aoscloud/aos_common/aoserrors
 github.com/aoscloud/aos_common/api/communicationmanager/v1
