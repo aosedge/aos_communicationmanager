@@ -813,10 +813,14 @@ func TestInvalidParams(t *testing.T) {
 	}
 
 	// Create or use context
-	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline1")}
 
-	cryptoContext, err := New(conf, &certProvider)
+	cryptoCtx, err := createCryptoContext(config.Crypt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cryptoContext, err := New(&certProvider, cryptoCtx)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -863,9 +867,14 @@ func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
 		{keyURL: nameToPkcs11URL(certName)},
 	}
 
+	cryptoCtx, err := createCryptoContext(config.Crypt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, certProvider := range testCertProviders {
 		// Create and use context
-		cryptoContext, err := New(config.Crypt{}, certProvider)
+		cryptoContext, err := New(certProvider, cryptoCtx)
 		if err != nil {
 			t.Fatalf("Error creating context: '%v'", err)
 		}
@@ -893,10 +902,6 @@ func TestDecryptSessionKeyPkcs1v15(t *testing.T) {
 		if !bytes.Equal(chipperContex.key, clearAesKey) {
 			t.Fatalf("Error decrypt key: invalid key")
 		}
-
-		if err = cryptoContext.Close(); err != nil {
-			t.Fatalf("Can't close crypto context: %s", err)
-		}
 	}
 }
 
@@ -919,10 +924,14 @@ func TestDecryptSessionKeyOAEP(t *testing.T) {
 	// End of: For testing only
 
 	// Create or use context
-	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline1")}
 
-	cryptoContext, err := New(conf, &certProvider)
+	cryptoCtx, err := createCryptoContext(config.Crypt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cryptoContext, err := New(&certProvider, cryptoCtx)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -971,10 +980,14 @@ func TestInvalidSessionKeyPkcs1v15(t *testing.T) {
 	// End of: For testing only
 
 	// Create or use context
-	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline2")}
 
-	cryptoContext, err := New(conf, &certProvider)
+	cryptoCtx, err := createCryptoContext(config.Crypt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cryptoContext, err := New(&certProvider, cryptoCtx)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -1019,10 +1032,14 @@ func TestInvalidSessionKeyOAEP(t *testing.T) {
 	// End of: For testing only
 
 	// Create or use context
-	conf := config.Crypt{}
 	certProvider := testCertificateProvider{keyURL: keyNameToFileURL("offline2")}
 
-	cryptoContext, err := New(conf, &certProvider)
+	cryptoCtx, err := createCryptoContext(config.Crypt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cryptoContext, err := New(&certProvider, cryptoCtx)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -1090,10 +1107,14 @@ func TestVerifySignOfComponent(t *testing.T) {
 		t.Fatalf("Can't parse cert URL: '%v'", err)
 	}
 
-	conf := config.Crypt{CACert: certURL.Path}
 	certProvider := testCertificateProvider{}
 
-	cryptoContext, err := New(conf, &certProvider)
+	cryptoCtx, err := createCryptoContext(config.Crypt{CACert: certURL.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cryptoContext, err := New(&certProvider, cryptoCtx)
 	if err != nil {
 		t.Fatalf("Error creating context: '%v'", err)
 	}
@@ -1152,8 +1173,13 @@ func TestGetCertificateOrganization(t *testing.T) {
 		{certURL: nameToPkcs11URL(certName)},
 	}
 
+	cryptoCtx, err := createCryptoContext(config.Crypt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, certProvider := range testCertProviders {
-		cryptoContext, err := New(config.Crypt{}, certProvider)
+		cryptoContext, err := New(certProvider, cryptoCtx)
 		if err != nil {
 			t.Fatalf("Can't create crypto context: %s", err)
 		}
@@ -1169,10 +1195,6 @@ func TestGetCertificateOrganization(t *testing.T) {
 
 		if names[0] != "staging-fusion.westeurope.cloudapp.azure.com" {
 			t.Fatalf("Wrong organization name: %s", names[0])
-		}
-
-		if err = cryptoContext.Close(); err != nil {
-			t.Fatalf("Can't close crypto context: %s", err)
 		}
 	}
 }
@@ -1353,4 +1375,12 @@ func clearPkcs11Storage() (err error) {
 	}
 
 	return nil
+}
+
+func createCryptoContext(conf config.Crypt) (cryptoContext *cryptutils.CryptoContext, err error) {
+	if cryptoContext, err = cryptutils.NewCryptoContext(conf.CACert); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return cryptoContext, nil
 }
