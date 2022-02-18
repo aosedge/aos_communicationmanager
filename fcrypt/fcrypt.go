@@ -29,18 +29,14 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/ThalesIgnite/crypto11"
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/utils/contextreader"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
-	"github.com/aoscloud/aos_common/utils/tpmkey"
 	"github.com/google/go-tpm/tpm2"
-	"github.com/google/go-tpm/tpmutil"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -74,13 +70,10 @@ type CryptoSessionKeyInfo struct {
 	ReceiverInfo      ReceiverInfo `json:"recipientInfo"`
 }
 
-// CryptoContext crypto context.
-type CryptoContext struct {
-	rootCertPool  *x509.CertPool
-	tpmDevice     io.ReadWriteCloser
-	pkcs11Ctx     map[pkcs11Descriptor]*crypto11.Context
-	pkcs11Library string
+// CryptoHandler crypto handler.
+type CryptoHandler struct {
 	certProvider  CertificateProvider
+	cryptoContext *cryptutils.CryptoContext
 }
 
 // SymmetricContextInterface interface for SymmetricCipherContext.
@@ -101,7 +94,7 @@ type SymmetricCipherContext struct {
 
 // SignContext sign context.
 type SignContext struct {
-	cryptoContext         *CryptoContext
+	handler               *CryptoHandler
 	signCertificates      []certificateInfo
 	signCertificateChains []certificateChainInfo
 }
@@ -138,68 +131,53 @@ type pkcs11Descriptor struct {
  **********************************************************************************************************************/
 
 // New create context for crypto operations.
-func New(conf config.Crypt, provider CertificateProvider) (cryptoContext *CryptoContext, err error) {
+func New(conf config.Crypt, provider CertificateProvider) (handler *CryptoHandler, err error) {
 	// Create context
-	cryptoContext = &CryptoContext{
-		certProvider:  provider,
-		pkcs11Ctx:     make(map[pkcs11Descriptor]*crypto11.Context),
-		pkcs11Library: conf.Pkcs11Library,
-	}
+	handler = &CryptoHandler{certProvider: provider}
 
-	if conf.CACert != "" {
-		if cryptoContext.rootCertPool, err = cryptutils.GetCaCertPool(conf.CACert); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
+	handler.cryptoContext, err = cryptutils.NewCryptoContext(conf.CACert)
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if conf.TpmDevice != "" {
-		if cryptoContext.tpmDevice, err = tpm2.OpenTPM(conf.TpmDevice); err != nil {
+		if cryptutils.DefaultTPMDevice, err = tpm2.OpenTPM(conf.TpmDevice); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 	}
 
-	return cryptoContext, nil
+	cryptutils.DefaultPKCS11Library = conf.Pkcs11Library
+
+	return handler, nil
 }
 
-// Close closes crypto context.
-func (cryptoContext *CryptoContext) Close() (err error) {
-	if cryptoContext.tpmDevice != nil {
-		if tpmErr := cryptoContext.tpmDevice.Close(); tpmErr != nil {
+// Close closes crypto handler.
+func (handler *CryptoHandler) Close() (err error) {
+	if cryptutils.DefaultTPMDevice != nil {
+		if tpmErr := cryptutils.DefaultTPMDevice.Close(); tpmErr != nil {
 			if err == nil {
 				err = tpmErr
 			}
 		}
 	}
 
-	for pkcs11Desc, pkcs11ctx := range cryptoContext.pkcs11Ctx {
-		log.WithFields(log.Fields{
-			"library": pkcs11Desc.library,
-			"token":   pkcs11Desc.token,
-		}).Debug("Close PKCS11 context")
-
-		if pkcs11Err := pkcs11ctx.Close(); pkcs11Err != nil {
-			log.WithFields(log.Fields{
-				"library": pkcs11Desc.library,
-				"token":   pkcs11Desc.token,
-			}).Errorf("Can't PKCS11 context: %s", err)
-
-			if err == nil {
-				err = pkcs11Err
-			}
+	if ctxErr := handler.cryptoContext.Close(); ctxErr != nil {
+		if err == nil {
+			err = ctxErr
 		}
 	}
 
-	return aoserrors.Wrap(err)
+	return err
 }
 
 // GetOrganization returns online certificate origanizarion names.
-func (cryptoContext *CryptoContext) GetOrganization() (names []string, err error) {
-	certURLStr, _, err := cryptoContext.certProvider.GetCertificate(onlineCertificate, nil, "")
+func (handler *CryptoHandler) GetOrganization() (names []string, err error) {
+	certURLStr, _, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	certs, err := cryptoContext.loadCertificateByURL(certURLStr)
+	certs, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -212,8 +190,8 @@ func (cryptoContext *CryptoContext) GetOrganization() (names []string, err error
 }
 
 // GetCertSerial returns certificate serial number.
-func (cryptoContext *CryptoContext) GetCertSerial(certURL string) (serial string, err error) {
-	certs, err := cryptoContext.loadCertificateByURL(certURL)
+func (handler *CryptoHandler) GetCertSerial(certURL string) (serial string, err error) {
+	certs, err := handler.cryptoContext.LoadCertificateByURL(certURL)
 	if err != nil {
 		return "", aoserrors.Wrap(err)
 	}
@@ -222,34 +200,34 @@ func (cryptoContext *CryptoContext) GetCertSerial(certURL string) (serial string
 }
 
 // CreateSignContext creates sign context.
-func (cryptoContext *CryptoContext) CreateSignContext() (signContext SignContextInterface, err error) {
-	if cryptoContext == nil || cryptoContext.rootCertPool == nil {
+func (handler *CryptoHandler) CreateSignContext() (signContext SignContextInterface, err error) {
+	if handler == nil || handler.cryptoContext.GetCACertPool() == nil {
 		return nil, aoserrors.New("asymmetric context not initialized")
 	}
 
-	return &SignContext{cryptoContext: cryptoContext}, nil
+	return &SignContext{handler: handler}, nil
 }
 
 // GetTLSConfig Provides TLS configuration for HTTPS client.
-func (cryptoContext *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) {
+func (handler *CryptoHandler) GetTLSConfig() (cfg *tls.Config, err error) {
 	cfg = &tls.Config{MinVersion: tls.VersionTLS12}
 
-	certURLStr, keyURLStr, err := cryptoContext.certProvider.GetCertificate(onlineCertificate, nil, "")
+	certURLStr, keyURLStr, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	clientCert, err := cryptoContext.loadCertificateByURL(certURLStr)
+	clientCert, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	onlinePrivate, _, err := cryptoContext.loadPrivateKeyByURL(keyURLStr)
+	onlinePrivate, _, err := handler.cryptoContext.LoadPrivateKeyByURL(keyURLStr)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	cfg.RootCAs = cryptoContext.rootCertPool
+	cfg.RootCAs = handler.cryptoContext.GetCACertPool()
 	cfg.Certificates = []tls.Certificate{{PrivateKey: onlinePrivate, Certificate: getRawCertificate(clientCert)}}
 	cfg.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) (err error) {
 		return nil
@@ -261,14 +239,14 @@ func (cryptoContext *CryptoContext) GetTLSConfig() (cfg *tls.Config, err error) 
 }
 
 // DecryptMetadata decrypt envelope.
-func (cryptoContext *CryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
+func (handler *CryptoHandler) DecryptMetadata(input []byte) (output []byte, err error) {
 	ci, err := unmarshallCMS(input)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	for _, recipient := range ci.EnvelopedData.RecipientInfos {
-		dkey, err := cryptoContext.getKeyForEnvelope(recipient.(keyTransRecipientInfo))
+		dkey, err := handler.getKeyForEnvelope(recipient.(keyTransRecipientInfo))
 		if err != nil {
 			log.Warnf("Can't get key for envelope: %s", err)
 
@@ -289,15 +267,15 @@ func (cryptoContext *CryptoContext) DecryptMetadata(input []byte) (output []byte
 }
 
 // ImportSessionKey function retrieves a symmetric key from crypto context.
-func (cryptoContext *CryptoContext) ImportSessionKey(
+func (handler *CryptoHandler) ImportSessionKey(
 	keyInfo CryptoSessionKeyInfo) (symContext SymmetricContextInterface, err error) {
-	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(
+	_, keyURLStr, err := handler.certProvider.GetCertificate(
 		offlineCertificate, keyInfo.ReceiverInfo.Issuer, keyInfo.ReceiverInfo.Serial)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	privKey, supportPKCS1v15SessionKey, err := cryptoContext.loadPrivateKeyByURL(keyURLStr)
+	privKey, supportPKCS1v15SessionKey, err := handler.cryptoContext.LoadPrivateKeyByURL(keyURLStr)
 	if err != nil {
 		log.Errorf("Cant load private key: %s", err)
 
@@ -468,7 +446,7 @@ func (signContext *SignContext) VerifySign(
 
 	verifyOptions := x509.VerifyOptions{
 		Intermediates: intermediatePool,
-		Roots:         signContext.cryptoContext.rootCertPool,
+		Roots:         signContext.handler.cryptoContext.GetCACertPool(),
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	}
 
@@ -548,72 +526,6 @@ func (symmetricContext *SymmetricCipherContext) DecryptFile(
  * Private
  **********************************************************************************************************************/
 
-func (cryptoContext *CryptoContext) loadPkcs11PrivateKey(keyURL *url.URL) (key crypto.PrivateKey, err error) {
-	library, token, label, id, userPin, err := parsePkcs11Url(keyURL)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	log.WithFields(log.Fields{"label": label, "id": id}).Debug("Load PKCS11 certificate")
-
-	pkcs11Ctx, err := cryptoContext.getPkcs11Context(library, token, userPin)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if key, err = pkcs11Ctx.FindKeyPair([]byte(id), []byte(label)); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if key == nil {
-		return nil, aoserrors.Errorf("private key label: %s, id: %s not found", label, id)
-	}
-
-	return key, nil
-}
-
-func (cryptoContext *CryptoContext) loadPrivateKeyByURL(keyURLStr string) (privKey crypto.PrivateKey,
-	supportPKCS1v15SessionKey bool, err error) {
-	keyURL, err := url.Parse(keyURLStr)
-	if err != nil {
-		return nil, false, aoserrors.Wrap(err)
-	}
-
-	switch keyURL.Scheme {
-	case cryptutils.SchemeFile:
-		if privKey, err = cryptutils.LoadKey(keyURL.Path); err != nil {
-			return nil, false, aoserrors.Wrap(err)
-		}
-
-		supportPKCS1v15SessionKey = true
-
-	case cryptutils.SchemeTPM:
-		if cryptoContext.tpmDevice == nil {
-			return nil, false, aoserrors.Errorf("TPM device is not configured")
-		}
-
-		var handle uint64
-
-		if handle, err = strconv.ParseUint(keyURL.Hostname(), 0, 32); err != nil {
-			return nil, false, aoserrors.Wrap(err)
-		}
-
-		if privKey, err = tpmkey.CreateFromPersistent(cryptoContext.tpmDevice, tpmutil.Handle(handle)); err != nil {
-			return nil, false, aoserrors.Wrap(err)
-		}
-
-	case cryptutils.SchemePKCS11:
-		if privKey, err = cryptoContext.loadPkcs11PrivateKey(keyURL); err != nil {
-			return nil, false, aoserrors.Wrap(err)
-		}
-
-	default:
-		return nil, false, aoserrors.Errorf("unsupported schema %s for private key", keyURL.Scheme)
-	}
-
-	return privKey, supportPKCS1v15SessionKey, nil
-}
-
 func getRawCertificate(certs []*x509.Certificate) (rawCerts [][]byte) {
 	rawCerts = make([][]byte, 0, len(certs))
 
@@ -624,141 +536,19 @@ func getRawCertificate(certs []*x509.Certificate) (rawCerts [][]byte) {
 	return rawCerts
 }
 
-func parsePkcs11Url(pkcs11Url *url.URL) (library, token, label, id, userPin string, err error) {
-	opaqueValues := make(map[string]string)
-
-	for _, field := range strings.Split(pkcs11Url.Opaque, ";") {
-		items := strings.Split(field, "=")
-		if len(items) < 2 { // nolint:gomnd
-			continue
-		}
-
-		opaqueValues[items[0]] = items[1]
-	}
-
-	for name, value := range opaqueValues {
-		switch name {
-		case "token":
-			token = value
-
-		case "object":
-			label = value
-
-		case "id":
-			id = value
-		}
-	}
-
-	for name, item := range pkcs11Url.Query() {
-		if len(item) == 0 {
-			continue
-		}
-
-		switch name {
-		case "module-path":
-			library = item[0]
-
-		case "pin-value":
-			userPin = item[0]
-		}
-	}
-
-	return library, token, label, id, userPin, nil
-}
-
-func (cryptoContext *CryptoContext) getPkcs11Context(
-	library, token, userPin string) (pkcs11Ctx *crypto11.Context, err error) {
-	log.WithFields(log.Fields{"library": library, "token": token}).Debug("Get PKCS11 context")
-
-	if library == "" && cryptoContext.pkcs11Library == "" {
-		return nil, aoserrors.New("PKCS11 library is not defined")
-	}
-
-	if library == "" {
-		library = cryptoContext.pkcs11Library
-	}
-
-	var (
-		ok         bool
-		pkcs11Desc = pkcs11Descriptor{library: library, token: token}
-	)
-
-	if pkcs11Ctx, ok = cryptoContext.pkcs11Ctx[pkcs11Desc]; !ok {
-		log.WithFields(log.Fields{"library": library, "token": token}).Debug("Create PKCS11 context")
-
-		if pkcs11Ctx, err = crypto11.Configure(&crypto11.Config{Path: library, TokenLabel: token, Pin: userPin}); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		cryptoContext.pkcs11Ctx[pkcs11Desc] = pkcs11Ctx
-	}
-
-	return pkcs11Ctx, nil
-}
-
-func (cryptoContext *CryptoContext) loadPkcs11Certificate(certURL *url.URL) (certs []*x509.Certificate, err error) {
-	library, token, label, id, userPin, err := parsePkcs11Url(certURL)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	log.WithFields(log.Fields{"label": label, "id": id}).Debug("Load PKCS11 certificate")
-
-	pkcs11Ctx, err := cryptoContext.getPkcs11Context(library, token, userPin)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if certs, err = pkcs11Ctx.FindCertificateChain([]byte(id), []byte(label), nil); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if len(certs) == 0 {
-		return nil, aoserrors.Errorf("certificate chain label: %s, id: %s not found", label, id)
-	}
-
-	return certs, nil
-}
-
-func (cryptoContext *CryptoContext) loadCertificateByURL(certURLStr string) (certs []*x509.Certificate, err error) {
-	certURL, err := url.Parse(certURLStr)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	switch certURL.Scheme {
-	case cryptutils.SchemeFile:
-		if certs, err = cryptutils.LoadCertificate(certURL.Path); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		return certs, nil
-
-	case cryptutils.SchemePKCS11:
-		if certs, err = cryptoContext.loadPkcs11Certificate(certURL); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		return certs, aoserrors.Wrap(err)
-
-	default:
-		return nil, aoserrors.Errorf("unsupported schema %s for certificate", certURL.Scheme)
-	}
-}
-
-func (cryptoContext *CryptoContext) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key []byte, err error) {
+func (handler *CryptoHandler) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key []byte, err error) {
 	issuer, err := asn1.Marshal(keyInfo.Rid.Issuer)
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
 
-	_, keyURLStr, err := cryptoContext.certProvider.GetCertificate(
+	_, keyURLStr, err := handler.certProvider.GetCertificate(
 		offlineCertificate, issuer, fmt.Sprintf("%X", keyInfo.Rid.SerialNumber))
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
 
-	privKey, _, err := cryptoContext.loadPrivateKeyByURL(keyURLStr)
+	privKey, _, err := handler.cryptoContext.LoadPrivateKeyByURL(keyURLStr)
 	if err != nil {
 		return key, aoserrors.Wrap(err)
 	}
@@ -799,17 +589,6 @@ func (symmetricContext *SymmetricCipherContext) generateKeyAndIV(algString strin
 
 	// Check and set values
 	return aoserrors.Wrap(symmetricContext.set(algString, key, iv))
-}
-
-func (signContext *SignContext) getCertificateByFingerprint(fingerprint string) (cert *x509.Certificate) {
-	// Find certificate in the chain
-	for _, certTmp := range signContext.signCertificates {
-		if certTmp.fingerprint == fingerprint {
-			return certTmp.certificate
-		}
-	}
-
-	return nil
 }
 
 func (symmetricContext *SymmetricCipherContext) encryptFile(
@@ -1005,6 +784,17 @@ func (symmetricContext *SymmetricCipherContext) loadKey() (err error) {
 
 func (symmetricContext *SymmetricCipherContext) isReady() bool {
 	return symmetricContext.encrypter != nil || symmetricContext.decrypter != nil
+}
+
+func (signContext *SignContext) getCertificateByFingerprint(fingerprint string) (cert *x509.Certificate) {
+	// Find certificate in the chain
+	for _, certTmp := range signContext.signCertificates {
+		if certTmp.fingerprint == fingerprint {
+			return certTmp.certificate
+		}
+	}
+
+	return nil
 }
 
 func (signContext *SignContext) getSignCertificate(
