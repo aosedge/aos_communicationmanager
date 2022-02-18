@@ -19,17 +19,15 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type IAMProtectedServiceClient interface {
-	GetCertTypes(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*CertTypes, error)
-	FinishProvisioning(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error)
-	Clear(ctx context.Context, in *ClearRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 	SetOwner(ctx context.Context, in *SetOwnerRequest, opts ...grpc.CallOption) (*empty.Empty, error)
+	Clear(ctx context.Context, in *ClearRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 	CreateKey(ctx context.Context, in *CreateKeyRequest, opts ...grpc.CallOption) (*CreateKeyResponse, error)
 	ApplyCert(ctx context.Context, in *ApplyCertRequest, opts ...grpc.CallOption) (*ApplyCertResponse, error)
-	GetCert(ctx context.Context, in *GetCertRequest, opts ...grpc.CallOption) (*GetCertResponse, error)
+	EncryptDisk(ctx context.Context, in *EncryptDiskRequest, opts ...grpc.CallOption) (*empty.Empty, error)
+	FinishProvisioning(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error)
 	SetUsers(ctx context.Context, in *Users, opts ...grpc.CallOption) (*empty.Empty, error)
 	RegisterService(ctx context.Context, in *RegisterServiceRequest, opts ...grpc.CallOption) (*RegisterServiceResponse, error)
 	UnregisterService(ctx context.Context, in *UnregisterServiceRequest, opts ...grpc.CallOption) (*empty.Empty, error)
-	EncryptDisk(ctx context.Context, in *EncryptDiskRequest, opts ...grpc.CallOption) (*empty.Empty, error)
 }
 
 type iAMProtectedServiceClient struct {
@@ -40,18 +38,9 @@ func NewIAMProtectedServiceClient(cc grpc.ClientConnInterface) IAMProtectedServi
 	return &iAMProtectedServiceClient{cc}
 }
 
-func (c *iAMProtectedServiceClient) GetCertTypes(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*CertTypes, error) {
-	out := new(CertTypes)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/GetCertTypes", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *iAMProtectedServiceClient) FinishProvisioning(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error) {
+func (c *iAMProtectedServiceClient) SetOwner(ctx context.Context, in *SetOwnerRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
 	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/FinishProvisioning", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/SetOwner", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -60,16 +49,7 @@ func (c *iAMProtectedServiceClient) FinishProvisioning(ctx context.Context, in *
 
 func (c *iAMProtectedServiceClient) Clear(ctx context.Context, in *ClearRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
 	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/Clear", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *iAMProtectedServiceClient) SetOwner(ctx context.Context, in *SetOwnerRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
-	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/SetOwner", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/Clear", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +58,7 @@ func (c *iAMProtectedServiceClient) SetOwner(ctx context.Context, in *SetOwnerRe
 
 func (c *iAMProtectedServiceClient) CreateKey(ctx context.Context, in *CreateKeyRequest, opts ...grpc.CallOption) (*CreateKeyResponse, error) {
 	out := new(CreateKeyResponse)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/CreateKey", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/CreateKey", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,43 +67,7 @@ func (c *iAMProtectedServiceClient) CreateKey(ctx context.Context, in *CreateKey
 
 func (c *iAMProtectedServiceClient) ApplyCert(ctx context.Context, in *ApplyCertRequest, opts ...grpc.CallOption) (*ApplyCertResponse, error) {
 	out := new(ApplyCertResponse)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/ApplyCert", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *iAMProtectedServiceClient) GetCert(ctx context.Context, in *GetCertRequest, opts ...grpc.CallOption) (*GetCertResponse, error) {
-	out := new(GetCertResponse)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/GetCert", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *iAMProtectedServiceClient) SetUsers(ctx context.Context, in *Users, opts ...grpc.CallOption) (*empty.Empty, error) {
-	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/SetUsers", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *iAMProtectedServiceClient) RegisterService(ctx context.Context, in *RegisterServiceRequest, opts ...grpc.CallOption) (*RegisterServiceResponse, error) {
-	out := new(RegisterServiceResponse)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/RegisterService", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *iAMProtectedServiceClient) UnregisterService(ctx context.Context, in *UnregisterServiceRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
-	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/UnregisterService", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/ApplyCert", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +76,43 @@ func (c *iAMProtectedServiceClient) UnregisterService(ctx context.Context, in *U
 
 func (c *iAMProtectedServiceClient) EncryptDisk(ctx context.Context, in *EncryptDiskRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
 	out := new(empty.Empty)
-	err := c.cc.Invoke(ctx, "/iamanager.v1.IAMProtectedService/EncryptDisk", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/EncryptDisk", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iAMProtectedServiceClient) FinishProvisioning(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/FinishProvisioning", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iAMProtectedServiceClient) SetUsers(ctx context.Context, in *Users, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/SetUsers", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iAMProtectedServiceClient) RegisterService(ctx context.Context, in *RegisterServiceRequest, opts ...grpc.CallOption) (*RegisterServiceResponse, error) {
+	out := new(RegisterServiceResponse)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/RegisterService", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iAMProtectedServiceClient) UnregisterService(ctx context.Context, in *UnregisterServiceRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
+	err := c.cc.Invoke(ctx, "/iamanager.v2.IAMProtectedService/UnregisterService", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -143,17 +123,15 @@ func (c *iAMProtectedServiceClient) EncryptDisk(ctx context.Context, in *Encrypt
 // All implementations must embed UnimplementedIAMProtectedServiceServer
 // for forward compatibility
 type IAMProtectedServiceServer interface {
-	GetCertTypes(context.Context, *empty.Empty) (*CertTypes, error)
-	FinishProvisioning(context.Context, *empty.Empty) (*empty.Empty, error)
-	Clear(context.Context, *ClearRequest) (*empty.Empty, error)
 	SetOwner(context.Context, *SetOwnerRequest) (*empty.Empty, error)
+	Clear(context.Context, *ClearRequest) (*empty.Empty, error)
 	CreateKey(context.Context, *CreateKeyRequest) (*CreateKeyResponse, error)
 	ApplyCert(context.Context, *ApplyCertRequest) (*ApplyCertResponse, error)
-	GetCert(context.Context, *GetCertRequest) (*GetCertResponse, error)
+	EncryptDisk(context.Context, *EncryptDiskRequest) (*empty.Empty, error)
+	FinishProvisioning(context.Context, *empty.Empty) (*empty.Empty, error)
 	SetUsers(context.Context, *Users) (*empty.Empty, error)
 	RegisterService(context.Context, *RegisterServiceRequest) (*RegisterServiceResponse, error)
 	UnregisterService(context.Context, *UnregisterServiceRequest) (*empty.Empty, error)
-	EncryptDisk(context.Context, *EncryptDiskRequest) (*empty.Empty, error)
 	mustEmbedUnimplementedIAMProtectedServiceServer()
 }
 
@@ -161,17 +139,11 @@ type IAMProtectedServiceServer interface {
 type UnimplementedIAMProtectedServiceServer struct {
 }
 
-func (UnimplementedIAMProtectedServiceServer) GetCertTypes(context.Context, *empty.Empty) (*CertTypes, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCertTypes not implemented")
-}
-func (UnimplementedIAMProtectedServiceServer) FinishProvisioning(context.Context, *empty.Empty) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FinishProvisioning not implemented")
+func (UnimplementedIAMProtectedServiceServer) SetOwner(context.Context, *SetOwnerRequest) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetOwner not implemented")
 }
 func (UnimplementedIAMProtectedServiceServer) Clear(context.Context, *ClearRequest) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Clear not implemented")
-}
-func (UnimplementedIAMProtectedServiceServer) SetOwner(context.Context, *SetOwnerRequest) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetOwner not implemented")
 }
 func (UnimplementedIAMProtectedServiceServer) CreateKey(context.Context, *CreateKeyRequest) (*CreateKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateKey not implemented")
@@ -179,8 +151,11 @@ func (UnimplementedIAMProtectedServiceServer) CreateKey(context.Context, *Create
 func (UnimplementedIAMProtectedServiceServer) ApplyCert(context.Context, *ApplyCertRequest) (*ApplyCertResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ApplyCert not implemented")
 }
-func (UnimplementedIAMProtectedServiceServer) GetCert(context.Context, *GetCertRequest) (*GetCertResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCert not implemented")
+func (UnimplementedIAMProtectedServiceServer) EncryptDisk(context.Context, *EncryptDiskRequest) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EncryptDisk not implemented")
+}
+func (UnimplementedIAMProtectedServiceServer) FinishProvisioning(context.Context, *empty.Empty) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FinishProvisioning not implemented")
 }
 func (UnimplementedIAMProtectedServiceServer) SetUsers(context.Context, *Users) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetUsers not implemented")
@@ -190,9 +165,6 @@ func (UnimplementedIAMProtectedServiceServer) RegisterService(context.Context, *
 }
 func (UnimplementedIAMProtectedServiceServer) UnregisterService(context.Context, *UnregisterServiceRequest) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnregisterService not implemented")
-}
-func (UnimplementedIAMProtectedServiceServer) EncryptDisk(context.Context, *EncryptDiskRequest) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EncryptDisk not implemented")
 }
 func (UnimplementedIAMProtectedServiceServer) mustEmbedUnimplementedIAMProtectedServiceServer() {}
 
@@ -207,38 +179,20 @@ func RegisterIAMProtectedServiceServer(s grpc.ServiceRegistrar, srv IAMProtected
 	s.RegisterService(&IAMProtectedService_ServiceDesc, srv)
 }
 
-func _IAMProtectedService_GetCertTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(empty.Empty)
+func _IAMProtectedService_SetOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetOwnerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(IAMProtectedServiceServer).GetCertTypes(ctx, in)
+		return srv.(IAMProtectedServiceServer).SetOwner(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/GetCertTypes",
+		FullMethod: "/iamanager.v2.IAMProtectedService/SetOwner",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IAMProtectedServiceServer).GetCertTypes(ctx, req.(*empty.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _IAMProtectedService_FinishProvisioning_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(empty.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(IAMProtectedServiceServer).FinishProvisioning(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/FinishProvisioning",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IAMProtectedServiceServer).FinishProvisioning(ctx, req.(*empty.Empty))
+		return srv.(IAMProtectedServiceServer).SetOwner(ctx, req.(*SetOwnerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -253,28 +207,10 @@ func _IAMProtectedService_Clear_Handler(srv interface{}, ctx context.Context, de
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/Clear",
+		FullMethod: "/iamanager.v2.IAMProtectedService/Clear",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IAMProtectedServiceServer).Clear(ctx, req.(*ClearRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _IAMProtectedService_SetOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetOwnerRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(IAMProtectedServiceServer).SetOwner(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/SetOwner",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IAMProtectedServiceServer).SetOwner(ctx, req.(*SetOwnerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -289,7 +225,7 @@ func _IAMProtectedService_CreateKey_Handler(srv interface{}, ctx context.Context
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/CreateKey",
+		FullMethod: "/iamanager.v2.IAMProtectedService/CreateKey",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IAMProtectedServiceServer).CreateKey(ctx, req.(*CreateKeyRequest))
@@ -307,7 +243,7 @@ func _IAMProtectedService_ApplyCert_Handler(srv interface{}, ctx context.Context
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/ApplyCert",
+		FullMethod: "/iamanager.v2.IAMProtectedService/ApplyCert",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IAMProtectedServiceServer).ApplyCert(ctx, req.(*ApplyCertRequest))
@@ -315,20 +251,38 @@ func _IAMProtectedService_ApplyCert_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _IAMProtectedService_GetCert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetCertRequest)
+func _IAMProtectedService_EncryptDisk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EncryptDiskRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(IAMProtectedServiceServer).GetCert(ctx, in)
+		return srv.(IAMProtectedServiceServer).EncryptDisk(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/GetCert",
+		FullMethod: "/iamanager.v2.IAMProtectedService/EncryptDisk",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IAMProtectedServiceServer).GetCert(ctx, req.(*GetCertRequest))
+		return srv.(IAMProtectedServiceServer).EncryptDisk(ctx, req.(*EncryptDiskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IAMProtectedService_FinishProvisioning_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(empty.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IAMProtectedServiceServer).FinishProvisioning(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/iamanager.v2.IAMProtectedService/FinishProvisioning",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IAMProtectedServiceServer).FinishProvisioning(ctx, req.(*empty.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -343,7 +297,7 @@ func _IAMProtectedService_SetUsers_Handler(srv interface{}, ctx context.Context,
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/SetUsers",
+		FullMethod: "/iamanager.v2.IAMProtectedService/SetUsers",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IAMProtectedServiceServer).SetUsers(ctx, req.(*Users))
@@ -361,7 +315,7 @@ func _IAMProtectedService_RegisterService_Handler(srv interface{}, ctx context.C
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/RegisterService",
+		FullMethod: "/iamanager.v2.IAMProtectedService/RegisterService",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IAMProtectedServiceServer).RegisterService(ctx, req.(*RegisterServiceRequest))
@@ -379,28 +333,10 @@ func _IAMProtectedService_UnregisterService_Handler(srv interface{}, ctx context
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/UnregisterService",
+		FullMethod: "/iamanager.v2.IAMProtectedService/UnregisterService",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IAMProtectedServiceServer).UnregisterService(ctx, req.(*UnregisterServiceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _IAMProtectedService_EncryptDisk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EncryptDiskRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(IAMProtectedServiceServer).EncryptDisk(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/iamanager.v1.IAMProtectedService/EncryptDisk",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IAMProtectedServiceServer).EncryptDisk(ctx, req.(*EncryptDiskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -409,24 +345,16 @@ func _IAMProtectedService_EncryptDisk_Handler(srv interface{}, ctx context.Conte
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var IAMProtectedService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "iamanager.v1.IAMProtectedService",
+	ServiceName: "iamanager.v2.IAMProtectedService",
 	HandlerType: (*IAMProtectedServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GetCertTypes",
-			Handler:    _IAMProtectedService_GetCertTypes_Handler,
-		},
-		{
-			MethodName: "FinishProvisioning",
-			Handler:    _IAMProtectedService_FinishProvisioning_Handler,
+			MethodName: "SetOwner",
+			Handler:    _IAMProtectedService_SetOwner_Handler,
 		},
 		{
 			MethodName: "Clear",
 			Handler:    _IAMProtectedService_Clear_Handler,
-		},
-		{
-			MethodName: "SetOwner",
-			Handler:    _IAMProtectedService_SetOwner_Handler,
 		},
 		{
 			MethodName: "CreateKey",
@@ -437,8 +365,12 @@ var IAMProtectedService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IAMProtectedService_ApplyCert_Handler,
 		},
 		{
-			MethodName: "GetCert",
-			Handler:    _IAMProtectedService_GetCert_Handler,
+			MethodName: "EncryptDisk",
+			Handler:    _IAMProtectedService_EncryptDisk_Handler,
+		},
+		{
+			MethodName: "FinishProvisioning",
+			Handler:    _IAMProtectedService_FinishProvisioning_Handler,
 		},
 		{
 			MethodName: "SetUsers",
@@ -452,11 +384,7 @@ var IAMProtectedService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "UnregisterService",
 			Handler:    _IAMProtectedService_UnregisterService_Handler,
 		},
-		{
-			MethodName: "EncryptDisk",
-			Handler:    _IAMProtectedService_EncryptDisk_Handler,
-		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "iamanager/v1/iamanagerprotected.proto",
+	Metadata: "iamanager/v2/iamanagerprotected.proto",
 }

@@ -2,12 +2,12 @@ module github.com/aoscloud/aos_communicationmanager
 
 go 1.14
 
-replace github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.2.5-0.20210607075540-0b6da74b5450
+replace github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
-	github.com/ThalesIgnite/crypto11 v1.2.4
-	github.com/aoscloud/aos_common v0.0.0-20220131091851-03b512e6deff
+	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
+	github.com/aoscloud/aos_common v0.0.0-20220218172038-8cf168776e9c
 	github.com/cavaliercoder/grab v2.0.0+incompatible
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/coreos/go-systemd/v22 v22.3.2
