@@ -43,7 +43,8 @@ const testConfigContent = `{
 	},
 	"certStorage": "/var/aos/crypt/cm/",
 	"serviceDiscoveryUrl" : "www.aos.com",
-	"iamServerUrl" : "localhost:8090",
+	"iamServerUrl" : "localhost:8089",
+	"iamPublicServerUrl" : "localhost:8090",
 	"fileServerUrl":"localhost:8092",
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
@@ -171,8 +172,14 @@ func TestGetBoardConfigFile(t *testing.T) {
 }
 
 func TestGetIAMServerURL(t *testing.T) {
-	if testCfg.IAMServerURL != "localhost:8090" {
+	if testCfg.IAMServerURL != "localhost:8089" {
 		t.Errorf("Wrong IAM server value: %s", testCfg.IAMServerURL)
+	}
+}
+
+func TestGetIAMPublicServerURL(t *testing.T) {
+	if testCfg.IAMPublicServerURL != "localhost:8090" {
+		t.Errorf("wrong IAM public server value: %s", testCfg.IAMPublicServerURL)
 	}
 }
 

@@ -121,6 +121,7 @@ type Config struct {
 	CertStorage           string       `json:"certStorage"`
 	ServiceDiscoveryURL   string       `json:"serviceDiscoveryUrl"`
 	IAMServerURL          string       `json:"iamServerUrl"`
+	IAMPublicServerURL    string       `json:"iamPublicServerUrl"`
 	FileServerURL         string       `json:"fileServerUrl"`
 	CMServerURL           string       `json:"cmServerUrl"`
 	Downloader            Downloader   `json:"downloader"`
