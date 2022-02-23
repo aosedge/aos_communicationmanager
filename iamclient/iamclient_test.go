@@ -33,7 +33,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
-	pb "github.com/aoscloud/aos_common/api/iamanager/v1"
+	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
@@ -49,27 +49,34 @@ import (
  **********************************************************************************************************************/
 
 const (
-	serverURL     = "localhost:8089"
-	secretLength  = 8
-	secretSymbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	protectedServerURL = "localhost:8089"
+	publicServerURL    = "localhost:8090"
+	secretLength       = 8
+	secretSymbols      = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
-type testServer struct {
-	pb.UnimplementedIAMProtectedServiceServer
+type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
 
 	grpcServer          *grpc.Server
 	systemID            string
 	users               []string
 	usersChangedChannel chan []string
-	csr                 map[string]string
 	certURL             map[string]string
 	keyURL              map[string]string
-	permissionsCache    map[string]servicePermissions
+}
+
+type testProtectedServer struct {
+	pb.UnimplementedIAMProtectedServiceServer
+
+	grpcServer       *grpc.Server
+	csr              map[string]string
+	certURL          map[string]string
+	permissionsCache map[string]servicePermissions
 }
 
 type testSender struct {
@@ -130,49 +137,57 @@ func TestMain(m *testing.M) {
  **********************************************************************************************************************/
 
 func TestGetSystemID(t *testing.T) {
-	server, err := newTestServer(serverURL)
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
 
-	defer server.close()
+	defer publicServer.close()
+	defer protectedServer.close()
 
-	server.systemID = "testID"
+	publicServer.systemID = "testID"
 
-	client, err := iamclient.New(&config.Config{IAMServerURL: serverURL}, &testSender{}, true)
+	client, err := iamclient.New(&config.Config{
+		IAMServerURL:       protectedServerURL,
+		IAMPublicServerURL: publicServerURL,
+	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
 	}
 	defer client.Close()
 
-	if client.GetSystemID() != server.systemID {
+	if client.GetSystemID() != publicServer.systemID {
 		t.Errorf("Invalid system ID: %s", client.GetSystemID())
 	}
 }
 
 func TestGetUsers(t *testing.T) {
-	server, err := newTestServer(serverURL)
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
 
-	defer server.close()
+	defer publicServer.close()
+	defer protectedServer.close()
 
-	server.users = []string{"user1", "user2", "user3"}
+	publicServer.users = []string{"user1", "user2", "user3"}
 
-	client, err := iamclient.New(&config.Config{IAMServerURL: serverURL}, &testSender{}, true)
+	client, err := iamclient.New(&config.Config{
+		IAMServerURL:       protectedServerURL,
+		IAMPublicServerURL: publicServerURL,
+	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
 	}
 	defer client.Close()
 
-	if !reflect.DeepEqual(server.users, client.GetUsers()) {
+	if !reflect.DeepEqual(publicServer.users, client.GetUsers()) {
 		t.Errorf("Invalid users: %s", client.GetUsers())
 	}
 
 	newUsers := []string{"newUser1", "newUser2", "newUser3"}
 
-	server.usersChangedChannel <- newUsers
+	publicServer.usersChangedChannel <- newUsers
 
 	select {
 	case users := <-client.UsersChangedChannel():
@@ -188,16 +203,20 @@ func TestGetUsers(t *testing.T) {
 func TestRenewCertificatesNotification(t *testing.T) {
 	sender := &testSender{}
 
-	server, err := newTestServer(serverURL)
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
 
-	defer server.close()
+	defer publicServer.close()
+	defer protectedServer.close()
 
-	server.csr = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
+	protectedServer.csr = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
 
-	client, err := iamclient.New(&config.Config{IAMServerURL: serverURL}, sender, true)
+	client, err := iamclient.New(&config.Config{
+		IAMServerURL:       protectedServerURL,
+		IAMPublicServerURL: publicServerURL,
+	}, sender, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
 	}
@@ -212,7 +231,7 @@ func TestRenewCertificatesNotification(t *testing.T) {
 		t.Fatalf("Can't process renew certificate notification: %s", err)
 	}
 
-	if !reflect.DeepEqual(server.csr, sender.csr) {
+	if !reflect.DeepEqual(protectedServer.csr, sender.csr) {
 		t.Errorf("Wrong sender CSR: %v", sender.csr)
 	}
 }
@@ -220,12 +239,13 @@ func TestRenewCertificatesNotification(t *testing.T) {
 func TestInstallCertificates(t *testing.T) {
 	sender := &testSender{}
 
-	server, err := newTestServer(serverURL)
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
 
-	defer server.close()
+	defer publicServer.close()
+	defer protectedServer.close()
 
 	// openssl req -newkey rsa:2048 -nodes -keyout online_key.pem -x509 -days 365 -out online_cert.pem -set_serial 1
 	onlineCert := `
@@ -286,12 +306,15 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	onlineURL := url.URL{Scheme: "file", Path: path.Join(tmpDir, "online_cert.pem")}
 	offlineURL := url.URL{Scheme: "file", Path: path.Join(tmpDir, "offline_cert.pem")}
 
-	server.certURL = map[string]string{
+	protectedServer.certURL = map[string]string{
 		"online":  onlineURL.String(),
 		"offline": offlineURL.String(),
 	}
 
-	client, err := iamclient.New(&config.Config{IAMServerURL: serverURL}, sender, true)
+	client, err := iamclient.New(&config.Config{
+		IAMServerURL:       protectedServerURL,
+		IAMPublicServerURL: publicServerURL,
+	}, sender, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
 	}
@@ -314,19 +337,21 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 }
 
 func TestGetCertificates(t *testing.T) {
-	sender := &testSender{}
-
-	server, err := newTestServer(serverURL)
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
 
-	defer server.close()
+	defer publicServer.close()
+	defer protectedServer.close()
 
-	server.certURL = map[string]string{"online": "onlineCertURL", "offline": "offlineCertURL"}
-	server.keyURL = map[string]string{"online": "onlineKeyURL", "offline": "offlineKeyURL"}
+	publicServer.certURL = map[string]string{"online": "onlineCertURL", "offline": "offlineCertURL"}
+	publicServer.keyURL = map[string]string{"online": "onlineKeyURL", "offline": "offlineKeyURL"}
 
-	client, err := iamclient.New(&config.Config{IAMServerURL: serverURL}, sender, true)
+	client, err := iamclient.New(&config.Config{
+		IAMServerURL:       protectedServerURL,
+		IAMPublicServerURL: publicServerURL,
+	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
 	}
@@ -339,11 +364,11 @@ func TestGetCertificates(t *testing.T) {
 			continue
 		}
 
-		if certURL != server.certURL[certType] {
+		if certURL != publicServer.certURL[certType] {
 			t.Errorf("Wrong %s cert URL: %s", certType, certURL)
 		}
 
-		if keyURL != server.keyURL[certType] {
+		if keyURL != publicServer.keyURL[certType] {
 			t.Errorf("Wrong %s key URL: %s", certType, keyURL)
 		}
 	}
@@ -353,31 +378,49 @@ func TestGetCertificates(t *testing.T) {
  * Private
  ******************************************************************************/
 
-func newTestServer(url string) (server *testServer, err error) {
-	server = &testServer{usersChangedChannel: make(chan []string, 1)}
-
-	listener, err := net.Listen("tcp", url)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
+func newTestServer(
+	publicServerURL,
+	protectedServerURL string) (publicServer *testPublicServer, protectedServer *testProtectedServer, err error) {
+	publicServer = &testPublicServer{
+		usersChangedChannel: make(chan []string, 1),
 	}
 
-	server.grpcServer = grpc.NewServer()
+	publicListener, err := net.Listen("tcp", publicServerURL)
+	if err != nil {
+		return nil, nil, aoserrors.Wrap(err)
+	}
 
-	pb.RegisterIAMProtectedServiceServer(server.grpcServer, server)
-	pb.RegisterIAMPublicServiceServer(server.grpcServer, server)
+	publicServer.grpcServer = grpc.NewServer()
 
-	server.permissionsCache = make(map[string]servicePermissions)
+	pb.RegisterIAMPublicServiceServer(publicServer.grpcServer, publicServer)
 
 	go func() {
-		if err := server.grpcServer.Serve(listener); err != nil {
-			log.Errorf("Can't serve gRPC server: %s", err)
+		if err := publicServer.grpcServer.Serve(publicListener); err != nil {
+			log.Errorf("Can't serve grpc server: %s", err)
 		}
 	}()
 
-	return server, nil
+	protectedServer = &testProtectedServer{permissionsCache: make(map[string]servicePermissions)}
+
+	protectedListener, err := net.Listen("tcp", protectedServerURL)
+	if err != nil {
+		return nil, nil, aoserrors.Wrap(err)
+	}
+
+	protectedServer.grpcServer = grpc.NewServer()
+
+	pb.RegisterIAMProtectedServiceServer(protectedServer.grpcServer, protectedServer)
+
+	go func() {
+		if err := protectedServer.grpcServer.Serve(protectedListener); err != nil {
+			log.Errorf("Can't serve grpc server: %s", err)
+		}
+	}()
+
+	return publicServer, protectedServer, nil
 }
 
-func (server *testServer) close() (err error) {
+func (server *testPublicServer) close() (err error) {
 	if server.grpcServer != nil {
 		server.grpcServer.Stop()
 	}
@@ -385,7 +428,15 @@ func (server *testServer) close() (err error) {
 	return nil
 }
 
-func (server *testServer) CreateKey(
+func (server *testProtectedServer) close() (err error) {
+	if server.grpcServer != nil {
+		server.grpcServer.Stop()
+	}
+
+	return nil
+}
+
+func (server *testProtectedServer) CreateKey(
 	context context.Context, req *pb.CreateKeyRequest) (rsp *pb.CreateKeyResponse, err error) {
 	rsp = &pb.CreateKeyResponse{Type: req.Type}
 
@@ -399,7 +450,7 @@ func (server *testServer) CreateKey(
 	return rsp, nil
 }
 
-func (server *testServer) ApplyCert(
+func (server *testProtectedServer) ApplyCert(
 	context context.Context, req *pb.ApplyCertRequest) (rsp *pb.ApplyCertResponse, err error) {
 	rsp = &pb.ApplyCertResponse{Type: req.Type}
 
@@ -413,7 +464,7 @@ func (server *testServer) ApplyCert(
 	return rsp, nil
 }
 
-func (server *testServer) GetCert(
+func (server *testPublicServer) GetCert(
 	context context.Context, req *pb.GetCertRequest) (rsp *pb.GetCertResponse, err error) {
 	rsp = &pb.GetCertResponse{Type: req.Type}
 
@@ -433,40 +484,42 @@ func (server *testServer) GetCert(
 	return rsp, nil
 }
 
-func (server *testServer) GetCertTypes(context context.Context, req *empty.Empty) (rsp *pb.CertTypes, err error) {
+func (server *testPublicServer) GetCertTypes(context context.Context, req *empty.Empty) (rsp *pb.CertTypes, err error) {
 	return rsp, nil
 }
 
-func (server *testServer) FinishProvisioning(context context.Context, req *empty.Empty) (rsp *empty.Empty, err error) {
+func (server *testProtectedServer) FinishProvisioning(
+	context context.Context, req *empty.Empty) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
-func (server *testServer) Clear(context context.Context, req *pb.ClearRequest) (rsp *empty.Empty, err error) {
+func (server *testProtectedServer) Clear(context context.Context, req *pb.ClearRequest) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
-func (server *testServer) SetOwner(context context.Context, req *pb.SetOwnerRequest) (rsp *empty.Empty, err error) {
+func (server *testProtectedServer) SetOwner(
+	context context.Context, req *pb.SetOwnerRequest) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
-func (server *testServer) GetSystemInfo(
+func (server *testPublicServer) GetSystemInfo(
 	context context.Context, req *empty.Empty) (rsp *pb.SystemInfo, err error) {
 	rsp = &pb.SystemInfo{SystemId: server.systemID}
 
 	return rsp, nil
 }
 
-func (server *testServer) SetUsers(context context.Context, req *pb.Users) (rsp *empty.Empty, err error) {
+func (server *testProtectedServer) SetUsers(context context.Context, req *pb.Users) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
-func (server *testServer) GetUsers(context context.Context, req *empty.Empty) (rsp *pb.Users, err error) {
+func (server *testPublicServer) GetUsers(context context.Context, req *empty.Empty) (rsp *pb.Users, err error) {
 	rsp = &pb.Users{Users: server.users}
 
 	return rsp, nil
 }
 
-func (server *testServer) SubscribeUsersChanged(
+func (server *testPublicServer) SubscribeUsersChanged(
 	req *empty.Empty, stream pb.IAMPublicService_SubscribeUsersChangedServer) (err error) {
 	for {
 		select {
@@ -481,7 +534,7 @@ func (server *testServer) SubscribeUsersChanged(
 	}
 }
 
-func (server *testServer) RegisterService(
+func (server *testProtectedServer) RegisterService(
 	context context.Context, req *pb.RegisterServiceRequest) (rsp *pb.RegisterServiceResponse, err error) {
 	rsp = &pb.RegisterServiceResponse{}
 
@@ -503,7 +556,7 @@ func (server *testServer) RegisterService(
 	return rsp, nil
 }
 
-func (server *testServer) UnregisterService(
+func (server *testProtectedServer) UnregisterService(
 	ctx context.Context, req *pb.UnregisterServiceRequest) (rsp *empty.Empty, err error) {
 	rsp = &empty.Empty{}
 
@@ -517,31 +570,18 @@ func (server *testServer) UnregisterService(
 	return rsp, nil
 }
 
-func (server *testServer) GetPermissions(
+func (server *testPublicServer) GetPermissions(
 	ctx context.Context, req *pb.PermissionsRequest) (rsp *pb.PermissionsResponse, err error) {
 	rsp = &pb.PermissionsResponse{}
-
-	funcServersPermissions, ok := server.permissionsCache[req.Secret]
-	if !ok {
-		return rsp, aoserrors.New("secret not found")
-	}
-
-	permissions, ok := funcServersPermissions.permissions[req.FunctionalServerId]
-	if !ok {
-		return rsp, aoserrors.New("permissions for functional server not found")
-	}
-
-	rsp.Permissions = &pb.Permissions{Permissions: permissions}
-	rsp.ServiceId = funcServersPermissions.serviceID
 
 	return rsp, nil
 }
 
-func (server *testServer) EncryptDisk(context.Context, *pb.EncryptDiskRequest) (*empty.Empty, error) {
+func (server *testProtectedServer) EncryptDisk(context.Context, *pb.EncryptDiskRequest) (*empty.Empty, error) {
 	return &empty.Empty{}, nil
 }
 
-func (server *testServer) findServiceID(serviceID string) (secret string) {
+func (server *testProtectedServer) findServiceID(serviceID string) (secret string) {
 	for key, value := range server.permissionsCache {
 		if value.serviceID == serviceID {
 			return key
@@ -594,7 +634,7 @@ func (provider *testCertProvider) GetCertSerial(certURLStr string) (serial strin
 
 	switch certURL.Scheme {
 	case cryptutils.SchemeFile:
-		if certs, err = cryptutils.LoadCertificate(certURL.Path); err != nil {
+		if certs, err = cryptutils.LoadCertificateFromFile(certURL.Path); err != nil {
 			return "", aoserrors.Wrap(err)
 		}
 
