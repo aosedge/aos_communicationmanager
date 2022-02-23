@@ -56,7 +56,7 @@ type smClient struct {
 	cfg              config.SMConfig
 	connection       *grpc.ClientConn
 	pbClient         pb.SMServiceClient
-	context          context.Context
+	context          context.Context // nolint:containedctx
 }
 
 type clientBoardConfig struct {

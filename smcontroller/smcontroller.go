@@ -90,7 +90,6 @@ type CertificateProvider interface {
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
-
 // New creates new SM controller.
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
