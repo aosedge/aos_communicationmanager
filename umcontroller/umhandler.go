@@ -260,10 +260,16 @@ func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
 }
 
 func (handler *umHandler) updateStatusNtf(e *fsm.Event) {
+	status, ok := e.Args[0].(umStatus)
+
+	if !ok {
+		log.Error("Unexpected fsm event status type")
+	}
+
 	handler.messageChannel <- umCtrlInternalMsg{
 		umID:        handler.umID,
 		requestType: umStatusUpdate,
-		status:      e.Args[0].(umStatus),
+		status:      status,
 	}
 }
 
