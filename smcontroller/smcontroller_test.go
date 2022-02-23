@@ -71,7 +71,7 @@ type testSM struct {
 	correlationID      string
 	stateChecksum      string
 
-	ctx            context.Context
+	ctx            context.Context // nolint:containedctx
 	cancelFunction context.CancelFunc
 }
 
@@ -639,8 +639,13 @@ func TestOverrideEnvVars(t *testing.T) {
 		t.Fatalf("Wait message error: %s", err)
 	}
 
-	if !reflect.DeepEqual(message.([]cloudprotocol.EnvVarInfoStatus), expectedStatus) {
-		t.Errorf("Wrong env var status: %v", message.([]cloudprotocol.EnvVarInfoStatus))
+	env, ok := message.([]cloudprotocol.EnvVarInfoStatus)
+	if !ok {
+		t.Error("Type assertion error")
+	}
+
+	if !reflect.DeepEqual(env, expectedStatus) {
+		t.Errorf("Wrong env var status: %v", env)
 	}
 }
 
