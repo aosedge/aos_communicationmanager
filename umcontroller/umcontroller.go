@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
@@ -113,6 +114,11 @@ type storage interface {
 	SetComponentsUpdateInfo(updateInfo []SystemComponent) (err error)
 }
 
+// CertificateProvider certificate and key provider interface.
+type CertificateProvider interface {
+	GetCertificate(certType string, issuer []byte, serial string) (certURL, keyURL string, err error)
+}
+
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
@@ -173,7 +179,8 @@ const connectionTimeout = 300 * time.Second
  **********************************************************************************************************************/
 
 // New creates new update managers controller.
-func New(config *config.Config, storage storage, urlTranslator URLTranslator, insecure bool) (
+func New(config *config.Config, storage storage, urlTranslator URLTranslator, certProvider CertificateProvider,
+	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (
 	umCtrl *Controller, err error) {
 	umCtrl = &Controller{
 		storage:           storage,
@@ -247,7 +254,7 @@ func New(config *config.Config, storage storage, urlTranslator URLTranslator, in
 		},
 	)
 
-	umCtrl.server, err = newServer(config, umCtrl.eventChannel, insecure)
+	umCtrl.server, err = newServer(config, umCtrl.eventChannel, certProvider, cryptcoxontext, insecure)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
