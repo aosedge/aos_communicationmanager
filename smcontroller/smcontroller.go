@@ -55,7 +55,7 @@ type Controller struct {
 	clientsWG        sync.WaitGroup
 	readyWG          sync.WaitGroup
 	clients          map[string]*smClient
-	context          context.Context
+	context          context.Context // nolint:containedctx
 	cancelFunction   context.CancelFunc
 }
 
@@ -82,6 +82,11 @@ type MessageSender interface {
 	SendLog(serviceLog cloudprotocol.PushLog) (err error)
 }
 
+// CertificateProvider certificate and key provider interface.
+type CertificateProvider interface {
+	GetCertificate(certType string, issuer []byte, serial string) (certURL, keyURL string, err error)
+}
+
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
@@ -89,7 +94,8 @@ type MessageSender interface {
 // New creates new SM controller.
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
-	urlTranslator URLTranslator, insecure bool) (controller *Controller, err error) {
+	urlTranslator URLTranslator, certProvider CertificateProvider,
+	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (controller *Controller, err error) {
 	log.Debug("Create SM controller")
 
 	controller = &Controller{
@@ -99,6 +105,7 @@ func New(
 		urlTranslator:    urlTranslator,
 		clients:          make(map[string]*smClient),
 	}
+
 	controller.context, controller.cancelFunction = context.WithCancel(context.Background())
 
 	defer func() {
@@ -113,9 +120,14 @@ func New(
 	if insecure {
 		secureOpt = grpc.WithInsecure()
 	} else {
-		tlsConfig, err := cryptutils.GetClientMutualTLSConfig(cfg.Crypt.CACert, cfg.CertStorage)
+		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
 		if err != nil {
-			return controller, aoserrors.Wrap(err)
+			return nil, aoserrors.Wrap(err)
+		}
+
+		tlsConfig, err := cryptcoxontext.GetClientMutualTLSConfig(certURL, keyURL)
+		if err != nil {
+			return nil, aoserrors.Wrap(err)
 		}
 
 		secureOpt = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
