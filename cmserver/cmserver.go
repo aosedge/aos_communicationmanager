@@ -103,12 +103,19 @@ type CMServer struct {
 	sync.Mutex
 }
 
+// CertificateProvider certificate and key provider interface.
+type CertificateProvider interface {
+	GetCertificate(certType string, issuer []byte, serial string) (certURL, keyURL string, err error)
+}
+
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
 
 // New creates new IAM server instance.
-func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMServer, err error) {
+func New(
+	cfg *config.Config, handler UpdateHandler, certProvider CertificateProvider,
+	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (server *CMServer, err error) {
 	server = &CMServer{
 		currentFOTAStatus: handler.GetFOTAStatus(),
 		currentSOTAStatus: handler.GetSOTAStatus(),
@@ -120,7 +127,12 @@ func New(cfg *config.Config, handler UpdateHandler, insecure bool) (server *CMSe
 		var opts []grpc.ServerOption
 
 		if !insecure {
-			tlsConfig, err := cryptutils.GetServerMutualTLSConfig(cfg.Crypt.CACert, cfg.CertStorage)
+			certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
+			if err != nil {
+				return nil, aoserrors.Wrap(err)
+			}
+
+			tlsConfig, err := cryptcoxontext.GetClientMutualTLSConfig(certURL, keyURL)
 			if err != nil {
 				return nil, aoserrors.Wrap(err)
 			}
