@@ -53,7 +53,8 @@ type umCtrlServer struct {
  **********************************************************************************************************************/
 
 // NewServer create update controller server.
-func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, insecure bool) (server *umCtrlServer, err error) {
+func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, certProvider CertificateProvider,
+	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (server *umCtrlServer, err error) {
 	log.WithField("host", cfg.UMController.ServerURL).Debug("Start UM server")
 
 	server = &umCtrlServer{controllerCh: ch}
@@ -61,7 +62,12 @@ func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, insecure bool) (se
 	var opts []grpc.ServerOption
 
 	if !insecure {
-		tlsConfig, err := cryptutils.GetServerMutualTLSConfig(cfg.Crypt.CACert, cfg.CertStorage)
+		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
+		if err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		tlsConfig, err := cryptcoxontext.GetClientMutualTLSConfig(certURL, keyURL)
 		if err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
