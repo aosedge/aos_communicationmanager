@@ -88,7 +88,7 @@ func TestConnection(t *testing.T) {
 		fotaChannel: make(chan cmserver.UpdateFOTAStatus, 10),
 	}
 
-	cmServer, err := cmserver.New(&cmConfig, &unitStatusHandler, true)
+	cmServer, err := cmserver.New(&cmConfig, &unitStatusHandler, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create CM server: %s", err)
 	}
