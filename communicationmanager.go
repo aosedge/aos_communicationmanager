@@ -30,9 +30,11 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/aoscloud/aos_common/utils/retryhelper"
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/coreos/go-systemd/journal"
+	"github.com/google/go-tpm/tpm2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/alerts"
@@ -69,7 +71,9 @@ type communicationManager struct {
 	db            *database.Database
 	amqp          *amqp.AmqpHandler
 	iam           *iamclient.Client
-	crypt         *fcrypt.CryptoContext
+	crypt         *fcrypt.CryptoHandler
+	cryptoContext *cryptutils.CryptoContext
+
 	alerts        *alerts.Alerts
 	monitor       *monitoring.Monitor
 	downloader    *downloader.Downloader
@@ -137,13 +141,21 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	if cm.cryptoContext, err = cryptutils.NewCryptoContext(cfg.Crypt.CACert); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
 	// Create IAM client
-	if cm.iam, err = iamclient.New(cfg, cm.amqp, false); err != nil {
+	if cm.iam, err = iamclient.New(cfg, cm.amqp, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
+	if err = initPKCS(cfg.Crypt); err != nil {
+		return nil, err
+	}
+
 	// Create crypto context
-	if cm.crypt, err = fcrypt.New(cfg.Crypt, cm.iam); err != nil {
+	if cm.crypt, err = fcrypt.New(cm.iam, cm.cryptoContext); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -168,12 +180,13 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	// Create SM controller
-	if cm.smController, err = smcontroller.New(cfg, cm.amqp, cm.alerts, cm.monitor, cm.fileServer, false); err != nil {
+	if cm.smController, err = smcontroller.New(cfg, cm.amqp, cm.alerts, cm.monitor,
+		cm.fileServer, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
 	// Create UM controller
-	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.fileServer, false); err != nil {
+	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.fileServer, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -189,11 +202,24 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	// Create CM server
-	if cm.cmServer, err = cmserver.New(cfg, cm.statusHandler, false); err != nil {
+	if cm.cmServer, err = cmserver.New(cfg, cm.statusHandler, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
 	return cm, nil
+}
+
+func initPKCS(cfg config.Crypt) (err error) {
+	cryptutils.DefaultPKCS11Library = cfg.Pkcs11Library
+
+	// Open TPM Device
+	if cfg.TpmDevice != "" {
+		if cryptutils.DefaultTPMDevice, err = tpm2.OpenTPM(cfg.TpmDevice); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
 }
 
 func (cm *communicationManager) close() {
@@ -232,11 +258,6 @@ func (cm *communicationManager) close() {
 		cm.alerts.Close()
 	}
 
-	// Close crypto context
-	if cm.crypt != nil {
-		cm.crypt.Close()
-	}
-
 	// Close iam
 	if cm.iam != nil {
 		cm.iam.Close()
@@ -245,6 +266,16 @@ func (cm *communicationManager) close() {
 	// Close amqp
 	if cm.amqp != nil {
 		cm.amqp.Close()
+	}
+
+	// Close crypto context
+	if cm.cryptoContext != nil {
+		cm.cryptoContext.Close()
+	}
+
+	// Close TPM Device
+	if cryptutils.DefaultTPMDevice != nil {
+		cryptutils.DefaultTPMDevice.Close()
 	}
 
 	// Close DB
