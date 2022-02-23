@@ -99,7 +99,7 @@ func TestConnection(t *testing.T) {
 	}
 	smConfig := config.Config{UMController: umCtrlConfig}
 
-	umCtrl, err := umcontroller.New(&smConfig, &testStorage{}, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &testStorage{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
@@ -202,7 +202,7 @@ func TestFullUpdate(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -353,7 +353,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -521,7 +521,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -605,7 +605,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um6.notifyTestChan
 	<-finishChannel
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -640,7 +640,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um5.notifyTestChan
 	<-um6.notifyTestChan
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -712,7 +712,7 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -836,7 +836,7 @@ func TestRevertOnUpdate(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -984,7 +984,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1137,7 +1137,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1232,7 +1232,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	<-finishChannel
 	// um14  reboot
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, true)
+	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
