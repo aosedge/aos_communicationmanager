@@ -139,7 +139,7 @@ func TestGetUsersStatus(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -188,7 +188,7 @@ func TestGetAllStatus(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -219,7 +219,7 @@ func TestCheckBoardConfig(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -249,7 +249,7 @@ func TestSetBoardConfig(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -282,7 +282,7 @@ func TestInstallServices(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -381,7 +381,7 @@ func TestRemoveServices(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -442,7 +442,7 @@ func TestInstallLayers(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -536,7 +536,7 @@ func TestServiceStateAcceptance(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -563,7 +563,7 @@ func TestSetServiceState(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		&testMessageSender{}, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -597,7 +597,7 @@ func TestOverrideEnvVars(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		messageSender, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, true)
+		messageSender, &testAlertSender{}, &testMonitoringSender{}, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
@@ -659,7 +659,7 @@ func TestSMNotifications(t *testing.T) {
 	controller, err := smcontroller.New(&config.Config{
 		SMController: config.SMController{SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}}},
 	},
-		messageSender, alertSender, monitoringSender, &testURLTranslator{}, true)
+		messageSender, alertSender, monitoringSender, &testURLTranslator{}, nil, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create SM constoller: %s", err)
 	}
