@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/aoscloud/aos_communicationmanager/workflows/CI/badge.svg)](https://github.com/aoscloud/aos_communicationmanager/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/aoscloud/aos_communicationmanager/branch/main/graph/badge.svg?token=oTxsU7fc1y)](https://codecov.io/gh/aoscloud/aos_communicationmanager)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=aoscloud_aos_communicationmanager&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=aoscloud_aos_communicationmanager)
 
 Aos Communication Manager (CM) is a part of Aos system which responsible of the following tasks:
 
