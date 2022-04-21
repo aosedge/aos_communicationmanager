@@ -888,7 +888,8 @@ func (sm *testSM) close() (err error) {
 }
 
 func (sm *testSM) SubscribeSMNotifications(
-	request *empty.Empty, stream pb.SMService_SubscribeSMNotificationsServer) (err error) {
+	request *empty.Empty, stream pb.SMService_SubscribeSMNotificationsServer,
+) (err error) {
 	for {
 		select {
 		case message := <-sm.messageChannel:
@@ -1043,7 +1044,8 @@ func (sm *testSM) GetAllStatus(ctx context.Context, request *empty.Empty) (respo
 }
 
 func (sm *testSM) GetBoardConfigStatus(
-	ctx context.Context, request *empty.Empty) (response *pb.BoardConfigStatus, err error) {
+	ctx context.Context, request *empty.Empty,
+) (response *pb.BoardConfigStatus, err error) {
 	response = &pb.BoardConfigStatus{VendorVersion: sm.boardConfigVersion}
 
 	return response, nil
@@ -1062,7 +1064,8 @@ func (sm *testSM) SetBoardConfig(ctx context.Context, request *pb.BoardConfig) (
 }
 
 func (sm *testSM) CheckBoardConfig(
-	ctx context.Context, request *pb.BoardConfig) (response *pb.BoardConfigStatus, err error) {
+	ctx context.Context, request *pb.BoardConfig,
+) (response *pb.BoardConfigStatus, err error) {
 	var boardconfig clientBoardConfig
 
 	if err = json.Unmarshal([]byte(request.BoardConfig), &boardconfig); err != nil {
@@ -1075,7 +1078,8 @@ func (sm *testSM) CheckBoardConfig(
 }
 
 func (sm *testSM) InstallService(ctx context.Context,
-	request *pb.InstallServiceRequest) (response *pb.ServiceStatus, err error) {
+	request *pb.InstallServiceRequest,
+) (response *pb.ServiceStatus, err error) {
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -1108,7 +1112,8 @@ func (sm *testSM) InstallService(ctx context.Context,
 }
 
 func (sm *testSM) RemoveService(
-	ctx context.Context, request *pb.RemoveServiceRequest) (response *empty.Empty, err error) {
+	ctx context.Context, request *pb.RemoveServiceRequest,
+) (response *empty.Empty, err error) {
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -1125,7 +1130,8 @@ func (sm *testSM) RemoveService(
 }
 
 func (sm *testSM) InstallLayer(
-	ctx context.Context, request *pb.InstallLayerRequest) (response *empty.Empty, err error) {
+	ctx context.Context, request *pb.InstallLayerRequest,
+) (response *empty.Empty, err error) {
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -1148,7 +1154,8 @@ func (sm *testSM) InstallLayer(
 }
 
 func (sm *testSM) ServiceStateAcceptance(
-	ctx context.Context, request *pb.StateAcceptance) (response *empty.Empty, err error) {
+	ctx context.Context, request *pb.StateAcceptance,
+) (response *empty.Empty, err error) {
 	sm.correlationID = request.CorrelationId
 	sm.stateChecksum = request.StateChecksum
 
@@ -1163,7 +1170,8 @@ func (sm *testSM) SetServiceState(ctx context.Context, request *pb.ServiceState)
 }
 
 func (sm *testSM) OverrideEnvVars(ctx context.Context,
-	request *pb.OverrideEnvVarsRequest) (response *pb.OverrideEnvVarStatus, err error) {
+	request *pb.OverrideEnvVarsRequest,
+) (response *pb.OverrideEnvVarStatus, err error) {
 	response = &pb.OverrideEnvVarStatus{}
 
 	for _, item := range request.EnvVars {
