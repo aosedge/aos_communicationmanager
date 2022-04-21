@@ -72,7 +72,8 @@ type clientBoardConfig struct {
 
 func newSMClient(ctx context.Context, cfg config.SMConfig,
 	messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
-	secureOpt grpc.DialOption) (client *smClient, err error) {
+	secureOpt grpc.DialOption,
+) (client *smClient, err error) {
 	client = &smClient{
 		context:          ctx,
 		cfg:              cfg,
@@ -114,7 +115,8 @@ func (client *smClient) close() (err error) {
 }
 
 func (client *smClient) getUsersStatus(users []string) (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error,
+) {
 	log.WithFields(log.Fields{"id": client.cfg.SMID, "users": users}).Debug("Get SM users status")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
@@ -147,7 +149,8 @@ func (client *smClient) getUsersStatus(users []string) (
 }
 
 func (client *smClient) getAllStatus() (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error,
+) {
 	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Get SM all status")
 
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
@@ -237,7 +240,8 @@ func (client *smClient) setBoardConfig(boardConfig clientBoardConfig) (err error
 }
 
 func (client *smClient) installService(users []string,
-	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateCheckSum string, err error) {
+	serviceInfo cloudprotocol.ServiceInfoFromCloud,
+) (stateCheckSum string, err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
 		"serviceID": serviceInfo.ID,
@@ -323,7 +327,8 @@ func (client *smClient) installLayer(layerInfo cloudprotocol.LayerInfoFromCloud)
 }
 
 func (client *smClient) serviceStateAcceptance(
-	correlationID string, stateAcceptance cloudprotocol.StateAcceptance) (err error) {
+	correlationID string, stateAcceptance cloudprotocol.StateAcceptance,
+) (err error) {
 	log.WithFields(log.Fields{
 		"id":            client.cfg.SMID,
 		"serviceID":     stateAcceptance.ServiceID,
@@ -494,7 +499,8 @@ func (client *smClient) handleSMNotifications() {
 }
 
 func (client *smClient) sendGetLogRequest(logRequest cloudprotocol.RequestServiceLog,
-	pbCall func(context.Context, *pb.ServiceLogRequest, ...grpc.CallOption) (*empty.Empty, error)) (err error) {
+	pbCall func(context.Context, *pb.ServiceLogRequest, ...grpc.CallOption) (*empty.Empty, error),
+) (err error) {
 	ctx, cancel := context.WithTimeout(client.context, smRequestTimeout)
 	defer cancel()
 

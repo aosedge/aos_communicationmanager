@@ -95,7 +95,8 @@ type CertificateProvider interface {
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
 	urlTranslator URLTranslator, certProvider CertificateProvider,
-	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (controller *Controller, err error) {
+	cryptcoxontext *cryptutils.CryptoContext, insecure bool,
+) (controller *Controller, err error) {
 	log.Debug("Create SM controller")
 
 	controller = &Controller{
@@ -161,7 +162,8 @@ func (controller *Controller) Close() (err error) {
 
 // GetUsersStatus returns SM users status.
 func (controller *Controller) GetUsersStatus(users []string) (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error,
+) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -181,7 +183,8 @@ func (controller *Controller) GetUsersStatus(users []string) (
 
 // GetAllStatus returns SM all existing layers and services status.
 func (controller *Controller) GetAllStatus() (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error,
+) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -264,7 +267,8 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 
 // InstallService requests to install servie.
 func (controller *Controller) InstallService(users []string,
-	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
+	serviceInfo cloudprotocol.ServiceInfoFromCloud,
+) (stateChecksum string, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -334,7 +338,8 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFrom
 
 // ServiceStateAcceptance handles service state acceptance.
 func (controller *Controller) ServiceStateAcceptance(
-	correlationID string, stateAcceptance cloudprotocol.StateAcceptance) (err error) {
+	correlationID string, stateAcceptance cloudprotocol.StateAcceptance,
+) (err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
