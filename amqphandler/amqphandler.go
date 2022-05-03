@@ -29,10 +29,9 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
-
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
 /***********************************************************************************************************************
@@ -43,6 +42,11 @@ const (
 	sendChannelSize    = 32
 	receiveChannelSize = 16
 	retryChannelSize   = 8
+)
+
+const (
+	amqpSecureScheme   = "amqps"
+	amqpInsecureScheme = "amqp"
 )
 
 /***********************************************************************************************************************
@@ -74,15 +78,12 @@ type AmqpHandler struct { // nolint:stylecheck
 
 // CryptoContext interface to access crypto functions.
 type CryptoContext interface {
-	GetTLSConfig() (config *tls.Config, err error)
-	DecryptMetadata(input []byte) (output []byte, err error)
+	GetTLSConfig() (*tls.Config, error)
+	DecryptMetadata(input []byte) ([]byte, error)
 }
 
-// Message AMQP message with correlation ID.
-type Message struct {
-	CorrelationID string
-	Data          interface{}
-}
+// Message AMQP message.
+type Message interface{}
 
 /***********************************************************************************************************************
  * Variables
@@ -123,10 +124,10 @@ var messageMap = map[string]func() interface{}{ // nolint:gochecknoglobals
  **********************************************************************************************************************/
 
 // New creates new amqp object.
-func New() (handler *AmqpHandler, err error) {
+func New() (*AmqpHandler, error) {
 	log.Debug("New AMQP")
 
-	handler = &AmqpHandler{
+	handler := &AmqpHandler{
 		sendChannel:  make(chan Message, sendChannelSize),
 		retryChannel: make(chan Message, retryChannelSize),
 	}
@@ -137,11 +138,11 @@ func New() (handler *AmqpHandler, err error) {
 }
 
 // Connect connects to cloud.
-func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID string, users []string) (err error) {
+func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID string, insecure bool) error {
 	handler.Lock()
 	defer handler.Unlock()
 
-	log.WithFields(log.Fields{"url": sdURL, "users": users}).Debug("AMQP connect")
+	log.WithFields(log.Fields{"url": sdURL}).Debug("AMQP connect")
 
 	handler.cryptoContext = cryptoContext
 	handler.systemID = systemID
@@ -155,46 +156,17 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 
 	if connectionInfo, err = getConnectionInfo(handler.ctx, sdURL,
 		handler.createCloudMessage(cloudprotocol.ServiceDiscoveryType,
-			cloudprotocol.ServiceDiscoveryRequest{Users: users}), tlsConfig); err != nil {
+			cloudprotocol.ServiceDiscoveryRequest{}), tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err = handler.setupConnections("amqps", connectionInfo, tlsConfig); err != nil {
-		return aoserrors.Wrap(err)
+	scheme := amqpSecureScheme
+
+	if insecure {
+		scheme = amqpInsecureScheme
 	}
 
-	return nil
-}
-
-// ConnectRabbit connects directly to RabbitMQ server without service discovery.
-func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchange, consumer, queue string) error {
-	handler.Lock()
-	defer handler.Unlock()
-
-	log.WithFields(log.Fields{
-		"host": host,
-		"user": user,
-	}).Debug("AMQP direct connect")
-
-	handler.systemID = systemID
-
-	connectionInfo := cloudprotocol.ConnectionInfo{
-		SendParams: cloudprotocol.SendParams{
-			Host:     host,
-			User:     user,
-			Password: password,
-			Exchange: cloudprotocol.ExchangeParams{Name: exchange},
-		},
-		ReceiveParams: cloudprotocol.ReceiveParams{
-			Host:     host,
-			User:     user,
-			Password: password,
-			Consumer: consumer,
-			Queue:    cloudprotocol.QueueInfo{Name: queue},
-		},
-	}
-
-	if err := handler.setupConnections("amqp", connectionInfo, nil); err != nil {
+	if err := handler.setupConnections(scheme, connectionInfo, tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -202,7 +174,7 @@ func (handler *AmqpHandler) ConnectRabbit(systemID, host, user, password, exchan
 }
 
 // Disconnect disconnects from cloud.
-func (handler *AmqpHandler) Disconnect() (err error) {
+func (handler *AmqpHandler) Disconnect() error {
 	handler.Lock()
 	defer handler.Unlock()
 
@@ -222,86 +194,84 @@ func (handler *AmqpHandler) Disconnect() (err error) {
 }
 
 // SendUnitStatus sends unit status.
-func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error) {
+func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) error {
 	unitStatusMsg := handler.createCloudMessage(cloudprotocol.UnitStatusType, unitStatus)
 
-	handler.sendChannel <- Message{"", unitStatusMsg}
+	handler.sendChannel <- unitStatusMsg
 
 	return nil
 }
 
 // SendMonitoringData sends monitoring data.
-func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error) {
+func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) error {
 	monitoringMsg := handler.createCloudMessage(cloudprotocol.MonitoringDataType, monitoringData)
 
-	handler.sendChannel <- Message{"", monitoringMsg}
+	handler.sendChannel <- monitoringMsg
 
 	return nil
 }
 
 // SendServiceNewState sends new state message.
-func (handler *AmqpHandler) SendServiceNewState(correlationID, serviceID, state, checksum string) (err error) {
-	newStateMsg := handler.createCloudMessage(cloudprotocol.NewStateType,
-		cloudprotocol.NewState{ServiceID: serviceID, State: state, Checksum: checksum})
+func (handler *AmqpHandler) SendInstanceNewState(newState cloudprotocol.NewState) error {
+	newStateMsg := handler.createCloudMessage(cloudprotocol.NewStateType, newState)
 
-	handler.sendChannel <- Message{correlationID, newStateMsg}
+	handler.sendChannel <- newStateMsg
 
 	return nil
 }
 
 // SendServiceStateRequest sends state request message.
-func (handler *AmqpHandler) SendServiceStateRequest(serviceID string, defaultState bool) (err error) {
-	stateRequestMsg := handler.createCloudMessage(cloudprotocol.StateRequestType,
-		cloudprotocol.StateRequest{ServiceID: serviceID, Default: defaultState})
+func (handler *AmqpHandler) SendInstanceStateRequest(request cloudprotocol.StateRequest) error {
+	stateRequestMsg := handler.createCloudMessage(cloudprotocol.StateRequestType, request)
 
-	handler.sendChannel <- Message{"", stateRequestMsg}
+	handler.sendChannel <- stateRequestMsg
 
 	return nil
 }
 
 // SendLog sends system or service logs.
-func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) (err error) {
+func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) error {
 	serviceLogMsg := handler.createCloudMessage(cloudprotocol.PushLogType, serviceLog)
 
-	handler.sendChannel <- Message{"", serviceLogMsg}
+	handler.sendChannel <- serviceLogMsg
 
 	return nil
 }
 
 // SendAlerts sends alerts message.
-func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) (err error) {
+func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) error {
 	alertMsg := handler.createCloudMessage(cloudprotocol.AlertsType, alerts)
 
-	handler.sendChannel <- Message{"", alertMsg}
+	handler.sendChannel <- alertMsg
 
 	return nil
 }
 
 // SendIssueUnitCerts sends request to issue new certificates.
-func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {
+func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) error {
 	request := handler.createCloudMessage(
 		cloudprotocol.IssueUnitCertsType, cloudprotocol.IssueUnitCerts{Requests: requests})
 
-	handler.sendChannel <- Message{"", request}
+	handler.sendChannel <- request
 
 	return nil
 }
 
 // SendInstallCertsConfirmation sends install certificates confirmation.
-func (handler *AmqpHandler) SendInstallCertsConfirmation(
-	confirmations []cloudprotocol.InstallCertData) (err error) {
+func (handler *AmqpHandler) SendInstallCertsConfirmation(confirmations []cloudprotocol.InstallCertData) error {
 	response := handler.createCloudMessage(cloudprotocol.InstallUnitCertsConfirmationType,
 		cloudprotocol.InstallUnitCertsConfirmation{Certificates: confirmations})
 
-	handler.sendChannel <- Message{"", response}
+	handler.sendChannel <- response
 
 	return nil
 }
 
 // SendOverrideEnvVarsStatus overrides env vars status.
-func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs []cloudprotocol.EnvVarInfoStatus) (err error) {
-	handler.sendChannel <- Message{"", handler.createCloudMessage(cloudprotocol.OverrideEnvVarsStatusType,
-		cloudprotocol.OverrideEnvVarsStatus{OverrideEnvVarsStatus: envs})}
+func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs cloudprotocol.OverrideEnvVarsStatus) error {
+	message := handler.createCloudMessage(cloudprotocol.OverrideEnvVarsStatusType, envs)
+
+	handler.sendChannel <- message
 
 	return nil
 }
@@ -322,8 +292,9 @@ func (handler *AmqpHandler) Close() {
  **************************************************************************************************/
 
 // service discovery implementation.
-func getConnectionInfo(ctx context.Context, url string,
-	request cloudprotocol.Message, tlsConfig *tls.Config) (info cloudprotocol.ConnectionInfo, err error) {
+func getConnectionInfo(
+	ctx context.Context, url string, request cloudprotocol.Message, tlsConfig *tls.Config,
+) (info cloudprotocol.ConnectionInfo, err error) {
 	reqJSON, err := json.Marshal(request)
 	if err != nil {
 		return info, aoserrors.Wrap(err)
@@ -366,23 +337,25 @@ func getConnectionInfo(ctx context.Context, url string,
 	return jsonResp.Connection, nil
 }
 
-func (handler *AmqpHandler) setupConnections(scheme string,
-	info cloudprotocol.ConnectionInfo, tlsConfig *tls.Config) (err error) {
+func (handler *AmqpHandler) setupConnections(
+	scheme string, info cloudprotocol.ConnectionInfo, tlsConfig *tls.Config,
+) error {
 	handler.MessageChannel = make(chan Message, receiveChannelSize)
 
-	if err = handler.setupSendConnection(scheme, info.SendParams, tlsConfig); err != nil {
+	if err := handler.setupSendConnection(scheme, info.SendParams, tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err = handler.setupReceiveConnection(scheme, info.ReceiveParams, tlsConfig); err != nil {
+	if err := handler.setupReceiveConnection(scheme, info.ReceiveParams, tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	return nil
 }
 
-func (handler *AmqpHandler) setupSendConnection(scheme string,
-	params cloudprotocol.SendParams, tlsConfig *tls.Config) (err error) {
+func (handler *AmqpHandler) setupSendConnection(
+	scheme string, params cloudprotocol.SendParams, tlsConfig *tls.Config,
+) error {
 	urlRabbitMQ := url.URL{
 		Scheme: scheme,
 		User:   url.UserPassword(params.User, params.Password),
@@ -439,7 +412,7 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 		select {
 		case err := <-errorChannel:
 			if err != nil {
-				handler.MessageChannel <- Message{"", aoserrors.New(err.Reason)}
+				handler.MessageChannel <- aoserrors.New(err.Reason)
 			}
 
 			return
@@ -450,7 +423,7 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 		case message = <-handler.sendChannel:
 		}
 
-		data, err := json.Marshal(message.Data)
+		data, err := json.Marshal(message)
 		if err != nil {
 			log.Errorf("Can't parse message: %s", err)
 			continue
@@ -458,13 +431,11 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 
 		if retry {
 			log.WithFields(log.Fields{
-				"correlationID": message.CorrelationID,
-				"data":          string(data),
+				"data": string(data),
 			}).Debug("AMQP retry message")
 		} else {
 			log.WithFields(log.Fields{
-				"correlationID": message.CorrelationID,
-				"data":          string(data),
+				"data": string(data),
 			}).Debug("AMQP send message")
 		}
 
@@ -474,11 +445,10 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 			params.Mandatory,     // mandatory
 			params.Immediate,     // immediate
 			amqp.Publishing{
-				ContentType:   "application/json",
-				DeliveryMode:  amqp.Persistent,
-				CorrelationId: message.CorrelationID,
-				UserId:        params.User,
-				Body:          data,
+				ContentType:  "application/json",
+				DeliveryMode: amqp.Persistent,
+				UserId:       params.User,
+				Body:         data,
 			}); err != nil {
 			log.Errorf("Error publishing AMQP message: %s", err)
 		}
@@ -487,8 +457,7 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 		confirm, ok := <-confirmChannel
 		if !ok || !confirm.Ack {
 			log.WithFields(log.Fields{
-				"correlationID": message.CorrelationID,
-				"data":          string(data),
+				"data": string(data),
 			}).Warning("AMQP data is not sent. Put into retry queue")
 
 			handler.retryChannel <- message
@@ -496,8 +465,9 @@ func (handler *AmqpHandler) runSender(params cloudprotocol.SendParams, amqpChann
 	}
 }
 
-func (handler *AmqpHandler) setupReceiveConnection(scheme string,
-	params cloudprotocol.ReceiveParams, tlsConfig *tls.Config) (err error) {
+func (handler *AmqpHandler) setupReceiveConnection(
+	scheme string, params cloudprotocol.ReceiveParams, tlsConfig *tls.Config,
+) error {
 	urlRabbitMQ := url.URL{
 		Scheme: scheme,
 		User:   url.UserPassword(params.User, params.Password),
@@ -557,14 +527,14 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 		select {
 		case err := <-errorChannel:
 			if err != nil {
-				handler.MessageChannel <- Message{"", aoserrors.New(err.Reason)}
+				handler.MessageChannel <- aoserrors.New(err.Reason)
 			}
 
 			return
 
 		case delivery, ok := <-deliveryChannel:
 			if !ok {
-				handler.MessageChannel <- Message{"", aoserrors.New("delivery channel is closed")}
+				handler.MessageChannel <- aoserrors.New("delivery channel is closed")
 				return
 			}
 
@@ -579,9 +549,8 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 			}
 
 			log.WithFields(log.Fields{
-				"corrlationId": delivery.CorrelationId,
-				"version":      incomingMsg.Header.Version,
-				"type":         incomingMsg.Header.MessageType,
+				"version": incomingMsg.Header.Version,
+				"type":    incomingMsg.Header.MessageType,
 			}).Debug("AMQP received message")
 
 			if incomingMsg.Header.Version != cloudprotocol.ProtocolVersion {
@@ -589,12 +558,12 @@ func (handler *AmqpHandler) runReceiver(param cloudprotocol.ReceiveParams, deliv
 				continue
 			}
 
-			handler.processReceivedMessages(rawData, delivery.CorrelationId, incomingMsg.Header.MessageType)
+			handler.processReceivedMessages(rawData, incomingMsg.Header.MessageType)
 		}
 	}
 }
 
-func (handler *AmqpHandler) processReceivedMessages(rawData json.RawMessage, correlationID, messageType string) {
+func (handler *AmqpHandler) processReceivedMessages(rawData json.RawMessage, messageType string) {
 	messageTypeFunc, ok := messageMap[messageType]
 	if !ok {
 		log.Warnf("AMQP unsupported message type: %s", messageType)
@@ -655,37 +624,42 @@ func (handler *AmqpHandler) processReceivedMessages(rawData json.RawMessage, cor
 		decodedData = decodedEnvVars
 	}
 
-	handler.MessageChannel <- Message{correlationID, decodedData}
+	handler.MessageChannel <- decodedData
 }
 
 func (handler *AmqpHandler) decodeDesiredStatus(
-	encodedStatus *cloudprotocol.DesiredStatus) (decodedStatus *cloudprotocol.DecodedDesiredStatus, err error) {
-	decodedStatus = &cloudprotocol.DecodedDesiredStatus{
+	encodedStatus *cloudprotocol.DesiredStatus,
+) (*cloudprotocol.DecodedDesiredStatus, error) {
+	decodedStatus := &cloudprotocol.DecodedDesiredStatus{
 		CertificateChains: encodedStatus.CertificateChains,
 		Certificates:      encodedStatus.Certificates,
 	}
 
-	if err = handler.decodeData(encodedStatus.BoardConfig, &decodedStatus.BoardConfig); err != nil {
+	if err := handler.decodeData(encodedStatus.BoardConfig, &decodedStatus.BoardConfig); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = handler.decodeData(encodedStatus.Services, &decodedStatus.Services); err != nil {
+	if err := handler.decodeData(encodedStatus.Services, &decodedStatus.Services); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = handler.decodeData(encodedStatus.Layers, &decodedStatus.Layers); err != nil {
+	if err := handler.decodeData(encodedStatus.Layers, &decodedStatus.Layers); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = handler.decodeData(encodedStatus.Components, &decodedStatus.Components); err != nil {
+	if err := handler.decodeData(encodedStatus.Components, &decodedStatus.Components); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = handler.decodeData(encodedStatus.FOTASchedule, &decodedStatus.FOTASchedule); err != nil {
+	if err := handler.decodeData(encodedStatus.FOTASchedule, &decodedStatus.FOTASchedule); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = handler.decodeData(encodedStatus.SOTASchedule, &decodedStatus.SOTASchedule); err != nil {
+	if err := handler.decodeData(encodedStatus.SOTASchedule, &decodedStatus.SOTASchedule); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	if err := handler.decodeData(encodedStatus.Instances, &decodedStatus.Instances); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -694,11 +668,12 @@ func (handler *AmqpHandler) decodeDesiredStatus(
 
 func (handler *AmqpHandler) decodeRenewCertsNotification(
 	encodedNotification *cloudprotocol.RenewCertsNotification) (
-	decodedNotification *cloudprotocol.RenewCertsNotificationWithPwd, err error) {
+	*cloudprotocol.RenewCertsNotificationWithPwd, error,
+) {
 	var secret cloudprotocol.UnitSecret
 
 	if len(encodedNotification.UnitSecureData) > 0 {
-		if err = handler.decodeData(encodedNotification.UnitSecureData, &secret); err != nil {
+		if err := handler.decodeData(encodedNotification.UnitSecureData, &secret); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -714,17 +689,18 @@ func (handler *AmqpHandler) decodeRenewCertsNotification(
 }
 
 func (handler *AmqpHandler) decodeEnvVars(
-	encodedEnvVars *cloudprotocol.OverrideEnvVars) (decodedEnvVars *cloudprotocol.DecodedOverrideEnvVars, err error) {
-	decodedEnvVars = &cloudprotocol.DecodedOverrideEnvVars{}
+	encodedEnvVars *cloudprotocol.OverrideEnvVars,
+) (*cloudprotocol.DecodedOverrideEnvVars, error) {
+	decodedEnvVars := &cloudprotocol.DecodedOverrideEnvVars{}
 
-	if err = handler.decodeData(encodedEnvVars.OverrideEnvVars, decodedEnvVars); err != nil {
+	if err := handler.decodeData(encodedEnvVars.OverrideEnvVars, decodedEnvVars); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	return decodedEnvVars, nil
 }
 
-func (handler *AmqpHandler) decodeData(data []byte, result interface{}) (err error) {
+func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -747,7 +723,7 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) (err err
 	return nil
 }
 
-func (handler *AmqpHandler) createCloudMessage(messageType string, data interface{}) (message cloudprotocol.Message) {
+func (handler *AmqpHandler) createCloudMessage(messageType string, data interface{}) cloudprotocol.Message {
 	return cloudprotocol.Message{
 		Header: cloudprotocol.MessageHeader{
 			Version:     cloudprotocol.ProtocolVersion,
