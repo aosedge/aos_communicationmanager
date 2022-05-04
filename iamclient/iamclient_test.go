@@ -22,7 +22,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"net/url"
 	"os"
@@ -33,13 +32,13 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/iamclient"
 )
@@ -51,9 +50,9 @@ import (
 const (
 	protectedServerURL = "localhost:8089"
 	publicServerURL    = "localhost:8090"
-	secretLength       = 8
-	secretSymbols      = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
+
+const defaultSubject = "defultSubject"
 
 /***********************************************************************************************************************
  * Types
@@ -62,34 +61,28 @@ const (
 type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
 
-	grpcServer          *grpc.Server
-	systemID            string
-	users               []string
-	usersChangedChannel chan []string
-	certURL             map[string]string
-	keyURL              map[string]string
+	grpcServer             *grpc.Server
+	systemID               string
+	subjects               []string
+	subjectsChangedChannel chan []string
+	certURL                map[string]string
+	keyURL                 map[string]string
 }
 
 type testProtectedServer struct {
 	pb.UnimplementedIAMProtectedServiceServer
 
-	grpcServer       *grpc.Server
-	csr              map[string]string
-	certURL          map[string]string
-	permissionsCache map[string]servicePermissions
+	grpcServer *grpc.Server
+	csr        map[string]string
+	certURL    map[string]string
 }
 
 type testSender struct {
-	csr    map[string]string
-	serial map[string]string
+	csr                  map[string]string
+	currentConfirmations []cloudprotocol.InstallCertData
 }
 
 type testCertProvider struct{}
-
-type servicePermissions struct {
-	serviceID   string
-	permissions map[string]map[string]string
-}
 
 /***********************************************************************************************************************
  * Vars
@@ -161,16 +154,13 @@ func TestGetSystemID(t *testing.T) {
 	}
 }
 
-func TestGetUsers(t *testing.T) {
+func TestGetSubjects(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
 		t.Fatalf("Can't create test server: %s", err)
 	}
 
-	defer publicServer.close()
-	defer protectedServer.close()
-
-	publicServer.users = []string{"user1", "user2", "user3"}
+	publicServer.subjects = []string{"subjects1", "subjects2", "subjects3"}
 
 	client, err := iamclient.New(&config.Config{
 		IAMServerURL:       protectedServerURL,
@@ -181,22 +171,65 @@ func TestGetUsers(t *testing.T) {
 	}
 	defer client.Close()
 
-	if !reflect.DeepEqual(publicServer.users, client.GetUsers()) {
-		t.Errorf("Invalid users: %s", client.GetUsers())
+	if !reflect.DeepEqual(publicServer.subjects, client.GetSubjects()) {
+		t.Errorf("Invalid subjects: %s", client.GetSubjects())
 	}
 
-	newUsers := []string{"newUser1", "newUser2", "newUser3"}
+	newSubjects := []string{"newSubjects1", "newSubjects2", "newSubjects3"}
 
-	publicServer.usersChangedChannel <- newUsers
+	publicServer.subjectsChangedChannel <- newSubjects
 
-	select {
-	case users := <-client.UsersChangedChannel():
-		if !reflect.DeepEqual(users, newUsers) {
-			t.Errorf("Invalid users: %s", users)
-		}
+	subjects, err := waitSubjects(client.SubjectsChangedChannel(), time.Second)
+	if err != nil {
+		t.Error("Wait subjects changed timeout")
+	}
 
-	case <-time.After(5 * time.Second):
-		t.Error("Wait users changed timeout")
+	if !reflect.DeepEqual(subjects, newSubjects) {
+		t.Errorf("Invalid subjects: %s", subjects)
+	}
+
+	newSubjects = []string{"newSubjects1", "newSubjects2"}
+
+	publicServer.subjectsChangedChannel <- newSubjects
+
+	if subjects, err = waitSubjects(client.SubjectsChangedChannel(), time.Second); err != nil {
+		t.Error("Wait subjects changed timeout")
+	}
+
+	if !reflect.DeepEqual(subjects, newSubjects) {
+		t.Errorf("Invalid subjects: %s", subjects)
+	}
+
+	publicServer.subjectsChangedChannel <- newSubjects
+
+	if _, err := waitSubjects(client.SubjectsChangedChannel(), time.Second); err == nil {
+		t.Error("Should be error: timout")
+	}
+
+	// test reconnect with new subject
+	publicServer.close()
+	protectedServer.close()
+
+	time.Sleep(time.Second)
+
+	publicServer, protectedServer, err = newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	time.Sleep(3 * time.Second)
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	newSubjects = []string{defaultSubject}
+
+	if subjects, err = waitSubjects(client.SubjectsChangedChannel(), time.Second); err != nil {
+		t.Error("Wait subjects changed timeout")
+	}
+
+	if !reflect.DeepEqual(subjects, newSubjects) {
+		t.Errorf("Invalid subjects: %s", subjects)
 	}
 }
 
@@ -320,19 +353,24 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	}
 	defer client.Close()
 
+	expectedConfimation := []cloudprotocol.InstallCertData{
+		{Type: "online", Serial: "1", Status: "installed"},
+		{Type: "offline", Serial: "2", Status: "installed"},
+		{Type: "invalid", Serial: "", Status: "not installed", Description: "error"},
+	}
+
 	certInfo := []cloudprotocol.IssuedCertData{
 		{Type: "online", CertificateChain: "onlineCert"},
 		{Type: "offline", CertificateChain: "offlineCert"},
+		{Type: "invalid", CertificateChain: "invalid"},
 	}
 
 	if err = client.InstallCertificates(certInfo, &testCertProvider{}); err != nil {
 		t.Fatalf("Can't process install certificates request: %s", err)
 	}
 
-	serial := map[string]string{"online": "1", "offline": "2"}
-
-	if !reflect.DeepEqual(serial, sender.serial) {
-		t.Errorf("Wrong certificate serials: %v", sender.serial)
+	if !reflect.DeepEqual(expectedConfimation, sender.currentConfirmations) {
+		t.Error("Wrong install confirmation")
 	}
 }
 
@@ -379,10 +417,11 @@ func TestGetCertificates(t *testing.T) {
  ******************************************************************************/
 
 func newTestServer(
-	publicServerURL,
-	protectedServerURL string) (publicServer *testPublicServer, protectedServer *testProtectedServer, err error) {
+	publicServerURL, protectedServerURL string,
+) (publicServer *testPublicServer, protectedServer *testProtectedServer, err error) {
 	publicServer = &testPublicServer{
-		usersChangedChannel: make(chan []string, 1),
+		subjectsChangedChannel: make(chan []string, 1),
+		subjects:               []string{defaultSubject},
 	}
 
 	publicListener, err := net.Listen("tcp", publicServerURL)
@@ -400,7 +439,7 @@ func newTestServer(
 		}
 	}()
 
-	protectedServer = &testProtectedServer{permissionsCache: make(map[string]servicePermissions)}
+	protectedServer = &testProtectedServer{}
 
 	protectedListener, err := net.Listen("tcp", protectedServerURL)
 	if err != nil {
@@ -437,7 +476,8 @@ func (server *testProtectedServer) close() (err error) {
 }
 
 func (server *testProtectedServer) CreateKey(
-	context context.Context, req *pb.CreateKeyRequest) (rsp *pb.CreateKeyResponse, err error) {
+	context context.Context, req *pb.CreateKeyRequest,
+) (rsp *pb.CreateKeyResponse, err error) {
 	rsp = &pb.CreateKeyResponse{Type: req.Type}
 
 	csr, ok := server.csr[req.Type]
@@ -451,7 +491,8 @@ func (server *testProtectedServer) CreateKey(
 }
 
 func (server *testProtectedServer) ApplyCert(
-	context context.Context, req *pb.ApplyCertRequest) (rsp *pb.ApplyCertResponse, err error) {
+	context context.Context, req *pb.ApplyCertRequest,
+) (rsp *pb.ApplyCertResponse, err error) {
 	rsp = &pb.ApplyCertResponse{Type: req.Type}
 
 	certURL, ok := server.certURL[req.Type]
@@ -465,7 +506,8 @@ func (server *testProtectedServer) ApplyCert(
 }
 
 func (server *testPublicServer) GetCert(
-	context context.Context, req *pb.GetCertRequest) (rsp *pb.GetCertResponse, err error) {
+	context context.Context, req *pb.GetCertRequest,
+) (rsp *pb.GetCertResponse, err error) {
 	rsp = &pb.GetCertResponse{Type: req.Type}
 
 	certURL, ok := server.certURL[req.Type]
@@ -489,7 +531,8 @@ func (server *testPublicServer) GetCertTypes(context context.Context, req *empty
 }
 
 func (server *testProtectedServer) FinishProvisioning(
-	context context.Context, req *empty.Empty) (rsp *empty.Empty, err error) {
+	context context.Context, req *empty.Empty,
+) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
@@ -498,109 +541,39 @@ func (server *testProtectedServer) Clear(context context.Context, req *pb.ClearR
 }
 
 func (server *testProtectedServer) SetOwner(
-	context context.Context, req *pb.SetOwnerRequest) (rsp *empty.Empty, err error) {
+	context context.Context, req *pb.SetOwnerRequest,
+) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
 func (server *testPublicServer) GetSystemInfo(
-	context context.Context, req *empty.Empty) (rsp *pb.SystemInfo, err error) {
+	context context.Context, req *empty.Empty,
+) (rsp *pb.SystemInfo, err error) {
 	rsp = &pb.SystemInfo{SystemId: server.systemID}
 
 	return rsp, nil
 }
 
-func (server *testProtectedServer) SetUsers(context context.Context, req *pb.Users) (rsp *empty.Empty, err error) {
-	return rsp, nil
-}
-
-func (server *testPublicServer) GetUsers(context context.Context, req *empty.Empty) (rsp *pb.Users, err error) {
-	rsp = &pb.Users{Users: server.users}
+func (server *testPublicServer) GetSubjects(context context.Context, req *empty.Empty) (rsp *pb.Subjects, err error) {
+	rsp = &pb.Subjects{Subjects: server.subjects}
 
 	return rsp, nil
 }
 
-func (server *testPublicServer) SubscribeUsersChanged(
-	req *empty.Empty, stream pb.IAMPublicService_SubscribeUsersChangedServer) (err error) {
+func (server *testPublicServer) SubscribeSubjectsChanged(
+	req *empty.Empty, stream pb.IAMPublicService_SubscribeSubjectsChangedServer,
+) error {
 	for {
 		select {
 		case <-stream.Context().Done():
 			return nil
 
-		case users := <-server.usersChangedChannel:
-			if err := stream.Send(&pb.Users{Users: users}); err != nil {
+		case subjects := <-server.subjectsChangedChannel:
+			if err := stream.Send(&pb.Subjects{Subjects: subjects}); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
 	}
-}
-
-func (server *testProtectedServer) RegisterService(
-	context context.Context, req *pb.RegisterServiceRequest) (rsp *pb.RegisterServiceResponse, err error) {
-	rsp = &pb.RegisterServiceResponse{}
-
-	secret := server.findServiceID(req.ServiceId)
-	if secret != "" {
-		return rsp, aoserrors.Errorf("service %s is already registered", req.ServiceId)
-	}
-
-	secret = randomString()
-	rsp.Secret = secret
-
-	permissions := make(map[string]map[string]string)
-	for key, value := range req.Permissions {
-		permissions[key] = value.Permissions
-	}
-
-	server.permissionsCache[secret] = servicePermissions{serviceID: req.ServiceId, permissions: permissions}
-
-	return rsp, nil
-}
-
-func (server *testProtectedServer) UnregisterService(
-	ctx context.Context, req *pb.UnregisterServiceRequest) (rsp *empty.Empty, err error) {
-	rsp = &empty.Empty{}
-
-	secret := server.findServiceID(req.ServiceId)
-	if secret == "" {
-		return rsp, aoserrors.Errorf("service %s is not registered ", req.ServiceId)
-	}
-
-	delete(server.permissionsCache, secret)
-
-	return rsp, nil
-}
-
-func (server *testPublicServer) GetPermissions(
-	ctx context.Context, req *pb.PermissionsRequest) (rsp *pb.PermissionsResponse, err error) {
-	rsp = &pb.PermissionsResponse{}
-
-	return rsp, nil
-}
-
-func (server *testProtectedServer) EncryptDisk(context.Context, *pb.EncryptDiskRequest) (*empty.Empty, error) {
-	return &empty.Empty{}, nil
-}
-
-func (server *testProtectedServer) findServiceID(serviceID string) (secret string) {
-	for key, value := range server.permissionsCache {
-		if value.serviceID == serviceID {
-			return key
-		}
-	}
-
-	return ""
-}
-
-func randomString() string {
-	secret := make([]byte, secretLength)
-
-	rand.Seed(time.Now().UnixNano())
-
-	for i := range secret {
-		secret[i] = secretSymbols[rand.Intn(len(secretSymbols))] // nolint:gosec // just for tests
-	}
-
-	return string(secret)
 }
 
 func (sender *testSender) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {
@@ -613,12 +586,13 @@ func (sender *testSender) SendIssueUnitCerts(requests []cloudprotocol.IssueCertD
 	return nil
 }
 
-func (sender *testSender) SendInstallCertsConfirmation(
-	confirmations []cloudprotocol.InstallCertData) (err error) {
-	sender.serial = make(map[string]string)
+func (sender *testSender) SendInstallCertsConfirmation(confirmations []cloudprotocol.InstallCertData) error {
+	sender.currentConfirmations = confirmations
 
-	for _, confirmation := range confirmations {
-		sender.serial[confirmation.Type] = confirmation.Serial
+	for i := range sender.currentConfirmations {
+		if sender.currentConfirmations[i].Description != "" {
+			sender.currentConfirmations[i].Description = "error"
+		}
 	}
 
 	return nil
@@ -643,4 +617,14 @@ func (provider *testCertProvider) GetCertSerial(certURLStr string) (serial strin
 	}
 
 	return fmt.Sprintf("%X", certs[0].SerialNumber), nil
+}
+
+func waitSubjects(messageChannel <-chan []string, timeout time.Duration) ([]string, error) {
+	select {
+	case <-time.After(timeout):
+		return []string{}, aoserrors.New("wait message timeout")
+
+	case subjects := <-messageChannel:
+		return subjects, nil
+	}
 }
