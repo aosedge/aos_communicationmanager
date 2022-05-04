@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -31,7 +32,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -66,17 +66,17 @@ type UpdateStatus struct {
 
 // UpdateFOTAStatus FOTA update status for update scheduler service.
 type UpdateFOTAStatus struct {
-	Components  []cloudprotocol.ComponentInfo
-	BoardConfig *cloudprotocol.BoardConfigInfo
+	Components  []cloudprotocol.ComponentStatus
+	BoardConfig *cloudprotocol.BoardConfigStatus
 	UpdateStatus
 }
 
 // UpdateSOTAStatus SOTA update status for update scheduler service.
 type UpdateSOTAStatus struct {
-	InstallServices []cloudprotocol.ServiceInfo
-	RemoveServices  []cloudprotocol.ServiceInfo
-	InstallLayers   []cloudprotocol.LayerInfo
-	RemoveLayers    []cloudprotocol.LayerInfo
+	InstallServices []cloudprotocol.ServiceStatus
+	RemoveServices  []cloudprotocol.ServiceStatus
+	InstallLayers   []cloudprotocol.LayerStatus
+	RemoveLayers    []cloudprotocol.LayerStatus
 	UpdateStatus
 }
 
@@ -115,7 +115,8 @@ type CertificateProvider interface {
 // New creates new IAM server instance.
 func New(
 	cfg *config.Config, handler UpdateHandler, certProvider CertificateProvider,
-	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (server *CMServer, err error) {
+	cryptcoxontext *cryptutils.CryptoContext, insecure bool,
+) (server *CMServer, err error) {
 	server = &CMServer{
 		currentFOTAStatus: handler.GetFOTAStatus(),
 		currentSOTAStatus: handler.GetSOTAStatus(),
@@ -186,7 +187,8 @@ func (server *CMServer) Close() {
 
 // SubscribeNotifications sunscribes on SOTA FOTA packages status changes.
 func (server *CMServer) SubscribeNotifications(
-	req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer) (err error) {
+	req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer,
+) (err error) {
 	log.Debug("New CM client subscribed to schedule update notification")
 
 	server.Lock()
