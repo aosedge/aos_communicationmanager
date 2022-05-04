@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -31,7 +32,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -44,7 +44,7 @@ const (
 	iamReconnectTimeout = 10 * time.Second
 )
 
-const usersChangedChannelSize = 1
+const subjectsChangedChannelSize = 1
 
 /***********************************************************************************************************************
  * Types
@@ -57,15 +57,15 @@ type Client struct {
 	sender Sender
 
 	systemID string
-	users    []string
+	subjects []string
 
 	publicConnection    *grpc.ClientConn
 	protectedConnection *grpc.ClientConn
 	pbProtected         pb.IAMProtectedServiceClient
 	pbPublic            pb.IAMPublicServiceClient
 
-	closeChannel        chan struct{}
-	usersChangedChannel chan []string
+	closeChannel           chan struct{}
+	subjectsChangedChannel chan []string
 }
 
 // Sender provides API to send messages to the cloud.
@@ -85,53 +85,53 @@ type CertificateProvider interface {
 
 // New creates new IAM client.
 func New(
-	config *config.Config, sender Sender, cryptocontext *cryptutils.CryptoContext,
-	insecure bool) (client *Client, err error) {
+	config *config.Config, sender Sender, cryptocontext *cryptutils.CryptoContext, insecure bool,
+) (client *Client, err error) {
 	log.Debug("Connecting to IAM...")
 
 	if sender == nil {
 		return nil, aoserrors.New("sender is nil")
 	}
 
-	client = &Client{
-		sender:              sender,
-		usersChangedChannel: make(chan []string, usersChangedChannelSize),
-		closeChannel:        make(chan struct{}, 1),
+	localClient := &Client{
+		sender:                 sender,
+		subjectsChangedChannel: make(chan []string, subjectsChangedChannelSize),
+		closeChannel:           make(chan struct{}, 1),
 	}
 
 	defer func() {
 		if err != nil {
-			client.Close()
+			localClient.Close()
 		}
 	}()
 
-	if client.publicConnection, err = createPublicConnection(
+	if localClient.publicConnection, err = createPublicConnection(
 		config.IAMPublicServerURL, cryptocontext, insecure); err != nil {
 		return nil, err
 	}
 
-	client.pbPublic = pb.NewIAMPublicServiceClient(client.publicConnection)
+	localClient.pbPublic = pb.NewIAMPublicServiceClient(localClient.publicConnection)
 
-	if client.protectedConnection, err = client.createProtectedConnection(
+	if localClient.protectedConnection, err = localClient.createProtectedConnection(
 		config, cryptocontext, insecure); err != nil {
 		return nil, err
 	}
 
-	client.pbProtected = pb.NewIAMProtectedServiceClient(client.protectedConnection)
+	localClient.pbProtected = pb.NewIAMProtectedServiceClient(localClient.protectedConnection)
 
 	log.Debug("Connected to IAM")
 
-	if client.systemID, err = client.getSystemID(); err != nil {
-		return client, aoserrors.Wrap(err)
+	if localClient.systemID, err = localClient.getSystemID(); err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
-	if client.users, err = client.getUsers(); err != nil {
-		return client, aoserrors.Wrap(err)
+	if localClient.subjects, err = localClient.getSubjects(); err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
-	go client.handleUsersChanged()
+	go client.handleSubjectsChanged()
 
-	return client, nil
+	return localClient, nil
 }
 
 // GetSystemID returns system ID.
@@ -139,17 +139,17 @@ func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
 }
 
-// GetUsers returns current users.
-func (client *Client) GetUsers() (users []string) {
+// GetSubjects returns current subjects.
+func (client *Client) GetSubjects() []string {
 	client.Lock()
 	defer client.Unlock()
 
-	return client.users
+	return client.subjects
 }
 
-// UsersChangedChannel returns users changed channel.
-func (client *Client) UsersChangedChannel() (channel <-chan []string) {
-	return client.usersChangedChannel
+// SubjectsChangedChannel returns subjects changed channel.
+func (client *Client) SubjectsChangedChannel() <-chan []string {
+	return client.subjectsChangedChannel
 }
 
 // RenewCertificatesNotification renew certificates notification.
@@ -186,8 +186,9 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 }
 
 // InstallCertificates applies new issued certificates.
-func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertData,
-	certProvider CertificateProvider) (err error) {
+func (client *Client) InstallCertificates(
+	certInfo []cloudprotocol.IssuedCertData, certProvider CertificateProvider,
+) error {
 	confirmations := make([]cloudprotocol.InstallCertData, len(certInfo))
 
 	for i, cert := range certInfo {
@@ -220,7 +221,7 @@ func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertDat
 		return nil
 	}
 
-	if err = client.sender.SendInstallCertsConfirmation(confirmations); err != nil {
+	if err := client.sender.SendInstallCertsConfirmation(confirmations); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -229,7 +230,8 @@ func (client *Client) InstallCertificates(certInfo []cloudprotocol.IssuedCertDat
 
 // GetCertificate gets certificate by issuer.
 func (client *Client) GetCertificate(
-	certType string, issuer []byte, serial string) (certURL, keyURL string, err error) {
+	certType string, issuer []byte, serial string,
+) (certURL, keyURL string, err error) {
 	log.WithFields(log.Fields{
 		"type":   certType,
 		"issuer": base64.StdEncoding.EncodeToString(issuer),
@@ -273,7 +275,8 @@ func (client *Client) Close() (err error) {
  **********************************************************************************************************************/
 
 func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoContext, insecure bool) (
-	connection *grpc.ClientConn, err error) {
+	connection *grpc.ClientConn, err error,
+) {
 	var secureOpt grpc.DialOption
 
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -299,7 +302,8 @@ func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoCo
 
 func (client *Client) createProtectedConnection(
 	config *config.Config, cryptocontext *cryptutils.CryptoContext, insecure bool) (
-	connection *grpc.ClientConn, err error) {
+	connection *grpc.ClientConn, err error,
+) {
 	var secureOpt grpc.DialOption
 
 	if insecure {
@@ -344,28 +348,28 @@ func (client *Client) getSystemID() (systemID string, err error) {
 	return response.SystemId, nil
 }
 
-func (client *Client) getUsers() (users []string, err error) {
+func (client *Client) getSubjects() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
 	request := &empty.Empty{}
 
-	response, err := client.pbPublic.GetUsers(ctx, request)
+	response, err := client.pbPublic.GetSubjects(ctx, request)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	log.WithFields(log.Fields{"users": response.Users}).Debug("Get users")
+	log.WithFields(log.Fields{"subjects": response.Subjects}).Debug("Get subjects")
 
-	return response.Users, nil
+	return response.Subjects, nil
 }
 
-func (client *Client) handleUsersChanged() {
-	err := client.subscribeUsersChanged()
+func (client *Client) handleSubjectsChanged() {
+	err := client.subscribeSubjectsChanged()
 
 	for {
 		if err != nil && len(client.closeChannel) == 0 {
-			log.Errorf("Error subscribe users changed: %s", err)
+			log.Errorf("Error subscribe subjects changed: %s", err)
 			log.Debugf("Reconnect to IAM in %v...", iamReconnectTimeout)
 		}
 
@@ -374,32 +378,32 @@ func (client *Client) handleUsersChanged() {
 			return
 
 		case <-time.After(iamReconnectTimeout):
-			err = client.subscribeUsersChanged()
+			err = client.subscribeSubjectsChanged()
 		}
 	}
 }
 
-func (client *Client) subscribeUsersChanged() (err error) {
-	log.Debug("Subscribe to users changed notification")
+func (client *Client) subscribeSubjectsChanged() error {
+	log.Debug("Subscribe to subjects changed notification")
 
 	request := &empty.Empty{}
 
-	stream, err := client.pbPublic.SubscribeUsersChanged(context.Background(), request)
+	stream, err := client.pbPublic.SubscribeSubjectsChanged(context.Background(), request)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	users, err := client.getUsers()
+	subjects, err := client.getSubjects()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if !isUsersEqual(users, client.users) {
+	if !isSubjectsEqual(subjects, client.subjects) {
 		client.Lock()
-		client.users = users
+		client.subjects = subjects
 		client.Unlock()
 
-		client.usersChangedChannel <- client.users
+		client.subjectsChangedChannel <- client.subjects
 	}
 
 	for {
@@ -408,25 +412,25 @@ func (client *Client) subscribeUsersChanged() (err error) {
 			return aoserrors.Wrap(err)
 		}
 
-		log.WithFields(log.Fields{"users": notification.Users}).Debug("Users changed notification")
+		log.WithFields(log.Fields{"subjects": notification.Subjects}).Debug("Subjects changed notification")
 
-		if !isUsersEqual(notification.Users, client.users) {
+		if !isSubjectsEqual(notification.Subjects, client.subjects) {
 			client.Lock()
-			client.users = notification.Users
+			client.subjects = notification.Subjects
 			client.Unlock()
 
-			client.usersChangedChannel <- client.users
+			client.subjectsChangedChannel <- client.subjects
 		}
 	}
 }
 
-func isUsersEqual(users1, users2 []string) (result bool) {
-	if len(users1) != len(users2) {
+func isSubjectsEqual(subjects1, subjects2 []string) bool {
+	if len(subjects1) != len(subjects2) {
 		return false
 	}
 
-	for i, user := range users1 {
-		if user != users2[i] {
+	for i, subject := range subjects1 {
+		if subject != subjects2[i] {
 			return false
 		}
 	}
