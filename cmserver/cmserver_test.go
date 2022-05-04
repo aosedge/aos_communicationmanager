@@ -24,12 +24,12 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
@@ -127,8 +127,8 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusFotaNotification := cmserver.UpdateFOTAStatus{
-		Components:   []cloudprotocol.ComponentInfo{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
-		BoardConfig:  &cloudprotocol.BoardConfigInfo{VendorVersion: "bc_version"},
+		Components:   []cloudprotocol.ComponentStatus{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
+		BoardConfig:  &cloudprotocol.BoardConfigStatus{VendorVersion: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
 
@@ -173,8 +173,8 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusNotification := cmserver.UpdateSOTAStatus{
-		InstallServices: []cloudprotocol.ServiceInfo{{ID: "s1", AosVersion: 42}},
-		InstallLayers:   []cloudprotocol.LayerInfo{{ID: "l1", Digest: "someSha", AosVersion: 42}},
+		InstallServices: []cloudprotocol.ServiceStatus{{ID: "s1", AosVersion: 42}},
+		InstallLayers:   []cloudprotocol.LayerStatus{{ID: "l1", Digest: "someSha", AosVersion: 42}},
 		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
 	}
 
