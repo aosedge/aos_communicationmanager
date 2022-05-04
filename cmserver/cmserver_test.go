@@ -54,6 +54,8 @@ type testClient struct {
 type testUpdateHandler struct {
 	fotaChannel chan cmserver.UpdateFOTAStatus
 	sotaChannel chan cmserver.UpdateSOTAStatus
+	startFOTA   bool
+	startSOTA   bool
 }
 
 /*******************************************************************************
@@ -174,7 +176,9 @@ func TestConnection(t *testing.T) {
 
 	statusNotification := cmserver.UpdateSOTAStatus{
 		InstallServices: []cloudprotocol.ServiceStatus{{ID: "s1", AosVersion: 42}},
+		RemoveServices:  []cloudprotocol.ServiceStatus{{ID: "s2", AosVersion: 42}},
 		InstallLayers:   []cloudprotocol.LayerStatus{{ID: "l1", Digest: "someSha", AosVersion: 42}},
+		RemoveLayers:    []cloudprotocol.LayerStatus{{ID: "l2", Digest: "someSha", AosVersion: 42}},
 		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
 	}
 
@@ -226,7 +230,25 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect layer aos version")
 	}
 
+	if _, err := client.pbclient.StartFOTAUpdate(ctx, &emptypb.Empty{}); err != nil {
+		t.Fatalf("Can't start FOTA update: %v", err)
+	}
+
+	if !unitStatusHandler.startFOTA {
+		t.Error("FOTA update should be started")
+	}
+
+	if _, err := client.pbclient.StartSOTAUpdate(ctx, &emptypb.Empty{}); err != nil {
+		t.Fatalf("Can't start SOTA update: %v", err)
+	}
+
+	if !unitStatusHandler.startSOTA {
+		t.Error("SOTA update should be started")
+	}
+
 	client.close()
+
+	time.Sleep(time.Second)
 }
 
 /*******************************************************************************
@@ -275,9 +297,13 @@ func (handler *testUpdateHandler) GetSOTAStatus() (status cmserver.UpdateSOTASta
 }
 
 func (handler *testUpdateHandler) StartFOTAUpdate() (err error) {
+	handler.startFOTA = true
+
 	return nil
 }
 
 func (handler *testUpdateHandler) StartSOTAUpdate() (err error) {
+	handler.startSOTA = true
+
 	return nil
 }
