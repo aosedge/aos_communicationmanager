@@ -32,7 +32,7 @@ import (
 	"github.com/aoscloud/aos_common/aoserrors"
 	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
@@ -160,7 +160,8 @@ func TestConnection(t *testing.T) {
  **********************************************************************************************************************/
 
 func createClientConnection(clientID string, state pb.UmState,
-	components []*pb.SystemComponent) (stream pb.UMService_RegisterUMClient, conn *grpc.ClientConn, err error) {
+	components []*pb.SystemComponent,
+) (stream pb.UMService_RegisterUMClient, conn *grpc.ClientConn, err error) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithInsecure())
 	opts = append(opts, grpc.WithBlock())
@@ -223,17 +224,17 @@ func TestFullUpdate(t *testing.T) {
 	um2 := newTestUM(t, "testUM2", pb.UmState_IDLE, "init", um2Components)
 	go um2.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um1C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um1C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um2C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um2C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um2C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um2C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -307,7 +308,7 @@ func TestFullUpdate(t *testing.T) {
 
 	<-finishChannel
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um1C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um1C2", VendorVersion: "2", Status: "installed"},
 		{ID: "um2C1", VendorVersion: "2", Status: "installed"},
@@ -374,17 +375,17 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um4 := newTestUM(t, "testUM4", pb.UmState_IDLE, "init", um4Components)
 	go um4.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um3C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um3C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um4C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um4C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um4C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um4C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -480,7 +481,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	<-finishChannel
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um3C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um3C2", VendorVersion: "2", Status: "installed"},
 		{ID: "um4C1", VendorVersion: "2", Status: "installed"},
@@ -542,17 +543,17 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6 := newTestUM(t, "testUM6", pb.UmState_IDLE, "init", um6Components)
 	go um6.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um5C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um5C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um6C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um6C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um6C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um6C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -671,7 +672,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um5.step = finishStep
 	um6.step = finishStep
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um5C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um5C2", VendorVersion: "2", Status: "installed"},
 		{ID: "um6C1", VendorVersion: "2", Status: "installed"},
@@ -733,17 +734,17 @@ func TestRevertOnPrepare(t *testing.T) {
 	um8 := newTestUM(t, "testUM8", pb.UmState_IDLE, "init", um8Components)
 	go um8.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um7C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um7C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um8C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um8C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um8C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um8C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -793,7 +794,7 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	<-finishChannel
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um7C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um7C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um8C1", VendorVersion: "1", Status: "installed"},
@@ -857,17 +858,17 @@ func TestRevertOnUpdate(t *testing.T) {
 	um10 := newTestUM(t, "testUM10", pb.UmState_IDLE, "init", um10Components)
 	go um10.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um9C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um9C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um10C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um10C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um10C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um10C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -941,7 +942,7 @@ func TestRevertOnUpdate(t *testing.T) {
 
 	<-finishChannel
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um9C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um9C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um10C1", VendorVersion: "1", Status: "installed"},
@@ -1005,17 +1006,17 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um12 := newTestUM(t, "testUM12", pb.UmState_IDLE, "init", um12Components)
 	go um12.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um11C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um11C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um12C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um12C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um12C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um12C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -1094,7 +1095,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 	<-finishChannel
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um11C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um11C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um12C1", VendorVersion: "1", Status: "installed"},
@@ -1158,17 +1159,17 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um14 := newTestUM(t, "testUM14", pb.UmState_IDLE, "init", um14Components)
 	go um14.processMessages()
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um13C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um13C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um14C1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um14C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um14C2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2"},
+			ID: "um14C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -1264,7 +1265,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	etalonComponents := []cloudprotocol.ComponentInfo{
+	etalonComponents := []cloudprotocol.ComponentStatus{
 		{ID: "um13C1", VendorVersion: "1", Status: "installed"},
 		{ID: "um13C2", VendorVersion: "1", Status: "installed"},
 		{ID: "um14C1", VendorVersion: "1", Status: "installed"},
@@ -1365,7 +1366,8 @@ func (um *testUmConnection) processMessages() {
  ******************************************************************************/
 
 func newTestUM(t *testing.T, id string, umState pb.UmState, testState string, components []*pb.SystemComponent) (
-	umTest *testUmConnection) {
+	umTest *testUmConnection,
+) {
 	t.Helper()
 
 	stream, conn, err := createClientConnection(id, umState, components)
