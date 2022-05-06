@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
+
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -186,7 +188,7 @@ func TestGetIAMPublicServerURL(t *testing.T) {
 }
 
 func TestDurationMarshal(t *testing.T) {
-	d := config.Duration{Duration: 32 * time.Second}
+	d := aostypes.Duration{Duration: 32 * time.Second}
 
 	result, err := json.Marshal(d)
 	if err != nil {
@@ -246,7 +248,7 @@ func TestUMControllerConfig(t *testing.T) {
 	originalConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{umClient},
-		UpdateTTL: config.Duration{100 * time.Hour},
+		UpdateTTL: aostypes.Duration{Duration: 100 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {
@@ -259,8 +261,8 @@ func TestDownloaderConfig(t *testing.T) {
 		DownloadDir:            "/path/to/download",
 		DecryptDir:             "/path/to/decrypt",
 		MaxConcurrentDownloads: 10,
-		RetryDelay:             config.Duration{10 * time.Second},
-		MaxRetryDelay:          config.Duration{30 * time.Second},
+		RetryDelay:             aostypes.Duration{Duration: 10 * time.Second},
+		MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Second},
 		DownloadPartLimit:      57,
 	}
 
@@ -275,7 +277,7 @@ func TestSMControllerConfig(t *testing.T) {
 			{SMID: "sm0", ServerURL: "localhost:8888", IsLocal: true},
 			{SMID: "sm1", ServerURL: "remotehost:8888"},
 		},
-		UpdateTTL: config.Duration{30 * time.Hour},
+		UpdateTTL: aostypes.Duration{Duration: 30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {
