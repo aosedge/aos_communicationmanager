@@ -25,7 +25,9 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/resourcemonitor"
+
 )
 
 /***********************************************************************************************************************
@@ -41,9 +43,9 @@ type Crypt struct {
 
 // UMController configuration for update controller.
 type UMController struct {
-	ServerURL string           `json:"serverUrl"`
-	UMClients []UMClientConfig `json:"umClients"`
-	UpdateTTL Duration         `json:"updateTtl"`
+	ServerURL string            `json:"serverUrl"`
+	UMClients []UMClientConfig  `json:"umClients"`
+	UpdateTTL aostypes.Duration `json:"updateTtl"`
 }
 
 // UMClientConfig update manager config.
@@ -53,16 +55,11 @@ type UMClientConfig struct {
 	IsLocal  bool   `json:"isLocal,omitempty"`
 }
 
-// Duration represents duration in format "00:00:00".
-type Duration struct {
-	time.Duration
-}
-
 // AlertRule describes alert rule.
 type AlertRule struct {
-	MinTimeout   Duration `json:"minTimeout"`
-	MinThreshold uint64   `json:"minThreshold"`
-	MaxThreshold uint64   `json:"maxThreshold"`
+	MinTimeout   aostypes.Duration `json:"minTimeout"`
+	MinThreshold uint64            `json:"minThreshold"`
+	MaxThreshold uint64            `json:"maxThreshold"`
 }
 
 // Monitoring configuration for system monitoring.
@@ -73,11 +70,11 @@ type Monitoring struct {
 
 // Alerts configuration for alerts.
 type Alerts struct {
-	EnableSystemAlerts bool     `json:"enableSystemAlerts"`
-	SendPeriod         Duration `json:"sendPeriod"`
-	MaxMessageSize     int      `json:"maxMessagesize"`
-	MaxOfflineMessages int      `json:"maxOfflineMessages"`
-	Filter             []string `json:"filter"`
+	EnableSystemAlerts bool              `json:"enableSystemAlerts"`
+	SendPeriod         aostypes.Duration `json:"sendPeriod"`
+	MaxMessageSize     int               `json:"maxMessagesize"`
+	MaxOfflineMessages int               `json:"maxOfflineMessages"`
+	Filter             []string          `json:"filter"`
 }
 
 // Migration struct represents path for db migration.
@@ -88,12 +85,12 @@ type Migration struct {
 
 // Downloader downloader configuration.
 type Downloader struct {
-	DownloadDir            string   `json:"downloadDir"`
-	DecryptDir             string   `json:"decryptDir"`
-	MaxConcurrentDownloads int      `json:"maxConcurrentDownloads"`
-	RetryDelay             Duration `json:"retryDelay"`
-	MaxRetryDelay          Duration `json:"maxRetryDelay"`
-	DownloadPartLimit      int      `json:"downloadPartLimit"`
+	DownloadDir            string            `json:"downloadDir"`
+	DecryptDir             string            `json:"decryptDir"`
+	MaxConcurrentDownloads int               `json:"maxConcurrentDownloads"`
+	RetryDelay             aostypes.Duration `json:"retryDelay"`
+	MaxRetryDelay          aostypes.Duration `json:"maxRetryDelay"`
+	DownloadPartLimit      int               `json:"downloadPartLimit"`
 }
 
 // SMConfig SM configuration.
@@ -105,28 +102,28 @@ type SMConfig struct {
 
 // SMController SM controller configuration.
 type SMController struct {
-	SMList    []SMConfig `json:"smList"`
-	UpdateTTL Duration   `json:"updateTtl"`
+	SMList    []SMConfig        `json:"smList"`
+	UpdateTTL aostypes.Duration `json:"updateTtl"`
 }
 
 // Config instance.
 type Config struct {
-	Crypt                 Crypt        `json:"fcrypt"`
-	CertStorage           string       `json:"certStorage"`
-	ServiceDiscoveryURL   string       `json:"serviceDiscoveryUrl"`
-	IAMServerURL          string       `json:"iamServerUrl"`
-	IAMPublicServerURL    string       `json:"iamPublicServerUrl"`
-	FileServerURL         string       `json:"fileServerUrl"`
-	CMServerURL           string       `json:"cmServerUrl"`
-	Downloader            Downloader   `json:"downloader"`
-	WorkingDir            string       `json:"workingDir"`
-	BoardConfigFile       string       `json:"boardConfigFile"`
-	UnitStatusSendTimeout Duration     `json:"unitStatusSendTimeout"`
-	Monitoring            Monitoring   `json:"monitoring"`
-	Alerts                Alerts       `json:"alerts"`
-	Migration             Migration    `json:"migration"`
-	SMController          SMController `json:"smController"`
-	UMController          UMController `json:"umController"`
+	Crypt                 Crypt             `json:"fcrypt"`
+	CertStorage           string            `json:"certStorage"`
+	ServiceDiscoveryURL   string            `json:"serviceDiscoveryUrl"`
+	IAMServerURL          string            `json:"iamServerUrl"`
+	IAMPublicServerURL    string            `json:"iamPublicServerUrl"`
+	FileServerURL         string            `json:"fileServerUrl"`
+	CMServerURL           string            `json:"cmServerUrl"`
+	Downloader            Downloader        `json:"downloader"`
+	WorkingDir            string            `json:"workingDir"`
+	BoardConfigFile       string            `json:"boardConfigFile"`
+	UnitStatusSendTimeout aostypes.Duration `json:"unitStatusSendTimeout"`
+	Monitoring            Monitoring        `json:"monitoring"`
+	Alerts                Alerts            `json:"alerts"`
+	Migration             Migration         `json:"migration"`
+	SMController          SMController      `json:"smController"`
+	UMController          UMController      `json:"umController"`
 }
 
 /***********************************************************************************************************************
@@ -141,20 +138,20 @@ func New(fileName string) (config *Config, err error) {
 	}
 
 	config = &Config{
-		UnitStatusSendTimeout: Duration{30 * time.Second},
+		UnitStatusSendTimeout: aostypes.Duration{Duration: 30 * time.Second},
 		Alerts: Alerts{
-			SendPeriod:         Duration{10 * time.Second},
+			SendPeriod:         aostypes.Duration{Duration: 10 * time.Second},
 			MaxMessageSize:     65536,
 			MaxOfflineMessages: 25,
 		},
 		Downloader: Downloader{
 			MaxConcurrentDownloads: 4,
-			RetryDelay:             Duration{1 * time.Minute},
-			MaxRetryDelay:          Duration{30 * time.Minute},
+			RetryDelay:             aostypes.Duration{Duration: 1 * time.Minute},
+			MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Minute},
 			DownloadPartLimit:      100,
 		},
-		SMController: SMController{UpdateTTL: Duration{30 * 24 * time.Hour}},
-		UMController: UMController{UpdateTTL: Duration{30 * 24 * time.Hour}},
+		SMController: SMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
+		UMController: UMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
 	}
 
 	if config.Monitoring.MonitorConfig != nil && config.Monitoring.MonitorConfig.WorkingDir == "" {
@@ -190,42 +187,4 @@ func New(fileName string) (config *Config, err error) {
 	}
 
 	return config, nil
-}
-
-// MarshalJSON marshals JSON Duration type.
-func (d Duration) MarshalJSON() (b []byte, err error) {
-	b, err = json.Marshal(d.Duration.String())
-	if err != nil {
-		return b, aoserrors.Wrap(err)
-	}
-
-	return b, nil
-}
-
-// UnmarshalJSON unmarshals JSON Duration type.
-func (d *Duration) UnmarshalJSON(b []byte) (err error) {
-	var v interface{}
-
-	if err := json.Unmarshal(b, &v); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	switch value := v.(type) {
-	case float64:
-		d.Duration = time.Duration(value)
-		return nil
-
-	case string:
-		duration, err := time.ParseDuration(value)
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		d.Duration = duration
-
-		return nil
-
-	default:
-		return aoserrors.Errorf("invalid duration value: %v", value)
-	}
 }
