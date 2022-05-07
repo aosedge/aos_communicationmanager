@@ -197,20 +197,20 @@ func TestDurationMarshal(t *testing.T) {
 }
 
 func TestGetMonitoringConfig(t *testing.T) {
-	if testCfg.Monitoring.SendPeriod.Duration != 5*time.Minute {
-		t.Errorf("Wrong send period value: %s", testCfg.Monitoring.SendPeriod)
+	if testCfg.Monitoring.MonitorConfig.SendPeriod.Duration != 5*time.Minute {
+		t.Errorf("Wrong send period value: %s", testCfg.Monitoring.MonitorConfig.SendPeriod)
 	}
 
-	if testCfg.Monitoring.PollPeriod.Duration != 1*time.Second {
-		t.Errorf("Wrong poll period value: %s", testCfg.Monitoring.PollPeriod)
+	if testCfg.Monitoring.MonitorConfig.PollPeriod.Duration != 1*time.Second {
+		t.Errorf("Wrong poll period value: %s", testCfg.Monitoring.MonitorConfig.PollPeriod)
 	}
 
-	if testCfg.Monitoring.RAM.MinTimeout.Duration != 10*time.Second {
-		t.Errorf("Wrong value: %s", testCfg.Monitoring.RAM.MinTimeout)
+	if testCfg.Monitoring.MonitorConfig.RAM.MinTimeout.Duration != 10*time.Second {
+		t.Errorf("Wrong value: %s", testCfg.Monitoring.MonitorConfig.RAM.MinTimeout)
 	}
 
-	if testCfg.Monitoring.OutTraffic.MinTimeout.Duration != 20*time.Second {
-		t.Errorf("Wrong value: %s", testCfg.Monitoring.RAM.MinTimeout)
+	if testCfg.Monitoring.MonitorConfig.OutTraffic.MinTimeout.Duration != 20*time.Second {
+		t.Errorf("Wrong value: %s", testCfg.Monitoring.MonitorConfig.RAM.MinTimeout)
 	}
 }
 
