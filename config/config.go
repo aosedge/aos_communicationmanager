@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/resourcemonitor"
 )
 
 /***********************************************************************************************************************
@@ -66,15 +67,8 @@ type AlertRule struct {
 
 // Monitoring configuration for system monitoring.
 type Monitoring struct {
-	EnableSystemMonitoring bool       `json:"enableSystemMonitoring"`
-	MaxOfflineMessages     int        `json:"maxOfflineMessages"`
-	SendPeriod             Duration   `json:"sendPeriod"`
-	PollPeriod             Duration   `json:"pollPeriod"`
-	RAM                    *AlertRule `json:"ram"`
-	CPU                    *AlertRule `json:"cpu"`
-	UsedDisk               *AlertRule `json:"usedDisk"`
-	InTraffic              *AlertRule `json:"inTraffic"`
-	OutTraffic             *AlertRule `json:"outTraffic"`
+	MonitorConfig      *resourcemonitor.Config `json:"monitorConfig"`
+	MaxOfflineMessages int                     `json:"maxOfflineMessages"`
 }
 
 // Alerts configuration for alerts.
@@ -148,11 +142,6 @@ func New(fileName string) (config *Config, err error) {
 
 	config = &Config{
 		UnitStatusSendTimeout: Duration{30 * time.Second},
-		Monitoring: Monitoring{
-			SendPeriod:         Duration{1 * time.Minute},
-			PollPeriod:         Duration{10 * time.Second},
-			MaxOfflineMessages: 25,
-		},
 		Alerts: Alerts{
 			SendPeriod:         Duration{10 * time.Second},
 			MaxMessageSize:     65536,
@@ -166,6 +155,10 @@ func New(fileName string) (config *Config, err error) {
 		},
 		SMController: SMController{UpdateTTL: Duration{30 * 24 * time.Hour}},
 		UMController: UMController{UpdateTTL: Duration{30 * 24 * time.Hour}},
+	}
+
+	if config.Monitoring.MonitorConfig != nil && config.Monitoring.MonitorConfig.WorkingDir == "" {
+		config.Monitoring.MonitorConfig.WorkingDir = config.WorkingDir
 	}
 
 	if err = json.Unmarshal(raw, &config); err != nil {
