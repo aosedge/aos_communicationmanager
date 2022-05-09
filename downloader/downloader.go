@@ -22,24 +22,26 @@ import (
 	"container/list"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"code.cloudfoundry.org/bytefmt"
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
 	"github.com/aoscloud/aos_common/utils/retryhelper"
 	"github.com/cavaliercoder/grab"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/alerts"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/fcrypt"
 )
@@ -86,11 +88,7 @@ type Downloader struct {
 
 // AlertSender provdes alert sender interface.
 type AlertSender interface {
-	SendDownloadStartedAlert(downloadStatus alerts.DownloadStatus)
-	SendDownloadFinishedAlert(downloadStatus alerts.DownloadStatus, code int)
-	SendDownloadInterruptedAlert(downloadStatus alerts.DownloadStatus, reason string)
-	SendDownloadResumedAlert(downloadStatus alerts.DownloadStatus, reason string)
-	SendDownloadStatusAlert(downloadStatus alerts.DownloadStatus)
+	SendAlert(alert cloudprotocol.AlertItem)
 }
 
 /***********************************************************************************************************************
@@ -99,7 +97,8 @@ type AlertSender interface {
 
 // New creates new downloader object.
 func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (
-	downloader *Downloader, err error) {
+	downloader *Downloader, err error,
+) {
 	log.Debug("Create downloader instance")
 
 	downloader = &Downloader{
@@ -133,7 +132,8 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 
 // DownloadAndDecrypt downloads, decrypts and verifies package.
 func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result Result, err error) {
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+) (result Result, err error) {
 	downloader.Lock()
 	defer downloader.Unlock()
 
@@ -289,7 +289,6 @@ func (downloader *Downloader) initAvailableSize() (err error) {
 	}
 
 	downloader.availableSize[downloader.downloadMountPoint] = int64(stat.Bavail) * stat.Bsize
-	// nolint:gomnd
 	downloader.downloadLimit = int64(stat.Blocks) * stat.Bsize * int64(downloader.config.DownloadPartLimit) / 100
 
 	if downloader.downloadMountPoint != downloader.decryptMountPoint {
@@ -584,20 +583,21 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 	if !resp.DidResume {
 		log.WithFields(log.Fields{"url": url, "id": result.id}).Debug("Download started")
 
-		downloader.sender.SendDownloadStartedAlert(downloader.getDownloadStatus(resp))
+		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download started"))
 	} else {
 		reason := result.retreiveInterruptReason()
 
 		log.WithFields(log.Fields{"url": url, "id": result.id, "reason": reason}).Debug("Download resumed")
 
-		downloader.sender.SendDownloadResumedAlert(downloader.getDownloadStatus(resp), reason)
+		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download resumed reason: "+reason))
+
 		result.removeInterruptReason()
 	}
 
 	for {
 		select {
 		case <-timer.C:
-			downloader.sender.SendDownloadStatusAlert(downloader.getDownloadStatus(resp))
+			downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download status"))
 
 			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size}).Debug("Download progress")
 
@@ -610,7 +610,8 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 				}).Warn("Download interrupted")
 
 				result.storeInterruptReason(err.Error())
-				downloader.sender.SendDownloadInterruptedAlert(downloader.getDownloadStatus(resp), err.Error())
+
+				downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download interrupted reason: "+err.Error()))
 
 				return aoserrors.Wrap(err)
 			}
@@ -621,7 +622,8 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 				"downloaded": resp.BytesComplete(),
 			}).Debug("Download completed")
 
-			downloader.sender.SendDownloadFinishedAlert(downloader.getDownloadStatus(resp), resp.HTTPResponse.StatusCode)
+			downloader.sender.SendAlert(
+				downloader.prepareDownloadAlert(resp, "Download finished code: "+strconv.Itoa(resp.HTTPResponse.StatusCode)))
 
 			return nil
 		}
@@ -698,11 +700,16 @@ func (downloader *Downloader) validateSigns(result *downloadResult) (err error) 
 	return nil
 }
 
-func (downloader *Downloader) getDownloadStatus(resp *grab.Response) (status alerts.DownloadStatus) {
-	return alerts.DownloadStatus{
-		Source: downloader.moduleID, URL: resp.Request.HTTPRequest.URL.String(),
-		Progress: int(resp.Progress() * 100), DownloadedBytes: uint64(resp.BytesComplete()), // nolint:gomnd
-		TotalBytes: uint64(resp.Size),
+func (downloader *Downloader) prepareDownloadAlert(resp *grab.Response, msg string) cloudprotocol.AlertItem {
+	return cloudprotocol.AlertItem{
+		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
+		Payload: cloudprotocol.DownloadAlert{
+			Progress:        fmt.Sprintf("%.2f", resp.Progress()*100) + "%",
+			URL:             resp.Request.HTTPRequest.URL.String(),
+			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
+			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size)),
+			Message:         msg,
+		},
 	}
 }
 
