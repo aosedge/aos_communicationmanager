@@ -22,10 +22,9 @@ import (
 	"io/ioutil"
 	"os"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	log "github.com/sirupsen/logrus"
 )
 
 /***********************************************************************************************************************
