@@ -29,18 +29,18 @@ import (
 	"os/exec"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
 	"github.com/aoscloud/aos_common/utils/testtools"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/alerts"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/fcrypt"
@@ -65,9 +65,7 @@ type testSymmetricContext struct{}
 
 type testSignContext struct{}
 
-type testAlertSender struct{}
-
-type alertsCounter struct {
+type testAlertSender struct {
 	alertStarted     int
 	alertFinished    int
 	alertInterrupted int
@@ -89,8 +87,6 @@ var (
 	downloadDir string
 	decryptDir  string
 )
-
-var alertsCnt alertsCounter
 
 /***********************************************************************************************************************
  * Init
@@ -127,7 +123,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestDownload(t *testing.T) {
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -147,7 +143,7 @@ func TestDownload(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -162,17 +158,17 @@ func TestDownload(t *testing.T) {
 		t.Errorf("Download error: %s", err)
 	}
 
-	if alertsCnt.alertStarted != 1 {
+	if sender.alertStarted != 1 {
 		t.Error("Download started alert was not received")
 	}
 
-	if alertsCnt.alertFinished != 1 {
+	if sender.alertFinished != 1 {
 		t.Error("Download finished alert was not received")
 	}
 }
 
 func TestInterruptResumeDownload(t *testing.T) {
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -201,7 +197,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -217,23 +213,23 @@ func TestInterruptResumeDownload(t *testing.T) {
 		t.Errorf("Download error: %s", err)
 	}
 
-	if alertsCnt.alertStarted != 1 {
+	if sender.alertStarted != 1 {
 		t.Error("Download started alert was not received")
 	}
 
-	if alertsCnt.alertStatus == 0 {
+	if sender.alertStatus == 0 {
 		t.Error("Download status was not received")
 	}
 
-	if alertsCnt.alertInterrupted == 0 {
+	if sender.alertInterrupted == 0 {
 		t.Error("Download interrupted alert was not received")
 	}
 
-	if alertsCnt.alertResumed == 0 {
+	if sender.alertResumed == 0 {
 		t.Error("Download resumed alert was not received")
 	}
 
-	if alertsCnt.alertFinished == 0 {
+	if sender.alertFinished == 0 {
 		t.Error("Download finished alert was not received")
 	}
 }
@@ -241,7 +237,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 // The test checks if available disk size is counted properly after resuming
 // download and takes into account files that already have been partially downloaded.
 func TestAvailableSize(t *testing.T) {
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -275,7 +271,7 @@ func TestAvailableSize(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -305,7 +301,7 @@ func TestAvailableSize(t *testing.T) {
 }
 
 func TestResumeDownloadFromTwoServers(t *testing.T) {
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -337,7 +333,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -375,7 +371,7 @@ func TestConcurrentDownloads(t *testing.T) {
 		fileNamePattern = "package%d.txt"
 	)
 
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -406,7 +402,7 @@ func TestConcurrentDownloads(t *testing.T) {
 			MaxConcurrentDownloads: 5,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -441,7 +437,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 
 	const fileNamePattern = "package%d.txt"
 
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -481,7 +477,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 			MaxConcurrentDownloads: 3,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -550,7 +546,7 @@ func TestDownloadPartLimit(t *testing.T) {
 		downloadPartLimit = 50
 	)
 
-	alertsCnt = alertsCounter{}
+	sender := testAlertSender{}
 
 	if err := clearDisks(); err != nil {
 		t.Fatalf("Can't clear disks: %s", err)
@@ -591,7 +587,7 @@ func TestDownloadPartLimit(t *testing.T) {
 			MaxConcurrentDownloads: 3,
 			DownloadPartLimit:      downloadPartLimit,
 		},
-	}, &testCryptoContext{}, &testAlertSender{})
+	}, &testCryptoContext{}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -634,7 +630,8 @@ func TestDownloadPartLimit(t *testing.T) {
  **********************************************************************************************************************/
 
 func (context *testCryptoContext) ImportSessionKey(
-	keyInfo fcrypt.CryptoSessionKeyInfo) (fcrypt.SymmetricContextInterface, error) {
+	keyInfo fcrypt.CryptoSessionKeyInfo,
+) (fcrypt.SymmetricContextInterface, error) {
 	return &testSymmetricContext{}, nil
 }
 
@@ -659,38 +656,33 @@ func (context *testSignContext) AddCertificateChain(name string, fingerprints []
 }
 
 func (context *testSignContext) VerifySign(
-	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error) {
+	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte,
+) (err error) {
 	return nil
 }
 
-func (instance *testAlertSender) SendDownloadStartedAlert(downloadStatus alerts.DownloadStatus) {
-	log.WithFields(log.Fields{"status": downloadStatus}).Debug("Download started alert")
+func (instance *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
+	downloadAlert, ok := alert.Payload.(cloudprotocol.DownloadAlert)
+	if !ok {
+		log.Error("Received not download alert")
+	}
 
-	alertsCnt.alertStarted++
-}
+	switch {
+	case strings.Contains(downloadAlert.Message, "Download started"):
+		instance.alertStarted++
 
-func (instance *testAlertSender) SendDownloadFinishedAlert(downloadStatus alerts.DownloadStatus, code int) {
-	log.WithFields(log.Fields{"status": downloadStatus, "code": code}).Debug("Download finished alert")
+	case strings.Contains(downloadAlert.Message, "Download resumed reason:"):
+		instance.alertResumed++
 
-	alertsCnt.alertFinished++
-}
+	case strings.Contains(downloadAlert.Message, "Download status"):
+		instance.alertStatus++
 
-func (instance *testAlertSender) SendDownloadInterruptedAlert(downloadStatus alerts.DownloadStatus, reason string) {
-	log.WithFields(log.Fields{"status": downloadStatus, "reason": reason}).Debug("Download interrupted alert")
+	case strings.Contains(downloadAlert.Message, "Download interrupted reason:"):
+		instance.alertInterrupted++
 
-	alertsCnt.alertInterrupted++
-}
-
-func (instance *testAlertSender) SendDownloadResumedAlert(downloadStatus alerts.DownloadStatus, reason string) {
-	log.WithFields(log.Fields{"status": downloadStatus, "reason": reason}).Debug("Download resumed alert")
-
-	alertsCnt.alertResumed++
-}
-
-func (instance *testAlertSender) SendDownloadStatusAlert(downloadStatus alerts.DownloadStatus) {
-	log.WithFields(log.Fields{"status": downloadStatus}).Debug("Download status alert")
-
-	alertsCnt.alertStatus++
+	case strings.Contains(downloadAlert.Message, "Download finished code:"):
+		instance.alertFinished++
+	}
 }
 
 /***********************************************************************************************************************
