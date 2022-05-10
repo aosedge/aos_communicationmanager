@@ -21,9 +21,8 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
 /***********************************************************************************************************************
@@ -69,7 +68,8 @@ func validateTimetable(timetable []cloudprotocol.TimetableEntry) (err error) {
 }
 
 func getAvailableTimetableTime(
-	fromDate time.Time, timetable []cloudprotocol.TimetableEntry) (availableTime time.Duration, err error) {
+	fromDate time.Time, timetable []cloudprotocol.TimetableEntry,
+) (availableTime time.Duration, err error) {
 	defer func() {
 		log.WithFields(log.Fields{"fromDate": fromDate, "availableTime": availableTime}).Debug("Get available timetable time")
 	}()
