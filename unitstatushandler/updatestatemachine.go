@@ -24,10 +24,10 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 )
 
@@ -92,8 +92,9 @@ var updateSynchronizer = newSyncExecutor() // nolint:gochecknoglobals
  * Interface
  **********************************************************************************************************************/
 
-func newUpdateStateMachine(initState string, events []fsm.EventDesc,
-	manager updateManager, defaultTTL time.Duration) (stateMachine *updateStateMachine) {
+func newUpdateStateMachine(
+	initState string, events []fsm.EventDesc, manager updateManager, defaultTTL time.Duration,
+) (stateMachine *updateStateMachine) {
 	stateMachine = &updateStateMachine{
 		manager:    manager,
 		defaultTTL: defaultTTL,
