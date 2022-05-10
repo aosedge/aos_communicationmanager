@@ -19,12 +19,14 @@ package unitstatushandler_test
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
 )
@@ -39,7 +41,7 @@ const waitStatusTimeout = 5 * time.Second
  * Vars
  **********************************************************************************************************************/
 
-var cfg = &config.Config{UnitStatusSendTimeout: config.Duration{Duration: 3 * time.Second}}
+var cfg = &config.Config{UnitStatusSendTimeout: aostypes.Duration{Duration: 3 * time.Second}}
 
 /***********************************************************************************************************************
  * Tests
@@ -47,20 +49,20 @@ var cfg = &config.Config{UnitStatusSendTimeout: config.Duration{Duration: 3 * ti
 
 func TestSendInitialStatus(t *testing.T) {
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{
 			{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
-		Components: []cloudprotocol.ComponentInfo{
+		Components: []cloudprotocol.ComponentStatus{
 			{ID: "comp0", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp1", VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp2", VendorVersion: "1.2", Status: cloudprotocol.InstalledStatus},
 		},
-		Layers: []cloudprotocol.LayerInfo{
+		Layers: []cloudprotocol.LayerStatus{
 			{ID: "layer0", Digest: "digest0", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer1", Digest: "digest1", AosVersion: 2, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer2", Digest: "digest2", AosVersion: 3, Status: cloudprotocol.InstalledStatus},
 		},
-		Services: []cloudprotocol.ServiceInfo{
+		Services: []cloudprotocol.ServiceStatus{
 			{ID: "service0", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "service2", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
@@ -96,7 +98,7 @@ func TestSendInitialStatus(t *testing.T) {
 
 func TestUpdateBoardConfig(t *testing.T) {
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
-		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	sender := unitstatushandler.NewTestSender()
@@ -121,14 +123,14 @@ func TestUpdateBoardConfig(t *testing.T) {
 
 	// success update
 
-	boardConfigUpdater.BoardConfigInfo = cloudprotocol.BoardConfigInfo{
+	boardConfigUpdater.BoardConfigStatus = cloudprotocol.BoardConfigStatus{
 		VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus,
 	}
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components:  []cloudprotocol.ComponentInfo{},
-		Layers:      []cloudprotocol.LayerInfo{},
-		Services:    []cloudprotocol.ServiceInfo{},
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components:  []cloudprotocol.ComponentStatus{},
+		Layers:      []cloudprotocol.LayerStatus{},
+		Services:    []cloudprotocol.ServiceStatus{},
 	}
 
 	boardConfigUpdater.UpdateVersion = "1.1"
@@ -149,10 +151,11 @@ func TestUpdateBoardConfig(t *testing.T) {
 	boardConfigUpdater.UpdateVersion = "1.2"
 	boardConfigUpdater.UpdateError = aoserrors.New("some error occurs")
 
-	boardConfigUpdater.BoardConfigInfo = cloudprotocol.BoardConfigInfo{
-		VendorVersion: "1.2", Status: cloudprotocol.ErrorStatus, Error: boardConfigUpdater.UpdateError.Error(),
+	boardConfigUpdater.BoardConfigStatus = cloudprotocol.BoardConfigStatus{
+		VendorVersion: "1.2", Status: cloudprotocol.ErrorStatus,
+		ErrorInfo: &cloudprotocol.ErrorInfo{Message: boardConfigUpdater.UpdateError.Error()},
 	}
-	expectedUnitStatus.BoardConfig = append(expectedUnitStatus.BoardConfig, boardConfigUpdater.BoardConfigInfo)
+	expectedUnitStatus.BoardConfig = append(expectedUnitStatus.BoardConfig, boardConfigUpdater.BoardConfigStatus)
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")})
 
@@ -166,10 +169,10 @@ func TestUpdateBoardConfig(t *testing.T) {
 }
 
 func TestUpdateComponents(t *testing.T) {
-	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(cloudprotocol.BoardConfigStatus{
 		VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus,
 	})
-	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater([]cloudprotocol.ComponentInfo{
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater([]cloudprotocol.ComponentStatus{
 		{ID: "comp0", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 		{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 		{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -198,22 +201,22 @@ func TestUpdateComponents(t *testing.T) {
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components: []cloudprotocol.ComponentInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components: []cloudprotocol.ComponentStatus{
 			{ID: "comp0", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 		},
-		Layers:   []cloudprotocol.LayerInfo{},
-		Services: []cloudprotocol.ServiceInfo{},
+		Layers:   []cloudprotocol.LayerStatus{},
+		Services: []cloudprotocol.ServiceStatus{},
 	}
 
 	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Components: []cloudprotocol.ComponentInfoFromCloud{
-			{ID: "comp0", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2.0"}},
-			{ID: "comp2", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2.0"}},
+		Components: []cloudprotocol.ComponentInfo{
+			{ID: "comp0", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2.0"}},
+			{ID: "comp2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2.0"}},
 		},
 	})
 
@@ -231,25 +234,25 @@ func TestUpdateComponents(t *testing.T) {
 	firmwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components: []cloudprotocol.ComponentInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components: []cloudprotocol.ComponentStatus{
 			{ID: "comp0", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			{
 				ID: "comp1", VendorVersion: "2.0", Status: cloudprotocol.ErrorStatus,
-				Error: firmwareUpdater.UpdateError.Error(),
+				ErrorInfo: &cloudprotocol.ErrorInfo{Message: firmwareUpdater.UpdateError.Error()},
 			},
 			{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 		},
-		Layers:   []cloudprotocol.LayerInfo{},
-		Services: []cloudprotocol.ServiceInfo{},
+		Layers:   []cloudprotocol.LayerStatus{},
+		Services: []cloudprotocol.ServiceStatus{},
 	}
 
 	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Components: []cloudprotocol.ComponentInfoFromCloud{
-			{ID: "comp1", VersionFromCloud: cloudprotocol.VersionFromCloud{VendorVersion: "2.0"}},
+		Components: []cloudprotocol.ComponentInfo{
+			{ID: "comp1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2.0"}},
 		},
 	})
 
@@ -264,9 +267,9 @@ func TestUpdateComponents(t *testing.T) {
 
 func TestUpdateLayers(t *testing.T) {
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
-		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, []cloudprotocol.LayerInfo{
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, []cloudprotocol.LayerStatus{
 		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
@@ -294,30 +297,30 @@ func TestUpdateLayers(t *testing.T) {
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components:  []cloudprotocol.ComponentInfo{},
-		Layers: []cloudprotocol.LayerInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components:  []cloudprotocol.ComponentStatus{},
+		Layers: []cloudprotocol.LayerStatus{
 			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 		},
-		Services: []cloudprotocol.ServiceInfo{},
+		Services: []cloudprotocol.ServiceStatus{},
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Layers: []cloudprotocol.LayerInfoFromCloud{
+		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "layer1", Digest: "digest1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 			},
 			{
-				ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 			{
-				ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "layer4", Digest: "digest4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 			},
 		},
@@ -339,9 +342,9 @@ func TestUpdateLayers(t *testing.T) {
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components:  []cloudprotocol.ComponentInfo{},
-		Layers: []cloudprotocol.LayerInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components:  []cloudprotocol.ComponentStatus{},
+		Layers: []cloudprotocol.LayerStatus{
 			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
 			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
@@ -349,24 +352,24 @@ func TestUpdateLayers(t *testing.T) {
 			{ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{
 				ID: "layer5", Digest: "digest5", AosVersion: 1, Status: cloudprotocol.ErrorStatus,
-				Error: softwareUpdater.UpdateError.Error(),
+				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 		},
-		Services: []cloudprotocol.ServiceInfo{},
+		Services: []cloudprotocol.ServiceStatus{},
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Layers: []cloudprotocol.LayerInfoFromCloud{
+		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 			{
-				ID: "layer4", Digest: "digest4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "layer4", Digest: "digest4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 			},
 			{
-				ID: "layer5", Digest: "digest5", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "layer5", Digest: "digest5", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{5}},
 			},
 		},
@@ -383,9 +386,9 @@ func TestUpdateLayers(t *testing.T) {
 
 func TestUpdateServices(t *testing.T) {
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
-		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceInfo{
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceStatus{
 		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
@@ -413,10 +416,10 @@ func TestUpdateServices(t *testing.T) {
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components:  []cloudprotocol.ComponentInfo{},
-		Layers:      []cloudprotocol.LayerInfo{},
-		Services: []cloudprotocol.ServiceInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components:  []cloudprotocol.ComponentStatus{},
+		Layers:      []cloudprotocol.LayerStatus{},
+		Services: []cloudprotocol.ServiceStatus{
 			{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "service2", Status: cloudprotocol.RemovedStatus},
@@ -425,17 +428,17 @@ func TestUpdateServices(t *testing.T) {
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Services: []cloudprotocol.ServiceInfoFromCloud{
+		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "service0", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{0}},
 			},
 			{
-				ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "service1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 			},
 			{
-				ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 		},
@@ -456,40 +459,40 @@ func TestUpdateServices(t *testing.T) {
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components:  []cloudprotocol.ComponentInfo{},
-		Layers:      []cloudprotocol.LayerInfo{},
-		Services: []cloudprotocol.ServiceInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components:  []cloudprotocol.ComponentStatus{},
+		Layers:      []cloudprotocol.LayerStatus{},
+		Services: []cloudprotocol.ServiceStatus{
 			{
 				ID: "service0", AosVersion: 0, Status: cloudprotocol.ErrorStatus,
-				Error: softwareUpdater.UpdateError.Error(),
+				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{ID: "service2", Status: cloudprotocol.RemovedStatus},
 			{ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
 			{
 				ID: "service3", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
-				Error: softwareUpdater.UpdateError.Error(),
+				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 			{
 				ID: "service4", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
-				Error: softwareUpdater.UpdateError.Error(),
+				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 		},
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Services: []cloudprotocol.ServiceInfoFromCloud{
+		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+				ID: "service1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 			},
 			{
-				ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 			{
-				ID: "service4", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+				ID: "service4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 			},
 		},
@@ -506,18 +509,18 @@ func TestUpdateServices(t *testing.T) {
 
 func TestUpdateCachedSOTA(t *testing.T) {
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
-		cloudprotocol.BoardConfigInfo{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceInfo{
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceStatus{
 		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}, []cloudprotocol.LayerInfo{
+	}, []cloudprotocol.LayerStatus{
 		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 	})
-	softwareUpdater.AllServices = []cloudprotocol.ServiceInfo{
+	softwareUpdater.AllServices = []cloudprotocol.ServiceStatus{
 		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 	}
-	softwareUpdater.AllLayers = []cloudprotocol.LayerInfo{
+	softwareUpdater.AllLayers = []cloudprotocol.LayerStatus{
 		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 	}
@@ -543,15 +546,15 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	}
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: []cloudprotocol.BoardConfigInfo{boardConfigUpdater.BoardConfigInfo},
-		Components:  []cloudprotocol.ComponentInfo{},
-		Layers: []cloudprotocol.LayerInfo{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Components:  []cloudprotocol.ComponentStatus{},
+		Layers: []cloudprotocol.LayerStatus{
 			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer3", Digest: "digest3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		},
-		Services: []cloudprotocol.ServiceInfo{
+		Services: []cloudprotocol.ServiceStatus{
 			{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
@@ -560,39 +563,39 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
-		Services: []cloudprotocol.ServiceInfoFromCloud{
+		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "service0", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service0"}, Sha256: []byte{0}},
 			},
 			{
-				ID: "service1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "service1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service1"}, Sha256: []byte{1}},
 			},
 			{
-				ID: "service2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "service2", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service2"}, Sha256: []byte{2}},
 			},
 			{
-				ID: "service3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
 			},
 		},
-		Layers: []cloudprotocol.LayerInfoFromCloud{
+		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer0", Digest: "digest0", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "layer0", Digest: "digest0", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer0"}, Sha256: []byte{0}},
 			},
 			{
-				ID: "layer1", Digest: "digest1", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "layer1", Digest: "digest1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer1"}, Sha256: []byte{1}},
 			},
 			{
-				ID: "layer2", Digest: "digest2", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "layer2", Digest: "digest2", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer2"}, Sha256: []byte{2}},
 			},
 			{
-				ID: "layer3", Digest: "digest3", VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 0},
+				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer3"}, Sha256: []byte{3}},
 			},
 		},
@@ -663,28 +666,28 @@ func compareStatus(len1, len2 int, compare func(index1, index2 int) bool) (err e
 func compareUnitStatus(status1, status2 cloudprotocol.UnitStatus) (err error) {
 	if err = compareStatus(len(status1.BoardConfig), len(status2.BoardConfig),
 		func(index1, index2 int) (result bool) {
-			return status1.BoardConfig[index1] == status2.BoardConfig[index2]
+			return reflect.DeepEqual(status1.BoardConfig[index1], status2.BoardConfig[index2])
 		}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	if err = compareStatus(len(status1.Components), len(status2.Components),
 		func(index1, index2 int) (result bool) {
-			return status1.Components[index1] == status2.Components[index2]
+			return reflect.DeepEqual(status1.Components[index1], status2.Components[index2])
 		}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	if err = compareStatus(len(status1.Layers), len(status2.Layers),
 		func(index1, index2 int) (result bool) {
-			return status1.Layers[index1] == status2.Layers[index2]
+			return reflect.DeepEqual(status1.Layers[index1], status2.Layers[index2])
 		}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	if err = compareStatus(len(status1.Services), len(status2.Services),
 		func(index1, index2 int) (result bool) {
-			return status1.Services[index1] == status2.Services[index2]
+			return reflect.DeepEqual(status1.Services[index1], status2.Services[index2])
 		}); err != nil {
 		return aoserrors.Wrap(err)
 	}

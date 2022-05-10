@@ -23,10 +23,9 @@ import (
 	"sync"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 )
 
 /***********************************************************************************************************************
@@ -47,7 +46,8 @@ type statusNotifier func(id string, status string, componentErr string)
 
 func (instance *Instance) download(ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
 	continueOnError bool, updateStatus statusNotifier,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult) {
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+) (result map[string]*downloadResult) {
 	result = make(map[string]*downloadResult)
 
 	for id := range request {
