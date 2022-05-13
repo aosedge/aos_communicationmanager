@@ -707,16 +707,6 @@ func (client *smClient) processRunInstancesStatus(data *pb.SMNotifications_RunIn
 		ErrorServices: make([]cloudprotocol.ServiceStatus, len(data.RunInstancesStatus.ErrorServices)),
 	}
 
-	for i, status := range data.RunInstancesStatus.Instances {
-		runStatus.Instances[i] = cloudprotocol.InstanceStatus{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(status.Instance),
-			AosVersion:    status.AosVersion,
-			StateChecksum: status.StateChecksum,
-			RunState:      status.RunState,
-			ErrorInfo:     errorInfoFromPB(status.ErrorInfo),
-		}
-	}
-
 	for i, serviceStatus := range data.RunInstancesStatus.ErrorServices {
 		runStatus.ErrorServices[i] = cloudprotocol.ServiceStatus{
 			ID: serviceStatus.ServiceId, AosVersion: serviceStatus.AosVersion,

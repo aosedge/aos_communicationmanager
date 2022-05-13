@@ -49,6 +49,7 @@ var cfg = &config.Config{UnitStatusSendTimeout: aostypes.Duration{Duration: 3 * 
 
 func TestSendInitialStatus(t *testing.T) {
 	expectedUnitStatus := cloudprotocol.UnitStatus{
+		UnitSubjects: []string{"subject1"},
 		BoardConfig: []cloudprotocol.BoardConfigStatus{
 			{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
@@ -82,8 +83,13 @@ func TestSendInitialStatus(t *testing.T) {
 	}
 	defer statusHandler.Close()
 
-	if err = statusHandler.SendUnitStatus(); err != nil {
-		t.Fatalf("Can't set users: %s", err)
+	if err := statusHandler.SendUnitStatus(); err != nil {
+		t.Fatalf("Can't send unit status: %v", err)
+	}
+
+	if err := statusHandler.ProcessRunStatus(
+		unitstatushandler.RunInstancesStatus{UnitSubjects: []string{"subject1"}}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
@@ -113,8 +119,8 @@ func TestUpdateBoardConfig(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err = statusHandler.SendUnitStatus(); err != nil {
-		t.Fatalf("Can't set users: %s", err)
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
@@ -190,8 +196,8 @@ func TestUpdateComponents(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err = statusHandler.SendUnitStatus(); err != nil {
-		t.Fatalf("Can't set users: %s", err)
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
@@ -286,8 +292,8 @@ func TestUpdateLayers(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err = statusHandler.SendUnitStatus(); err != nil {
-		t.Fatalf("Can't set users: %s", err)
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
@@ -335,7 +341,7 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	softwareUpdater.UsersLayers = expectedUnitStatus.Layers
+	softwareUpdater.AllLayers = expectedUnitStatus.Layers
 
 	// failed update
 
@@ -405,8 +411,8 @@ func TestUpdateServices(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err = statusHandler.SendUnitStatus(); err != nil {
-		t.Fatalf("Can't set users: %s", err)
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	if _, err = sender.WaitForStatus(5 * time.Second); err != nil {
@@ -455,7 +461,7 @@ func TestUpdateServices(t *testing.T) {
 
 	// failed update
 
-	softwareUpdater.UsersServices = expectedUnitStatus.Services
+	softwareUpdater.AllServices = expectedUnitStatus.Services
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
@@ -513,17 +519,13 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceStatus{
 		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}, []cloudprotocol.LayerStatus{
-		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	})
-	softwareUpdater.AllServices = []cloudprotocol.ServiceStatus{
 		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}
-	softwareUpdater.AllLayers = []cloudprotocol.LayerStatus{
+	}, []cloudprotocol.LayerStatus{
+		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}
+	})
 	sender := unitstatushandler.NewTestSender()
 	downloader := unitstatushandler.NewTestDownloader()
 
@@ -537,8 +539,8 @@ func TestUpdateCachedSOTA(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err = statusHandler.SendUnitStatus(); err != nil {
-		t.Fatalf("Can't set users: %s", err)
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
