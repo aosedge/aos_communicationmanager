@@ -317,7 +317,7 @@ func TestLayerMessages(t *testing.T) {
 		}
 	}
 
-	layersResult, err := controller.GetLayerStatus()
+	layersResult, err := controller.GetLayersStatus()
 	if err != nil {
 		t.Fatalf("Can't get all layers status: %v", err)
 	}

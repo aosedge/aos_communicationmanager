@@ -78,7 +78,6 @@ type softwareManager struct {
 	actionHandler *action.Handler
 	statusMutex   sync.RWMutex
 	pendingUpdate *softwareUpdate
-	currentUsers  []string
 
 	LayerStatuses   map[string]*cloudprotocol.LayerStatus   `json:"layerStatuses,omitempty"`
 	ServiceStatuses map[string]*cloudprotocol.ServiceStatus `json:"serviceStatuses,omitempty"`
@@ -201,6 +200,18 @@ func (manager *softwareManager) getCurrentUpdateState() (status cmserver.UpdateS
 	return convertState(manager.CurrentState)
 }
 
+func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
+	for _, errStatus := range status.ErrorServices {
+		var errMsg string
+
+		if errStatus.ErrorInfo != nil {
+			errMsg = errStatus.ErrorInfo.Message
+		}
+
+		manager.updateServiceStatusByID(errStatus.ID, errStatus.Status, errMsg)
+	}
+}
+
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) (err error) {
 	manager.Lock()
 	defer manager.Unlock()
@@ -216,26 +227,22 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		CertChains:       desiredStatus.CertificateChains, Certs: desiredStatus.Certificates,
 	}
 
-	usersServices, usersLayers, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
+	allServices, err := manager.softwareUpdater.GetServicesStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	allServices, allLayers, err := manager.softwareUpdater.GetAllStatus()
+	allLayers, err := manager.softwareUpdater.GetLayersStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	manager.processDesiredServices(update, allServices, usersServices, desiredStatus.Services)
+	manager.processDesiredServices(update, allServices, desiredStatus.Services)
 
-	manager.processDesiredUsersServices(update, usersServices, desiredStatus.Services)
+	manager.processDesiredLayers(update, allLayers, desiredStatus.Layers)
 
-	manager.processDesiredLayers(update, allLayers, usersLayers, desiredStatus.Layers)
-
-	manager.processDesiredUsersLayers(update, usersLayers, desiredStatus.Layers)
-
-	if len(update.DownloadServices) != 0 || len(update.InstallServices) != 0 || len(update.RemoveServices) != 0 ||
-		len(update.DownloadLayers) != 0 || len(update.InstallLayers) != 0 || len(update.RemoveLayers) != 0 {
+	if len(update.DownloadServices) != 0 || len(update.RemoveServices) != 0 ||
+		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 {
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
@@ -244,83 +251,60 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	return nil
 }
 
-func (manager *softwareManager) processDesiredServices(update *softwareUpdate,
-	allServices, usersServices []cloudprotocol.ServiceStatus, desiredServices []cloudprotocol.ServiceInfo,
+func (manager *softwareManager) processDesiredServices(
+	update *softwareUpdate, allServices []cloudprotocol.ServiceStatus, desiredServices []cloudprotocol.ServiceInfo,
 ) {
-desiredServicesLoop:
+downloadServiceLoop:
 	for _, desiredService := range desiredServices {
-		for _, usersService := range usersServices {
-			if desiredService.ID == usersService.ID && desiredService.AosVersion == usersService.AosVersion &&
-				usersService.Status == cloudprotocol.InstalledStatus {
-				continue desiredServicesLoop
-			}
-		}
-
 		for _, service := range allServices {
 			if desiredService.ID == service.ID && desiredService.AosVersion == service.AosVersion &&
 				service.Status == cloudprotocol.InstalledStatus {
-				update.InstallServices = append(update.InstallServices, desiredService)
-				continue desiredServicesLoop
+				continue downloadServiceLoop
 			}
 		}
 
 		update.DownloadServices = append(update.DownloadServices, desiredService)
 	}
-}
 
-func (manager *softwareManager) processDesiredUsersServices(update *softwareUpdate,
-	usersServices []cloudprotocol.ServiceStatus, desiredServices []cloudprotocol.ServiceInfo,
-) {
-usersServicesLoop:
-	for _, usersService := range usersServices {
-		if usersService.Status != cloudprotocol.InstalledStatus {
+removeServiceLoop:
+	for _, service := range allServices {
+		if service.Status != cloudprotocol.InstalledStatus {
 			continue
 		}
 
 		for _, desiredService := range desiredServices {
-			if usersService.ID == desiredService.ID {
-				continue usersServicesLoop
+			if service.ID == desiredService.ID {
+				continue removeServiceLoop
 			}
 		}
 
-		update.RemoveServices = append(update.RemoveServices, usersService)
+		update.RemoveServices = append(update.RemoveServices, service)
 	}
 }
 
-func (manager *softwareManager) processDesiredLayers(update *softwareUpdate,
-	allLayers, usersLayers []cloudprotocol.LayerStatus, desiredLayers []cloudprotocol.LayerInfo,
+func (manager *softwareManager) processDesiredLayers(
+	update *softwareUpdate, allLayers []cloudprotocol.LayerStatus, desiredLayers []cloudprotocol.LayerInfo,
 ) {
-desiredLayersLoop:
+downloadLayersLoop:
 	for _, desiredLayer := range desiredLayers {
-		for _, usersLayer := range usersLayers {
-			if desiredLayer.Digest == usersLayer.Digest && usersLayer.Status == cloudprotocol.InstalledStatus {
-				continue desiredLayersLoop
-			}
-		}
-
 		for _, layer := range allLayers {
 			if desiredLayer.Digest == layer.Digest && layer.Status == cloudprotocol.InstalledStatus {
-				update.InstallLayers = append(update.InstallLayers, desiredLayer)
-				continue desiredLayersLoop
+				continue downloadLayersLoop
 			}
 		}
 
 		update.DownloadLayers = append(update.DownloadLayers, desiredLayer)
 	}
-}
 
-func (manager *softwareManager) processDesiredUsersLayers(update *softwareUpdate,
-	usersLayers []cloudprotocol.LayerStatus, desiredLayers []cloudprotocol.LayerInfo,
-) {
-usersLayersLoop:
-	for _, installedLayer := range usersLayers {
+removeLayersLoop:
+	for _, installedLayer := range allLayers {
 		if installedLayer.Status != cloudprotocol.InstalledStatus {
 			continue
 		}
 
 		for _, desiredLayer := range desiredLayers {
 			if installedLayer.Digest == desiredLayer.Digest {
-				continue usersLayersLoop
+				continue removeLayersLoop
 			}
 		}
 
@@ -341,68 +325,60 @@ func (manager *softwareManager) startUpdate() (err error) {
 	return nil
 }
 
-func (manager *softwareManager) getItemStatuses() (serviceStatuses []cloudprotocol.ServiceStatus,
-	layerStatuses []cloudprotocol.LayerStatus, err error,
-) {
+func (manager *softwareManager) getServiceStatus() (serviceStatuses []cloudprotocol.ServiceStatus, err error) {
 	manager.Lock()
 	defer manager.Unlock()
 
 	manager.statusMutex.RLock()
 	defer manager.statusMutex.RUnlock()
 
-	serviceInfo, layerInfo, err := manager.softwareUpdater.GetUsersStatus(manager.currentUsers)
+	servicesStatus, err := manager.softwareUpdater.GetServicesStatus()
 	if err != nil {
-		return nil, nil, aoserrors.Wrap(err)
+		return nil, aoserrors.Wrap(err)
 	}
 
 	// Get installed info
 
-	for _, service := range serviceInfo {
+	for _, service := range servicesStatus {
 		if service.Status == cloudprotocol.InstalledStatus {
 			serviceStatuses = append(serviceStatuses, service)
-		}
-	}
-
-	for _, layer := range layerInfo {
-		if layer.Status == cloudprotocol.InstalledStatus {
-			layerStatuses = append(layerStatuses, layer)
 		}
 	}
 
 	// Append currently processing info
 
 	if manager.CurrentState == stateNoUpdate {
-		return serviceStatuses, layerStatuses, nil
+		return serviceStatuses, nil
 	}
 
 	for _, service := range manager.ServiceStatuses {
 		serviceStatuses = append(serviceStatuses, *service)
 	}
 
+	return serviceStatuses, nil
+}
+
+func (manager *softwareManager) getLayersStatus() (layerStatuses []cloudprotocol.LayerStatus, err error) {
+	layersStatus, err := manager.softwareUpdater.GetLayersStatus()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	for _, layer := range layersStatus {
+		if layer.Status == cloudprotocol.InstalledStatus {
+			layerStatuses = append(layerStatuses, layer)
+		}
+	}
+
+	if manager.CurrentState == stateNoUpdate {
+		return layerStatuses, nil
+	}
+
 	for _, layer := range manager.LayerStatuses {
 		layerStatuses = append(layerStatuses, *layer)
 	}
 
-	return serviceStatuses, layerStatuses, nil
-}
-
-func (manager *softwareManager) setUsers(users []string) (err error) {
-	manager.Lock()
-	defer manager.Unlock()
-
-	if isUsersEqual(manager.currentUsers, users) {
-		return nil
-	}
-
-	if manager.stateMachine.canTransit(eventCancel) {
-		if err = manager.stateMachine.sendEvent(eventCancel, ""); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	manager.currentUsers = users
-
-	return nil
+	return layerStatuses, nil
 }
 
 /***********************************************************************************************************************
@@ -419,7 +395,7 @@ func (manager *softwareManager) stateChanged(event, state string, updateErr stri
 
 		for id, status := range manager.ServiceStatuses {
 			if status.Status != cloudprotocol.ErrorStatus {
-				manager.updateServiceStatusByID(id, cloudprotocol.ErrorStatus, updateErr, "")
+				manager.updateServiceStatusByID(id, cloudprotocol.ErrorStatus, updateErr)
 			}
 		}
 	}
@@ -537,7 +513,7 @@ func (manager *softwareManager) download(ctx context.Context) {
 				"version": serviceStatus.AosVersion,
 			}).Debug("Service successfully downloaded")
 
-			manager.updateServiceStatusByID(id, cloudprotocol.PendingStatus, "", "")
+			manager.updateServiceStatusByID(id, cloudprotocol.PendingStatus, "")
 		}
 	}
 
@@ -606,7 +582,7 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]clo
 			Status:     cloudprotocol.PendingStatus,
 		}
 
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.PendingStatus, "", "")
+		manager.updateServiceStatusByID(service.ID, cloudprotocol.PendingStatus, "")
 	}
 
 	for _, layer := range manager.CurrentUpdate.InstallLayers {
@@ -639,6 +615,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 		}()
 	}()
 
+	if errorStr := manager.removeServices(); errorStr != "" {
+		if updateErr == "" {
+			updateErr = errorStr
+		}
+	}
+
 	if errorStr := manager.installLayers(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
@@ -646,12 +628,6 @@ func (manager *softwareManager) update(ctx context.Context) {
 	}
 
 	if errorStr := manager.installServices(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
-	}
-
-	if errorStr := manager.removeServices(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
 		}
@@ -739,7 +715,7 @@ func (manager *softwareManager) updateStatusByID(id string, status string, error
 	if _, ok := manager.LayerStatuses[id]; ok {
 		manager.updateLayerStatusByID(id, status, errorStr)
 	} else if _, ok := manager.ServiceStatuses[id]; ok {
-		manager.updateServiceStatusByID(id, status, errorStr, "")
+		manager.updateServiceStatusByID(id, status, errorStr)
 	} else {
 		log.Errorf("Software update ID not found: %s", id)
 	}
@@ -764,7 +740,7 @@ func (manager *softwareManager) updateLayerStatusByID(id, status, layerErr strin
 	manager.statusHandler.updateLayerStatus(*info)
 }
 
-func (manager *softwareManager) updateServiceStatusByID(id, status, serviceErr, stateChecksum string) {
+func (manager *softwareManager) updateServiceStatusByID(id, status, serviceErr string) {
 	manager.statusMutex.Lock()
 	defer manager.statusMutex.Unlock()
 
@@ -995,25 +971,24 @@ func (manager *softwareManager) installServices() (installErr string) {
 			"aosVersion": service.AosVersion,
 		}).Debug("Install service")
 
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.InstallingStatus, "", "")
+		manager.updateServiceStatusByID(service.ID, cloudprotocol.InstallingStatus, "")
 
 		// Create new variable to be captured by action function
 		serviceInfo := service
 
 		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) error {
-			stateChecksum, err := manager.softwareUpdater.InstallService(manager.currentUsers, serviceInfo)
+			err := manager.softwareUpdater.InstallService(serviceInfo)
 			if err != nil {
 				handleError(serviceInfo, aoserrors.Wrap(err).Error())
 				return aoserrors.Wrap(err)
 			}
 
 			log.WithFields(log.Fields{
-				"id":            serviceInfo.ID,
-				"aosVersion":    serviceInfo.AosVersion,
-				"stateChecksum": stateChecksum,
+				"id":         serviceInfo.ID,
+				"aosVersion": serviceInfo.AosVersion,
 			}).Info("Service successfully installed")
 
-			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "", stateChecksum)
+			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "")
 
 			return nil
 		})
@@ -1062,13 +1037,13 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 		}
 		manager.statusMutex.Unlock()
 
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.RemovingStatus, "", "")
+		manager.updateServiceStatusByID(service.ID, cloudprotocol.RemovingStatus, "")
 
 		// Create new variable to be captured by action function
 		serviceStatus := service
 
 		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) error {
-			if err := manager.softwareUpdater.RemoveService(manager.currentUsers, serviceStatus); err != nil {
+			if err := manager.softwareUpdater.RemoveService(serviceStatus.ID); err != nil {
 				handleError(serviceStatus, err.Error())
 				return aoserrors.Wrap(err)
 			}
@@ -1078,7 +1053,7 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 				"aosVersion": serviceStatus.AosVersion,
 			}).Info("Service successfully removed")
 
-			manager.updateServiceStatusByID(serviceStatus.ID, cloudprotocol.RemovedStatus, "", "")
+			manager.updateServiceStatusByID(serviceStatus.ID, cloudprotocol.RemovedStatus, "")
 
 			return nil
 		})
@@ -1087,26 +1062,4 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 	manager.actionHandler.Wait()
 
 	return removeErr
-}
-
-func isUsersEqual(users1, users2 []string) (result bool) {
-	if users1 == nil && users2 == nil {
-		return true
-	}
-
-	if users1 == nil || users2 == nil {
-		return false
-	}
-
-	if len(users1) != len(users2) {
-		return false
-	}
-
-	for i := range users1 {
-		if users1[i] != users2[i] {
-			return false
-		}
-	}
-
-	return true
 }

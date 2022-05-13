@@ -70,11 +70,9 @@ type TestFirmwareUpdater struct {
 }
 
 type TestSoftwareUpdater struct {
-	UsersServices []cloudprotocol.ServiceStatus
-	UsersLayers   []cloudprotocol.LayerStatus
-	AllServices   []cloudprotocol.ServiceStatus
-	AllLayers     []cloudprotocol.LayerStatus
-	UpdateError   error
+	AllServices []cloudprotocol.ServiceStatus
+	AllLayers   []cloudprotocol.LayerStatus
+	UpdateError error
 }
 
 type TestDownloader struct {
@@ -1372,35 +1370,32 @@ func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.
  **********************************************************************************************************************/
 
 func NewTestSoftwareUpdater(
-	usersServices []cloudprotocol.ServiceStatus, usersLayers []cloudprotocol.LayerStatus,
+	services []cloudprotocol.ServiceStatus, layers []cloudprotocol.LayerStatus,
 ) (updater *TestSoftwareUpdater) {
-	return &TestSoftwareUpdater{UsersServices: usersServices, UsersLayers: usersLayers}
+	return &TestSoftwareUpdater{AllServices: services, AllLayers: layers}
 }
 
-func (updater *TestSoftwareUpdater) GetUsersStatus(users []string) (
-	servicesInfo []cloudprotocol.ServiceStatus, layersInfo []cloudprotocol.LayerStatus, err error,
-) {
-	return updater.UsersServices, updater.UsersLayers, nil
+func (updater *TestSoftwareUpdater) GetServicesStatus() ([]cloudprotocol.ServiceStatus, error) {
+	return updater.AllServices, nil
 }
 
-func (updater *TestSoftwareUpdater) GetAllStatus() (
-	servicesInfo []cloudprotocol.ServiceStatus, layersInfo []cloudprotocol.LayerStatus, err error,
-) {
-	return updater.AllServices, updater.AllLayers, nil
+func (updater *TestSoftwareUpdater) GetLayersStatus() ([]cloudprotocol.LayerStatus, error) {
+	return updater.AllLayers, nil
 }
 
-func (updater *TestSoftwareUpdater) InstallService(
-	users []string, serviceInfo cloudprotocol.ServiceInfo,
-) (stateChecksum string, err error) {
-	return "", updater.UpdateError
-}
-
-func (updater *TestSoftwareUpdater) RemoveService(users []string, serviceInfo cloudprotocol.ServiceStatus) (err error) {
+func (updater *TestSoftwareUpdater) InstallService(serviceInfo cloudprotocol.ServiceInfo) error {
 	return updater.UpdateError
 }
 
-func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo) (err error) {
+func (updater *TestSoftwareUpdater) RemoveService(serviceID string) error {
 	return updater.UpdateError
+}
+
+func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo) error {
+	return updater.UpdateError
+}
+
+func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) {
 }
 
 /***********************************************************************************************************************
