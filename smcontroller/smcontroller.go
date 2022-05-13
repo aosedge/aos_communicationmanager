@@ -186,7 +186,7 @@ func (controller *Controller) GetServicesStatus() (servicesStatus []cloudprotoco
 }
 
 // GetUsersStatus returns SM users status.
-func (controller *Controller) GetLayerStatus() (layersInfo []cloudprotocol.LayerStatus, err error) {
+func (controller *Controller) GetLayersStatus() (layersInfo []cloudprotocol.LayerStatus, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()

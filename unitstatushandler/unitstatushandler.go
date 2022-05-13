@@ -67,14 +67,14 @@ type FirmwareUpdater interface {
 	UpdateComponents(components []cloudprotocol.ComponentInfo) (status []cloudprotocol.ComponentStatus, err error)
 }
 
-// SoftwareUpdater updates services, layers.
+// SoftwareUpdater updates services, layers, instances runner.
 type SoftwareUpdater interface {
-	GetUsersStatus(users []string) (servicesInfo []cloudprotocol.ServiceStatus,
-		layersInfo []cloudprotocol.LayerStatus, err error)
-	GetAllStatus() (servicesInfo []cloudprotocol.ServiceStatus, layersInfo []cloudprotocol.LayerStatus, err error)
-	InstallService(users []string, serviceInfo cloudprotocol.ServiceInfo) (stateChecksum string, err error)
-	RemoveService(users []string, serviceInfo cloudprotocol.ServiceStatus) (err error)
-	InstallLayer(layerInfo cloudprotocol.LayerInfo) (err error)
+	GetServicesStatus() ([]cloudprotocol.ServiceStatus, error)
+	GetLayersStatus() ([]cloudprotocol.LayerStatus, error)
+	InstallService(serviceInfo cloudprotocol.ServiceInfo) error
+	RemoveService(serviceID string) error
+	InstallLayer(layerInfo cloudprotocol.LayerInfo) error
+	RunInstances(instances []cloudprotocol.InstanceInfo)
 }
 
 // Storage used to store unit status handler states.
@@ -83,6 +83,13 @@ type Storage interface {
 	GetFirmwareUpdateState() (state json.RawMessage, err error)
 	SetSoftwareUpdateState(state json.RawMessage) (err error)
 	GetSoftwareUpdateState() (state json.RawMessage, err error)
+}
+
+// RunInstancesStatus run instances status.
+type RunInstancesStatus struct {
+	UnitSubjects  []string
+	Instances     []cloudprotocol.InstanceStatus
+	ErrorServices []cloudprotocol.ServiceStatus
 }
 
 // Instance instance of unit status handler.
@@ -95,6 +102,7 @@ type Instance struct {
 	statusMutex sync.Mutex
 
 	statusTimer       *time.Timer
+	unitSubjects      []string
 	boardConfigStatus itemStatus
 	componentStatuses map[string]*itemStatus
 	layerStatuses     map[string]*itemStatus
@@ -106,6 +114,7 @@ type Instance struct {
 	softwareManager *softwareManager
 
 	decryptDir string
+	initDone   bool
 }
 
 type statusDescriptor struct {
@@ -185,6 +194,31 @@ func (instance *Instance) Close() (err error) {
 	return aoserrors.Wrap(err)
 }
 
+// SendUnitStatus send unit status.
+func (instance *Instance) SendUnitStatus() error {
+	instance.sendCurrentStatus()
+
+	return nil
+}
+
+// ProcessRunStatus process current run instances status.
+func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
+	if err := instance.initCurrentStatus(); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	instance.unitSubjects = status.UnitSubjects
+
+	instance.softwareManager.processRunStatus(status)
+	instance.sendCurrentStatus()
+
+	return nil
+}
+
+// ProcessUpdateInstanceStatus process update instances status.
+func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+}
+
 // ProcessDesiredStatus processes desired status.
 func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) {
 	instance.Lock()
@@ -205,111 +239,6 @@ func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.Decod
 	if err := instance.softwareManager.processDesiredStatus(desiredStatus); err != nil {
 		log.Errorf("Error processing software desired status: %s", err)
 	}
-}
-
-// SetUsers sets current users.
-func (instance *Instance) SetUsers(users []string) (err error) {
-	instance.Lock()
-	defer instance.Unlock()
-
-	if err = instance.softwareManager.setUsers(users); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-// SendUnitStatus sends unit status.
-func (instance *Instance) SendUnitStatus() (err error) {
-	instance.Lock()
-	defer instance.Unlock()
-
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
-
-	log.Debug("Send initial firmware and software statuses")
-
-	instance.boardConfigStatus = nil
-	instance.componentStatuses = make(map[string]*itemStatus)
-	instance.serviceStatuses = make(map[string]*itemStatus)
-	instance.layerStatuses = make(map[string]*itemStatus)
-
-	// Get initial board config info
-
-	boardConfigStatuses, err := instance.firmwareManager.getBoardConfigStatuses()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, status := range boardConfigStatuses {
-		log.WithFields(log.Fields{
-			"status":        status.Status,
-			"vendorVersion": status.VendorVersion,
-			"error":         status.ErrorInfo,
-		}).Debug("Initial board config status")
-
-		instance.processBoardConfigStatus(status)
-	}
-
-	// Get initial components info
-
-	componentStatuses, err := instance.firmwareManager.getComponentStatuses()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, status := range componentStatuses {
-		log.WithFields(log.Fields{
-			"id":            status.ID,
-			"status":        status.Status,
-			"vendorVersion": status.VendorVersion,
-			"error":         status.ErrorInfo,
-		}).Debug("Initial component status")
-
-		instance.processComponentStatus(status)
-	}
-
-	// Get initial services and layers info
-
-	serviceStatuses, layerStatuses, err := instance.softwareManager.getItemStatuses()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, status := range serviceStatuses {
-		if _, ok := instance.serviceStatuses[status.ID]; !ok {
-			instance.serviceStatuses[status.ID] = &itemStatus{}
-		}
-
-		log.WithFields(log.Fields{
-			"id":         status.ID,
-			"status":     status.Status,
-			"aosVersion": status.AosVersion,
-			"error":      status.ErrorInfo,
-		}).Debug("Initial service status")
-
-		instance.processServiceStatus(status)
-	}
-
-	for _, status := range layerStatuses {
-		if _, ok := instance.layerStatuses[status.Digest]; !ok {
-			instance.layerStatuses[status.Digest] = &itemStatus{}
-		}
-
-		log.WithFields(log.Fields{
-			"id":         status.ID,
-			"digest":     status.Digest,
-			"status":     status.Status,
-			"aosVersion": status.AosVersion,
-			"error":      status.ErrorInfo,
-		}).Debug("Initial layer status")
-
-		instance.processLayerStatus(status)
-	}
-
-	instance.sendCurrentStatus()
-
-	return nil
 }
 
 // GetFOTAStatusChannel returns FOTA status channels.
@@ -363,6 +292,95 @@ func (instance *Instance) StartSOTAUpdate() (err error) {
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (instance *Instance) initCurrentStatus() error {
+	instance.boardConfigStatus = nil
+	instance.componentStatuses = make(map[string]*itemStatus)
+	instance.serviceStatuses = make(map[string]*itemStatus)
+	instance.layerStatuses = make(map[string]*itemStatus)
+
+	// Get initial board config info
+
+	boardConfigStatuses, err := instance.firmwareManager.getBoardConfigStatuses()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, status := range boardConfigStatuses {
+		log.WithFields(log.Fields{
+			"status":        status.Status,
+			"vendorVersion": status.VendorVersion,
+			"error":         status.ErrorInfo,
+		}).Debug("Initial board config status")
+
+		instance.processBoardConfigStatus(status)
+	}
+
+	// Get initial components info
+
+	componentStatuses, err := instance.firmwareManager.getComponentStatuses()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, status := range componentStatuses {
+		log.WithFields(log.Fields{
+			"id":            status.ID,
+			"status":        status.Status,
+			"vendorVersion": status.VendorVersion,
+			"error":         status.ErrorInfo,
+		}).Debug("Initial component status")
+
+		instance.processComponentStatus(status)
+	}
+
+	// Get initial services and layers info
+
+	serviceStatuses, err := instance.softwareManager.getServiceStatus()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, status := range serviceStatuses {
+		if _, ok := instance.serviceStatuses[status.ID]; !ok {
+			instance.serviceStatuses[status.ID] = &itemStatus{}
+		}
+
+		log.WithFields(log.Fields{
+			"id":         status.ID,
+			"status":     status.Status,
+			"aosVersion": status.AosVersion,
+			"error":      status.ErrorInfo,
+		}).Debug("Initial service status")
+
+		instance.processServiceStatus(status)
+	}
+
+	layerStatuses, err := instance.softwareManager.getLayersStatus()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, status := range layerStatuses {
+		if _, ok := instance.layerStatuses[status.Digest]; !ok {
+			instance.layerStatuses[status.Digest] = &itemStatus{}
+		}
+
+		log.WithFields(log.Fields{
+			"id":         status.ID,
+			"digest":     status.Digest,
+			"status":     status.Status,
+			"aosVersion": status.AosVersion,
+			"error":      status.ErrorInfo,
+		}).Debug("Initial layer status")
+
+		instance.processLayerStatus(status)
+	}
+
+	instance.initDone = true
+
+	return nil
+}
 
 func (descriptor *statusDescriptor) getStatus() (status string) {
 	switch amqpStatus := descriptor.amqpStatus.(type) {
@@ -530,15 +548,20 @@ func (instance *Instance) updateStatus(status *itemStatus, descriptor statusDesc
 }
 
 func (instance *Instance) sendCurrentStatus() {
-	unitStatus := cloudprotocol.UnitStatus{
-		BoardConfig: make([]cloudprotocol.BoardConfigStatus, 0, len(instance.boardConfigStatus)),
-		Components:  make([]cloudprotocol.ComponentStatus, 0, len(instance.componentStatuses)),
-		Layers:      make([]cloudprotocol.LayerStatus, 0, len(instance.layerStatuses)),
-		Services:    make([]cloudprotocol.ServiceStatus, 0, len(instance.serviceStatuses)),
+	if !instance.initDone {
+		return
 	}
 
-	for _, status := range instance.boardConfigStatus {
-		unitStatus.BoardConfig = append(unitStatus.BoardConfig, *status.amqpStatus.(*cloudprotocol.BoardConfigStatus))
+	unitStatus := cloudprotocol.UnitStatus{
+		UnitSubjects: instance.unitSubjects,
+		BoardConfig:  make([]cloudprotocol.BoardConfigStatus, len(instance.boardConfigStatus)),
+		Components:   make([]cloudprotocol.ComponentStatus, 0, len(instance.componentStatuses)),
+		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.layerStatuses)),
+		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.serviceStatuses)),
+	}
+
+	for i, status := range instance.boardConfigStatus {
+		unitStatus.BoardConfig[i] = *status.amqpStatus.(*cloudprotocol.BoardConfigStatus)
 	}
 
 	for _, componentStatus := range instance.componentStatuses {
