@@ -61,6 +61,7 @@ type softwareUpdate struct {
 	DownloadLayers   []cloudprotocol.LayerInfo        `json:"downloadLayers,omitempty"`
 	InstallLayers    []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
 	RemoveLayers     []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
+	RunInstances     []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
 	CertChains       []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
 	Certs            []cloudprotocol.Certificate      `json:"certs,omitempty"`
 }
@@ -79,13 +80,14 @@ type softwareManager struct {
 	statusMutex   sync.RWMutex
 	pendingUpdate *softwareUpdate
 
-	LayerStatuses   map[string]*cloudprotocol.LayerStatus   `json:"layerStatuses,omitempty"`
-	ServiceStatuses map[string]*cloudprotocol.ServiceStatus `json:"serviceStatuses,omitempty"`
-	CurrentUpdate   *softwareUpdate                         `json:"currentUpdate,omitempty"`
-	DownloadResult  map[string]*downloadResult              `json:"downloadResult,omitempty"`
-	CurrentState    string                                  `json:"currentState,omitempty"`
-	UpdateErr       string                                  `json:"updateErr,omitempty"`
-	TTLDate         time.Time                               `json:"ttlDate,omitempty"`
+	LayerStatuses    map[string]*cloudprotocol.LayerStatus   `json:"layerStatuses,omitempty"`
+	ServiceStatuses  map[string]*cloudprotocol.ServiceStatus `json:"serviceStatuses,omitempty"`
+	InstanceStatuses []cloudprotocol.InstanceStatus          `json:"instanceStatuses,omitempty"`
+	CurrentUpdate    *softwareUpdate                         `json:"currentUpdate,omitempty"`
+	DownloadResult   map[string]*downloadResult              `json:"downloadResult,omitempty"`
+	CurrentState     string                                  `json:"currentState,omitempty"`
+	UpdateErr        string                                  `json:"updateErr,omitempty"`
+	TTLDate          time.Time                               `json:"ttlDate,omitempty"`
 }
 
 /***********************************************************************************************************************
@@ -201,6 +203,8 @@ func (manager *softwareManager) getCurrentUpdateState() (status cmserver.UpdateS
 }
 
 func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
+	manager.InstanceStatuses = status.Instances
+
 	for _, errStatus := range status.ErrorServices {
 		var errMsg string
 
@@ -224,6 +228,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		DownloadLayers:   make([]cloudprotocol.LayerInfo, 0),
 		InstallLayers:    make([]cloudprotocol.LayerInfo, 0),
 		RemoveLayers:     make([]cloudprotocol.LayerStatus, 0),
+		RunInstances:     desiredStatus.Instances,
 		CertChains:       desiredStatus.CertificateChains, Certs: desiredStatus.Certificates,
 	}
 
@@ -238,11 +243,11 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	}
 
 	manager.processDesiredServices(update, allServices, desiredStatus.Services)
-
 	manager.processDesiredLayers(update, allLayers, desiredStatus.Layers)
 
 	if len(update.DownloadServices) != 0 || len(update.RemoveServices) != 0 ||
-		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 {
+		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 ||
+		manager.needRunInstances(desiredStatus.Instances) {
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
@@ -310,6 +315,44 @@ removeLayersLoop:
 
 		update.RemoveLayers = append(update.RemoveLayers, installedLayer)
 	}
+}
+
+func (manager *softwareManager) needRunInstances(desiredInstances []cloudprotocol.InstanceInfo) bool {
+	currentIdents := make([]cloudprotocol.InstanceIdent, len(manager.InstanceStatuses))
+	desiredIdents := []cloudprotocol.InstanceIdent{}
+
+	for i, ident := range manager.InstanceStatuses {
+		currentIdents[i] = ident.InstanceIdent
+	}
+
+	for _, instance := range desiredInstances {
+		ident := cloudprotocol.InstanceIdent{
+			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
+		}
+
+		for i := uint64(0); i < instance.NumInstances; i++ {
+			ident.Instance = i
+
+			desiredIdents = append(desiredIdents, ident)
+		}
+	}
+
+	if len(currentIdents) != len(desiredIdents) {
+		return true
+	}
+
+loopFound:
+	for _, desIdent := range desiredIdents {
+		for _, curIdent := range currentIdents {
+			if desIdent == curIdent {
+				continue loopFound
+			}
+		}
+
+		return true
+	}
+
+	return false
 }
 
 func (manager *softwareManager) startUpdate() (err error) {
@@ -638,6 +681,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 			updateErr = errorStr
 		}
 	}
+
+	if errorStr := manager.runInstances(); errorStr != "" {
+		if updateErr == "" {
+			updateErr = errorStr
+		}
+	}
 }
 
 /***********************************************************************************************************************
@@ -676,7 +725,8 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 		if reflect.DeepEqual(update.InstallLayers, manager.CurrentUpdate.InstallLayers) &&
 			reflect.DeepEqual(update.RemoveLayers, manager.CurrentUpdate.RemoveLayers) &&
 			reflect.DeepEqual(update.InstallServices, manager.CurrentUpdate.InstallServices) &&
-			reflect.DeepEqual(update.RemoveServices, manager.CurrentUpdate.RemoveServices) {
+			reflect.DeepEqual(update.RemoveServices, manager.CurrentUpdate.RemoveServices) &&
+			reflect.DeepEqual(update.RunInstances, manager.CurrentUpdate.RunInstances) {
 			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
 				return nil
 			}
@@ -1062,4 +1112,12 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 	manager.actionHandler.Wait()
 
 	return removeErr
+}
+
+func (manager *softwareManager) runInstances() (runErr string) {
+	if err := manager.softwareUpdater.RunInstances(manager.CurrentUpdate.RunInstances); err != nil {
+		return err.Error()
+	}
+
+	return ""
 }
