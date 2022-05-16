@@ -74,7 +74,7 @@ type SoftwareUpdater interface {
 	InstallService(serviceInfo cloudprotocol.ServiceInfo) error
 	RemoveService(serviceID string) error
 	InstallLayer(layerInfo cloudprotocol.LayerInfo) error
-	RunInstances(instances []cloudprotocol.InstanceInfo)
+	RunInstances(instances []cloudprotocol.InstanceInfo) error
 }
 
 // Storage used to store unit status handler states.
@@ -107,6 +107,7 @@ type Instance struct {
 	componentStatuses map[string]*itemStatus
 	layerStatuses     map[string]*itemStatus
 	serviceStatuses   map[string]*itemStatus
+	instanceStatuses  []cloudprotocol.InstanceStatus
 
 	sendStatusPeriod time.Duration
 
@@ -208,6 +209,7 @@ func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 	}
 
 	instance.unitSubjects = status.UnitSubjects
+	instance.instanceStatuses = status.Instances
 
 	instance.softwareManager.processRunStatus(status)
 	instance.sendCurrentStatus()
@@ -217,6 +219,7 @@ func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 
 // ProcessUpdateInstanceStatus process update instances status.
 func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+	instance.updateInstanceStatus(status)
 }
 
 // ProcessDesiredStatus processes desired status.
@@ -518,6 +521,42 @@ func (instance *Instance) processServiceStatus(serviceInfo cloudprotocol.Service
 	instance.updateStatus(serviceStatus, statusDescriptor{&serviceInfo})
 }
 
+func (instance *Instance) updateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	newStatuses := []cloudprotocol.InstanceStatus{}
+
+foundloop:
+	for _, instanceStauts := range status {
+		for i := range instance.instanceStatuses {
+			if instanceStauts.InstanceIdent == instance.instanceStatuses[i].InstanceIdent &&
+				instanceStauts.AosVersion == instance.instanceStatuses[i].AosVersion {
+				log.WithFields(log.Fields{
+					"serviceID":  instanceStauts.InstanceIdent.ServiceID,
+					"subjectID":  instanceStauts.InstanceIdent.ServiceID,
+					"instance":   instanceStauts.InstanceIdent.Instance,
+					"aosVersion": instanceStauts.AosVersion,
+					"runState":   instanceStauts.RunState,
+					"error":      instanceStauts.ErrorInfo,
+				}).Debug("Update instance status")
+
+				instance.instanceStatuses[i].StateChecksum = instanceStauts.StateChecksum
+				instance.instanceStatuses[i].RunState = instanceStauts.RunState
+				instance.instanceStatuses[i].ErrorInfo = instanceStauts.ErrorInfo
+
+				continue foundloop
+			}
+		}
+
+		newStatuses = append(newStatuses, instanceStauts)
+	}
+
+	instance.instanceStatuses = append(instance.instanceStatuses, newStatuses...)
+
+	instance.statusChanged()
+}
+
 func (instance *Instance) statusChanged() {
 	if instance.statusTimer != nil {
 		return
@@ -558,6 +597,7 @@ func (instance *Instance) sendCurrentStatus() {
 		Components:   make([]cloudprotocol.ComponentStatus, 0, len(instance.componentStatuses)),
 		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.layerStatuses)),
 		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.serviceStatuses)),
+		Instances:    instance.instanceStatuses,
 	}
 
 	for i, status := range instance.boardConfigStatus {

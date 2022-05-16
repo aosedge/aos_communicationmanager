@@ -70,9 +70,10 @@ type TestFirmwareUpdater struct {
 }
 
 type TestSoftwareUpdater struct {
-	AllServices []cloudprotocol.ServiceStatus
-	AllLayers   []cloudprotocol.LayerStatus
-	UpdateError error
+	AllServices     []cloudprotocol.ServiceStatus
+	AllLayers       []cloudprotocol.LayerStatus
+	UpdateError     error
+	runInstanceChan chan []cloudprotocol.InstanceInfo
 }
 
 type TestDownloader struct {
@@ -1026,6 +1027,12 @@ func TestSoftwareManager(t *testing.T) {
 		}
 
 		for _, expectedStatus := range item.updateWaitStatuses {
+			if expectedStatus.State == cmserver.Updating {
+				if _, err := softwareUpdater.WaitForRunInstance(time.Second); err != nil {
+					t.Errorf("Wait run instances error: %v", err)
+				}
+			}
+
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
 				t.Errorf("Wait for update status error: %s", err)
 
@@ -1371,8 +1378,10 @@ func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.
 
 func NewTestSoftwareUpdater(
 	services []cloudprotocol.ServiceStatus, layers []cloudprotocol.LayerStatus,
-) (updater *TestSoftwareUpdater) {
-	return &TestSoftwareUpdater{AllServices: services, AllLayers: layers}
+) *TestSoftwareUpdater {
+	return &TestSoftwareUpdater{
+		AllServices: services, AllLayers: layers, runInstanceChan: make(chan []cloudprotocol.InstanceInfo, 1),
+	}
 }
 
 func (updater *TestSoftwareUpdater) GetServicesStatus() ([]cloudprotocol.ServiceStatus, error) {
@@ -1395,7 +1404,20 @@ func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerIn
 	return updater.UpdateError
 }
 
-func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) {
+func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) error {
+	updater.runInstanceChan <- instances
+
+	return nil
+}
+
+func (updater *TestSoftwareUpdater) WaitForRunInstance(timeout time.Duration) ([]cloudprotocol.InstanceInfo, error) {
+	select {
+	case receivedRunInstances := <-updater.runInstanceChan:
+		return receivedRunInstances, nil
+
+	case <-time.After(timeout):
+		return nil, aoserrors.New("receive run instances timeout")
+	}
 }
 
 /***********************************************************************************************************************
