@@ -35,7 +35,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const waitStatusTimeout = 5 * time.Second
+const (
+	waitStatusTimeout      = 5 * time.Second
+	waitRunInstanceTimeout = 1 * time.Second
+)
 
 /***********************************************************************************************************************
  * Vars
@@ -341,6 +344,10 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
+	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
 	softwareUpdater.AllLayers = expectedUnitStatus.Layers
 
 	// failed update
@@ -387,6 +394,10 @@ func TestUpdateLayers(t *testing.T) {
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+
+	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
 	}
 }
 
@@ -459,6 +470,10 @@ func TestUpdateServices(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
+	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
 	// failed update
 
 	softwareUpdater.AllServices = expectedUnitStatus.Services
@@ -506,6 +521,197 @@ func TestUpdateServices(t *testing.T) {
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+
+	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+}
+
+func TestRunInstances(t *testing.T) {
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
+		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	sender := unitstatushandler.NewTestSender()
+
+	statusHandler, err := unitstatushandler.New(
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
+	if err != nil {
+		t.Fatalf("Can't create unit status handler: %v", err)
+	}
+	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
+
+	initialInstancesStatus := []cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+		},
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+		},
+	}
+
+	if err := statusHandler.ProcessRunStatus(
+		unitstatushandler.RunInstancesStatus{Instances: initialInstancesStatus}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	expectedUnitStatus := cloudprotocol.UnitStatus{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Instances:   initialInstancesStatus,
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+
+	// success run
+
+	expexpectedRunInstances := []cloudprotocol.InstanceInfo{
+		{ServiceID: "Serv1", SubjectID: "Subj1", NumInstances: 3},
+		{ServiceID: "Serv1", SubjectID: "Subj2", NumInstances: 1},
+		{ServiceID: "Serv2", SubjectID: "Subj1", NumInstances: 1},
+	}
+
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+		Instances: expexpectedRunInstances,
+	})
+
+	receivedRunInstances, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive run instances: %v", err)
+	}
+
+	if !reflect.DeepEqual(receivedRunInstances, expexpectedRunInstances) {
+		t.Error("Incorrect run instances")
+	}
+
+	updatedInstancesStatus := []cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+		},
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+		},
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 2}, AosVersion: 1,
+		},
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj2", Instance: 0}, AosVersion: 1,
+		},
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+		},
+	}
+
+	if err := statusHandler.ProcessRunStatus(
+		unitstatushandler.RunInstancesStatus{Instances: updatedInstancesStatus}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	expectedUnitStatus = cloudprotocol.UnitStatus{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Instances:   updatedInstancesStatus,
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+
+	// send the same run instances
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+		Instances: expexpectedRunInstances,
+	})
+
+	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err == nil {
+		t.Error("Should be no run instances request")
+	}
+}
+
+func TestUpdateInstancesStatus(t *testing.T) {
+	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
+		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	sender := unitstatushandler.NewTestSender()
+
+	statusHandler, err := unitstatushandler.New(
+		cfg, boardConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		unitstatushandler.NewTestStorage(), sender)
+	if err != nil {
+		t.Fatalf("Can't create unit status handler: %v", err)
+	}
+	defer statusHandler.Close()
+
+	go handleUpdateStatus(statusHandler)
+
+	if err := statusHandler.ProcessRunStatus(
+		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{
+			{
+				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+			},
+			{
+				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+			},
+			{
+				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
+			},
+		}}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	if _, err := sender.WaitForStatus(waitStatusTimeout); err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	expectedUnitStatus := cloudprotocol.UnitStatus{
+		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
+		Instances: []cloudprotocol.InstanceStatus{
+			{
+				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+				RunState: "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
+			},
+			{
+				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+			},
+			{
+				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
+				StateChecksum: "newState",
+			},
+		},
+	}
+
+	statusHandler.ProcessUpdateInstanceStatus([]cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+			RunState: "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
+		},
+		{
+			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
+			StateChecksum: "newState",
+		},
+	})
+
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
