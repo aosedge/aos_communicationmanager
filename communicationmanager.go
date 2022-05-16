@@ -22,7 +22,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"os/signal"
 	"reflect"
@@ -155,7 +154,7 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return nil, err
 	}
 
-	if cm.crypt, err = fcrypt.New(cm.iam, cm.cryptoContext); err != nil {
+	if cm.crypt, err = fcrypt.New(cm.iam, cm.cryptoContext, cfg.ServiceDiscoveryURL); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -296,29 +295,6 @@ func (cm *communicationManager) close() {
 	if cm.db != nil {
 		cm.db.Close()
 	}
-}
-
-func (cm *communicationManager) getServiceDiscoveryURLs(cfg *config.Config) (serviceDiscoveryURLs []string) {
-	// Get organization names from certificate and use it as discovery URL
-	orgNames, err := cm.crypt.GetOrganization()
-	if err != nil {
-		log.Warningf("Organization name will be taken from config file: %s", err)
-
-		return append(serviceDiscoveryURLs, cfg.ServiceDiscoveryURL)
-	}
-
-	if len(orgNames) == 0 || orgNames[0] == "" {
-		log.Warn("Certificate organization name is empty or organization is not a single")
-
-		return append(serviceDiscoveryURLs, cfg.ServiceDiscoveryURL)
-	}
-
-	url := url.URL{
-		Scheme: "https",
-		Host:   orgNames[0],
-	}
-
-	return append(serviceDiscoveryURLs, url.String()+":9000")
 }
 
 func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
@@ -619,7 +595,7 @@ func main() {
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
-	go cm.handleConnection(ctx, cm.getServiceDiscoveryURLs(cfg))
+	go cm.handleConnection(ctx, cm.crypt.GetServiceDiscoveryURLs())
 	go cm.handleStatusChannels(ctx)
 
 	// Handle SIGTERM
