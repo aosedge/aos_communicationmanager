@@ -26,8 +26,8 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/journalalerts"
 	"github.com/aoscloud/aos_common/resourcemonitor"
-
 )
 
 /***********************************************************************************************************************
@@ -70,11 +70,10 @@ type Monitoring struct {
 
 // Alerts configuration for alerts.
 type Alerts struct {
-	EnableSystemAlerts bool              `json:"enableSystemAlerts"`
-	SendPeriod         aostypes.Duration `json:"sendPeriod"`
-	MaxMessageSize     int               `json:"maxMessagesize"`
-	MaxOfflineMessages int               `json:"maxOfflineMessages"`
-	Filter             []string          `json:"filter"`
+	JournalAlerts      *journalalerts.Config `json:"journalAlerts,omitempty"`
+	SendPeriod         aostypes.Duration     `json:"sendPeriod"`
+	MaxMessageSize     int                   `json:"maxMessagesize"`
+	MaxOfflineMessages int                   `json:"maxOfflineMessages"`
 }
 
 // Migration struct represents path for db migration.

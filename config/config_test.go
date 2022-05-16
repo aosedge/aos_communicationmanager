@@ -76,12 +76,13 @@ const testConfigContent = `{
 		},
 		"maxOfflineMessages": 25
 	},
-	"alerts": {
-		"enableSystemAlerts": true,
+	"alerts": {		
 		"sendPeriod": "20s",
 		"maxMessageSize": 1024,
 		"maxOfflineMessages": 32,
-		"filter": ["(test)", "(regexp)"]
+		"journalAlerts": {
+			"filter": ["(test)", "(regexp)"]
+		}
 	},
 	"migration": {
 		"migrationPath" : "/usr/share/aos_communicationmanager/migration",
@@ -219,10 +220,6 @@ func TestGetMonitoringConfig(t *testing.T) {
 }
 
 func TestGetAlertsConfig(t *testing.T) {
-	if !testCfg.Alerts.EnableSystemAlerts {
-		t.Errorf("Wrong enable system alerts value: %v", testCfg.Alerts.EnableSystemAlerts)
-	}
-
 	if testCfg.Alerts.SendPeriod.Duration != 20*time.Second {
 		t.Errorf("Wrong poll period value: %s", testCfg.Alerts.SendPeriod)
 	}
@@ -237,8 +234,8 @@ func TestGetAlertsConfig(t *testing.T) {
 
 	filter := []string{"(test)", "(regexp)"}
 
-	if !reflect.DeepEqual(testCfg.Alerts.Filter, filter) {
-		t.Errorf("Wrong filter value: %v", testCfg.Alerts.Filter)
+	if !reflect.DeepEqual(testCfg.Alerts.JournalAlerts.Filter, filter) {
+		t.Errorf("Wrong filter value: %v", testCfg.Alerts.JournalAlerts.Filter)
 	}
 }
 
