@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -48,6 +49,13 @@ const (
 	onlineCertificate  = "online"
 	offlineCertificate = "offline"
 )
+
+/***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+// nolint:gochecknoglobals // use as const
+var issuerAltNameExtID = asn1.ObjectIdentifier{2, 5, 29, 18}
 
 /***********************************************************************************************************************
  * Types
@@ -70,8 +78,9 @@ type CryptoSessionKeyInfo struct {
 
 // CryptoHandler crypto handler.
 type CryptoHandler struct {
-	certProvider  CertificateProvider
-	cryptoContext *cryptutils.CryptoContext
+	certProvider        CertificateProvider
+	cryptoContext       *cryptutils.CryptoContext
+	serviceDiscoveryURL string
 }
 
 // SymmetricContextInterface interface for SymmetricCipherContext.
@@ -125,30 +134,41 @@ type certificateChainInfo struct {
 
 // New create context for crypto operations.
 func New(
-	provider CertificateProvider, cryptocontext *cryptutils.CryptoContext,
+	provider CertificateProvider, cryptocontext *cryptutils.CryptoContext, serviceDiscoveryURL string,
 ) (handler *CryptoHandler, err error) {
-	handler = &CryptoHandler{certProvider: provider, cryptoContext: cryptocontext}
+	handler = &CryptoHandler{
+		certProvider:        provider,
+		cryptoContext:       cryptocontext,
+		serviceDiscoveryURL: serviceDiscoveryURL,
+	}
 
 	return handler, nil
 }
 
-// GetOrganization returns online certificate origanizarion names.
-func (handler *CryptoHandler) GetOrganization() (names []string, err error) {
-	certURLStr, _, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
+// GetServiceDiscoveryURLs returns service discovery URLs.
+func (handler *CryptoHandler) GetServiceDiscoveryURLs() (serviceDiscoveryURLs []string) {
+	defer func() {
+		if len(serviceDiscoveryURLs) == 0 {
+			log.Warning("Service discovery URL can't be found in certificate and will be used from config")
+
+			serviceDiscoveryURLs = append(serviceDiscoveryURLs, handler.serviceDiscoveryURL)
+		}
+	}()
+
+	certs, err := handler.getOnlineCert()
+	if err != nil || len(certs) == 0 {
+		return nil
 	}
 
-	certs, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
+	if serviceDiscoveryURLs, err = handler.getServiceDiscoveryFromExtensions(certs[0]); err == nil {
+		return serviceDiscoveryURLs
 	}
 
-	if certs[0].Subject.Organization == nil {
-		return nil, aoserrors.New("online certificate does not have organizations")
+	if serviceDiscoveryURLs, err = handler.getServiceDiscoveryFromOrgName(certs[0]); err == nil {
+		return serviceDiscoveryURLs
 	}
 
-	return certs[0].Subject.Organization, nil
+	return nil
 }
 
 // GetCertSerial returns certificate serial number.
@@ -501,6 +521,20 @@ func getRawCertificate(certs []*x509.Certificate) (rawCerts [][]byte) {
 	return rawCerts
 }
 
+func (handler *CryptoHandler) getOnlineCert() ([]*x509.Certificate, error) {
+	certURLStr, _, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	certs, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return certs, nil
+}
+
 func (handler *CryptoHandler) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key []byte, err error) {
 	issuer, err := asn1.Marshal(keyInfo.Rid.Issuer)
 	if err != nil {
@@ -528,6 +562,67 @@ func (handler *CryptoHandler) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (
 	}
 
 	return key, nil
+}
+
+func (handler *CryptoHandler) getServiceDiscoveryFromExtensions(
+	cert *x509.Certificate,
+) (serviceDiscoveryURLs []string, err error) {
+	for _, ext := range cert.Extensions {
+		if !issuerAltNameExtID.Equal(ext.Id) {
+			continue
+		}
+
+		var aosNames asn1.RawValue
+
+		rest, err := asn1.Unmarshal(ext.Value, &aosNames)
+		if err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if len(rest) != 0 {
+			return nil, aoserrors.New("x509: trailing data after X.509 authority information")
+		}
+
+		rest = aosNames.Bytes
+
+		for len(rest) > 0 {
+			var aosName asn1.RawValue
+
+			rest, err = asn1.Unmarshal(rest, &aosName)
+			if err != nil {
+				return nil, aoserrors.Wrap(err)
+			}
+
+			if aosName.Tag == asn1.TagOID {
+				serviceDiscoveryURLs = append(serviceDiscoveryURLs, string(aosName.Bytes))
+			}
+		}
+	}
+
+	if len(serviceDiscoveryURLs) == 0 {
+		return nil, aoserrors.New("URL is not in the certificate")
+	}
+
+	return serviceDiscoveryURLs, nil
+}
+
+func (handler *CryptoHandler) getServiceDiscoveryFromOrgName(
+	cert *x509.Certificate,
+) (serviceDiscoveryURLs []string, err error) {
+	if cert.Subject.Organization == nil {
+		return nil, aoserrors.New("certificate does not have organizations")
+	}
+
+	if len(cert.Subject.Organization) == 0 || cert.Subject.Organization[0] == "" {
+		return nil, aoserrors.New("URLs are not in the certificate")
+	}
+
+	url := url.URL{
+		Scheme: "https",
+		Host:   cert.Subject.Organization[0],
+	}
+
+	return append(serviceDiscoveryURLs, url.String()+":9000"), nil
 }
 
 func (symmetricContext *SymmetricCipherContext) generateKeyAndIV(algString string) (err error) {
