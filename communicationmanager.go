@@ -299,6 +299,18 @@ func (cm *communicationManager) close() {
 }
 
 func (cm *communicationManager) getServiceDiscoveryURLs(cfg *config.Config) (serviceDiscoveryURLs []string) {
+	// Get urls from certificate and use it as discovery URL
+	urls, err := cm.crypt.GetServiceDiscoveryFromExtensions()
+	if err != nil {
+		log.Warningf("Service discovery will be taken from config file : %v", err)
+
+		return append(serviceDiscoveryURLs, cfg.ServiceDiscoveryURL)
+	}
+
+	if len(urls) != 0 {
+		return urls
+	}
+
 	// Get organization names from certificate and use it as discovery URL
 	orgNames, err := cm.crypt.GetOrganization()
 	if err != nil {

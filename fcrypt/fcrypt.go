@@ -50,6 +50,13 @@ const (
 )
 
 /***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+// nolint:gochecknoglobals // use as consts
+var issuerAltNameExtID = asn1.ObjectIdentifier{2, 5, 29, 18}
+
+/***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
@@ -148,6 +155,48 @@ func (handler *CryptoHandler) GetOrganization() (names []string, err error) {
 	}
 
 	return certs[0].Subject.Organization, nil
+}
+
+// GetServiceDiscoveryFromExtensions returns service discovery URLs.
+func (handler *CryptoHandler) GetServiceDiscoveryFromExtensions() (urls []string, err error) {
+	certURLStr, _, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	certs, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	for _, ext := range certs[0].Extensions {
+		if issuerAltNameExtID.Equal(ext.Id) {
+			var aosNames asn1.RawValue
+
+			rest, err := asn1.Unmarshal(ext.Value, &aosNames)
+			if err != nil {
+				return nil, aoserrors.Wrap(err)
+			} else if len(rest) != 0 {
+				return nil, aoserrors.New("x509: trailing data after X.509 authority information")
+			}
+
+			rest = aosNames.Bytes
+			for len(rest) > 0 {
+				var aosName asn1.RawValue
+
+				rest, err = asn1.Unmarshal(rest, &aosName)
+				if err != nil {
+					return nil, aoserrors.Wrap(err)
+				}
+
+				if aosName.Tag == 6 {
+					urls = append(urls, string(aosName.Bytes))
+				}
+			}
+		}
+	}
+
+	return urls, nil
 }
 
 // GetCertSerial returns certificate serial number.
