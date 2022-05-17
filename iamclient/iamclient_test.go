@@ -52,8 +52,6 @@ const (
 	publicServerURL    = "localhost:8090"
 )
 
-const defaultSubject = "defultSubject"
-
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -61,12 +59,10 @@ const defaultSubject = "defultSubject"
 type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
 
-	grpcServer             *grpc.Server
-	systemID               string
-	subjects               []string
-	subjectsChangedChannel chan []string
-	certURL                map[string]string
-	keyURL                 map[string]string
+	grpcServer *grpc.Server
+	systemID   string
+	certURL    map[string]string
+	keyURL     map[string]string
 }
 
 type testProtectedServer struct {
@@ -151,85 +147,6 @@ func TestGetSystemID(t *testing.T) {
 
 	if client.GetSystemID() != publicServer.systemID {
 		t.Errorf("Invalid system ID: %s", client.GetSystemID())
-	}
-}
-
-func TestGetSubjects(t *testing.T) {
-	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
-	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
-	}
-
-	publicServer.subjects = []string{"subjects1", "subjects2", "subjects3"}
-
-	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
-	}, &testSender{}, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create IAM client: %s", err)
-	}
-	defer client.Close()
-
-	if !reflect.DeepEqual(publicServer.subjects, client.GetSubjects()) {
-		t.Errorf("Invalid subjects: %s", client.GetSubjects())
-	}
-
-	newSubjects := []string{"newSubjects1", "newSubjects2", "newSubjects3"}
-
-	publicServer.subjectsChangedChannel <- newSubjects
-
-	subjects, err := waitSubjects(client.SubjectsChangedChannel(), time.Second)
-	if err != nil {
-		t.Error("Wait subjects changed timeout")
-	}
-
-	if !reflect.DeepEqual(subjects, newSubjects) {
-		t.Errorf("Invalid subjects: %s", subjects)
-	}
-
-	newSubjects = []string{"newSubjects1", "newSubjects2"}
-
-	publicServer.subjectsChangedChannel <- newSubjects
-
-	if subjects, err = waitSubjects(client.SubjectsChangedChannel(), time.Second); err != nil {
-		t.Error("Wait subjects changed timeout")
-	}
-
-	if !reflect.DeepEqual(subjects, newSubjects) {
-		t.Errorf("Invalid subjects: %s", subjects)
-	}
-
-	publicServer.subjectsChangedChannel <- newSubjects
-
-	if _, err := waitSubjects(client.SubjectsChangedChannel(), time.Second); err == nil {
-		t.Error("Should be error: timout")
-	}
-
-	// test reconnect with new subject
-	publicServer.close()
-	protectedServer.close()
-
-	time.Sleep(time.Second)
-
-	publicServer, protectedServer, err = newTestServer(publicServerURL, protectedServerURL)
-	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
-	}
-
-	time.Sleep(3 * time.Second)
-
-	defer publicServer.close()
-	defer protectedServer.close()
-
-	newSubjects = []string{defaultSubject}
-
-	if subjects, err = waitSubjects(client.SubjectsChangedChannel(), time.Second); err != nil {
-		t.Error("Wait subjects changed timeout")
-	}
-
-	if !reflect.DeepEqual(subjects, newSubjects) {
-		t.Errorf("Invalid subjects: %s", subjects)
 	}
 }
 
@@ -419,10 +336,7 @@ func TestGetCertificates(t *testing.T) {
 func newTestServer(
 	publicServerURL, protectedServerURL string,
 ) (publicServer *testPublicServer, protectedServer *testProtectedServer, err error) {
-	publicServer = &testPublicServer{
-		subjectsChangedChannel: make(chan []string, 1),
-		subjects:               []string{defaultSubject},
-	}
+	publicServer = &testPublicServer{}
 
 	publicListener, err := net.Listen("tcp", publicServerURL)
 	if err != nil {
@@ -554,28 +468,6 @@ func (server *testPublicServer) GetSystemInfo(
 	return rsp, nil
 }
 
-func (server *testPublicServer) GetSubjects(context context.Context, req *empty.Empty) (rsp *pb.Subjects, err error) {
-	rsp = &pb.Subjects{Subjects: server.subjects}
-
-	return rsp, nil
-}
-
-func (server *testPublicServer) SubscribeSubjectsChanged(
-	req *empty.Empty, stream pb.IAMPublicService_SubscribeSubjectsChangedServer,
-) error {
-	for {
-		select {
-		case <-stream.Context().Done():
-			return nil
-
-		case subjects := <-server.subjectsChangedChannel:
-			if err := stream.Send(&pb.Subjects{Subjects: subjects}); err != nil {
-				return aoserrors.Wrap(err)
-			}
-		}
-	}
-}
-
 func (sender *testSender) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {
 	sender.csr = make(map[string]string)
 
@@ -617,14 +509,4 @@ func (provider *testCertProvider) GetCertSerial(certURLStr string) (serial strin
 	}
 
 	return fmt.Sprintf("%X", certs[0].SerialNumber), nil
-}
-
-func waitSubjects(messageChannel <-chan []string, timeout time.Duration) ([]string, error) {
-	select {
-	case <-time.After(timeout):
-		return []string{}, aoserrors.New("wait message timeout")
-
-	case subjects := <-messageChannel:
-		return subjects, nil
-	}
 }

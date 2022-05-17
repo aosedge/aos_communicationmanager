@@ -39,10 +39,7 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const (
-	iamRequestTimeout   = 30 * time.Second
-	iamReconnectTimeout = 10 * time.Second
-)
+const iamRequestTimeout = 30 * time.Second
 
 const subjectsChangedChannelSize = 1
 
@@ -57,7 +54,6 @@ type Client struct {
 	sender Sender
 
 	systemID string
-	subjects []string
 
 	publicConnection    *grpc.ClientConn
 	protectedConnection *grpc.ClientConn
@@ -125,31 +121,12 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if localClient.subjects, err = localClient.getSubjects(); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	go client.handleSubjectsChanged()
-
 	return localClient, nil
 }
 
 // GetSystemID returns system ID.
 func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
-}
-
-// GetSubjects returns current subjects.
-func (client *Client) GetSubjects() []string {
-	client.Lock()
-	defer client.Unlock()
-
-	return client.subjects
-}
-
-// SubjectsChangedChannel returns subjects changed channel.
-func (client *Client) SubjectsChangedChannel() <-chan []string {
-	return client.subjectsChangedChannel
 }
 
 // RenewCertificatesNotification renew certificates notification.
@@ -346,94 +323,4 @@ func (client *Client) getSystemID() (systemID string, err error) {
 	log.WithFields(log.Fields{"systemID": response.SystemId}).Debug("Get system ID")
 
 	return response.SystemId, nil
-}
-
-func (client *Client) getSubjects() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
-	defer cancel()
-
-	request := &empty.Empty{}
-
-	response, err := client.pbPublic.GetSubjects(ctx, request)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	log.WithFields(log.Fields{"subjects": response.Subjects}).Debug("Get subjects")
-
-	return response.Subjects, nil
-}
-
-func (client *Client) handleSubjectsChanged() {
-	err := client.subscribeSubjectsChanged()
-
-	for {
-		if err != nil && len(client.closeChannel) == 0 {
-			log.Errorf("Error subscribe subjects changed: %s", err)
-			log.Debugf("Reconnect to IAM in %v...", iamReconnectTimeout)
-		}
-
-		select {
-		case <-client.closeChannel:
-			return
-
-		case <-time.After(iamReconnectTimeout):
-			err = client.subscribeSubjectsChanged()
-		}
-	}
-}
-
-func (client *Client) subscribeSubjectsChanged() error {
-	log.Debug("Subscribe to subjects changed notification")
-
-	request := &empty.Empty{}
-
-	stream, err := client.pbPublic.SubscribeSubjectsChanged(context.Background(), request)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	subjects, err := client.getSubjects()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if !isSubjectsEqual(subjects, client.subjects) {
-		client.Lock()
-		client.subjects = subjects
-		client.Unlock()
-
-		client.subjectsChangedChannel <- client.subjects
-	}
-
-	for {
-		notification, err := stream.Recv()
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		log.WithFields(log.Fields{"subjects": notification.Subjects}).Debug("Subjects changed notification")
-
-		if !isSubjectsEqual(notification.Subjects, client.subjects) {
-			client.Lock()
-			client.subjects = notification.Subjects
-			client.Unlock()
-
-			client.subjectsChangedChannel <- client.subjects
-		}
-	}
-}
-
-func isSubjectsEqual(subjects1, subjects2 []string) bool {
-	if len(subjects1) != len(subjects2) {
-		return false
-	}
-
-	for i, subject := range subjects1 {
-		if subject != subjects2[i] {
-			return false
-		}
-	}
-
-	return true
 }
