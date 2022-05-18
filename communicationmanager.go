@@ -527,7 +527,7 @@ func reset(cfg *config.Config) (err error) {
  * Main
  **********************************************************************************************************************/
 
-func main() { // nolint:funlen
+func main() {
 	// Initialize command line flags
 	configFile := flag.String("c", "aos_communicationmanager.cfg", "path to config file")
 	strLogLevel := flag.String("v", "info", `log level: "debug", "info", "warn", "error", "fatal", "panic"`)
