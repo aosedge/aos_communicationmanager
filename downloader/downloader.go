@@ -18,7 +18,6 @@
 package downloader
 
 import (
-	"bufio"
 	"container/list"
 	"context"
 	"encoding/base64"
@@ -29,7 +28,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -38,6 +36,7 @@ import (
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
+	"github.com/aoscloud/aos_common/utils/fs"
 	"github.com/aoscloud/aos_common/utils/retryhelper"
 	"github.com/cavaliercoder/grab"
 	log "github.com/sirupsen/logrus"
@@ -119,11 +118,11 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if downloader.downloadMountPoint, err = getMountPoint(downloader.config.DownloadDir); err != nil {
+	if downloader.downloadMountPoint, err = fs.GetMountPoint(downloader.config.DownloadDir); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if downloader.decryptMountPoint, err = getMountPoint(downloader.config.DecryptDir); err != nil {
+	if downloader.decryptMountPoint, err = fs.GetMountPoint(downloader.config.DecryptDir); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -704,7 +703,7 @@ func (downloader *Downloader) prepareDownloadAlert(resp *grab.Response, msg stri
 	return cloudprotocol.AlertItem{
 		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
 		Payload: cloudprotocol.DownloadAlert{
-			Progress:        fmt.Sprintf("%.2f", resp.Progress()*100) + "%",
+			Progress:        fmt.Sprintf("%.2f%%", resp.Progress()*100),
 			URL:             resp.Request.HTTPRequest.URL.String(),
 			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
 			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size)),
@@ -736,40 +735,6 @@ func getFileSize(fileName string) (size int64, err error) {
 	}
 
 	return stat.Size, nil
-}
-
-func getMountPoint(dir string) (mountPoint string, err error) {
-	file, err := os.Open("/proc/mounts")
-	if err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		fields := strings.Fields(line)
-		if len(fields) < 2 { // nolint:gomnd
-			continue
-		}
-
-		relPath, err := filepath.Rel(fields[1], dir)
-		if err != nil || strings.Contains(relPath, "..") {
-			continue
-		}
-
-		if len(fields[1]) > len(mountPoint) {
-			mountPoint = fields[1]
-		}
-	}
-
-	if mountPoint == "" {
-		return "", aoserrors.Errorf("failed to find mount point for %s", dir)
-	}
-
-	return mountPoint, nil
 }
 
 func getDirSize(path string) (size int64, err error) {
