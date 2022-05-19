@@ -35,7 +35,7 @@ linters-settings:
   gomnd:
     settings:
       mnd:
-        ignored-numbers: 0o600,0o755,10,16,32, 64,128
+        ignored-numbers: 0o600,0o755,10,16,32,64,128,100
         ignored-files: config/config.go,fcrypt/utils.go
 
   gofumpt:
