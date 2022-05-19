@@ -58,19 +58,21 @@ const testConfigContent = `{
 		"downloadPartLimit": 57
 	},
 	"monitoring": {
-		"sendPeriod": "5m",
-		"pollPeriod": "1s",
-		"maxOfflineMessages": 25,
-		"ram": {
-			"minTimeout": "10s",
-			"minThreshold": 10,
-			"maxThreshold": 150
+		"monitorConfig": {
+			"sendPeriod": "5m",
+			"pollPeriod": "1s",
+			"ram": {
+				"minTimeout": "10s",
+				"minThreshold": 10,
+				"maxThreshold": 150
+			},
+			"outTraffic": {
+				"minTimeout": "20s",
+				"minThreshold": 10,
+				"maxThreshold": 150
+			}
 		},
-		"outTraffic": {
-			"minTimeout": "20s",
-			"minThreshold": 10,
-			"maxThreshold": 150
-		}
+		"maxOfflineMessages": 25
 	},
 	"alerts": {
 		"enableSystemAlerts": true,
