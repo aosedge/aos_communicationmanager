@@ -30,6 +30,9 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_common/journalalerts"
+	"github.com/aoscloud/aos_common/resourcemonitor"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/aoscloud/aos_common/utils/retryhelper"
 	"github.com/coreos/go-systemd/daemon"
@@ -40,7 +43,6 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/alerts"
 	amqp "github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/boardconfig"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/database"
@@ -48,7 +50,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/fcrypt"
 	"github.com/aoscloud/aos_communicationmanager/fileserver"
 	"github.com/aoscloud/aos_communicationmanager/iamclient"
-	"github.com/aoscloud/aos_communicationmanager/monitoring"
+	"github.com/aoscloud/aos_communicationmanager/monitorcontroller"
 	"github.com/aoscloud/aos_communicationmanager/smcontroller"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
@@ -68,21 +70,22 @@ const (
  **********************************************************************************************************************/
 
 type communicationManager struct {
-	db            *database.Database
-	amqp          *amqp.AmqpHandler
-	iam           *iamclient.Client
-	crypt         *fcrypt.CryptoHandler
-	cryptoContext *cryptutils.CryptoContext
-
-	alerts        *alerts.Alerts
-	monitor       *monitoring.Monitor
-	downloader    *downloader.Downloader
-	fileServer    *fileserver.FileServer
-	smController  *smcontroller.Controller
-	umController  *umcontroller.Controller
-	boardConfig   *boardconfig.Instance
-	statusHandler *unitstatushandler.Instance
-	cmServer      *cmserver.CMServer
+	db                *database.Database
+	amqp              *amqp.AmqpHandler
+	iam               *iamclient.Client
+	crypt             *fcrypt.CryptoHandler
+	cryptoContext     *cryptutils.CryptoContext
+	journalAlerts     *journalalerts.JournalAlerts
+	alerts            *alerts.Alerts
+	monitorcontroller *monitorcontroller.MonitorController
+	resourcemonitor   *resourcemonitor.ResourceMonitor
+	downloader        *downloader.Downloader
+	fileServer        *fileserver.FileServer
+	smController      *smcontroller.Controller
+	umController      *umcontroller.Controller
+	boardConfig       *boardconfig.Instance
+	statusHandler     *unitstatushandler.Instance
+	cmServer          *cmserver.CMServer
 }
 
 type journalHook struct {
@@ -113,7 +116,7 @@ func init() {
  * CommunicationManager
  **********************************************************************************************************************/
 
-func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) {
+func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) { //nolint:funlen
 	defer func() {
 		if err != nil {
 			cm.close()
@@ -136,7 +139,6 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		}
 	}
 
-	// Create AMQP handler
 	if cm.amqp, err = amqp.New(); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
@@ -145,7 +147,6 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return nil, aoserrors.Wrap(err)
 	}
 
-	// Create IAM client
 	if cm.iam, err = iamclient.New(cfg, cm.amqp, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
@@ -154,54 +155,57 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return nil, err
 	}
 
-	// Create crypto context
 	if cm.crypt, err = fcrypt.New(cm.iam, cm.cryptoContext); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create alerts
-	if cm.alerts, err = alerts.New(cfg, cm.amqp, cm.db); err != nil {
+	if cm.alerts, err = alerts.New(cfg.Alerts, cm.amqp); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create monitor
-	if cm.monitor, err = monitoring.New(cfg, cm.alerts, nil, cm.amqp); err != nil {
+	if cfg.Alerts.JournalAlerts != nil {
+		if cm.journalAlerts, err = journalalerts.New(*cfg.Alerts.JournalAlerts, nil, cm.db, cm.alerts); err != nil {
+			return cm, aoserrors.Wrap(err)
+		}
+	}
+
+	if cm.monitorcontroller, err = monitorcontroller.New(cfg, cm.amqp); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create downloader
+	if cfg.Monitoring.MonitorConfig != nil {
+		if cm.resourcemonitor, err = resourcemonitor.New(
+			*cfg.Monitoring.MonitorConfig, cm.alerts, cm.monitorcontroller, nil); err != nil {
+			return cm, aoserrors.Wrap(err)
+		}
+	}
+
 	if cm.downloader, err = downloader.New("CM", cfg, cm.crypt, cm.alerts); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create file server
 	if cm.fileServer, err = fileserver.New(cfg); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create SM controller
-	if cm.smController, err = smcontroller.New(cfg, cm.amqp, cm.alerts, cm.monitor,
+	if cm.smController, err = smcontroller.New(cfg, cm.amqp, cm.alerts, cm.monitorcontroller,
 		cm.fileServer, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create UM controller
 	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.fileServer, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create board config
 	if cm.boardConfig, err = boardconfig.New(cfg, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create unit status handler
 	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.boardConfig, cm.umController, cm.smController,
 		cm.downloader, cm.db, cm.amqp); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	// Create CM server
 	if cm.cmServer, err = cmserver.New(cfg, cm.statusHandler, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
@@ -248,14 +252,24 @@ func (cm *communicationManager) close() {
 		cm.fileServer.Close()
 	}
 
-	// Close monitor
-	if cm.monitor != nil {
-		cm.monitor.Close()
+	// Close resourcemonitor
+	if cm.resourcemonitor != nil {
+		cm.resourcemonitor.Close()
+	}
+
+	// Close journal alerts
+	if cm.journalAlerts != nil {
+		cm.journalAlerts.Close()
 	}
 
 	// Close alerts
 	if cm.alerts != nil {
 		cm.alerts.Close()
+	}
+
+	// Close monitorcontroller
+	if cm.monitorcontroller != nil {
+		cm.monitorcontroller.Close()
 	}
 
 	// Close iam
@@ -308,7 +322,7 @@ func (cm *communicationManager) getServiceDiscoveryURL(cfg *config.Config) (serv
 }
 
 func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
-	switch data := message.Data.(type) {
+	switch data := message.(type) {
 	case *cloudprotocol.DecodedDesiredStatus:
 		log.Info("Receive desired status message")
 
@@ -329,7 +343,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"result":    data.Result,
 		}).Info("Receive state acceptance message")
 
-		if err = cm.smController.ServiceStateAcceptance(message.CorrelationID, *data); err != nil {
+		if err = cm.smController.InstanceStateAcceptance(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -339,7 +353,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"checksum":  data.Checksum,
 		}).Info("Receive update state message")
 
-		if err = cm.smController.SetServiceState(cm.iam.GetUsers(), *data); err != nil {
+		if err = cm.smController.SetInstanceState(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -350,7 +364,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"till":      data.Till,
 		}).Info("Receive request service log message")
 
-		if err = cm.smController.GetServiceLog(*data); err != nil {
+		if err = cm.smController.GetInstanceLog(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -359,7 +373,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"serviceID": data.ServiceID,
 		}).Info("Receive request service crash log message")
 
-		if err = cm.smController.GetServiceCrashLog(*data); err != nil {
+		if err = cm.smController.GetInstanceCrashLog(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -398,7 +412,7 @@ func (cm *communicationManager) handleMessages(ctx context.Context) {
 	for {
 		select {
 		case message := <-cm.amqp.MessageChannel:
-			if err, ok := message.Data.(error); ok {
+			if err, ok := message.(error); ok {
 				log.Errorf("AMQP error: %s", err)
 				return
 			}
@@ -417,8 +431,7 @@ func (cm *communicationManager) handleConnection(ctx context.Context, serviceDis
 	for {
 		_ = retryhelper.Retry(ctx,
 			func() (err error) {
-				if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL,
-					cm.iam.GetSystemID(), cm.iam.GetUsers()); err != nil {
+				if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL, cm.iam.GetSystemID(), false); err != nil {
 					return aoserrors.Wrap(err)
 				}
 
@@ -429,10 +442,6 @@ func (cm *communicationManager) handleConnection(ctx context.Context, serviceDis
 				log.Debugf("Retry connection in %v", delay)
 			},
 			0, initReconnectTimeout, maxReconnectTimeout)
-
-		if err := cm.statusHandler.SetUsers(cm.iam.GetUsers()); err != nil {
-			log.Errorf("Can't set users: %s", err)
-		}
 
 		if err := cm.statusHandler.SendUnitStatus(); err != nil {
 			log.Errorf("Can't send unit status: %s", err)
@@ -450,13 +459,16 @@ func (cm *communicationManager) handleConnection(ctx context.Context, serviceDis
 	}
 }
 
-func (cm *communicationManager) handleUsers(ctx context.Context) {
+func (cm *communicationManager) handleStatusChannels(ctx context.Context) {
 	for {
 		select {
-		case <-cm.iam.UsersChangedChannel():
-			if err := cm.amqp.Disconnect(); err != nil {
-				log.Errorf("Can't disconnect: %s", err)
+		case runStatus := <-cm.smController.GetRunInstancesStatusChannel():
+			if err := cm.statusHandler.ProcessRunStatus(runStatus); err != nil {
+				log.Errorf("Can't process run statusL %v", err)
 			}
+
+		case instanceStatus := <-cm.smController.GetUpdateInstancesStatusChannel():
+			cm.statusHandler.ProcessUpdateInstanceStatus(instanceStatus)
 
 		case <-ctx.Done():
 			return
@@ -604,7 +616,7 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	go cm.handleConnection(ctx, cm.getServiceDiscoveryURL(cfg))
-	go cm.handleUsers(ctx)
+	go cm.handleStatusChannels(ctx)
 
 	// Handle SIGTERM
 
@@ -614,9 +626,5 @@ func main() {
 
 	<-terminateChannel
 
-	cm.close()
-
 	cancelFunc()
-
-	defer os.Exit(0)
 }
