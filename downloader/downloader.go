@@ -25,7 +25,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -277,7 +276,7 @@ func (downloader *Downloader) unlockFile(fileName string) {
 }
 
 func (downloader *Downloader) initAvailableSize() (err error) {
-	if downloader.downloadSize, err = getDirSize(downloader.config.DownloadDir); err != nil {
+	if downloader.downloadSize, err = fs.GetDirSize(downloader.config.DownloadDir); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -735,22 +734,4 @@ func getFileSize(fileName string) (size int64, err error) {
 	}
 
 	return stat.Size, nil
-}
-
-func getDirSize(path string) (size int64, err error) {
-	if err = filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if !info.IsDir() {
-			size += info.Size()
-		}
-
-		return aoserrors.Wrap(err)
-	}); err != nil {
-		return 0, aoserrors.Wrap(err)
-	}
-
-	return size, nil
 }
