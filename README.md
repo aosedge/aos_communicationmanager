@@ -4,21 +4,20 @@
 [![codecov](https://codecov.io/gh/aoscloud/aos_communicationmanager/branch/main/graph/badge.svg?token=oTxsU7fc1y)](https://codecov.io/gh/aoscloud/aos_communicationmanager)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=aoscloud_aos_communicationmanager&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=aoscloud_aos_communicationmanager)
 
-Aos Communication Manager (CM) is a part of Aos system which responsible of the following tasks:
+Aos Communication Manager (CM) is a part of Aos system which responsible for the following tasks:
 
 * communicate with the backend;
 * download, verify and decrypt services, layers and component updates;
 * monitor system resource usage;
 * serve Update Managers (UM's) and Service Managers (SM's).
 
-See architecture [document](doc/architecture.md) for more details.
+See architecture [document](https://docs.aoscloud.io/bin/view/Home/Architecture/Aos%20Core/Communication%20Manager%20%28CM%29/) for more details.
 
 ## Build
 
 ### Required GO packages
 
 All requires GO packages exist under `vendor` folder. Content of this folder is created with GO modules:
-
 
 ```bash
 go mod init
@@ -53,7 +52,7 @@ CM is configured through a configuration file. The file `aos_communicationmanage
 ./aos_communicationmanager -c aos_communicationmanager.cfg
 ```
 
-The configuration file has JSON format described [here] ([doc/config.md](https://kb.epam.com/display/EPMDAEPRA/Communication+Manager+Configuration)). Example configuration file could be found in `aos_communication.cfg`
+The configuration file has JSON format described [here](https://docs.aoscloud.io/bin/view/Home/Architecture/General/Data%20formats/Core%20component%20configurations/Communication%20Manager%20configuration/). Example configuration file could be found in `aos_communication.cfg`
 
 To increase log level use option -v:
 
