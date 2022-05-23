@@ -136,6 +136,9 @@ func New(fileName string) (config *Config, err error) {
 			MaxMessageSize:     65536,
 			MaxOfflineMessages: 25,
 		},
+		Monitoring: Monitoring{
+			MaxOfflineMessages: 25,
+		},
 		Downloader: Downloader{
 			MaxConcurrentDownloads: 4,
 			RetryDelay:             aostypes.Duration{Duration: 1 * time.Minute},
