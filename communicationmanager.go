@@ -298,19 +298,19 @@ func (cm *communicationManager) close() {
 	}
 }
 
-func (cm *communicationManager) getServiceDiscoveryURL(cfg *config.Config) (serviceDiscoveryURL string) {
+func (cm *communicationManager) getServiceDiscoveryURLs(cfg *config.Config) (serviceDiscoveryURLs []string) {
 	// Get organization names from certificate and use it as discovery URL
 	orgNames, err := cm.crypt.GetOrganization()
 	if err != nil {
 		log.Warningf("Organization name will be taken from config file: %s", err)
 
-		return cfg.ServiceDiscoveryURL
+		return append(serviceDiscoveryURLs, cfg.ServiceDiscoveryURL)
 	}
 
 	if len(orgNames) == 0 || orgNames[0] == "" {
 		log.Warn("Certificate organization name is empty or organization is not a single")
 
-		return cfg.ServiceDiscoveryURL
+		return append(serviceDiscoveryURLs, cfg.ServiceDiscoveryURL)
 	}
 
 	url := url.URL{
@@ -318,7 +318,7 @@ func (cm *communicationManager) getServiceDiscoveryURL(cfg *config.Config) (serv
 		Host:   orgNames[0],
 	}
 
-	return url.String() + ":9000"
+	return append(serviceDiscoveryURLs, url.String()+":9000")
 }
 
 func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
@@ -427,15 +427,19 @@ func (cm *communicationManager) handleMessages(ctx context.Context) {
 	}
 }
 
-func (cm *communicationManager) handleConnection(ctx context.Context, serviceDiscoveryURL string) {
+func (cm *communicationManager) handleConnection(ctx context.Context, serviceDiscoveryURLs []string) {
 	for {
 		_ = retryhelper.Retry(ctx,
 			func() (err error) {
-				if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL, cm.iam.GetSystemID(), false); err != nil {
-					return aoserrors.Wrap(err)
+				for _, serviceDiscoveryURL := range serviceDiscoveryURLs {
+					if err = cm.amqp.Connect(cm.crypt, serviceDiscoveryURL, cm.iam.GetSystemID(), false); err == nil {
+						return nil
+					} else {
+						log.Warnf("Can't connect to SD: %v", err)
+					}
 				}
 
-				return nil
+				return aoserrors.Wrap(err)
 			},
 			func(retryCount int, delay time.Duration, err error) {
 				log.Errorf("Can't establish connection: %s", err)
@@ -615,7 +619,7 @@ func main() {
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
-	go cm.handleConnection(ctx, cm.getServiceDiscoveryURL(cfg))
+	go cm.handleConnection(ctx, cm.getServiceDiscoveryURLs(cfg))
 	go cm.handleStatusChannels(ctx)
 
 	// Handle SIGTERM
