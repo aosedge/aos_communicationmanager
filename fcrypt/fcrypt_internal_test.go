@@ -1199,12 +1199,13 @@ func TestGetCertificateOrganization(t *testing.T) {
 	}
 }
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Private
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 func (provider *testCertificateProvider) GetCertificate(
-	certType string, issuer []byte, serial string) (certURL, keyURL string, err error) {
+	certType string, issuer []byte, serial string,
+) (certURL, keyURL string, err error) {
 	return provider.certURL, provider.keyURL, nil
 }
 
