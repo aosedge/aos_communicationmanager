@@ -29,6 +29,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -99,7 +100,7 @@ type CertificateProvider interface {
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
 	urlTranslator URLTranslator, certProvider CertificateProvider, cryptcoxontext *cryptutils.CryptoContext,
-	insecure bool,
+	insecureConn bool,
 ) (controller *Controller, err error) {
 	log.Debug("Create SM controller")
 
@@ -125,8 +126,8 @@ func New(
 
 	var secureOpt grpc.DialOption
 
-	if insecure {
-		secureOpt = grpc.WithInsecure()
+	if insecureConn {
+		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
 	} else {
 		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
 		if err != nil {

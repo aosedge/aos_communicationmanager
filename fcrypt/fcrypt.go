@@ -125,7 +125,8 @@ type certificateChainInfo struct {
 
 // New create context for crypto operations.
 func New(
-	provider CertificateProvider, cryptocontext *cryptutils.CryptoContext) (handler *CryptoHandler, err error) {
+	provider CertificateProvider, cryptocontext *cryptutils.CryptoContext,
+) (handler *CryptoHandler, err error) {
 	handler = &CryptoHandler{certProvider: provider, cryptoContext: cryptocontext}
 
 	return handler, nil
@@ -229,7 +230,8 @@ func (handler *CryptoHandler) DecryptMetadata(input []byte) (output []byte, err 
 
 // ImportSessionKey function retrieves a symmetric key from crypto context.
 func (handler *CryptoHandler) ImportSessionKey(
-	keyInfo CryptoSessionKeyInfo) (symContext SymmetricContextInterface, err error) {
+	keyInfo CryptoSessionKeyInfo,
+) (symContext SymmetricContextInterface, err error) {
 	_, keyURLStr, err := handler.certProvider.GetCertificate(
 		offlineCertificate, keyInfo.ReceiverInfo.Issuer, keyInfo.ReceiverInfo.Serial)
 	if err != nil {
@@ -342,7 +344,8 @@ func (signContext *SignContext) AddCertificateChain(name string, fingerprints []
 
 // VerifySign verifies signature.
 func (signContext *SignContext) VerifySign(
-	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error) {
+	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte,
+) (err error) {
 	if len(signContext.signCertificateChains) == 0 || len(signContext.signCertificates) == 0 {
 		return aoserrors.New("sign context not initialized (no certificates)")
 	}
@@ -427,7 +430,8 @@ func CreateSymmetricCipherContext() (symContext *SymmetricCipherContext) {
 
 // DecryptFile decrypts file.
 func (symmetricContext *SymmetricCipherContext) DecryptFile(
-	ctx context.Context, encryptedFile, clearFile *os.File) (err error) {
+	ctx context.Context, encryptedFile, clearFile *os.File,
+) (err error) {
 	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
@@ -553,7 +557,8 @@ func (symmetricContext *SymmetricCipherContext) generateKeyAndIV(algString strin
 }
 
 func (symmetricContext *SymmetricCipherContext) encryptFile(
-	ctx context.Context, clearFile, encryptedFile *os.File) (err error) {
+	ctx context.Context, clearFile, encryptedFile *os.File,
+) (err error) {
 	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
@@ -645,7 +650,8 @@ func (symmetricContext *SymmetricCipherContext) appendPadding(dataIn []byte, dat
 }
 
 func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (
-	removedSize int, err error) {
+	removedSize int, err error,
+) {
 	switch strings.ToUpper(symmetricContext.paddingName) {
 	case "PKCS7PADDING", "PKCS7":
 		if removedSize, err = symmetricContext.removePkcs7Padding(dataIn, dataLen); err != nil {
@@ -660,7 +666,8 @@ func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, da
 }
 
 func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int) (
-	fullSize int, err error) {
+	fullSize int, err error,
+) {
 	blockSize := symmetricContext.encrypter.BlockSize()
 	appendSize := blockSize - (dataLen % blockSize)
 
@@ -678,7 +685,8 @@ func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte
 }
 
 func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int) (
-	removedSize int, err error) {
+	removedSize int, err error,
+) {
 	blockLen := symmetricContext.decrypter.BlockSize()
 
 	if dataLen%blockLen != 0 || dataLen == 0 {
@@ -759,7 +767,8 @@ func (signContext *SignContext) getCertificateByFingerprint(fingerprint string) 
 }
 
 func (signContext *SignContext) getSignCertificate(
-	chainName string) (signCert *x509.Certificate, chain certificateChainInfo, err error) {
+	chainName string,
+) (signCert *x509.Certificate, chain certificateChainInfo, err error) {
 	var signCertFingerprint string
 
 	// Find chain

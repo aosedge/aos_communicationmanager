@@ -950,7 +950,11 @@ func serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 
-		rowResponse, _ := json.Marshal(response)
+		rowResponse, err := json.Marshal(response)
+		if err != nil {
+			log.Errorf("Can't marshal response: %v", err)
+			break
+		}
 
 		if _, err := w.Write(rowResponse); err != nil {
 			log.Errorf("Can't send http response: %v", err)

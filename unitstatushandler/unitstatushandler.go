@@ -593,32 +593,55 @@ func (instance *Instance) sendCurrentStatus() {
 
 	unitStatus := cloudprotocol.UnitStatus{
 		UnitSubjects: instance.unitSubjects,
-		BoardConfig:  make([]cloudprotocol.BoardConfigStatus, len(instance.boardConfigStatus)),
 		Components:   make([]cloudprotocol.ComponentStatus, 0, len(instance.componentStatuses)),
 		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.layerStatuses)),
 		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.serviceStatuses)),
 		Instances:    instance.instanceStatuses,
 	}
 
-	for i, status := range instance.boardConfigStatus {
-		unitStatus.BoardConfig[i] = *status.amqpStatus.(*cloudprotocol.BoardConfigStatus)
+	for _, status := range instance.boardConfigStatus {
+		boardConfig, ok := status.amqpStatus.(*cloudprotocol.BoardConfigStatus)
+		if !ok {
+			log.Error("Incorrect board config type")
+			continue
+		}
+
+		unitStatus.BoardConfig = append(unitStatus.BoardConfig, *boardConfig)
 	}
 
 	for _, componentStatus := range instance.componentStatuses {
 		for _, status := range *componentStatus {
-			unitStatus.Components = append(unitStatus.Components, *status.amqpStatus.(*cloudprotocol.ComponentStatus))
+			status, ok := status.amqpStatus.(*cloudprotocol.ComponentStatus)
+			if !ok {
+				log.Error("Incorrect component status type")
+				continue
+			}
+
+			unitStatus.Components = append(unitStatus.Components, *status)
 		}
 	}
 
 	for _, layerStatus := range instance.layerStatuses {
 		for _, status := range *layerStatus {
-			unitStatus.Layers = append(unitStatus.Layers, *status.amqpStatus.(*cloudprotocol.LayerStatus))
+			status, ok := status.amqpStatus.(*cloudprotocol.LayerStatus)
+			if !ok {
+				log.Error("Incorrect layer status type")
+				continue
+			}
+
+			unitStatus.Layers = append(unitStatus.Layers, *status)
 		}
 	}
 
 	for _, serviceStatus := range instance.serviceStatuses {
 		for _, status := range *serviceStatus {
-			unitStatus.Services = append(unitStatus.Services, *status.amqpStatus.(*cloudprotocol.ServiceStatus))
+			status, ok := status.amqpStatus.(*cloudprotocol.ServiceStatus)
+			if !ok {
+				log.Error("Incorrect service status type")
+				continue
+			}
+
+			unitStatus.Services = append(unitStatus.Services, *status)
 		}
 	}
 

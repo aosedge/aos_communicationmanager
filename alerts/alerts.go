@@ -141,7 +141,11 @@ func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) {
 		return
 	}
 
-	data, _ := json.Marshal(item)
+	data, err := json.Marshal(item)
+	if err != nil {
+		log.Error("Can't calculate alert size")
+	}
+
 	instance.alertsSize += len(data)
 
 	if instance.alertsSize <= instance.config.MaxMessageSize {
