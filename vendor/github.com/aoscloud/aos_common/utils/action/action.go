@@ -96,8 +96,11 @@ func (handler *Handler) Wait() {
 
 func (handler *Handler) isIDInWorkQueue(id string) (result bool) {
 	for item := handler.workQueue.Front(); item != nil; item = item.Next() {
-		if item.Value.(action).id == id {
-			return true
+		action, ok := item.Value.(action)
+		if ok {
+			if action.id == id {
+				return true
+			}
 		}
 	}
 
