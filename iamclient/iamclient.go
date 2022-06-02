@@ -31,6 +31,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
@@ -251,7 +252,7 @@ func (client *Client) Close() (err error) {
  * Private
  **********************************************************************************************************************/
 
-func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoContext, insecure bool) (
+func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoContext, insecureConn bool) (
 	connection *grpc.ClientConn, err error,
 ) {
 	var secureOpt grpc.DialOption
@@ -259,8 +260,8 @@ func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoCo
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	if insecure {
-		secureOpt = grpc.WithInsecure()
+	if insecureConn {
+		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
 	} else {
 		tlsConfig, err := cryptocontext.GetClientTLSConfig()
 		if err != nil {
@@ -278,13 +279,13 @@ func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoCo
 }
 
 func (client *Client) createProtectedConnection(
-	config *config.Config, cryptocontext *cryptutils.CryptoContext, insecure bool) (
+	config *config.Config, cryptocontext *cryptutils.CryptoContext, insecureConn bool) (
 	connection *grpc.ClientConn, err error,
 ) {
 	var secureOpt grpc.DialOption
 
-	if insecure {
-		secureOpt = grpc.WithInsecure()
+	if insecureConn {
+		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
 	} else {
 		certURL, keyURL, err := client.GetCertificate(config.CertStorage, nil, "")
 		if err != nil {

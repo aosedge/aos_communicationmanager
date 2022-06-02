@@ -60,7 +60,7 @@ type smClient struct {
 	cfg                      config.SMConfig
 	connection               *grpc.ClientConn
 	pbClient                 pb.SMServiceClient
-	ctx                      context.Context
+	ctx                      context.Context // nolint:containedctx
 }
 
 /***********************************************************************************************************************

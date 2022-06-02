@@ -232,7 +232,12 @@ func (downloader *Downloader) isResultInQueue(result *downloadResult) (present b
 
 	// check wait queue
 	for element := downloader.waitQueue.Front(); element != nil; element = element.Next() {
-		if element.Value.(*downloadResult).id == result.id {
+		downloadResult, ok := element.Value.(*downloadResult)
+		if !ok {
+			return false
+		}
+
+		if downloadResult.id == result.id {
 			return true
 		}
 	}

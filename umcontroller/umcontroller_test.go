@@ -28,6 +28,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
@@ -159,11 +160,11 @@ func TestConnection(t *testing.T) {
  * Private
  **********************************************************************************************************************/
 
-func createClientConnection(clientID string, state pb.UmState,
-	components []*pb.SystemComponent,
+func createClientConnection(
+	clientID string, state pb.UmState, components []*pb.SystemComponent,
 ) (stream pb.UMService_RegisterUMClient, conn *grpc.ClientConn, err error) {
 	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithInsecure())
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	opts = append(opts, grpc.WithBlock())
 
 	conn, err = grpc.Dial(serverURL, opts...)

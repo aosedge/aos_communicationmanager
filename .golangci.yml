@@ -1,5 +1,5 @@
 linters:
-  enable-all: true  
+  enable-all: true
   disable:
     - varnamelen
     - exhaustivestruct
@@ -12,11 +12,23 @@ linters:
     - ireturn
     - gomoddirectives
     - unparam
+    - nonamedreturns
+    - exhaustruct
     # deprecated
     - interfacer
     - golint
     - scopelint
     - maligned
+    - bodyclose
+    - contextcheck
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - structcheck
+    - tparallel
+    - unparam
+    - wastedassign
 
 linters-settings:
   revive:
@@ -39,7 +51,7 @@ linters-settings:
         ignored-files: config/config.go,fcrypt/utils.go
 
   gofumpt:
-    lang-version: "1.14"
+    lang-version: "1.18"
 
 issues:
   include:
@@ -54,3 +66,4 @@ issues:
         - gocognit
         - paralleltest
         - dupl
+        - maintidx
