@@ -49,7 +49,7 @@ type Result interface {
 type downloadResult struct {
 	id string
 
-	ctx         context.Context
+	ctx         context.Context // nolint:containedctx
 	packageInfo cloudprotocol.DecryptDataStruct
 	chains      []cloudprotocol.CertificateChain
 	certs       []cloudprotocol.Certificate

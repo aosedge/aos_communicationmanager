@@ -70,7 +70,7 @@ type AmqpHandler struct { // nolint:stylecheck
 
 	systemID string
 
-	ctx        context.Context
+	ctx        context.Context // nolint:containedctx
 	cancelFunc context.CancelFunc
 
 	wg sync.WaitGroup

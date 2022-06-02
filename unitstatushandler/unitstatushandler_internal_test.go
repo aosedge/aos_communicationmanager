@@ -85,7 +85,7 @@ type TestDownloader struct {
 }
 
 type TestResult struct {
-	ctx          context.Context
+	ctx          context.Context // nolint:containedctx
 	downloadTime time.Duration
 	fileName     string
 	err          error
