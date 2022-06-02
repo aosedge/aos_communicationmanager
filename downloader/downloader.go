@@ -37,7 +37,7 @@ import (
 	"github.com/aoscloud/aos_common/image"
 	"github.com/aoscloud/aos_common/utils/fs"
 	"github.com/aoscloud/aos_common/utils/retryhelper"
-	"github.com/cavaliercoder/grab"
+	"github.com/cavaliergopher/grab/v3"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -705,7 +705,7 @@ func (downloader *Downloader) prepareDownloadAlert(resp *grab.Response, msg stri
 			Progress:        fmt.Sprintf("%.2f%%", resp.Progress()*100),
 			URL:             resp.Request.HTTPRequest.URL.String(),
 			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
-			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size)),
+			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
 			Message:         msg,
 		},
 	}
