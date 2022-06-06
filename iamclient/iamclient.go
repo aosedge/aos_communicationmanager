@@ -42,8 +42,6 @@ import (
 
 const iamRequestTimeout = 30 * time.Second
 
-const subjectsChangedChannelSize = 1
-
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -61,8 +59,7 @@ type Client struct {
 	pbProtected         pb.IAMProtectedServiceClient
 	pbPublic            pb.IAMPublicServiceClient
 
-	closeChannel           chan struct{}
-	subjectsChangedChannel chan []string
+	closeChannel chan struct{}
 }
 
 // Sender provides API to send messages to the cloud.
@@ -91,9 +88,8 @@ func New(
 	}
 
 	localClient := &Client{
-		sender:                 sender,
-		subjectsChangedChannel: make(chan []string, subjectsChangedChannelSize),
-		closeChannel:           make(chan struct{}, 1),
+		sender:       sender,
+		closeChannel: make(chan struct{}, 1),
 	}
 
 	defer func() {
