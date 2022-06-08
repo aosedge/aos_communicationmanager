@@ -58,6 +58,7 @@ type softwareUpdate struct {
 	DownloadServices []cloudprotocol.ServiceInfo      `json:"downloadServices,omitempty"`
 	InstallServices  []cloudprotocol.ServiceInfo      `json:"installServices,omitempty"`
 	RemoveServices   []cloudprotocol.ServiceStatus    `json:"removeServices,omitempty"`
+	RestoreServices  []cloudprotocol.ServiceInfo      `json:"remstoreServices,omitempty"`
 	DownloadLayers   []cloudprotocol.LayerInfo        `json:"downloadLayers,omitempty"`
 	InstallLayers    []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
 	RemoveLayers     []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
@@ -246,7 +247,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	manager.processDesiredLayers(update, allLayers, desiredStatus.Layers)
 
 	if len(update.DownloadServices) != 0 || len(update.RemoveServices) != 0 ||
-		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 ||
+		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 || len(update.RestoreServices) != 0 ||
 		manager.needRunInstances(desiredStatus.Instances) {
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
@@ -264,6 +265,10 @@ downloadServiceLoop:
 		for _, service := range allServices {
 			if desiredService.ID == service.ID && desiredService.AosVersion == service.AosVersion &&
 				service.Status == cloudprotocol.InstalledStatus {
+				if service.Cached {
+					update.RestoreServices = append(update.RestoreServices, desiredService)
+				}
+
 				continue downloadServiceLoop
 			}
 		}
@@ -674,6 +679,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 		}
 	}
 
+	if errorStr := manager.restoreServices(); errorStr != "" {
+		if updateErr == "" {
+			updateErr = errorStr
+		}
+	}
+
 	if errorStr := manager.installServices(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
@@ -730,7 +741,8 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 			reflect.DeepEqual(update.RemoveLayers, manager.CurrentUpdate.RemoveLayers) &&
 			reflect.DeepEqual(update.InstallServices, manager.CurrentUpdate.InstallServices) &&
 			reflect.DeepEqual(update.RemoveServices, manager.CurrentUpdate.RemoveServices) &&
-			reflect.DeepEqual(update.RunInstances, manager.CurrentUpdate.RunInstances) {
+			reflect.DeepEqual(update.RunInstances, manager.CurrentUpdate.RunInstances) &&
+			reflect.DeepEqual(update.RestoreServices, manager.CurrentUpdate.RestoreServices) {
 			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
 				return nil
 			}
@@ -1051,6 +1063,67 @@ func (manager *softwareManager) installServices() (installErr string) {
 	manager.actionHandler.Wait()
 
 	return installErr
+}
+
+func (manager *softwareManager) restoreServices() (restoreErr string) {
+	var mutex sync.Mutex
+
+	handleError := func(service cloudprotocol.ServiceInfo, serviceErr string) {
+		log.WithFields(log.Fields{
+			"id":         service.ID,
+			"aosVersion": service.AosVersion,
+		}).Errorf("Can't restore service: %s", serviceErr)
+
+		if isCancelError(serviceErr) {
+			return
+		}
+
+		manager.updateStatusByID(service.ID, cloudprotocol.ErrorStatus, serviceErr)
+
+		mutex.Lock()
+		defer mutex.Unlock()
+
+		if restoreErr == "" {
+			restoreErr = serviceErr
+		}
+	}
+
+	for _, service := range manager.CurrentUpdate.RestoreServices {
+		log.WithFields(log.Fields{
+			"id":         service.ID,
+			"aosVersion": service.AosVersion,
+		}).Debug("Restore service")
+
+		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceStatus{
+			ID:         service.ID,
+			AosVersion: service.AosVersion,
+			Status:     cloudprotocol.InstallingStatus,
+		}
+
+		// Create new variable to be captured by action function
+		serviceInfo := service
+
+		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) error {
+			if err := manager.softwareUpdater.RestoreService(serviceInfo.ID); err != nil {
+				handleError(serviceInfo, aoserrors.Wrap(err).Error())
+
+				return aoserrors.Wrap(err)
+			}
+
+			log.WithFields(log.Fields{
+				"id":         serviceInfo.ID,
+				"aosVersion": serviceInfo.AosVersion,
+			}).Info("Service successfully restored")
+
+			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "")
+
+			return nil
+		})
+	}
+
+	manager.actionHandler.Wait()
+
+	return restoreErr
 }
 
 func (manager *softwareManager) removeServices() (removeErr string) {

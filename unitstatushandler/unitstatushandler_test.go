@@ -816,6 +816,7 @@ func TestUpdateCachedSOTA(t *testing.T) {
 			{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "service3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "service4", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		},
 	}
 
@@ -835,6 +836,10 @@ func TestUpdateCachedSOTA(t *testing.T) {
 			},
 			{
 				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
+			},
+			{
+				ID: "service4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
 			},
 		},
