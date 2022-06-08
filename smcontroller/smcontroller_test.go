@@ -63,6 +63,7 @@ type testSM struct {
 	grpcServer                   *grpc.Server
 	messageChannel               chan *pb.SMNotifications
 	currentServiceInstallRequest *pb.InstallServiceRequest
+	currentServiceRestoreRequest *pb.RestoreServiceRequest
 	currentServiceRemoveRequest  *pb.RemoveServiceRequest
 	servicesStatus               pb.ServicesStatus
 	currentLayerInstallRequest   *pb.InstallLayerRequest
@@ -242,8 +243,9 @@ func TestServicesMessages(t *testing.T) {
 	}
 
 	var (
-		serviceID             = "someserviceID"
-		expectedRemoveRequest = &pb.RemoveServiceRequest{ServiceId: serviceID}
+		serviceID              = "someserviceID"
+		expectedRemoveRequest  = &pb.RemoveServiceRequest{ServiceId: serviceID}
+		expectedRestoreRequest = &pb.RestoreServiceRequest{ServiceId: serviceID}
 	)
 
 	if err := controller.RemoveService(serviceID); err != nil {
@@ -252,6 +254,14 @@ func TestServicesMessages(t *testing.T) {
 
 	if !proto.Equal(expectedRemoveRequest, sm.currentServiceRemoveRequest) {
 		t.Error("incorrect remove service request")
+	}
+
+	if err := controller.RestoreService(serviceID); err != nil {
+		t.Fatalf("Can't restore service: %v", err)
+	}
+
+	if !proto.Equal(expectedRestoreRequest, sm.currentServiceRestoreRequest) {
+		t.Error("incorrect restore service request")
 	}
 }
 
@@ -1165,6 +1175,12 @@ func (sm *testSM) CheckBoardConfig(ctx context.Context, request *pb.BoardConfig)
 
 func (sm *testSM) InstallService(ctx context.Context, service *pb.InstallServiceRequest) (*empty.Empty, error) {
 	sm.currentServiceInstallRequest = service
+
+	return &empty.Empty{}, nil
+}
+
+func (sm *testSM) RestoreService(ctx context.Context, req *pb.RestoreServiceRequest) (*empty.Empty, error) {
+	sm.currentServiceRestoreRequest = req
 
 	return &empty.Empty{}, nil
 }

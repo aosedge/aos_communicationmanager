@@ -293,6 +293,23 @@ func (controller *Controller) InstallService(serviceInfo cloudprotocol.ServiceIn
 	return nil
 }
 
+// RestoreService restores service.
+func (controller *Controller) RestoreService(serviceID string) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, restore same service for all SM's
+
+	for _, client := range clients {
+		if err := client.restoreService(serviceID); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
 // RemoveService requests to install servie.
 func (controller *Controller) RemoveService(serviceID string) error {
 	controller.waitAndLock()
