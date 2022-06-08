@@ -1394,6 +1394,10 @@ func (updater *TestSoftwareUpdater) InstallService(serviceInfo cloudprotocol.Ser
 	return updater.UpdateError
 }
 
+func (updater *TestSoftwareUpdater) RestoreService(serviceID string) error {
+	return nil
+}
+
 func (updater *TestSoftwareUpdater) RemoveService(serviceID string) error {
 	return updater.UpdateError
 }
