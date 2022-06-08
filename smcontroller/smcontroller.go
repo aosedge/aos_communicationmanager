@@ -169,7 +169,7 @@ func (controller *Controller) Close() (err error) {
 }
 
 // GetServicesStatus returns SM all existing services status.
-func (controller *Controller) GetServicesStatus() (servicesStatus []cloudprotocol.ServiceStatus, err error) {
+func (controller *Controller) GetServicesStatus() (servicesStatus []unitstatushandler.ServiceStatus, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()

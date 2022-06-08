@@ -189,7 +189,7 @@ func TestServicesMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	expectedStatus := make([]cloudprotocol.ServiceStatus, 5)
+	expectedStatus := make([]unitstatushandler.ServiceStatus, 5)
 	sm.servicesStatus.Services = make([]*pb.ServiceStatus, 5)
 
 	for i := 0; i < 5; i++ {
@@ -214,10 +214,12 @@ func TestServicesMessages(t *testing.T) {
 			Sha512:      []byte{byte(i + 300), 0, 0, 0},
 			Size:        uint64(i + 500),
 		}
-		expectedStatus[i] = cloudprotocol.ServiceStatus{
-			AosVersion: uint64(i),
-			ID:         "testService" + strconv.Itoa(i),
-			Status:     cloudprotocol.InstalledStatus,
+		expectedStatus[i] = unitstatushandler.ServiceStatus{
+			ServiceStatus: cloudprotocol.ServiceStatus{
+				AosVersion: uint64(i),
+				ID:         "testService" + strconv.Itoa(i),
+				Status:     cloudprotocol.InstalledStatus,
+			},
 		}
 		sm.servicesStatus.Services[i] = &pb.ServiceStatus{ServiceId: "testService" + strconv.Itoa(i), AosVersion: uint64(i)}
 
