@@ -72,6 +72,7 @@ type SoftwareUpdater interface {
 	GetServicesStatus() ([]ServiceStatus, error)
 	GetLayersStatus() ([]cloudprotocol.LayerStatus, error)
 	InstallService(serviceInfo cloudprotocol.ServiceInfo) error
+	RestoreService(serviceID string) error
 	RemoveService(serviceID string) error
 	InstallLayer(layerInfo cloudprotocol.LayerInfo) error
 	RunInstances(instances []cloudprotocol.InstanceInfo) error
