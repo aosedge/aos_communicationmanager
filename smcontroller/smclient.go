@@ -114,7 +114,7 @@ func (client *smClient) close() (err error) {
 	return nil
 }
 
-func (client *smClient) getServicesStatus() ([]cloudprotocol.ServiceStatus, error) {
+func (client *smClient) getServicesStatus() ([]unitstatushandler.ServiceStatus, error) {
 	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Get SM all services")
 
 	ctx, cancel := context.WithTimeout(client.ctx, smRequestTimeout)
@@ -125,13 +125,15 @@ func (client *smClient) getServicesStatus() ([]cloudprotocol.ServiceStatus, erro
 		return nil, aoserrors.Wrap(err)
 	}
 
-	servicesStatus := make([]cloudprotocol.ServiceStatus, len(status.Services))
+	servicesStatus := make([]unitstatushandler.ServiceStatus, len(status.Services))
 
 	for i, service := range status.Services {
-		servicesStatus[i] = cloudprotocol.ServiceStatus{
-			ID:         service.ServiceId,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.InstalledStatus,
+		servicesStatus[i] = unitstatushandler.ServiceStatus{
+			ServiceStatus: cloudprotocol.ServiceStatus{
+				ID:         service.ServiceId,
+				AosVersion: service.AosVersion,
+				Status:     cloudprotocol.InstalledStatus,
+			}, Cached: service.Cached,
 		}
 	}
 

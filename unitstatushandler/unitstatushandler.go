@@ -85,6 +85,12 @@ type Storage interface {
 	GetSoftwareUpdateState() (state json.RawMessage, err error)
 }
 
+// ServiceStatus represents service status.
+type ServiceStatus struct {
+	cloudprotocol.ServiceStatus
+	Cached bool
+}
+
 // RunInstancesStatus run instances status.
 type RunInstancesStatus struct {
 	UnitSubjects  []string
