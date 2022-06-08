@@ -73,9 +73,28 @@ func TestSendInitialStatus(t *testing.T) {
 		},
 	}
 
+	initialServices := []unitstatushandler.ServiceStatus{
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service0", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service2", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+		{
+			ServiceStatus: cloudprotocol.ServiceStatus{
+				ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			},
+			Cached: true,
+		},
+	}
+
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(expectedUnitStatus.BoardConfig[0])
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(expectedUnitStatus.Components)
-	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(expectedUnitStatus.Services, expectedUnitStatus.Layers)
+	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(initialServices, expectedUnitStatus.Layers)
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -402,14 +421,21 @@ func TestUpdateLayers(t *testing.T) {
 }
 
 func TestUpdateServices(t *testing.T) {
+	serviceStatuses := []unitstatushandler.ServiceStatus{
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+	}
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceStatus{
-		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}, nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, nil)
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -476,7 +502,20 @@ func TestUpdateServices(t *testing.T) {
 
 	// failed update
 
-	softwareUpdater.AllServices = expectedUnitStatus.Services
+	softwareUpdater.AllServices = []unitstatushandler.ServiceStatus{
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service2", AosVersion: 0, Status: cloudprotocol.RemovedStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+	}
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
@@ -720,14 +759,24 @@ func TestUpdateInstancesStatus(t *testing.T) {
 }
 
 func TestUpdateCachedSOTA(t *testing.T) {
+	serviceStatuses := []unitstatushandler.ServiceStatus{
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ID: "service4", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}, Cached: true},
+	}
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater([]cloudprotocol.ServiceStatus{
-		{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	}, []cloudprotocol.LayerStatus{
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, []cloudprotocol.LayerStatus{
 		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},

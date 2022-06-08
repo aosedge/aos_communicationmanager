@@ -257,7 +257,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 }
 
 func (manager *softwareManager) processDesiredServices(
-	update *softwareUpdate, allServices []cloudprotocol.ServiceStatus, desiredServices []cloudprotocol.ServiceInfo,
+	update *softwareUpdate, allServices []ServiceStatus, desiredServices []cloudprotocol.ServiceInfo,
 ) {
 downloadServiceLoop:
 	for _, desiredService := range desiredServices {
@@ -277,13 +277,17 @@ removeServiceLoop:
 			continue
 		}
 
+		if service.Cached {
+			continue
+		}
+
 		for _, desiredService := range desiredServices {
 			if service.ID == desiredService.ID {
 				continue removeServiceLoop
 			}
 		}
 
-		update.RemoveServices = append(update.RemoveServices, service)
+		update.RemoveServices = append(update.RemoveServices, service.ServiceStatus)
 	}
 }
 
@@ -383,8 +387,8 @@ func (manager *softwareManager) getServiceStatus() (serviceStatuses []cloudproto
 	// Get installed info
 
 	for _, service := range servicesStatus {
-		if service.Status == cloudprotocol.InstalledStatus {
-			serviceStatuses = append(serviceStatuses, service)
+		if service.Status == cloudprotocol.InstalledStatus && !service.Cached {
+			serviceStatuses = append(serviceStatuses, service.ServiceStatus)
 		}
 	}
 
