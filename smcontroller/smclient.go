@@ -271,6 +271,22 @@ func (client *smClient) installService(serviceInfo cloudprotocol.ServiceInfo) er
 	return nil
 }
 
+func (client *smClient) restoreService(serviceID string) error {
+	log.WithFields(log.Fields{
+		"id":        client.cfg.SMID,
+		"serviceID": serviceID,
+	}).Debug("Restore SM service")
+
+	ctx, cancel := context.WithTimeout(client.ctx, smInstallTimeout)
+	defer cancel()
+
+	if _, err := client.pbClient.RestoreService(ctx, &pb.RestoreServiceRequest{ServiceId: serviceID}); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 func (client *smClient) removeService(serviceID string) error {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
