@@ -719,6 +719,10 @@ func (client *smClient) processSMLogNotification(data *pb.SMNotifications_Log) {
 func (client *smClient) processRunInstancesStatus(data *pb.SMNotifications_RunInstancesStatus) {
 	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Receive SM run instances status")
 
+	if data.RunInstancesStatus.UnitSubjects == nil {
+		data.RunInstancesStatus.UnitSubjects = make([]string, 0)
+	}
+
 	runStatus := unitstatushandler.RunInstancesStatus{
 		UnitSubjects:  data.RunInstancesStatus.UnitSubjects,
 		Instances:     instancesStatusFromPB(data.RunInstancesStatus.Instances),
