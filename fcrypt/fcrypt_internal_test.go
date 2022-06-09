@@ -38,8 +38,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/aoscloud/aos_common/utils/testtools"
 	log "github.com/sirupsen/logrus"
@@ -93,17 +95,9 @@ type testUpgradeCertificate struct {
 	Certificate []byte `json:"certificate"`
 }
 
-type testUpgradeSigns struct {
-	ChainName        string   `json:"chainName"`
-	Alg              string   `json:"alg"`
-	Value            []byte   `json:"value"`
-	TrustedTimestamp string   `json:"trustedTimestamp"`
-	OcspValues       []string `json:"ocspValues"`
-}
-
 type testUpgradeFileInfo struct {
 	FileData []byte
-	Signs    *testUpgradeSigns
+	Signs    *cloudprotocol.Signs
 }
 
 // UpgradeMetadata upgrade metadata.
@@ -849,11 +843,11 @@ func TestVerifySignOfComponent(t *testing.T) {
 		Data: []testUpgradeFileInfo{
 			{
 				FileData: []byte("test"),
-				Signs: &testUpgradeSigns{
+				Signs: &cloudprotocol.Signs{
 					ChainName:        "8D28D60220B8D08826E283B531A0B1D75359C5EE",
 					Alg:              "RSA/SHA256",
 					Value:            signValue,
-					TrustedTimestamp: "",
+					TrustedTimestamp: time.Now().Format(time.RFC3339),
 				},
 			},
 		},
@@ -929,9 +923,35 @@ func TestVerifySignOfComponent(t *testing.T) {
 			t.Errorf("Can't seek tmp file: %v", err)
 		}
 
-		err = signCtx.VerifySign(context.Background(), tmpFile, data.Signs.ChainName, data.Signs.Alg, data.Signs.Value)
+		err = signCtx.VerifySign(context.Background(), tmpFile, data.Signs)
 		if err != nil {
-			t.Fatal("Verify fail", err)
+			t.Fatalf("Verify fail: %v", err)
+		}
+	}
+
+	for i := range upgradeMetadata.Data {
+		upgradeMetadata.Data[i].Signs.TrustedTimestamp = time.Now().AddDate(2, 0, 0).Format(time.RFC3339)
+	}
+
+	for _, data := range upgradeMetadata.Data {
+		tmpFile, err := ioutil.TempFile(os.TempDir(), "aos_update-")
+		if err != nil {
+			t.Fatal("Cannot create temporary file", err)
+		}
+		defer tmpFile.Close()
+		defer os.Remove(tmpFile.Name())
+
+		if _, err = tmpFile.Write(data.FileData); err != nil {
+			t.Errorf("Can't write tmp file: %v", err)
+		}
+
+		if _, err = tmpFile.Seek(0, 0); err != nil {
+			t.Errorf("Can't seek tmp file: %v", err)
+		}
+
+		err = signCtx.VerifySign(context.Background(), tmpFile, data.Signs)
+		if err == nil {
+			t.Fatal("Should be verify error")
 		}
 	}
 }

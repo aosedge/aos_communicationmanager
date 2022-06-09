@@ -655,9 +655,7 @@ func (context *testSignContext) AddCertificateChain(name string, fingerprints []
 	return nil
 }
 
-func (context *testSignContext) VerifySign(
-	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte,
-) (err error) {
+func (context *testSignContext) VerifySign(ctx context.Context, f *os.File, sign *cloudprotocol.Signs) (err error) {
 	return nil
 }
 

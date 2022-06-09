@@ -695,8 +695,7 @@ func (downloader *Downloader) validateSigns(result *downloadResult) (err error) 
 
 	log.WithField("file", file.Name()).Debug("Check signature")
 
-	if err = signCtx.VerifySign(result.ctx, file,
-		result.packageInfo.Signs.ChainName, result.packageInfo.Signs.Alg, result.packageInfo.Signs.Value); err != nil {
+	if err = signCtx.VerifySign(result.ctx, file, result.packageInfo.Signs); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
