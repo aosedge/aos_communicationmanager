@@ -419,15 +419,9 @@ func (signContext *SignContext) VerifySign(
 
 	// Sign ok, verify certs
 
-	intermediatePool := x509.NewCertPool()
-
-	for _, certFingerprints := range chain.fingerprints[1:] {
-		crt := signContext.getCertificateByFingerprint(certFingerprints)
-		if crt == nil {
-			return aoserrors.Errorf("cannot find certificate in chain fingerprint: %s", certFingerprints)
-		}
-
-		intermediatePool.AddCert(crt)
+	intermediatePool, err := signContext.getIntermediateCertPool(chain)
+	if err != nil {
+		return err
 	}
 
 	signTime, err := time.Parse(time.RFC3339, sign.TrustedTimestamp)
@@ -895,6 +889,21 @@ func (signContext *SignContext) getSignCertificate(
 	}
 
 	return signCert, chain, nil
+}
+
+func (signContext *SignContext) getIntermediateCertPool(chain certificateChainInfo) (*x509.CertPool, error) {
+	intermediatePool := x509.NewCertPool()
+
+	for _, certFingerprints := range chain.fingerprints[1:] {
+		crt := signContext.getCertificateByFingerprint(certFingerprints)
+		if crt == nil {
+			return nil, aoserrors.Errorf("cannot find certificate in chain fingerprint: %v", certFingerprints)
+		}
+
+		intermediatePool.AddCert(crt)
+	}
+
+	return intermediatePool, nil
 }
 
 func getHashFuncBySignHash(hash string) (hashFunc crypto.Hash, err error) {
