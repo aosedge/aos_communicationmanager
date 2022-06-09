@@ -34,8 +34,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/utils/contextreader"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
@@ -110,7 +112,7 @@ type SignContext struct {
 type SignContextInterface interface {
 	AddCertificate(fingerprint string, asn1Bytes []byte) (err error)
 	AddCertificateChain(name string, fingerprints []string) (err error)
-	VerifySign(ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error)
+	VerifySign(ctx context.Context, f *os.File, sign *cloudprotocol.Signs) (err error)
 }
 
 // CertificateProvider interface to get certificate.
@@ -364,18 +366,18 @@ func (signContext *SignContext) AddCertificateChain(name string, fingerprints []
 
 // VerifySign verifies signature.
 func (signContext *SignContext) VerifySign(
-	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte,
+	ctx context.Context, f *os.File, sign *cloudprotocol.Signs,
 ) (err error) {
 	if len(signContext.signCertificateChains) == 0 || len(signContext.signCertificates) == 0 {
 		return aoserrors.New("sign context not initialized (no certificates)")
 	}
 
-	signCert, chain, err := signContext.getSignCertificate(chainName)
+	signCert, chain, err := signContext.getSignCertificate(sign.ChainName)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	signAlgName, signHash, signPadding := decodeSignAlgNames(algName)
+	signAlgName, signHash, signPadding := decodeSignAlgNames(sign.Alg)
 
 	hashFunc, err := getHashFuncBySignHash(signHash)
 	if err != nil {
@@ -398,12 +400,12 @@ func (signContext *SignContext) VerifySign(
 
 		switch signPadding {
 		case "PKCS1v1_5":
-			if err = rsa.VerifyPKCS1v15(publicKey, hashFunc.HashFunc(), hash.Sum(nil), signValue); err != nil {
+			if err = rsa.VerifyPKCS1v15(publicKey, hashFunc.HashFunc(), hash.Sum(nil), sign.Value); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
 		case "PSS":
-			if err = rsa.VerifyPSS(publicKey, hashFunc.HashFunc(), hash.Sum(nil), signValue, nil); err != nil {
+			if err = rsa.VerifyPSS(publicKey, hashFunc.HashFunc(), hash.Sum(nil), sign.Value, nil); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
@@ -428,7 +430,13 @@ func (signContext *SignContext) VerifySign(
 		intermediatePool.AddCert(crt)
 	}
 
+	signTime, err := time.Parse(time.RFC3339, sign.TrustedTimestamp)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
 	verifyOptions := x509.VerifyOptions{
+		CurrentTime:   signTime,
 		Intermediates: intermediatePool,
 		Roots:         signContext.handler.cryptoContext.GetCACertPool(),
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
