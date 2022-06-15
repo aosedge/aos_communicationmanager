@@ -213,6 +213,11 @@ func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 			errMsg = errStatus.ErrorInfo.Message
 		}
 
+		if _, ok := manager.ServiceStatuses[errStatus.ID]; !ok {
+			status := errStatus
+			manager.ServiceStatuses[errStatus.ID] = &status
+		}
+
 		manager.updateServiceStatusByID(errStatus.ID, errStatus.Status, errMsg)
 	}
 }
