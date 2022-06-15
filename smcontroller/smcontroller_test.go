@@ -283,7 +283,7 @@ func TestLayerMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	expectedLayersStatus := make([]cloudprotocol.LayerStatus, 5)
+	expectedLayersStatus := make([]unitstatushandler.LayerStatus, 5)
 	sm.layersStatus.Layers = make([]*pb.LayerStatus, 5)
 
 	for i := 0; i < 5; i++ {
@@ -309,12 +309,12 @@ func TestLayerMessages(t *testing.T) {
 			Sha512:      []byte{byte(i + 100), 0, 0, 0},
 			Size:        uint64(i + 500),
 		}
-		expectedLayersStatus[i] = cloudprotocol.LayerStatus{
+		expectedLayersStatus[i] = unitstatushandler.LayerStatus{LayerStatus: cloudprotocol.LayerStatus{
 			AosVersion: uint64(i),
 			Status:     cloudprotocol.InstalledStatus,
 			ID:         "testLayer" + strconv.Itoa(i),
 			Digest:     "digest" + strconv.Itoa(i),
-		}
+		}}
 		sm.layersStatus.Layers[i] = &pb.LayerStatus{
 			LayerId: "testLayer" + strconv.Itoa(i), AosVersion: uint64(i), VendorVersion: strconv.Itoa(i + 1),
 			Digest: "digest" + strconv.Itoa(i),

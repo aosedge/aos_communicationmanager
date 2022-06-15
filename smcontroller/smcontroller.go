@@ -187,7 +187,7 @@ func (controller *Controller) GetServicesStatus() (servicesStatus []unitstatusha
 }
 
 // GetUsersStatus returns SM users status.
-func (controller *Controller) GetLayersStatus() (layersInfo []cloudprotocol.LayerStatus, err error) {
+func (controller *Controller) GetLayersStatus() (layersStatus []unitstatushandler.LayerStatus, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -198,10 +198,10 @@ func (controller *Controller) GetLayersStatus() (layersInfo []cloudprotocol.Laye
 			return nil, aoserrors.Wrap(err)
 		}
 
-		layersInfo = append(layersInfo, clientLayers...)
+		layersStatus = append(layersStatus, clientLayers...)
 	}
 
-	return layersInfo, nil
+	return layersStatus, nil
 }
 
 // CheckBoardConfig checks board config.
