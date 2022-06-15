@@ -140,7 +140,7 @@ func (client *smClient) getServicesStatus() ([]unitstatushandler.ServiceStatus, 
 	return servicesStatus, nil
 }
 
-func (client *smClient) getLayersStatus() ([]cloudprotocol.LayerStatus, error) {
+func (client *smClient) getLayersStatus() ([]unitstatushandler.LayerStatus, error) {
 	log.WithFields(log.Fields{"id": client.cfg.SMID}).Debug("Get SM layer status")
 
 	ctx, cancel := context.WithTimeout(client.ctx, smRequestTimeout)
@@ -151,14 +151,16 @@ func (client *smClient) getLayersStatus() ([]cloudprotocol.LayerStatus, error) {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	layersStatus := make([]cloudprotocol.LayerStatus, len(status.Layers))
+	layersStatus := make([]unitstatushandler.LayerStatus, len(status.Layers))
 
 	for i, layer := range status.Layers {
-		layersStatus[i] = cloudprotocol.LayerStatus{
-			ID:         layer.LayerId,
-			AosVersion: layer.AosVersion,
-			Digest:     layer.Digest,
-			Status:     cloudprotocol.InstalledStatus,
+		layersStatus[i] = unitstatushandler.LayerStatus{
+			LayerStatus: cloudprotocol.LayerStatus{
+				ID:         layer.LayerId,
+				AosVersion: layer.AosVersion,
+				Digest:     layer.Digest,
+				Status:     cloudprotocol.InstalledStatus,
+			}, Cached: layer.Cached,
 		}
 	}
 
