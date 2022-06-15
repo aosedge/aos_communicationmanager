@@ -92,6 +92,12 @@ type ServiceStatus struct {
 	Cached bool
 }
 
+// LayerStatus represents layer status.
+type LayerStatus struct {
+	cloudprotocol.LayerStatus
+	Cached bool
+}
+
 // RunInstancesStatus run instances status.
 type RunInstancesStatus struct {
 	UnitSubjects  []string
