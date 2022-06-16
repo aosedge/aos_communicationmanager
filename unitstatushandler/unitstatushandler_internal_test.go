@@ -71,7 +71,7 @@ type TestFirmwareUpdater struct {
 
 type TestSoftwareUpdater struct {
 	AllServices     []ServiceStatus
-	AllLayers       []cloudprotocol.LayerStatus
+	AllLayers       []LayerStatus
 	UpdateError     error
 	runInstanceChan chan []cloudprotocol.InstanceInfo
 }
@@ -1376,7 +1376,7 @@ func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.
  * TestSoftwareUpdater
  **********************************************************************************************************************/
 
-func NewTestSoftwareUpdater(services []ServiceStatus, layers []cloudprotocol.LayerStatus) *TestSoftwareUpdater {
+func NewTestSoftwareUpdater(services []ServiceStatus, layers []LayerStatus) *TestSoftwareUpdater {
 	return &TestSoftwareUpdater{
 		AllServices: services, AllLayers: layers, runInstanceChan: make(chan []cloudprotocol.InstanceInfo, 1),
 	}
@@ -1386,7 +1386,7 @@ func (updater *TestSoftwareUpdater) GetServicesStatus() ([]ServiceStatus, error)
 	return updater.AllServices, nil
 }
 
-func (updater *TestSoftwareUpdater) GetLayersStatus() ([]cloudprotocol.LayerStatus, error) {
+func (updater *TestSoftwareUpdater) GetLayersStatus() ([]LayerStatus, error) {
 	return updater.AllLayers, nil
 }
 

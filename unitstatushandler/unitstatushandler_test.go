@@ -92,9 +92,21 @@ func TestSendInitialStatus(t *testing.T) {
 		},
 	}
 
+	initialLayers := []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer0", Digest: "digest0", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer1", Digest: "digest1", AosVersion: 2, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer2", Digest: "digest2", AosVersion: 3, Status: cloudprotocol.InstalledStatus,
+		}},
+	}
+
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(expectedUnitStatus.BoardConfig[0])
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(expectedUnitStatus.Components)
-	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(initialServices, expectedUnitStatus.Layers)
+	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(initialServices, initialLayers)
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -294,14 +306,21 @@ func TestUpdateComponents(t *testing.T) {
 }
 
 func TestUpdateLayers(t *testing.T) {
+	layerStatuses := []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+	}
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, []cloudprotocol.LayerStatus{
-		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	})
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, layerStatuses)
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
@@ -367,7 +386,23 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
-	softwareUpdater.AllLayers = expectedUnitStatus.Layers
+	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+		}},
+	}
 
 	// failed update
 
@@ -773,14 +808,24 @@ func TestUpdateCachedSOTA(t *testing.T) {
 			ID: "service4", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
 		}, Cached: true},
 	}
+	layerStatuses := []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer4", Digest: "digest4", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}, Cached: true},
+	}
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, []cloudprotocol.LayerStatus{
-		{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-		{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-	})
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, layerStatuses)
 	sender := unitstatushandler.NewTestSender()
 	downloader := unitstatushandler.NewTestDownloader()
 
