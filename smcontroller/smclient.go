@@ -332,6 +332,38 @@ func (client *smClient) installLayer(layerInfo cloudprotocol.LayerInfo) (err err
 	return nil
 }
 
+func (client *smClient) removeLayer(digest string) error {
+	log.WithFields(log.Fields{
+		"id":     client.cfg.SMID,
+		"digest": digest,
+	}).Debug("Remove SM layer")
+
+	ctx, cancel := context.WithTimeout(client.ctx, smInstallTimeout)
+	defer cancel()
+
+	if _, err := client.pbClient.RemoveLayer(ctx, &pb.RemoveLayerRequest{Digest: digest}); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (client *smClient) restoreLayer(digest string) error {
+	log.WithFields(log.Fields{
+		"id":     client.cfg.SMID,
+		"digest": digest,
+	}).Debug("Restore SM layer")
+
+	ctx, cancel := context.WithTimeout(client.ctx, smInstallTimeout)
+	defer cancel()
+
+	if _, err := client.pbClient.RestoreLayer(ctx, &pb.RestoreLayerRequest{Digest: digest}); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 func (client *smClient) instanceStateAcceptance(stateAcceptance cloudprotocol.StateAcceptance) (err error) {
 	log.WithFields(log.Fields{
 		"id":        client.cfg.SMID,
