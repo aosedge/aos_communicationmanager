@@ -67,6 +67,8 @@ type testSM struct {
 	currentServiceRemoveRequest  *pb.RemoveServiceRequest
 	servicesStatus               pb.ServicesStatus
 	currentLayerInstallRequest   *pb.InstallLayerRequest
+	currentRemoveLayerRequest    *pb.RemoveLayerRequest
+	currentRestoreLayerRequest   *pb.RestoreLayerRequest
 	layersStatus                 pb.LayersStatus
 	currentStateAcceptance       *pb.StateAcceptance
 	currentSetState              *pb.InstanceState
@@ -336,6 +338,28 @@ func TestLayerMessages(t *testing.T) {
 
 	if !reflect.DeepEqual(layersResult, expectedLayersStatus) {
 		t.Error("Incorrect layers status")
+	}
+
+	const layerDigest = "layerDigest"
+
+	expectedRemoveReq := &pb.RemoveLayerRequest{Digest: layerDigest}
+
+	if err := controller.RemoveLayer(layerDigest); err != nil {
+		t.Fatalf("Can't remove layer: %v", err)
+	}
+
+	if !proto.Equal(sm.currentRemoveLayerRequest, expectedRemoveReq) {
+		t.Error("Incorrect remove layer request")
+	}
+
+	expectedRestoreReq := &pb.RestoreLayerRequest{Digest: layerDigest}
+
+	if err := controller.RestoreLayer(layerDigest); err != nil {
+		t.Fatalf("Can't restore layer: %v", err)
+	}
+
+	if !proto.Equal(sm.currentRestoreLayerRequest, expectedRestoreReq) {
+		t.Error("Incorrect restore layer request")
 	}
 }
 
@@ -1197,6 +1221,18 @@ func (sm *testSM) GetServicesStatus(context.Context, *empty.Empty) (*pb.Services
 
 func (sm *testSM) InstallLayer(ctx context.Context, layer *pb.InstallLayerRequest) (*empty.Empty, error) {
 	sm.currentLayerInstallRequest = layer
+
+	return &empty.Empty{}, nil
+}
+
+func (sm *testSM) RemoveLayer(ctx context.Context, req *pb.RemoveLayerRequest) (*empty.Empty, error) {
+	sm.currentRemoveLayerRequest = req
+
+	return &empty.Empty{}, nil
+}
+
+func (sm *testSM) RestoreLayer(ctx context.Context, req *pb.RestoreLayerRequest) (*empty.Empty, error) {
+	sm.currentRestoreLayerRequest = req
 
 	return &empty.Empty{}, nil
 }

@@ -355,6 +355,40 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfo) er
 	return nil
 }
 
+// RemoveLayer remove layer request.
+func (controller *Controller) RemoveLayer(digest string) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, remove same layer for all SM's
+
+	for _, client := range clients {
+		if err := client.removeLayer(digest); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// RestoreLayer restore layer request.
+func (controller *Controller) RestoreLayer(digest string) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, restore same layer for all SM's
+
+	for _, client := range clients {
+		if err := client.restoreLayer(digest); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
 // InstanceStateAcceptance handles instance state acceptance.
 func (controller *Controller) InstanceStateAcceptance(stateAcceptance cloudprotocol.StateAcceptance) error {
 	controller.waitAndLock()
