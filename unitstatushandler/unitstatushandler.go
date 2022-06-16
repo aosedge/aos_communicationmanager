@@ -70,7 +70,7 @@ type FirmwareUpdater interface {
 // SoftwareUpdater updates services, layers, instances runner.
 type SoftwareUpdater interface {
 	GetServicesStatus() ([]ServiceStatus, error)
-	GetLayersStatus() ([]cloudprotocol.LayerStatus, error)
+	GetLayersStatus() ([]LayerStatus, error)
 	InstallService(serviceInfo cloudprotocol.ServiceInfo) error
 	RestoreService(serviceID string) error
 	RemoveService(serviceID string) error

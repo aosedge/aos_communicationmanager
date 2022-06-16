@@ -302,7 +302,7 @@ removeServiceLoop:
 }
 
 func (manager *softwareManager) processDesiredLayers(
-	update *softwareUpdate, allLayers []cloudprotocol.LayerStatus, desiredLayers []cloudprotocol.LayerInfo,
+	update *softwareUpdate, allLayers []LayerStatus, desiredLayers []cloudprotocol.LayerInfo,
 ) {
 downloadLayersLoop:
 	for _, desiredLayer := range desiredLayers {
@@ -321,13 +321,17 @@ removeLayersLoop:
 			continue
 		}
 
+		if installedLayer.Cached {
+			continue
+		}
+
 		for _, desiredLayer := range desiredLayers {
 			if installedLayer.Digest == desiredLayer.Digest {
 				continue removeLayersLoop
 			}
 		}
 
-		update.RemoveLayers = append(update.RemoveLayers, installedLayer)
+		update.RemoveLayers = append(update.RemoveLayers, installedLayer.LayerStatus)
 	}
 }
 
@@ -422,8 +426,8 @@ func (manager *softwareManager) getLayersStatus() (layerStatuses []cloudprotocol
 	}
 
 	for _, layer := range layersStatus {
-		if layer.Status == cloudprotocol.InstalledStatus {
-			layerStatuses = append(layerStatuses, layer)
+		if layer.Status == cloudprotocol.InstalledStatus && !layer.Cached {
+			layerStatuses = append(layerStatuses, layer.LayerStatus)
 		}
 	}
 
