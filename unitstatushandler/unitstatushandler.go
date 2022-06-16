@@ -75,6 +75,7 @@ type SoftwareUpdater interface {
 	RestoreService(serviceID string) error
 	RemoveService(serviceID string) error
 	InstallLayer(layerInfo cloudprotocol.LayerInfo) error
+	RemoveLayer(digest string) error
 	RunInstances(instances []cloudprotocol.InstanceInfo) error
 }
 

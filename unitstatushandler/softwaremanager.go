@@ -956,6 +956,29 @@ func (manager *softwareManager) installLayers() (installErr string) {
 }
 
 func (manager *softwareManager) removeLayers() (removeErr string) {
+	var mutex sync.Mutex
+
+	handleError := func(layer cloudprotocol.LayerStatus, layerErr string) {
+		log.WithFields(log.Fields{
+			"digest":     layer.Digest,
+			"id":         layer.ID,
+			"aosVersion": layer.AosVersion,
+		}).Errorf("Can't remove layer: %s", layerErr)
+
+		if isCancelError(layerErr) {
+			return
+		}
+
+		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.ErrorStatus, layerErr)
+
+		mutex.Lock()
+		defer mutex.Unlock()
+
+		if removeErr == "" {
+			removeErr = layerErr
+		}
+	}
+
 	for _, layer := range manager.CurrentUpdate.RemoveLayers {
 		log.WithFields(log.Fields{
 			"id":         layer.ID,
@@ -972,14 +995,25 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 		}
 		manager.statusMutex.Unlock()
 
-		log.WithFields(log.Fields{
-			"id":         layer.ID,
-			"aosVersion": layer.AosVersion,
-			"digest":     layer.Digest,
-		}).Info("Layer successfully removed")
+		// Create new variable to be captured by action function
+		layerInfo := layer
 
-		// As we do not perform layer deleting, just update status
-		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.RemovedStatus, "")
+		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) error {
+			if err := manager.softwareUpdater.RemoveLayer(layerInfo.Digest); err != nil {
+				handleError(layerInfo, aoserrors.Wrap(err).Error())
+				return aoserrors.Wrap(err)
+			}
+
+			log.WithFields(log.Fields{
+				"id":         layerInfo.ID,
+				"aosVersion": layerInfo.AosVersion,
+				"digest":     layerInfo.Digest,
+			}).Info("Layer successfully removed")
+
+			manager.updateLayerStatusByID(layerInfo.Digest, cloudprotocol.RemovedStatus, "")
+
+			return nil
+		})
 	}
 
 	return ""

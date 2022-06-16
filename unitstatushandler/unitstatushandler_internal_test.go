@@ -1406,6 +1406,10 @@ func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerIn
 	return updater.UpdateError
 }
 
+func (updater *TestSoftwareUpdater) RemoveLayer(digest string) error {
+	return nil
+}
+
 func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) error {
 	updater.runInstanceChan <- instances
 
