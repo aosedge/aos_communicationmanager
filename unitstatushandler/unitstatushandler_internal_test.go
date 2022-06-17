@@ -1410,6 +1410,10 @@ func (updater *TestSoftwareUpdater) RemoveLayer(digest string) error {
 	return nil
 }
 
+func (updater *TestSoftwareUpdater) RestoreLayer(digest string) error {
+	return nil
+}
+
 func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) error {
 	updater.runInstanceChan <- instances
 
