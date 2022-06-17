@@ -821,6 +821,9 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		{LayerStatus: cloudprotocol.LayerStatus{
 			ID: "layer4", Digest: "digest4", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
 		}, Cached: true},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			ID: "layer5", Digest: "digest5", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+		}, Cached: true},
 	}
 	boardConfigUpdater := unitstatushandler.NewTestBoardConfigUpdater(
 		cloudprotocol.BoardConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
@@ -855,6 +858,7 @@ func TestUpdateCachedSOTA(t *testing.T) {
 			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 			{ID: "layer3", Digest: "digest3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ID: "layer5", Digest: "digest5", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		},
 		Services: []cloudprotocol.ServiceStatus{
 			{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
@@ -904,6 +908,10 @@ func TestUpdateCachedSOTA(t *testing.T) {
 			{
 				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer3"}, Sha256: []byte{3}},
+			},
+			{
+				ID: "layer5", Digest: "digest5", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer5"}, Sha256: []byte{3}},
 			},
 		},
 	})
