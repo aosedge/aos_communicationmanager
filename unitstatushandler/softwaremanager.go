@@ -58,10 +58,11 @@ type softwareUpdate struct {
 	DownloadServices []cloudprotocol.ServiceInfo      `json:"downloadServices,omitempty"`
 	InstallServices  []cloudprotocol.ServiceInfo      `json:"installServices,omitempty"`
 	RemoveServices   []cloudprotocol.ServiceStatus    `json:"removeServices,omitempty"`
-	RestoreServices  []cloudprotocol.ServiceInfo      `json:"remstoreServices,omitempty"`
+	RestoreServices  []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
 	DownloadLayers   []cloudprotocol.LayerInfo        `json:"downloadLayers,omitempty"`
 	InstallLayers    []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
 	RemoveLayers     []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
+	RestoreLayers    []cloudprotocol.LayerStatus      `json:"remstoreLayers,omitempty"`
 	RunInstances     []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
 	CertChains       []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
 	Certs            []cloudprotocol.Certificate      `json:"certs,omitempty"`
@@ -253,7 +254,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 
 	if len(update.DownloadServices) != 0 || len(update.RemoveServices) != 0 ||
 		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 || len(update.RestoreServices) != 0 ||
-		manager.needRunInstances(desiredStatus.Instances) {
+		len(update.RestoreLayers) != 0 || manager.needRunInstances(desiredStatus.Instances) {
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
@@ -308,6 +309,10 @@ downloadLayersLoop:
 	for _, desiredLayer := range desiredLayers {
 		for _, layer := range allLayers {
 			if desiredLayer.Digest == layer.Digest && layer.Status == cloudprotocol.InstalledStatus {
+				if layer.Cached {
+					update.RestoreLayers = append(update.RestoreLayers, layer.LayerStatus)
+				}
+
 				continue downloadLayersLoop
 			}
 		}
@@ -706,6 +711,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 		}
 	}
 
+	if errorStr := manager.restoreLayers(); errorStr != "" {
+		if updateErr == "" {
+			updateErr = errorStr
+		}
+	}
+
 	if errorStr := manager.runInstances(); errorStr != "" {
 		if updateErr == "" {
 			updateErr = errorStr
@@ -751,7 +762,8 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 			reflect.DeepEqual(update.InstallServices, manager.CurrentUpdate.InstallServices) &&
 			reflect.DeepEqual(update.RemoveServices, manager.CurrentUpdate.RemoveServices) &&
 			reflect.DeepEqual(update.RunInstances, manager.CurrentUpdate.RunInstances) &&
-			reflect.DeepEqual(update.RestoreServices, manager.CurrentUpdate.RestoreServices) {
+			reflect.DeepEqual(update.RestoreServices, manager.CurrentUpdate.RestoreServices) &&
+			reflect.DeepEqual(update.RestoreLayers, manager.CurrentUpdate.RestoreLayers) {
 			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
 				return nil
 			}
@@ -956,6 +968,18 @@ func (manager *softwareManager) installLayers() (installErr string) {
 }
 
 func (manager *softwareManager) removeLayers() (removeErr string) {
+	return manager.processRemoveRestorLayers(
+		manager.CurrentUpdate.RemoveLayers, "remove", cloudprotocol.RemovedStatus, manager.softwareUpdater.RemoveLayer)
+}
+
+func (manager *softwareManager) restoreLayers() (restoreErr string) {
+	return manager.processRemoveRestorLayers(
+		manager.CurrentUpdate.RestoreLayers, "restore", cloudprotocol.InstalledStatus, manager.softwareUpdater.RestoreLayer)
+}
+
+func (manager *softwareManager) processRemoveRestorLayers(
+	layers []cloudprotocol.LayerStatus, operationStr, successStatus string, operation func(digest string) error,
+) (processError string) {
 	var mutex sync.Mutex
 
 	handleError := func(layer cloudprotocol.LayerStatus, layerErr string) {
@@ -963,7 +987,7 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 			"digest":     layer.Digest,
 			"id":         layer.ID,
 			"aosVersion": layer.AosVersion,
-		}).Errorf("Can't remove layer: %s", layerErr)
+		}).Errorf("Can't %s layer: %s", operationStr, layerErr)
 
 		if isCancelError(layerErr) {
 			return
@@ -974,19 +998,18 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 		mutex.Lock()
 		defer mutex.Unlock()
 
-		if removeErr == "" {
-			removeErr = layerErr
+		if processError == "" {
+			processError = layerErr
 		}
 	}
 
-	for _, layer := range manager.CurrentUpdate.RemoveLayers {
+	for _, layer := range layers {
 		log.WithFields(log.Fields{
 			"id":         layer.ID,
 			"aosVersion": layer.AosVersion,
 			"digest":     layer.Digest,
-		}).Debug("Remove layer")
+		}).Debugf("%s layer", operationStr)
 
-		// Create status for remove layers. For install layer it is created in download function.
 		manager.statusMutex.Lock()
 		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerStatus{
 			ID:         layer.ID,
@@ -999,7 +1022,7 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 		layerInfo := layer
 
 		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) error {
-			if err := manager.softwareUpdater.RemoveLayer(layerInfo.Digest); err != nil {
+			if err := operation(layerInfo.Digest); err != nil {
 				handleError(layerInfo, aoserrors.Wrap(err).Error())
 				return aoserrors.Wrap(err)
 			}
@@ -1008,13 +1031,15 @@ func (manager *softwareManager) removeLayers() (removeErr string) {
 				"id":         layerInfo.ID,
 				"aosVersion": layerInfo.AosVersion,
 				"digest":     layerInfo.Digest,
-			}).Info("Layer successfully removed")
+			}).Infof("Layer successfully %sd", operationStr)
 
-			manager.updateLayerStatusByID(layerInfo.Digest, cloudprotocol.RemovedStatus, "")
+			manager.updateLayerStatusByID(layerInfo.Digest, successStatus, "")
 
 			return nil
 		})
 	}
+
+	manager.actionHandler.Wait()
 
 	return ""
 }
