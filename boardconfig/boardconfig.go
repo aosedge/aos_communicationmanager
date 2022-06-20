@@ -19,6 +19,7 @@ package boardconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"sync"
 
@@ -48,6 +49,9 @@ type Client interface {
 	CheckBoardConfig(boardConfig aostypes.BoardConfig) (err error)
 	SetBoardConfig(boardConfig aostypes.BoardConfig) (err error)
 }
+
+// ErrAlreadyInstalled error to detect that board config with the same version already installed.
+var ErrAlreadyInstalled = errors.New("already installed")
 
 /***********************************************************************************************************************
  * Public
@@ -171,7 +175,7 @@ func (instance *Instance) load() (err error) {
 
 func (instance *Instance) checkBoardConfig(boardConfig aostypes.BoardConfig) (vendorVersion string, err error) {
 	if boardConfig.VendorVersion == instance.boardConfig.VendorVersion {
-		return boardConfig.VendorVersion, aoserrors.New("invalid vendor version")
+		return boardConfig.VendorVersion, ErrAlreadyInstalled
 	}
 
 	if err = instance.client.CheckBoardConfig(boardConfig); err != nil {
