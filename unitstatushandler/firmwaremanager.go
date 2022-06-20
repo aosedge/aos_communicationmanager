@@ -20,6 +20,7 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -33,6 +34,7 @@ import (
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_communicationmanager/boardconfig"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 )
 
@@ -678,6 +680,14 @@ func (manager *firmwareManager) updateBoardConfig(ctx context.Context) (boardCon
 	}()
 
 	if _, err := manager.boardConfigUpdater.CheckBoardConfig(manager.CurrentUpdate.BoardConfig); err != nil {
+		if errors.Is(err, boardconfig.ErrAlreadyInstalled) {
+			log.Error("Board config already installed")
+
+			manager.updateBoardConfigStatus(cloudprotocol.InstalledStatus, "")
+
+			return ""
+		}
+
 		return aoserrors.Wrap(err).Error()
 	}
 
