@@ -260,6 +260,13 @@ func (cryptoContext *CryptoContext) GetClientTLSConfig() (*tls.Config, error) {
 	return &tls.Config{RootCAs: cryptoContext.rootCertPool, MinVersion: tls.VersionTLS12}, nil
 }
 
+// CertToPEM is a utility function returns a PEM encoded x509 Certificate.
+func CertToPEM(cert *x509.Certificate) []byte {
+	pemCert := pem.EncodeToMemory(&pem.Block{Type: PEMBlockCertificate, Bytes: cert.Raw})
+
+	return pemCert
+}
+
 // PEMToX509Cert parses PEM data to x509 certificate structures.
 func PEMToX509Cert(data []byte) (certs []*x509.Certificate, err error) {
 	var block *pem.Block
@@ -400,36 +407,38 @@ func LoadPrivateKeyFromFile(fileName string) (crypto.PrivateKey, error) {
 
 // SavePrivateKeyToFile saves private key to file.
 func SavePrivateKeyToFile(fileName string, key crypto.PrivateKey) error {
-	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0o600)
+	keyPem, err := PrivateKeyToPEM(key)
 	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(fileName, keyPem, 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
-	defer file.Close()
 
+	return nil
+}
+
+// PrivateKeyToPEM converts private key to PEM format.
+func PrivateKeyToPEM(key crypto.PrivateKey) ([]byte, error) {
 	switch privateKey := key.(type) {
 	case *rsa.PrivateKey:
-		if err = pem.Encode(file, &pem.Block{
+		return pem.EncodeToMemory(&pem.Block{
 			Type:  PEMBlockRSAPrivateKey,
 			Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-		}); err != nil {
-			return aoserrors.Wrap(err)
-		}
+		}), nil
 
 	case *ecdsa.PrivateKey:
 		data, err := x509.MarshalECPrivateKey(privateKey)
 		if err != nil {
-			return aoserrors.Wrap(err)
+			return nil, aoserrors.Wrap(err)
 		}
 
-		if err = pem.Encode(file, &pem.Block{Type: PEMBlockECPrivateKey, Bytes: data}); err != nil {
-			return aoserrors.Wrap(err)
-		}
+		return pem.EncodeToMemory(&pem.Block{Type: PEMBlockECPrivateKey, Bytes: data}), nil
 
 	default:
-		return aoserrors.Errorf("unsupported key type: %v", reflect.TypeOf(privateKey))
+		return nil, aoserrors.Errorf("unsupported key type: %v", reflect.TypeOf(privateKey))
 	}
-
-	return nil
 }
 
 // CheckCertificate checks if certificate matches key.
