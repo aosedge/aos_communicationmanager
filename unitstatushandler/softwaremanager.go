@@ -54,18 +54,16 @@ type softwareStatusHandler interface {
 }
 
 type softwareUpdate struct {
-	Schedule         cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
-	DownloadServices []cloudprotocol.ServiceInfo      `json:"downloadServices,omitempty"`
-	InstallServices  []cloudprotocol.ServiceInfo      `json:"installServices,omitempty"`
-	RemoveServices   []cloudprotocol.ServiceStatus    `json:"removeServices,omitempty"`
-	RestoreServices  []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
-	DownloadLayers   []cloudprotocol.LayerInfo        `json:"downloadLayers,omitempty"`
-	InstallLayers    []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
-	RemoveLayers     []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
-	RestoreLayers    []cloudprotocol.LayerStatus      `json:"remstoreLayers,omitempty"`
-	RunInstances     []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
-	CertChains       []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
-	Certs            []cloudprotocol.Certificate      `json:"certs,omitempty"`
+	Schedule        cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
+	InstallServices []cloudprotocol.ServiceInfo      `json:"installServices,omitempty"`
+	RemoveServices  []cloudprotocol.ServiceStatus    `json:"removeServices,omitempty"`
+	RestoreServices []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
+	InstallLayers   []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
+	RemoveLayers    []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
+	RestoreLayers   []cloudprotocol.LayerStatus      `json:"remstoreLayers,omitempty"`
+	RunInstances    []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
+	CertChains      []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
+	Certs           []cloudprotocol.Certificate      `json:"certs,omitempty"`
 }
 
 type softwareManager struct {
@@ -158,12 +156,6 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 		return status
 	}
 
-	for _, layer := range manager.CurrentUpdate.DownloadLayers {
-		status.InstallLayers = append(status.InstallLayers, cloudprotocol.LayerStatus{
-			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion,
-		})
-	}
-
 	for _, layer := range manager.CurrentUpdate.InstallLayers {
 		status.InstallLayers = append(status.InstallLayers, cloudprotocol.LayerStatus{
 			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion,
@@ -173,12 +165,6 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 	for _, layer := range manager.CurrentUpdate.RemoveLayers {
 		status.RemoveLayers = append(status.RemoveLayers, cloudprotocol.LayerStatus{
 			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion,
-		})
-	}
-
-	for _, service := range manager.CurrentUpdate.DownloadServices {
-		status.InstallServices = append(status.InstallServices, cloudprotocol.ServiceStatus{
-			ID: service.ID, AosVersion: service.AosVersion,
 		})
 	}
 
@@ -228,15 +214,13 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	defer manager.Unlock()
 
 	update := &softwareUpdate{
-		Schedule:         desiredStatus.SOTASchedule,
-		DownloadServices: make([]cloudprotocol.ServiceInfo, 0),
-		InstallServices:  make([]cloudprotocol.ServiceInfo, 0),
-		RemoveServices:   make([]cloudprotocol.ServiceStatus, 0),
-		DownloadLayers:   make([]cloudprotocol.LayerInfo, 0),
-		InstallLayers:    make([]cloudprotocol.LayerInfo, 0),
-		RemoveLayers:     make([]cloudprotocol.LayerStatus, 0),
-		RunInstances:     desiredStatus.Instances,
-		CertChains:       desiredStatus.CertificateChains, Certs: desiredStatus.Certificates,
+		Schedule:        desiredStatus.SOTASchedule,
+		InstallServices: make([]cloudprotocol.ServiceInfo, 0),
+		RemoveServices:  make([]cloudprotocol.ServiceStatus, 0),
+		InstallLayers:   make([]cloudprotocol.LayerInfo, 0),
+		RemoveLayers:    make([]cloudprotocol.LayerStatus, 0),
+		RunInstances:    desiredStatus.Instances,
+		CertChains:      desiredStatus.CertificateChains, Certs: desiredStatus.Certificates,
 	}
 
 	allServices, err := manager.softwareUpdater.GetServicesStatus()
@@ -252,8 +236,8 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	manager.processDesiredServices(update, allServices, desiredStatus.Services)
 	manager.processDesiredLayers(update, allLayers, desiredStatus.Layers)
 
-	if len(update.DownloadServices) != 0 || len(update.RemoveServices) != 0 ||
-		len(update.DownloadLayers) != 0 || len(update.RemoveLayers) != 0 || len(update.RestoreServices) != 0 ||
+	if len(update.InstallServices) != 0 || len(update.RemoveServices) != 0 ||
+		len(update.InstallLayers) != 0 || len(update.RemoveLayers) != 0 || len(update.RestoreServices) != 0 ||
 		len(update.RestoreLayers) != 0 || manager.needRunInstances(desiredStatus.Instances) {
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
@@ -279,7 +263,7 @@ downloadServiceLoop:
 			}
 		}
 
-		update.DownloadServices = append(update.DownloadServices, desiredService)
+		update.InstallServices = append(update.InstallServices, desiredService)
 	}
 
 removeServiceLoop:
@@ -317,7 +301,7 @@ downloadLayersLoop:
 			}
 		}
 
-		update.DownloadLayers = append(update.DownloadLayers, desiredLayer)
+		update.InstallLayers = append(update.InstallLayers, desiredLayer)
 	}
 
 removeLayersLoop:
@@ -607,7 +591,7 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]clo
 	manager.LayerStatuses = make(map[string]*cloudprotocol.LayerStatus)
 	manager.ServiceStatuses = make(map[string]*cloudprotocol.ServiceStatus)
 
-	for _, service := range manager.CurrentUpdate.DownloadServices {
+	for _, service := range manager.CurrentUpdate.InstallServices {
 		log.WithFields(log.Fields{
 			"id":      service.ID,
 			"version": service.AosVersion,
@@ -621,7 +605,7 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]clo
 		}
 	}
 
-	for _, layer := range manager.CurrentUpdate.DownloadLayers {
+	for _, layer := range manager.CurrentUpdate.InstallLayers {
 		log.WithFields(log.Fields{
 			"id":      layer.ID,
 			"digest":  layer.Digest,
@@ -638,29 +622,6 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]clo
 	}
 
 	manager.statusMutex.Unlock()
-
-	// Set pending status for install services and layers
-
-	for _, service := range manager.CurrentUpdate.InstallServices {
-		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceStatus{
-			ID:         service.ID,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.PendingStatus,
-		}
-
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.PendingStatus, "")
-	}
-
-	for _, layer := range manager.CurrentUpdate.InstallLayers {
-		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerStatus{
-			ID:         layer.ID,
-			AosVersion: layer.AosVersion,
-			Digest:     layer.Digest,
-			Status:     cloudprotocol.PendingStatus,
-		}
-
-		manager.updateLayerStatusByID(layer.Digest, cloudprotocol.PendingStatus, "")
-	}
 
 	return request
 }
@@ -900,10 +861,9 @@ func (manager *softwareManager) installLayers() (installErr string) {
 		}
 	}
 
-	installLayers := make([]cloudprotocol.LayerInfo, 0,
-		len(manager.CurrentUpdate.DownloadLayers)+len(manager.CurrentUpdate.InstallLayers))
+	installLayers := []cloudprotocol.LayerInfo{}
 
-	for _, layer := range manager.CurrentUpdate.DownloadLayers {
+	for _, layer := range manager.CurrentUpdate.InstallLayers {
 		downloadInfo, ok := manager.DownloadResult[layer.Digest]
 		if !ok {
 			handleError(layer, aoserrors.New("can't get download result").Error())
@@ -929,8 +889,6 @@ func (manager *softwareManager) installLayers() (installErr string) {
 
 		installLayers = append(installLayers, layer)
 	}
-
-	installLayers = append(installLayers, manager.CurrentUpdate.InstallLayers...)
 
 	for _, layer := range installLayers {
 		log.WithFields(log.Fields{
@@ -1067,10 +1025,9 @@ func (manager *softwareManager) installServices() (installErr string) {
 		}
 	}
 
-	installServices := make([]cloudprotocol.ServiceInfo, 0,
-		len(manager.CurrentUpdate.DownloadServices)+len(manager.CurrentUpdate.InstallServices))
+	installServices := []cloudprotocol.ServiceInfo{}
 
-	for _, service := range manager.CurrentUpdate.DownloadServices {
+	for _, service := range manager.CurrentUpdate.InstallServices {
 		downloadInfo, ok := manager.DownloadResult[service.ID]
 		if !ok {
 			handleError(service, aoserrors.New("can't get download result").Error())
@@ -1096,8 +1053,6 @@ func (manager *softwareManager) installServices() (installErr string) {
 
 		installServices = append(installServices, service)
 	}
-
-	installServices = append(installServices, manager.CurrentUpdate.InstallServices...)
 
 	for _, service := range installServices {
 		log.WithFields(log.Fields{
