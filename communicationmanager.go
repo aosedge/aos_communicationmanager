@@ -271,6 +271,11 @@ func (cm *communicationManager) close() {
 		cm.monitorcontroller.Close()
 	}
 
+	// Close downloader
+	if cm.downloader != nil {
+		cm.downloader.Close()
+	}
+
 	// Close iam
 	if cm.iam != nil {
 		cm.iam.Close()

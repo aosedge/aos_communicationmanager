@@ -24,6 +24,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_common/spaceallocator"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -59,6 +60,9 @@ type downloadResult struct {
 	decryptedFileName string
 	downloadFileName  string
 	interruptFileName string
+
+	downloadSpace spaceallocator.Space
+	decryptSpace  spaceallocator.Space
 }
 
 /***********************************************************************************************************************
@@ -91,7 +95,7 @@ func (result *downloadResult) storeInterruptReason(reason string) {
 	}
 }
 
-func (result *downloadResult) retreiveInterruptReason() (reason string) {
+func (result *downloadResult) retrieveInterruptReason() (reason string) {
 	data, err := ioutil.ReadFile(result.interruptFileName)
 	if err != nil {
 		return unknownInterruptReason
