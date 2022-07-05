@@ -28,17 +28,17 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
-	"github.com/aoscloud/aos_common/utils/testtools"
+	"github.com/aoscloud/aos_common/spaceallocator"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -73,6 +73,25 @@ type testAlertSender struct {
 	alertStatus      int
 }
 
+type testAllocator struct {
+	sync.Mutex
+
+	totalSize     uint64
+	allocatedSize uint64
+	remover       spaceallocator.ItemRemover
+	outdatedItems []testOutdatedItem
+}
+
+type testSpace struct {
+	allocator *testAllocator
+	size      uint64
+}
+
+type testOutdatedItem struct {
+	id   string
+	size uint64
+}
+
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
@@ -86,6 +105,8 @@ var (
 	serverDir   string
 	downloadDir string
 	decryptDir  string
+
+	downloadAllocator = &testAllocator{}
 )
 
 /***********************************************************************************************************************
@@ -116,7 +137,7 @@ func TestMain(m *testing.M) {
 	ret := m.Run()
 
 	if err = cleanup(); err != nil {
-		log.Fatalf("Error cleaning up: %s", err)
+		log.Errorf("Error cleaning up: %s", err)
 	}
 
 	os.Exit(ret)
@@ -124,9 +145,10 @@ func TestMain(m *testing.M) {
 
 func TestDownload(t *testing.T) {
 	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{}
 
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear dirs: %v", err)
 	}
 
 	fileName := path.Join(serverDir, "package.txt")
@@ -147,6 +169,7 @@ func TestDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
+	defer downloadInstance.Close()
 
 	result, err := downloadInstance.DownloadAndDecrypt(
 		context.Background(), preparePackageInfo("http://localhost:8001/", fileName), nil, nil)
@@ -156,6 +179,15 @@ func TestDownload(t *testing.T) {
 
 	if err = result.Wait(); err != nil {
 		t.Errorf("Download error: %s", err)
+	}
+
+	fileInfo, err := os.Stat(result.GetFileName())
+	if err != nil {
+		t.Fatalf("Can't get file stat: %v", err)
+	}
+
+	if downloadAllocator.allocatedSize != uint64(fileInfo.Size()) {
+		t.Errorf("Wrong allocated size: %d", downloadAllocator.allocatedSize)
 	}
 
 	if sender.alertStarted != 1 {
@@ -169,9 +201,10 @@ func TestDownload(t *testing.T) {
 
 func TestInterruptResumeDownload(t *testing.T) {
 	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{}
 
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear dirs: %v", err)
 	}
 
 	if err := setWondershaperLimit("lo", "128"); err != nil {
@@ -201,6 +234,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
+	defer downloadInstance.Close()
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
 
@@ -211,6 +245,15 @@ func TestInterruptResumeDownload(t *testing.T) {
 
 	if err = result.Wait(); err != nil {
 		t.Errorf("Download error: %s", err)
+	}
+
+	fileInfo, err := os.Stat(result.GetFileName())
+	if err != nil {
+		t.Fatalf("Can't get file stat: %v", err)
+	}
+
+	if downloadAllocator.allocatedSize != uint64(fileInfo.Size()) {
+		t.Errorf("Wrong allocated size: %d", downloadAllocator.allocatedSize)
 	}
 
 	if sender.alertStarted != 1 {
@@ -234,13 +277,12 @@ func TestInterruptResumeDownload(t *testing.T) {
 	}
 }
 
-// The test checks if available disk size is counted properly after resuming
-// download and takes into account files that already have been partially downloaded.
-func TestAvailableSize(t *testing.T) {
+func TestContinueDownload(t *testing.T) {
 	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{}
 
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear dirs: %s", err)
 	}
 
 	if err := setWondershaperLimit("lo", "512"); err != nil {
@@ -249,17 +291,9 @@ func TestAvailableSize(t *testing.T) {
 
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
-	var stat syscall.Statfs_t
-
-	if err := syscall.Statfs(downloadDir, &stat); err != nil {
-		t.Errorf("Can't make syscall statfs: %s", err)
-	}
-
 	fileName := path.Join(serverDir, "package.txt")
-	// File should be a little less than required due to extra blocks needed by FS
-	fileSize := (stat.Bavail - 16) * uint64(stat.Bsize)
 
-	if err := generateFile(fileName, fileSize); err != nil {
+	if err := generateFile(fileName, 1*Megabyte); err != nil {
 		t.Errorf("Can't generate file: %s", err)
 	}
 	defer os.RemoveAll(fileName)
@@ -298,13 +332,23 @@ func TestAvailableSize(t *testing.T) {
 	if err = result.Wait(); err != nil {
 		t.Errorf("Download error: %s", err)
 	}
+
+	fileInfo, err := os.Stat(result.GetFileName())
+	if err != nil {
+		t.Fatalf("Can't get file stat: %v", err)
+	}
+
+	if downloadAllocator.allocatedSize != uint64(fileInfo.Size()) {
+		t.Errorf("Wrong allocated size: %d", downloadAllocator.allocatedSize)
+	}
 }
 
 func TestResumeDownloadFromTwoServers(t *testing.T) {
 	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{}
 
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear disks: %v", err)
 	}
 
 	if err := setWondershaperLimit("lo", "256"); err != nil {
@@ -337,6 +381,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
+	defer downloadInstance.Close()
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
 
@@ -372,9 +417,10 @@ func TestConcurrentDownloads(t *testing.T) {
 	)
 
 	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{}
 
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear dirs: %v", err)
 	}
 
 	if err := setWondershaperLimit("lo", "1024"); err != nil {
@@ -406,6 +452,7 @@ func TestConcurrentDownloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
+	defer downloadInstance.Close()
 
 	wg := sync.WaitGroup{}
 
@@ -438,9 +485,12 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	const fileNamePattern = "package%d.txt"
 
 	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{
+		totalSize: 2 * Megabyte,
+	}
 
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear dirs: %v", err)
 	}
 
 	if err := setWondershaperLimit("lo", "4096"); err != nil {
@@ -449,14 +499,8 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
-	var stat syscall.Statfs_t
-
-	if err := syscall.Statfs(downloadDir, &stat); err != nil {
-		t.Errorf("Can't make syscall statfs: %s", err)
-	}
-
 	// Create files half of available size
-	fileSize := (stat.Bavail / 2) * uint64(stat.Bsize)
+	fileSize := downloadAllocator.totalSize / 2
 
 	for i := 0; i < numDownloads; i++ {
 		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), fileSize); err != nil {
@@ -481,116 +525,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
-
-	wg := sync.WaitGroup{}
-
-	results := make([]downloader.Result, 0, numDownloads)
-
-	for i := 0; i < numDownloads; i++ {
-		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
-
-		result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
-		if err != nil {
-			t.Errorf("Can't download and decrypt package: %s", err)
-			continue
-		}
-
-		results = append(results, result)
-
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			if err = result.Wait(); err != nil {
-				t.Errorf("Download error: %s", err)
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	// Try to download another file. It should fail as there is no space in DecryptDir
-	if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, numDownloads)), fileSize); err != nil {
-		t.Fatalf("Can't generate file: %s", err)
-	}
-
-	packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, numDownloads))
-
-	if _, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err == nil {
-		t.Error("Error expected")
-	}
-
-	// Remove decrypted files
-	for _, result := range results {
-		if err = os.RemoveAll(result.GetFileName()); err != nil {
-			t.Fatalf("Can't remove decrypted file: %s", err)
-		}
-	}
-
-	// Now it should download successfully
-	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
-	if err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
-	}
-
-	if err = result.Wait(); err != nil {
-		t.Errorf("Download error: %s", err)
-	}
-}
-
-func TestDownloadPartLimit(t *testing.T) {
-	const (
-		numDownloads      = 10
-		fileNamePattern   = "package%d.txt"
-		downloadPartLimit = 50
-	)
-
-	sender := testAlertSender{}
-
-	if err := clearDisks(); err != nil {
-		t.Fatalf("Can't clear disks: %s", err)
-	}
-
-	if err := setWondershaperLimit("lo", "4096"); err != nil {
-		t.Fatalf("Can't set speed limit: %s", err)
-	}
-
-	defer clearWondershaperLimit("lo") // nolint:errcheck
-
-	var stat syscall.Statfs_t
-
-	if err := syscall.Statfs(downloadDir, &stat); err != nil {
-		t.Fatalf("Can't get FS status: %s", err)
-	}
-
-	expectedFreeBlocks := stat.Bavail - stat.Blocks*downloadPartLimit/100
-
-	fileSize := (stat.Bavail / numDownloads) * uint64(stat.Bsize)
-
-	for i := 0; i < numDownloads; i++ {
-		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), fileSize); err != nil {
-			t.Fatalf("Can't generate file: %s", err)
-		}
-	}
-
-	defer func() {
-		for i := 0; i < numDownloads; i++ {
-			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
-		}
-	}()
-
-	downloadInstance, err := downloader.New("testModule", &config.Config{
-		Downloader: config.Downloader{
-			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
-			MaxConcurrentDownloads: 3,
-			DownloadPartLimit:      downloadPartLimit,
-		},
-	}, &testCryptoContext{}, &sender)
-	if err != nil {
-		t.Fatalf("Can't create downloader: %s", err)
-	}
+	defer downloadInstance.Close()
 
 	wg := sync.WaitGroup{}
 
@@ -615,14 +550,6 @@ func TestDownloadPartLimit(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	if err := syscall.Statfs(downloadDir, &stat); err != nil {
-		t.Fatalf("Can't get FS status: %s", err)
-	}
-
-	if stat.Bavail < expectedFreeBlocks {
-		t.Errorf("Num of available blocks should be more than expected: %d < %d", stat.Bavail, expectedFreeBlocks)
-	}
 }
 
 /***********************************************************************************************************************
@@ -684,6 +611,96 @@ func (instance *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
 }
 
 /***********************************************************************************************************************
+ * Interfaces
+ **********************************************************************************************************************/
+
+func newSpaceAllocator(
+	path string, partLimit uint, remover spaceallocator.ItemRemover,
+) (spaceallocator.Allocator, error) {
+	switch path {
+	case downloadDir:
+		downloadAllocator.remover = remover
+		return downloadAllocator, nil
+
+	default:
+		return &testAllocator{remover: remover}, nil
+	}
+}
+
+func (allocator *testAllocator) AllocateSpace(size uint64) (spaceallocator.Space, error) {
+	allocator.Lock()
+	defer allocator.Unlock()
+
+	if allocator.totalSize != 0 && allocator.allocatedSize+size > allocator.totalSize {
+		for allocator.allocatedSize+size > allocator.totalSize {
+			if len(allocator.outdatedItems) == 0 {
+				return nil, spaceallocator.ErrNoSpace
+			}
+
+			if err := allocator.remover(allocator.outdatedItems[0].id); err != nil {
+				return nil, err
+			}
+
+			if allocator.outdatedItems[0].size < allocator.allocatedSize {
+				allocator.allocatedSize -= allocator.outdatedItems[0].size
+			} else {
+				allocator.allocatedSize = 0
+			}
+
+			allocator.outdatedItems = allocator.outdatedItems[1:]
+		}
+	}
+
+	allocator.allocatedSize += size
+
+	return &testSpace{allocator: allocator, size: size}, nil
+}
+
+func (allocator *testAllocator) FreeSpace(size uint64) {
+	allocator.Lock()
+	defer allocator.Unlock()
+
+	if size > allocator.allocatedSize {
+		allocator.allocatedSize = 0
+	} else {
+		allocator.allocatedSize -= size
+	}
+}
+
+func (allocator *testAllocator) AddOutdatedItem(id string, size uint64, timestamp time.Time) error {
+	allocator.outdatedItems = append(allocator.outdatedItems, testOutdatedItem{id: id, size: size})
+
+	return nil
+}
+
+func (allocator *testAllocator) RestoreOutdatedItem(id string) {
+}
+
+func (allocator *testAllocator) Close() error {
+	return nil
+}
+
+func (space *testSpace) Accept() error {
+	return nil
+}
+
+func (space *testSpace) PartiallyAccept(size uint64) error {
+	if size > space.size {
+		return aoserrors.New("wrong accepted size")
+	}
+
+	space.allocator.FreeSpace(space.size - size)
+
+	return nil
+}
+
+func (space *testSpace) Release() error {
+	space.allocator.FreeSpace(space.size)
+
+	return nil
+}
+
+/***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
@@ -693,14 +710,8 @@ func setup() (err error) {
 		return aoserrors.Wrap(err)
 	}
 
-	if downloadDir, err = createTmpDisk("downloadDir", 2); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if decryptDir, err = createTmpDisk("decryptDir", 8); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
+	downloadDir = filepath.Join(tmpDir, "download")
+	decryptDir = filepath.Join(tmpDir, "decrypt")
 	serverDir = path.Join(tmpDir, "fileServer")
 
 	if err = os.MkdirAll(serverDir, 0o755); err != nil {
@@ -713,16 +724,17 @@ func setup() (err error) {
 
 	time.Sleep(time.Second)
 
+	downloader.NewSpaceAllocator = newSpaceAllocator
+
 	return nil
 }
 
 func cleanup() (err error) {
 	_ = clearWondershaperLimit("lo")
 
-	_ = closeTmpDisk("downloadDir")
-	_ = closeTmpDisk("decryptDir")
-
-	os.RemoveAll(tmpDir)
+	if err = os.RemoveAll(tmpDir); err != nil {
+		return aoserrors.Wrap(err)
+	}
 
 	return nil
 }
@@ -812,80 +824,20 @@ func clearWondershaperLimit(iface string) (err error) {
 	return nil
 }
 
-func createTmpDisk(name string, size uint64) (mountDir string, err error) {
-	fileName := path.Join(tmpDir, name+".ext4")
-
-	defer func() {
-		if err != nil {
-			os.RemoveAll(fileName)
-		}
-	}()
-
-	mountDir = path.Join(tmpDir, name)
-
-	if err = os.MkdirAll(mountDir, 0o755); err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	defer func() {
-		if err != nil {
-			os.RemoveAll(mountDir)
-		}
-	}()
-
-	if err = testtools.CreateFilePartition(fileName, "ext4", size, nil, false); err != nil {
-		return "", aoserrors.Wrap(err)
-	}
-
-	if output, err := exec.Command("mount", fileName, mountDir).CombinedOutput(); err != nil {
-		return "", aoserrors.Errorf("%s (%s)", err, (string(output)))
-	}
-
-	return mountDir, nil
-}
-
-func clearDisks() (err error) {
-	if err = clearTmpDisk("downloadDir"); err != nil {
+func clearDirs() error {
+	if err := os.RemoveAll(downloadDir); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err = clearTmpDisk("decryptDir"); err != nil {
+	if err := os.RemoveAll(decryptDir); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	return nil
-}
-
-func clearTmpDisk(name string) (err error) {
-	mountDir := path.Join(tmpDir, name)
-
-	items, err := ioutil.ReadDir(mountDir)
-	if err != nil {
+	if err := os.RemoveAll(serverDir); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	for _, item := range items {
-		if err = os.RemoveAll(path.Join(mountDir, item.Name())); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-func closeTmpDisk(name string) (err error) {
-	fileName := path.Join(tmpDir, name+".ext4")
-	mountDir := path.Join(tmpDir, name)
-
-	if output, err := exec.Command("umount", mountDir).CombinedOutput(); err != nil {
-		return aoserrors.Errorf("%s (%s)", err, (string(output)))
-	}
-
-	if err = os.RemoveAll(mountDir); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = os.Remove(fileName); err != nil {
+	if err := os.MkdirAll(serverDir, 0o755); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
