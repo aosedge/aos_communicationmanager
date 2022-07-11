@@ -70,7 +70,6 @@ type AmqpHandler struct { // nolint:stylecheck
 
 	systemID string
 
-	ctx        context.Context // nolint:containedctx
 	cancelFunc context.CancelFunc
 
 	wg sync.WaitGroup
@@ -132,8 +131,6 @@ func New() (*AmqpHandler, error) {
 		retryChannel: make(chan Message, retryChannelSize),
 	}
 
-	handler.ctx, handler.cancelFunc = context.WithCancel(context.Background())
-
 	return handler, nil
 }
 
@@ -152,9 +149,14 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 		return aoserrors.Wrap(err)
 	}
 
-	var connectionInfo cloudprotocol.ConnectionInfo
+	var (
+		connectionInfo cloudprotocol.ConnectionInfo
+		ctx            context.Context
+	)
 
-	if connectionInfo, err = getConnectionInfo(handler.ctx, sdURL,
+	ctx, handler.cancelFunc = context.WithCancel(context.Background())
+
+	if connectionInfo, err = getConnectionInfo(ctx, sdURL,
 		handler.createCloudMessage(cloudprotocol.ServiceDiscoveryType,
 			cloudprotocol.ServiceDiscoveryRequest{}), tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
@@ -179,6 +181,10 @@ func (handler *AmqpHandler) Disconnect() error {
 	defer handler.Unlock()
 
 	log.Debug("AMQP disconnect")
+
+	if handler.cancelFunc != nil {
+		handler.cancelFunc()
+	}
 
 	if handler.sendConnection != nil {
 		handler.sendConnection.Close()
@@ -280,7 +286,9 @@ func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs cloudprotocol.Overrid
 func (handler *AmqpHandler) Close() {
 	log.Info("Close AMQP")
 
-	handler.cancelFunc()
+	if handler.cancelFunc != nil {
+		handler.cancelFunc()
+	}
 
 	if err := handler.Disconnect(); err != nil {
 		log.Errorf("Can't disconnect from AMQP server: %s", err)
