@@ -206,7 +206,7 @@ func TestMain(m *testing.M) {
  * Tests
  **********************************************************************************************************************/
 
-func TestSendMessages(t *testing.T) {
+func TestReceiveMessages(t *testing.T) {
 	cryptoContext := &testCryptoContext{}
 
 	amqpHandler, err := amqphandler.New()
@@ -503,7 +503,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 	}
 }
 
-func TestReceiveMessages(t *testing.T) {
+func TestSendMessages(t *testing.T) {
 	cryptoContext := &testCryptoContext{}
 
 	amqpHandler, err := amqphandler.New()
