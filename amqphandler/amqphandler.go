@@ -736,7 +736,7 @@ func (handler *AmqpHandler) decodeRenewCertsNotification(
 		}
 
 		if secret.Version != cloudprotocol.UnitSecretVersion {
-			return nil, aoserrors.New("unit secure version missmatch")
+			return nil, aoserrors.New("unit secure version mismatch")
 		}
 	}
 
