@@ -66,6 +66,10 @@ type testCryptoContext struct {
 	decodedData cloudprotocol.DecodedDesiredStatus
 }
 
+type testConnectionEventsConsumer struct {
+	connectionChannel chan bool
+}
+
 /***********************************************************************************************************************
  * Vars
  **********************************************************************************************************************/
@@ -865,6 +869,81 @@ func TestReceiveMessages(t *testing.T) {
 	}
 }
 
+func TestConnectionEvents(t *testing.T) {
+	amqpHandler, err := amqphandler.New()
+	if err != nil {
+		t.Fatalf("Can't create amqp: %v", err)
+	}
+	defer amqpHandler.Close()
+
+	connectionConsumer := newConnectionEventsConsumer()
+
+	if err := amqpHandler.SubscribeForConnectionEvents(connectionConsumer); err != nil {
+		t.Fatalf("Can't subscribe for connection events: %v", err)
+	}
+
+	defer func() {
+		if err := amqpHandler.UnsubscribeFromConnectionEvents(connectionConsumer); err != nil {
+			t.Fatalf("Can't unsubscribe from connection events: %v", err)
+		}
+	}()
+
+	if err := amqpHandler.Connect(&testCryptoContext{}, serviceDiscoveryURL, systemID, true); err != nil {
+		t.Errorf("Can't connect to cloud: %v", err)
+	}
+
+	connected, err := connectionConsumer.waitConnectionEvent()
+	if err != nil {
+		t.Errorf("Error waiting connection event: %v", err)
+	}
+
+	if !connected {
+		t.Errorf("Wrong connection event: %v", connected)
+	}
+
+	if err := amqpHandler.Disconnect(); err != nil {
+		t.Errorf("Can't disconnect from cloud: %v", err)
+	}
+
+	if connected, err = connectionConsumer.waitConnectionEvent(); err != nil {
+		t.Errorf("Error waiting connection event: %v", err)
+	}
+
+	if connected {
+		t.Errorf("Wrong connection event: %v", connected)
+	}
+}
+
+func TestConnectionEventsError(t *testing.T) {
+	amqpHandler, err := amqphandler.New()
+	if err != nil {
+		t.Fatalf("Can't create amqp: %v", err)
+	}
+	defer amqpHandler.Close()
+
+	connectionConsumer := newConnectionEventsConsumer()
+
+	if err := amqpHandler.UnsubscribeFromConnectionEvents(connectionConsumer); err == nil {
+		t.Error("Error expected")
+	}
+
+	if err := amqpHandler.SubscribeForConnectionEvents(connectionConsumer); err != nil {
+		t.Fatalf("Can't subscribe for connection events: %v", err)
+	}
+
+	if err := amqpHandler.SubscribeForConnectionEvents(connectionConsumer); err == nil {
+		t.Error("Error expected")
+	}
+
+	if err := amqpHandler.UnsubscribeFromConnectionEvents(connectionConsumer); err != nil {
+		t.Fatalf("Can't unsubscribe from connection events: %v", err)
+	}
+
+	if err := amqpHandler.UnsubscribeFromConnectionEvents(connectionConsumer); err == nil {
+		t.Error("Error expected")
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
@@ -903,6 +982,34 @@ func (context *testCryptoContext) DecryptMetadata(input []byte) (output []byte, 
 	}
 
 	return output, aoserrors.Wrap(err)
+}
+
+func newConnectionEventsConsumer() *testConnectionEventsConsumer {
+	return &testConnectionEventsConsumer{
+		connectionChannel: make(chan bool, 1),
+	}
+}
+
+func (consumer *testConnectionEventsConsumer) CloudConnected() {
+	log.Debug("Connected to cloud")
+
+	consumer.connectionChannel <- true
+}
+
+func (consumer *testConnectionEventsConsumer) CloudDisconnected() {
+	log.Debug("Disconnected from cloud")
+
+	consumer.connectionChannel <- false
+}
+
+func (consumer *testConnectionEventsConsumer) waitConnectionEvent() (bool, error) {
+	select {
+	case connected := <-consumer.connectionChannel:
+		return connected, nil
+
+	case <-time.After(1 * time.Second):
+		return false, aoserrors.New("wait connection timeout")
+	}
 }
 
 /***********************************************************************************************************************
