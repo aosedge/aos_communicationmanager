@@ -20,6 +20,7 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"os"
 	"path"
@@ -31,6 +32,7 @@ import (
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
@@ -660,7 +662,8 @@ func (instance *Instance) sendCurrentStatus() {
 		}
 	}
 
-	if err := instance.statusSender.SendUnitStatus(unitStatus); err != nil {
+	if err := instance.statusSender.SendUnitStatus(
+		unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 		log.Errorf("Can't send unit status: %s", err)
 	}
 
