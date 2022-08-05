@@ -19,8 +19,10 @@ package monitorcontroller
 
 import (
 	"context"
+	"errors"
 
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 
 	log "github.com/sirupsen/logrus"
@@ -65,7 +67,8 @@ func New(
 				return
 
 			case monitorData := <-monitor.monitoringChannel:
-				if err := monitor.monitoringSender.SendMonitoringData(monitorData); err != nil {
+				if err := monitor.monitoringSender.SendMonitoringData(
+					monitorData); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 					log.Errorf("Can't send monitoring data: %v", err)
 				}
 			}
