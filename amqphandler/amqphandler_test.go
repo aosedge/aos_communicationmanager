@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -173,7 +174,7 @@ func sendMessage(message interface{}) error {
 		return aoserrors.Wrap(err)
 	}
 
-	log.Debug(string(dataJSON))
+	log.WithFields(log.Fields{"message": string(dataJSON)}).Debug("Send message")
 
 	return aoserrors.Wrap(testClient.channel.Publish(
 		"",
@@ -941,6 +942,129 @@ func TestConnectionEventsError(t *testing.T) {
 
 	if err := amqpHandler.UnsubscribeFromConnectionEvents(connectionConsumer); err == nil {
 		t.Error("Error expected")
+	}
+}
+
+func TestSendMultipleMessages(t *testing.T) {
+	const numMessages = 1000
+
+	amqpHandler, err := amqphandler.New()
+	if err != nil {
+		t.Fatalf("Can't create amqp: %v", err)
+	}
+	defer amqpHandler.Close()
+
+	if err = amqpHandler.Connect(&testCryptoContext{}, serviceDiscoveryURL, systemID, true); err != nil {
+		t.Errorf("Can't establish connection: %v", err)
+	}
+
+	testData := []func() error{
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{}))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendMonitoringData(cloudprotocol.MonitoringData{}))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendInstanceNewState(cloudprotocol.NewState{}))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{}))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendLog(cloudprotocol.PushLog{}))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendAlerts(cloudprotocol.Alerts{}))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendIssueUnitCerts(nil))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendInstallCertsConfirmation(nil))
+		},
+		func() error {
+			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(cloudprotocol.OverrideEnvVarsStatus{}))
+		},
+	}
+
+	for i := 0; i < numMessages; i++ {
+		// nolint:gosec // it is enough to use weak random generator in this case
+		call := testData[rand.Intn(len(testData))]
+
+		if err = call(); err != nil {
+			t.Errorf("Can't perform call: %v", err)
+			continue
+		}
+
+		select {
+		case <-testClient.delivery:
+
+		case err = <-testClient.errChannel:
+			t.Errorf("AMQP error: %v", err)
+
+		case <-time.After(5 * time.Second):
+			t.Error("Waiting data timeout")
+		}
+	}
+}
+
+func TestSendDisconnectMessages(t *testing.T) {
+	const sendQueueSize = 32
+
+	amqpHandler, err := amqphandler.New()
+	if err != nil {
+		t.Fatalf("Can't create amqp: %v", err)
+	}
+	defer amqpHandler.Close()
+
+	// Send unimportant message
+
+	if err := amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{}); !errors.Is(err, amqphandler.ErrNotConnected) {
+		t.Errorf("Wrong error type: %v", err)
+	}
+
+	// Send number important messages equals to send channel size - should be accepted without error
+
+	for i := 0; i < sendQueueSize; i++ {
+		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{}); err != nil {
+			t.Errorf("Can't send important message: %v", err)
+		}
+	}
+
+	// Next important message should fail due to send channel size
+
+	if err := amqpHandler.SendInstanceStateRequest(
+		cloudprotocol.StateRequest{}); !errors.Is(err, amqphandler.ErrSendChannelFull) {
+		t.Errorf("Wrong error type: %v", err)
+	}
+
+	if err = amqpHandler.Connect(&testCryptoContext{}, serviceDiscoveryURL, systemID, true); err != nil {
+		t.Errorf("Can't establish connection: %v", err)
+	}
+
+	// Server should receive pending important messages
+
+	for i := 0; i < sendQueueSize; i++ {
+		select {
+		case delivery := <-testClient.delivery:
+			var message cloudprotocol.Message
+
+			if err = json.Unmarshal(delivery.Body, &message); err != nil {
+				t.Errorf("Error parsing message: %v", err)
+				continue
+			}
+
+			if message.Header.MessageType != cloudprotocol.AlertsType {
+				t.Errorf("Wrong message type: %s", message.Header.MessageType)
+			}
+
+		case err = <-testClient.errChannel:
+			t.Errorf("AMQP error: %v", err)
+
+		case <-time.After(5 * time.Second):
+			t.Fatal("Waiting message timeout")
+		}
 	}
 }
 
