@@ -19,9 +19,9 @@ package alerts_test
 
 import (
 	"errors"
+	"math/rand"
 	"os"
 	"reflect"
-	"strconv"
 	"testing"
 	"time"
 
@@ -65,47 +65,49 @@ var errTimeout = errors.New("timeout")
  * Tests
  **********************************************************************************************************************/
 
-func TestAlertsMaxOfflineandMessages(t *testing.T) {
+func TestAlertsMaxMessageSize(t *testing.T) {
+	const numMessages = 5
+
 	sender := newTestSender()
 
 	alertsHandler, err := alerts.New(config.Alerts{
 		SendPeriod:         aostypes.Duration{Duration: 1 * time.Second},
-		MaxMessageSize:     1024,
+		MaxMessageSize:     512,
 		MaxOfflineMessages: 32,
 	},
 		sender)
 	if err != nil {
-		t.Fatalf("Can't create alerts: %s", err)
+		t.Fatalf("Can't create alerts: %v", err)
 	}
 	defer alertsHandler.Close()
 
 	expectedAlerts := cloudprotocol.Alerts{}
-	testTime := time.Now()
-
-	// alertlen = header 96 + message in bytes*6 (\\u0000)
-	alertItem := cloudprotocol.AlertItem{
-		Timestamp: testTime,
-		Tag:       cloudprotocol.AlertTagSystemError,
-		Payload:   cloudprotocol.SystemAlert{Message: string(make([]byte, 150))},
-	}
-
-	expectedAlerts = append(expectedAlerts, alertItem)
 
 	for i := 0; i < 2; i++ {
-		if i != 0 {
-			alertsHandler.SendAlert(cloudprotocol.AlertItem{
-				Timestamp: testTime,
-				Tag:       cloudprotocol.AlertTagSystemError,
-				Payload:   cloudprotocol.SystemAlert{Message: string(make([]byte, 150)) + strconv.Itoa(i)},
-			})
+		// alert size = header 96 + message length
+		alertItem := cloudprotocol.AlertItem{
+			Timestamp: time.Now(),
+			Tag:       cloudprotocol.AlertTagSystemError,
+			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		}
 
-			continue
+		alertsHandler.SendAlert(alertItem)
+
+		expectedAlerts = append(expectedAlerts, alertItem)
+	}
+
+	for i := 2; i < numMessages; i++ {
+		// alert size = header 96 + message length
+		alertItem := cloudprotocol.AlertItem{
+			Timestamp: time.Now(),
+			Tag:       cloudprotocol.AlertTagSystemError,
+			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
 		}
 
 		alertsHandler.SendAlert(alertItem)
 	}
 
-	alerts, err := sender.waitResult(2*time.Second, testTime)
+	alerts, err := sender.waitResult(2 * time.Second)
 	if err != nil {
 		t.Fatalf("Wait alerts error: %v", err)
 	}
@@ -115,7 +117,7 @@ func TestAlertsMaxOfflineandMessages(t *testing.T) {
 	}
 }
 
-func TestAlertsDublicationMessages(t *testing.T) {
+func TestAlertsDuplicationMessages(t *testing.T) {
 	sender := newTestSender()
 
 	alertsHandler, err := alerts.New(config.Alerts{
@@ -125,17 +127,16 @@ func TestAlertsDublicationMessages(t *testing.T) {
 	},
 		sender)
 	if err != nil {
-		t.Fatalf("Can't create alerts: %s", err)
+		t.Fatalf("Can't create alerts: %v", err)
 	}
 	defer alertsHandler.Close()
 
 	expectedAlerts := cloudprotocol.Alerts{}
-	testTime := time.Now()
 
 	alertItem := cloudprotocol.AlertItem{
-		Timestamp: testTime,
+		Timestamp: time.Now(),
 		Tag:       cloudprotocol.AlertTagSystemError,
-		Payload:   cloudprotocol.SystemAlert{Message: "alert"},
+		Payload:   cloudprotocol.SystemAlert{Message: randomString(32)},
 	}
 
 	expectedAlerts = append(expectedAlerts, alertItem)
@@ -144,7 +145,7 @@ func TestAlertsDublicationMessages(t *testing.T) {
 		alertsHandler.SendAlert(alertItem)
 	}
 
-	alerts, err := sender.waitResult(2*time.Second, testTime)
+	alerts, err := sender.waitResult(2 * time.Second)
 	if err != nil {
 		t.Fatalf("Wait alerts error: %v", err)
 	}
@@ -158,20 +159,24 @@ func TestAlertsDublicationMessages(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
+func newTestSender() (sender *testSender) {
+	sender = &testSender{
+		alertsChannel: make(chan cloudprotocol.Alerts, 1),
+	}
+
+	return sender
+}
+
 func (sender *testSender) SendAlerts(alerts cloudprotocol.Alerts) (err error) {
 	sender.alertsChannel <- alerts
 
 	return nil
 }
 
-func (sender *testSender) waitResult(timeout time.Duration, testTime time.Time) (cloudprotocol.Alerts, error) {
+func (sender *testSender) waitResult(timeout time.Duration) (cloudprotocol.Alerts, error) {
 	for {
 		select {
 		case alerts := <-sender.alertsChannel:
-			for i := range alerts {
-				alerts[i].Timestamp = testTime
-			}
-
 			return alerts, nil
 
 		case <-time.After(timeout):
@@ -184,10 +189,14 @@ func (sender *testSender) waitResult(timeout time.Duration, testTime time.Time) 
  * Private
  **********************************************************************************************************************/
 
-func newTestSender() (sender *testSender) {
-	sender = &testSender{
-		alertsChannel: make(chan cloudprotocol.Alerts, 1),
+func randomString(n int) string {
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	s := make([]rune, n)
+
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))] // nolint:gosec // weak rand is ok in this case
 	}
 
-	return sender
+	return string(s)
 }

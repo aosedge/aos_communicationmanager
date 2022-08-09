@@ -35,7 +35,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const alertChannelSize = 50
+const (
+	alertChannelSize = 64
+	addAlertTimeout  = 10 * time.Second
+)
 
 /***********************************************************************************************************************
  * Types
@@ -69,15 +72,15 @@ func New(config config.Alerts, sender Sender) (instance *Alerts, err error) {
 	log.Debug("New alerts")
 
 	instance = &Alerts{
-		config:        config,
-		sender:        sender,
-		alertsChannel: make(chan cloudprotocol.AlertItem, alertChannelSize),
+		config:               config,
+		sender:               sender,
+		alertsChannel:        make(chan cloudprotocol.AlertItem, alertChannelSize),
+		alertsPackageChannel: make(chan cloudprotocol.Alerts, config.MaxOfflineMessages),
 	}
 
 	ctx, cancelFunction := context.WithCancel(context.Background())
 
 	instance.senderCancelFunction = cancelFunction
-	instance.alertsPackageChannel = make(chan cloudprotocol.Alerts, config.MaxOfflineMessages)
 
 	go instance.processAlertChannels(ctx)
 
@@ -93,15 +96,18 @@ func (instance *Alerts) Close() {
 	}
 }
 
-// SendResourceAlert sends resource alert.
+// SendAlert sends alert.
 func (instance *Alerts) SendAlert(alert cloudprotocol.AlertItem) {
-	if len(instance.alertsChannel) >= cap(instance.alertsChannel) {
+	select {
+	case instance.alertsChannel <- alert:
+
+	case <-time.After(addAlertTimeout):
 		log.Warn("Skip alert, channel is full")
 
-		return
+		instance.Lock()
+		instance.skippedAlerts++
+		instance.Unlock()
 	}
-
-	instance.alertsChannel <- alert
 }
 
 /***********************************************************************************************************************
@@ -109,20 +115,36 @@ func (instance *Alerts) SendAlert(alert cloudprotocol.AlertItem) {
  **********************************************************************************************************************/
 
 func (instance *Alerts) processAlertChannels(ctx context.Context) {
-	sendTicker := time.NewTicker(instance.config.SendPeriod.Duration)
+	var (
+		sendTicker           = time.NewTicker(instance.config.SendPeriod.Duration)
+		alertsChannel        = instance.alertsChannel
+		alertsPackageChannel chan cloudprotocol.Alerts
+	)
 
 	for {
 		select {
-		case alert := <-instance.alertsChannel:
-			instance.addAlert(alert)
+		case alert := <-alertsChannel:
+			if instance.addAlert(alert) {
+				alertsChannel = nil
+			}
 
-		case alertsPackage := <-instance.alertsPackageChannel:
+		case alertsPackage := <-alertsPackageChannel:
 			if err := instance.sender.SendAlerts(alertsPackage); err != nil {
 				log.Errorf("Can't send alerts: %s", err)
 			}
 
+			alertsPackageChannel = nil
+
 		case <-sendTicker.C:
 			instance.prepareAlertsPackage()
+
+			if alertsChannel == nil {
+				alertsChannel = instance.alertsChannel
+			}
+
+			if alertsPackageChannel == nil {
+				alertsPackageChannel = instance.alertsPackageChannel
+			}
 
 		case <-ctx.Done():
 			sendTicker.Stop()
@@ -131,7 +153,7 @@ func (instance *Alerts) processAlertChannels(ctx context.Context) {
 	}
 }
 
-func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) {
+func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) (bufferIsFull bool) {
 	instance.Lock()
 	defer instance.Unlock()
 
@@ -143,40 +165,39 @@ func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) {
 
 	data, err := json.Marshal(item)
 	if err != nil {
-		log.Error("Can't calculate alert size")
+		log.Errorf("Can't marshal alert: %v", err)
 	}
 
 	instance.alertsSize += len(data)
+	instance.currentAlerts = append(instance.currentAlerts, item)
 
-	if instance.alertsSize <= instance.config.MaxMessageSize {
-		instance.currentAlerts = append(instance.currentAlerts, item)
-	} else {
-		instance.skippedAlerts++
-	}
+	return instance.alertsSize >= instance.config.MaxMessageSize
 }
 
 func (instance *Alerts) prepareAlertsPackage() {
 	instance.Lock()
 	defer instance.Unlock()
 
-	if instance.alertsSize != 0 {
-		if len(instance.alertsChannel) < cap(instance.alertsChannel) {
-			instance.alertsPackageChannel <- instance.currentAlerts
+	if instance.alertsSize == 0 {
+		return
+	}
 
-			if instance.skippedAlerts != 0 {
-				log.WithField("count", instance.skippedAlerts).Warn("Alerts skipped due to size limit")
-			}
+	if len(instance.alertsPackageChannel) < cap(instance.alertsPackageChannel) {
+		instance.alertsPackageChannel <- instance.currentAlerts
 
-			if instance.duplicatedAlerts != 0 {
-				log.WithField("count", instance.duplicatedAlerts).Warn("Alerts skipped due to duplication")
-			}
-		} else {
-			log.Warn("Skip sending alerts due to channel is full")
+		if instance.skippedAlerts != 0 {
+			log.WithField("count", instance.skippedAlerts).Warn("Alerts skipped due to channel is full")
 		}
 
-		instance.currentAlerts = []cloudprotocol.AlertItem{}
-		instance.skippedAlerts = 0
-		instance.duplicatedAlerts = 0
-		instance.alertsSize = 0
+		if instance.duplicatedAlerts != 0 {
+			log.WithField("count", instance.duplicatedAlerts).Warn("Alerts skipped due to duplication")
+		}
+	} else {
+		log.Warn("Skip sending alerts due to channel is full")
 	}
+
+	instance.currentAlerts = []cloudprotocol.AlertItem{}
+	instance.skippedAlerts = 0
+	instance.duplicatedAlerts = 0
+	instance.alertsSize = 0
 }
