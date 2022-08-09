@@ -65,7 +65,7 @@ type Monitoring struct {
 type Alerts struct {
 	JournalAlerts      *journalalerts.Config `json:"journalAlerts,omitempty"`
 	SendPeriod         aostypes.Duration     `json:"sendPeriod"`
-	MaxMessageSize     int                   `json:"maxMessagesize"`
+	MaxMessageSize     int                   `json:"maxMessageSize"`
 	MaxOfflineMessages int                   `json:"maxOfflineMessages"`
 }
 
