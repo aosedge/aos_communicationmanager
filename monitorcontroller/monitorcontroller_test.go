@@ -19,10 +19,13 @@ package monitorcontroller_test
 
 import (
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/monitorcontroller"
 	log "github.com/sirupsen/logrus"
@@ -33,6 +36,7 @@ import (
  **********************************************************************************************************************/
 
 type testMonitoringSender struct {
+	consumer       amqphandler.ConnectionEventsConsumer
 	monitoringData chan cloudprotocol.MonitoringData
 }
 
@@ -55,6 +59,8 @@ func init() {
  **********************************************************************************************************************/
 
 func TestMain(m *testing.M) {
+	monitorcontroller.MinSendPeriod = 100 * time.Millisecond
+
 	ret := m.Run()
 
 	os.Exit(ret)
@@ -65,20 +71,17 @@ func TestMain(m *testing.M) {
  **********************************************************************************************************************/
 
 func TestSendMonitorData(t *testing.T) {
-	duration := 100 * time.Millisecond
-
-	sender := &testMonitoringSender{
-		monitoringData: make(chan cloudprotocol.MonitoringData),
-	}
+	sender := newTestMonitoringSender()
 
 	controller, err := monitorcontroller.New(&config.Config{
-		Monitoring: config.Monitoring{
-			MaxOfflineMessages: 25,
-		},
+		Monitoring: config.Monitoring{MaxOfflineMessages: 8},
 	}, sender)
 	if err != nil {
 		t.Fatalf("Can't create monitoring controller: %v", err)
 	}
+	defer controller.Close()
+
+	sender.consumer.CloudConnected()
 
 	monitoringData := cloudprotocol.MonitoringData{
 		Global: cloudprotocol.GlobalMonitoringData{
@@ -92,25 +95,108 @@ func TestSendMonitorData(t *testing.T) {
 
 	controller.SendMonitoringData(monitoringData)
 
-	select {
-	case receivedMonitoringData := <-sender.monitoringData:
-		if receivedMonitoringData.Global != monitoringData.Global {
-			t.Errorf("Incorrect system monitoring data: %v", receivedMonitoringData.Global)
-		}
-
-	case <-time.After(duration * 2):
-		t.Fatal("Monitoring data timeout")
+	receivedMonitoringData, err := sender.waitMonitoringData()
+	if err != nil {
+		t.Fatalf("Error waiting for monitoring data: %v", err)
 	}
 
-	controller.Close()
+	if receivedMonitoringData.Global != monitoringData.Global {
+		t.Errorf("Incorrect system monitoring data: %v", receivedMonitoringData.Global)
+	}
+}
+
+func TestSendMonitorOffline(t *testing.T) {
+	const (
+		numOfflineMessages = 32
+		numExtraMessages   = 16
+	)
+
+	sender := newTestMonitoringSender()
+
+	controller, err := monitorcontroller.New(&config.Config{
+		Monitoring: config.Monitoring{MaxOfflineMessages: numOfflineMessages},
+	}, sender)
+	if err != nil {
+		t.Fatalf("Can't create monitoring controller: %v", err)
+	}
+	defer controller.Close()
+
+	var sentData []cloudprotocol.MonitoringData
+
+	for i := 0; i < numOfflineMessages+numExtraMessages; i++ {
+		monitoringData := cloudprotocol.MonitoringData{
+			Global: cloudprotocol.GlobalMonitoringData{
+				RAM:        1100,
+				CPU:        35,
+				UsedDisk:   uint64(i),
+				InTraffic:  150,
+				OutTraffic: 150,
+			},
+		}
+
+		controller.SendMonitoringData(monitoringData)
+
+		sentData = append(sentData, monitoringData)
+	}
+
+	if _, err := sender.waitMonitoringData(); err == nil {
+		t.Error("Should not be monitoring data received")
+	}
+
+	sender.consumer.CloudConnected()
+
+	var receivedData []cloudprotocol.MonitoringData
+
+	for i := 0; i < numOfflineMessages; i++ {
+		monitoringData, err := sender.waitMonitoringData()
+		if err != nil {
+			t.Fatalf("Error waiting for monitoring data: %v", err)
+		}
+
+		receivedData = append(receivedData, monitoringData)
+	}
+
+	if !reflect.DeepEqual(receivedData, sentData[len(sentData)-numOfflineMessages:]) {
+		t.Errorf("Wrong monitoring data received: %v", receivedData)
+	}
+
+	if data, err := sender.waitMonitoringData(); err == nil {
+		t.Error("Should not be monitoring data received ", data)
+	}
 }
 
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
 
-func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error) {
+func newTestMonitoringSender() *testMonitoringSender {
+	return &testMonitoringSender{monitoringData: make(chan cloudprotocol.MonitoringData)}
+}
+
+func (sender *testMonitoringSender) SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
+	sender.consumer = consumer
+
+	return nil
+}
+
+func (sender *testMonitoringSender) UnsubscribeFromConnectionEvents(
+	consumer amqphandler.ConnectionEventsConsumer,
+) error {
+	return nil
+}
+
+func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) error {
 	sender.monitoringData <- monitoringData
 
 	return nil
+}
+
+func (sender *testMonitoringSender) waitMonitoringData() (cloudprotocol.MonitoringData, error) {
+	select {
+	case monitoringData := <-sender.monitoringData:
+		return monitoringData, nil
+
+	case <-time.After(1 * time.Second):
+		return cloudprotocol.MonitoringData{}, aoserrors.New("wait monitoring data timeout")
+	}
 }

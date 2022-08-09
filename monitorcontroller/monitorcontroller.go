@@ -20,12 +20,15 @@ package monitorcontroller
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
-
-	log "github.com/sirupsen/logrus"
 )
 
 /***********************************************************************************************************************
@@ -34,15 +37,28 @@ import (
 
 // MonitoringSender sends monitoring data.
 type MonitoringSender interface {
-	SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error)
+	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
+	UnsubscribeFromConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
+	SendMonitoringData(monitoringData cloudprotocol.MonitoringData) error
 }
 
 // MonitorController instance.
 type MonitorController struct {
-	monitoringChannel chan cloudprotocol.MonitoringData
-	monitoringSender  MonitoringSender
-	cancelFunction    context.CancelFunc
+	sync.Mutex
+	monitoringQueue     []cloudprotocol.MonitoringData
+	monitoringQueueSize int
+	monitoringSender    MonitoringSender
+	cancelFunction      context.CancelFunc
+	isConnected         bool
 }
+
+/***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+// MinSendPeriod used to adjust min send period.
+// nolint:gochecknoglobals
+var MinSendPeriod = 10 * time.Second
 
 /***********************************************************************************************************************
  * Public
@@ -53,33 +69,29 @@ func New(
 	config *config.Config, monitoringSender MonitoringSender,
 ) (monitor *MonitorController, err error) {
 	monitor = &MonitorController{
-		monitoringSender:  monitoringSender,
-		monitoringChannel: make(chan cloudprotocol.MonitoringData, config.Monitoring.MaxOfflineMessages),
+		monitoringSender:    monitoringSender,
+		monitoringQueue:     make([]cloudprotocol.MonitoringData, 0, config.Monitoring.MaxOfflineMessages),
+		monitoringQueueSize: config.Monitoring.MaxOfflineMessages,
+	}
+
+	if err = monitor.monitoringSender.SubscribeForConnectionEvents(monitor); err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	monitor.cancelFunction = cancelFunc
 
-	go func(ctx context.Context) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-
-			case monitorData := <-monitor.monitoringChannel:
-				if err := monitor.monitoringSender.SendMonitoringData(
-					monitorData); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
-					log.Errorf("Can't send monitoring data: %v", err)
-				}
-			}
-		}
-	}(ctx)
+	go monitor.processQueue(ctx)
 
 	return monitor, nil
 }
 
 // Close closes monitor controller instance.
 func (monitor *MonitorController) Close() {
+	if err := monitor.monitoringSender.UnsubscribeFromConnectionEvents(monitor); err != nil {
+		log.Errorf("Can't unsubscribe from connection events: %v", err)
+	}
+
 	if monitor.cancelFunction != nil {
 		monitor.cancelFunction()
 	}
@@ -87,9 +99,63 @@ func (monitor *MonitorController) Close() {
 
 // SendMonitoringData sends monitoring data.
 func (monitor *MonitorController) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) {
-	if len(monitor.monitoringChannel) < cap(monitor.monitoringChannel) {
-		monitor.monitoringChannel <- monitoringData
-	} else {
-		log.Warn("Skip sending monitoring data. Channel full.")
+	monitor.Lock()
+	defer monitor.Unlock()
+
+	if len(monitor.monitoringQueue) >= monitor.monitoringQueueSize {
+		monitor.monitoringQueue = monitor.monitoringQueue[1:]
+	}
+
+	monitor.monitoringQueue = append(monitor.monitoringQueue, monitoringData)
+}
+
+/***********************************************************************************************************************
+ * Interface
+ **********************************************************************************************************************/
+
+// CloudConnected indicates unit connected to cloud.
+func (monitor *MonitorController) CloudConnected() {
+	monitor.Lock()
+	defer monitor.Unlock()
+
+	monitor.isConnected = true
+}
+
+// CloudDisconnected indicates unit disconnected from cloud.
+func (monitor *MonitorController) CloudDisconnected() {
+	monitor.Lock()
+	defer monitor.Unlock()
+
+	monitor.isConnected = false
+}
+
+/***********************************************************************************************************************
+ * Private
+ **********************************************************************************************************************/
+
+func (monitor *MonitorController) processQueue(ctx context.Context) {
+	sendTicker := time.NewTicker(MinSendPeriod)
+
+	for {
+		select {
+		case <-sendTicker.C:
+			monitor.Lock()
+
+			if len(monitor.monitoringQueue) > 0 && monitor.isConnected {
+				var monitoringData cloudprotocol.MonitoringData
+
+				monitoringData, monitor.monitoringQueue = monitor.monitoringQueue[0], monitor.monitoringQueue[1:]
+
+				if err := monitor.monitoringSender.SendMonitoringData(
+					monitoringData); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+					log.Errorf("Can't send monitoring data: %v", err)
+				}
+			}
+
+			monitor.Unlock()
+
+		case <-ctx.Done():
+			return
+		}
 	}
 }
