@@ -25,9 +25,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -46,12 +48,14 @@ const (
 
 // Sender alerts sender to the cloud interface.
 type Sender interface {
-	SendAlerts(alerts cloudprotocol.Alerts) (err error)
+	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
+	UnsubscribeFromConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
+	SendAlerts(alerts cloudprotocol.Alerts) error
 }
 
 // Alerts instance.
 type Alerts struct {
-	sync.Mutex
+	sync.RWMutex
 	alertsChannel        chan cloudprotocol.AlertItem
 	alertsPackageChannel chan cloudprotocol.Alerts
 	currentAlerts        cloudprotocol.Alerts
@@ -61,6 +65,7 @@ type Alerts struct {
 	alertsSize           int
 	skippedAlerts        uint32
 	duplicatedAlerts     uint32
+	isConnected          bool
 }
 
 /***********************************************************************************************************************
@@ -82,6 +87,10 @@ func New(config config.Alerts, sender Sender) (instance *Alerts, err error) {
 
 	instance.senderCancelFunction = cancelFunction
 
+	if err = instance.sender.SubscribeForConnectionEvents(instance); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
 	go instance.processAlertChannels(ctx)
 
 	return instance, nil
@@ -90,6 +99,10 @@ func New(config config.Alerts, sender Sender) (instance *Alerts, err error) {
 // Close closes logging.
 func (instance *Alerts) Close() {
 	log.Debug("Close alerts")
+
+	if err := instance.sender.SubscribeForConnectionEvents(instance); err != nil {
+		log.Errorf("Can't unsubscribe from connection events: %v", err)
+	}
 
 	if instance.senderCancelFunction != nil {
 		instance.senderCancelFunction()
@@ -108,6 +121,26 @@ func (instance *Alerts) SendAlert(alert cloudprotocol.AlertItem) {
 		instance.skippedAlerts++
 		instance.Unlock()
 	}
+}
+
+/***********************************************************************************************************************
+ * Interface
+ **********************************************************************************************************************/
+
+// CloudConnected indicates unit connected to cloud.
+func (instance *Alerts) CloudConnected() {
+	instance.Lock()
+	defer instance.Unlock()
+
+	instance.isConnected = true
+}
+
+// CloudDisconnected indicates unit disconnected from cloud.
+func (instance *Alerts) CloudDisconnected() {
+	instance.Lock()
+	defer instance.Unlock()
+
+	instance.isConnected = false
 }
 
 /***********************************************************************************************************************
@@ -142,9 +175,13 @@ func (instance *Alerts) processAlertChannels(ctx context.Context) {
 				alertsChannel = instance.alertsChannel
 			}
 
-			if alertsPackageChannel == nil {
+			instance.RLock()
+
+			if alertsPackageChannel == nil && instance.isConnected {
 				alertsPackageChannel = instance.alertsPackageChannel
 			}
+
+			instance.RUnlock()
 
 		case <-ctx.Done():
 			sendTicker.Stop()

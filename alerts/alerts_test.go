@@ -30,6 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/alerts"
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -52,6 +53,7 @@ func init() {
  **********************************************************************************************************************/
 
 type testSender struct {
+	consumer      amqphandler.ConnectionEventsConsumer
 	alertsChannel chan cloudprotocol.Alerts
 }
 
@@ -80,6 +82,8 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 		t.Fatalf("Can't create alerts: %v", err)
 	}
 	defer alertsHandler.Close()
+
+	sender.consumer.CloudConnected()
 
 	expectedAlerts := cloudprotocol.Alerts{}
 
@@ -131,6 +135,8 @@ func TestAlertsDuplicationMessages(t *testing.T) {
 	}
 	defer alertsHandler.Close()
 
+	sender.consumer.CloudConnected()
+
 	expectedAlerts := cloudprotocol.Alerts{}
 
 	alertItem := cloudprotocol.AlertItem{
@@ -155,6 +161,77 @@ func TestAlertsDuplicationMessages(t *testing.T) {
 	}
 }
 
+func TestAlertsOfflineMessages(t *testing.T) {
+	const (
+		numOfflineMessages = 32
+		numExtraMessages   = 8
+	)
+
+	sender := newTestSender()
+
+	alertsHandler, err := alerts.New(config.Alerts{
+		SendPeriod:         aostypes.Duration{Duration: 100 * time.Millisecond},
+		MaxMessageSize:     256,
+		MaxOfflineMessages: numOfflineMessages,
+	},
+		sender)
+	if err != nil {
+		t.Fatalf("Can't create alerts: %v", err)
+	}
+	defer alertsHandler.Close()
+
+	expectedAlerts := cloudprotocol.Alerts{}
+
+	for i := 0; i < numOfflineMessages; i++ {
+		alertItem := cloudprotocol.AlertItem{
+			Timestamp: time.Now(),
+			Tag:       cloudprotocol.AlertTagSystemError,
+			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		}
+
+		expectedAlerts = append(expectedAlerts, alertItem)
+
+		alertsHandler.SendAlert(alertItem)
+	}
+
+	for i := 0; i < numExtraMessages; i++ {
+		alertItem := cloudprotocol.AlertItem{
+			Timestamp: time.Now(),
+			Tag:       cloudprotocol.AlertTagAosCore,
+			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		}
+
+		alertsHandler.SendAlert(alertItem)
+	}
+
+	// Wait all offline messages are processed: 100 msec for each message + 1 second guard
+	if _, err := sender.waitResult(
+		numOfflineMessages*100*time.Millisecond + 1*time.Second); !errors.Is(err, errTimeout) {
+		t.Error("Timeout error expected")
+	}
+
+	sender.consumer.CloudConnected()
+
+	receivedAlerts := cloudprotocol.Alerts{}
+
+	for i := 0; i < numOfflineMessages; i++ {
+		alerts, err := sender.waitResult(2 * time.Second)
+		if err != nil {
+			t.Fatalf("Wait alerts error: %v", err)
+		}
+
+		receivedAlerts = append(receivedAlerts, alerts...)
+	}
+
+	if !reflect.DeepEqual(receivedAlerts, expectedAlerts) {
+		t.Error("Incorrect alerts")
+	}
+
+	if _, err := sender.waitResult(1 * time.Second); !errors.Is(err, errTimeout) {
+		t.Error("Timeout error expected")
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
@@ -165,6 +242,16 @@ func newTestSender() (sender *testSender) {
 	}
 
 	return sender
+}
+
+func (sender *testSender) SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
+	sender.consumer = consumer
+
+	return nil
+}
+
+func (sender *testSender) UnsubscribeFromConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
+	return nil
 }
 
 func (sender *testSender) SendAlerts(alerts cloudprotocol.Alerts) (err error) {
