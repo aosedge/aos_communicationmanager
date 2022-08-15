@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	log "github.com/sirupsen/logrus"
@@ -63,8 +64,9 @@ func New(cfg *config.Config) (fileServer *FileServer, err error) {
 
 	if cfg.FileServerURL != "" {
 		fileServer.server = &http.Server{
-			Addr:    cfg.FileServerURL,
-			Handler: http.FileServer(http.Dir(cfg.Downloader.DecryptDir)),
+			Addr:              cfg.FileServerURL,
+			Handler:           http.FileServer(http.Dir(cfg.Downloader.DecryptDir)),
+			ReadHeaderTimeout: 5 * time.Second,
 		}
 
 		go fileServer.startFileStorage()
