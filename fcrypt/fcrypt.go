@@ -217,8 +217,6 @@ func (handler *CryptoHandler) GetTLSConfig() (cfg *tls.Config, err error) {
 		return nil
 	}
 
-	cfg.BuildNameToCertificate()
-
 	return cfg, nil
 }
 
