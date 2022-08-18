@@ -19,17 +19,20 @@ package image
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/cavaliercoder/grab"
+	"github.com/cavaliergopher/grab/v3"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/sha3"
 
@@ -43,6 +46,11 @@ import (
 
 const (
 	updateDownloadsTime = 10 * time.Second
+)
+
+const (
+	dirSymlinkSize  = 4 * 1024
+	contentTypeSize = 64
 )
 
 /***********************************************************************************************************************
@@ -218,6 +226,79 @@ func UntarGZArchive(ctx context.Context, source, destination string) (err error)
 			if err = untarItem(destination, header, contextReader); err != nil {
 				return aoserrors.Wrap(err)
 			}
+		}
+	}
+}
+
+// UnpackTarImage extracts tar image.
+func UnpackTarImage(source, destination string) error {
+	log.WithFields(log.Fields{"name": source, "destination": destination}).Debug("Unpack tar image")
+
+	if _, err := os.Stat(source); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if output, err := exec.Command("tar", "xf", source, "-C", destination).CombinedOutput(); err != nil {
+		log.Errorf("Failed to unpack archive: %s", string(output))
+
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+// GetUncompressedTarContentSize calculates tar content size.
+func GetUncompressedTarContentSize(path string) (size int64, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, aoserrors.Wrap(err)
+	}
+	defer file.Close()
+
+	bReader := bufio.NewReader(file)
+
+	testBytes, err := bReader.Peek(contentTypeSize)
+	if err != nil {
+		return 0, aoserrors.Wrap(err)
+	}
+
+	reader := io.Reader(bReader)
+
+	if strings.Contains(http.DetectContentType(testBytes), "x-gzip") {
+		gzipReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return 0, aoserrors.Wrap(err)
+		}
+		defer gzipReader.Close()
+
+		reader = gzipReader
+	}
+
+	tarReader := tar.NewReader(reader)
+
+	for {
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			return size, nil
+		}
+
+		if err != nil {
+			return 0, aoserrors.Wrap(err)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			size += dirSymlinkSize
+
+		case tar.TypeSymlink:
+			size += dirSymlinkSize
+
+		case tar.TypeReg:
+			size += header.Size
 		}
 	}
 }

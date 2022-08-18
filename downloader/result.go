@@ -22,10 +22,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_common/spaceallocator"
+	log "github.com/sirupsen/logrus"
 )
 
 /***********************************************************************************************************************
@@ -50,7 +50,7 @@ type Result interface {
 type downloadResult struct {
 	id string
 
-	ctx         context.Context
+	ctx         context.Context // nolint:containedctx
 	packageInfo cloudprotocol.DecryptDataStruct
 	chains      []cloudprotocol.CertificateChain
 	certs       []cloudprotocol.Certificate
@@ -60,6 +60,9 @@ type downloadResult struct {
 	decryptedFileName string
 	downloadFileName  string
 	interruptFileName string
+
+	downloadSpace spaceallocator.Space
+	decryptSpace  spaceallocator.Space
 }
 
 /***********************************************************************************************************************
@@ -92,7 +95,7 @@ func (result *downloadResult) storeInterruptReason(reason string) {
 	}
 }
 
-func (result *downloadResult) retreiveInterruptReason() (reason string) {
+func (result *downloadResult) retrieveInterruptReason() (reason string) {
 	data, err := ioutil.ReadFile(result.interruptFileName)
 	if err != nil {
 		return unknownInterruptReason

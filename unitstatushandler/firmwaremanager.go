@@ -20,6 +20,7 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -29,10 +30,11 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_communicationmanager/boardconfig"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 )
 
@@ -48,16 +50,16 @@ type firmwareStatusHandler interface {
 	download(ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
 		continueOnError bool, notifier statusNotifier,
 		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult)
-	updateComponentStatus(componentInfo cloudprotocol.ComponentInfo)
-	updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigInfo)
+	updateComponentStatus(componentInfo cloudprotocol.ComponentStatus)
+	updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigStatus)
 }
 
 type firmwareUpdate struct {
-	Schedule    cloudprotocol.ScheduleRule             `json:"schedule,omitempty"`
-	BoardConfig json.RawMessage                        `json:"boardConfig,omitempty"`
-	Components  []cloudprotocol.ComponentInfoFromCloud `json:"components,omitempty"`
-	CertChains  []cloudprotocol.CertificateChain       `json:"certChains,omitempty"`
-	Certs       []cloudprotocol.Certificate            `json:"certs,omitempty"`
+	Schedule    cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
+	BoardConfig json.RawMessage                  `json:"boardConfig,omitempty"`
+	Components  []cloudprotocol.ComponentInfo    `json:"components,omitempty"`
+	CertChains  []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
+	Certs       []cloudprotocol.Certificate      `json:"certs,omitempty"`
 }
 
 type firmwareManager struct {
@@ -74,13 +76,13 @@ type firmwareManager struct {
 	statusMutex   sync.RWMutex
 	pendingUpdate *firmwareUpdate
 
-	ComponentStatuses map[string]*cloudprotocol.ComponentInfo `json:"componentStatuses,omitempty"`
-	BoardConfigStatus cloudprotocol.BoardConfigInfo           `json:"boardConfigStatus,omitempty"`
-	CurrentUpdate     *firmwareUpdate                         `json:"currentUpdate,omitempty"`
-	DownloadResult    map[string]*downloadResult              `json:"downloadResult,omitempty"`
-	CurrentState      string                                  `json:"currentState,omitempty"`
-	UpdateErr         string                                  `json:"updateErr,omitempty"`
-	TTLDate           time.Time                               `json:"ttlDate,omitempty"`
+	ComponentStatuses map[string]*cloudprotocol.ComponentStatus `json:"componentStatuses,omitempty"`
+	BoardConfigStatus cloudprotocol.BoardConfigStatus           `json:"boardConfigStatus,omitempty"`
+	CurrentUpdate     *firmwareUpdate                           `json:"currentUpdate,omitempty"`
+	DownloadResult    map[string]*downloadResult                `json:"downloadResult,omitempty"`
+	CurrentState      string                                    `json:"currentState,omitempty"`
+	UpdateErr         string                                    `json:"updateErr,omitempty"`
+	TTLDate           time.Time                                 `json:"ttlDate,omitempty"`
 }
 
 /***********************************************************************************************************************
@@ -89,7 +91,8 @@ type firmwareManager struct {
 
 func newFirmwareManager(statusHandler firmwareStatusHandler,
 	firmwareUpdater FirmwareUpdater, boardConfigUpdater BoardConfigUpdater,
-	storage Storage, defaultTTL time.Duration) (manager *firmwareManager, err error) {
+	storage Storage, defaultTTL time.Duration,
+) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
 		statusChannel:      make(chan cmserver.UpdateFOTAStatus, 1),
 		statusHandler:      statusHandler,
@@ -149,14 +152,14 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 	}
 
 	for _, component := range manager.CurrentUpdate.Components {
-		status.Components = append(status.Components, cloudprotocol.ComponentInfo{
+		status.Components = append(status.Components, cloudprotocol.ComponentStatus{
 			ID: component.ID, AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
 		})
 	}
 
 	if len(manager.CurrentUpdate.BoardConfig) != 0 {
 		version, _ := manager.boardConfigUpdater.GetBoardConfigVersion(manager.CurrentUpdate.BoardConfig)
-		status.BoardConfig = &cloudprotocol.BoardConfigInfo{VendorVersion: version}
+		status.BoardConfig = &cloudprotocol.BoardConfigStatus{VendorVersion: version}
 	}
 
 	return status
@@ -176,7 +179,7 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	update := &firmwareUpdate{
 		Schedule:    desiredStatus.FOTASchedule,
 		BoardConfig: desiredStatus.BoardConfig,
-		Components:  make([]cloudprotocol.ComponentInfoFromCloud, 0),
+		Components:  make([]cloudprotocol.ComponentInfo, 0),
 		CertChains:  desiredStatus.CertificateChains,
 		Certs:       desiredStatus.Certificates,
 	}
@@ -228,7 +231,7 @@ func (manager *firmwareManager) startUpdate() (err error) {
 	return nil
 }
 
-func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.ComponentInfo, err error) {
+func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.ComponentStatus, err error) {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -261,7 +264,7 @@ func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.C
 	return status, nil
 }
 
-func (manager *firmwareManager) getBoardConfigStatuses() (status []cloudprotocol.BoardConfigInfo, err error) {
+func (manager *firmwareManager) getBoardConfigStatuses() (status []cloudprotocol.BoardConfigStatus, err error) {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -397,7 +400,7 @@ func (manager *firmwareManager) download(ctx context.Context) {
 
 	manager.statusMutex.Lock()
 
-	manager.ComponentStatuses = make(map[string]*cloudprotocol.ComponentInfo)
+	manager.ComponentStatuses = make(map[string]*cloudprotocol.ComponentStatus)
 	request := make(map[string]cloudprotocol.DecryptDataStruct)
 
 	for _, component := range manager.CurrentUpdate.Components {
@@ -407,7 +410,7 @@ func (manager *firmwareManager) download(ctx context.Context) {
 		}).Debug("Download component")
 
 		request[component.ID] = component.DecryptDataStruct
-		manager.ComponentStatuses[component.ID] = &cloudprotocol.ComponentInfo{
+		manager.ComponentStatuses[component.ID] = &cloudprotocol.ComponentStatus{
 			ID:            component.ID,
 			AosVersion:    component.AosVersion,
 			VendorVersion: component.VendorVersion,
@@ -428,11 +431,11 @@ func (manager *firmwareManager) download(ctx context.Context) {
 	downloadErr = getDownloadError(manager.DownloadResult)
 
 	for id, item := range manager.ComponentStatuses {
-		if item.Error != "" {
+		if item.ErrorInfo != nil {
 			log.WithFields(log.Fields{
 				"id":      item.ID,
 				"version": item.VendorVersion,
-			}).Errorf("Error downloading component: %s", item.Error)
+			}).Errorf("Error downloading component: %s", item.ErrorInfo.Message)
 
 			continue
 		}
@@ -565,12 +568,12 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 				log.WithFields(log.Fields{
 					"id":      status.ID,
 					"version": status.VendorVersion,
-				}).Errorf("Error updating component: %s", status.Error)
+				}).Errorf("Error updating component: %v", status.ErrorInfo)
 			}
 		}
 	}()
 
-	updateComponents := make([]cloudprotocol.ComponentInfoFromCloud, 0, len(manager.CurrentUpdate.Components))
+	updateComponents := make([]cloudprotocol.ComponentInfo, 0, len(manager.CurrentUpdate.Components))
 
 	for _, component := range manager.CurrentUpdate.Components {
 		log.WithFields(log.Fields{"id": component.ID, "version": component.VendorVersion}).Debug("Update component")
@@ -629,7 +632,10 @@ func (manager *firmwareManager) updateComponentStatusByID(id, status, componentE
 	}
 
 	info.Status = status
-	info.Error = componentErr
+
+	if componentErr != "" {
+		info.ErrorInfo = &cloudprotocol.ErrorInfo{Message: componentErr}
+	}
 
 	manager.statusHandler.updateComponentStatus(*info)
 }
@@ -674,6 +680,14 @@ func (manager *firmwareManager) updateBoardConfig(ctx context.Context) (boardCon
 	}()
 
 	if _, err := manager.boardConfigUpdater.CheckBoardConfig(manager.CurrentUpdate.BoardConfig); err != nil {
+		if errors.Is(err, boardconfig.ErrAlreadyInstalled) {
+			log.Error("Board config already installed")
+
+			manager.updateBoardConfigStatus(cloudprotocol.InstalledStatus, "")
+
+			return ""
+		}
+
 		return aoserrors.Wrap(err).Error()
 	}
 
@@ -689,7 +703,8 @@ func (manager *firmwareManager) updateBoardConfig(ctx context.Context) (boardCon
 }
 
 func (manager *firmwareManager) asyncUpdate(
-	updateComponents []cloudprotocol.ComponentInfoFromCloud) (channel <-chan string) {
+	updateComponents []cloudprotocol.ComponentInfo,
+) (channel <-chan string) {
 	finishChannel := make(chan string, 1)
 
 	go func() (errorStr string) {
@@ -704,10 +719,12 @@ func (manager *firmwareManager) asyncUpdate(
 			for _, item := range updateResult {
 				if item.ID == status.ID && item.VendorVersion == status.VendorVersion {
 					if errorStr == "" {
-						errorStr = item.Error
+						if item.ErrorInfo != nil {
+							errorStr = item.ErrorInfo.Message
+						}
 					}
 
-					manager.updateComponentStatusByID(id, item.Status, item.Error)
+					manager.updateComponentStatusByID(id, item.Status, errorStr)
 				}
 			}
 		}
@@ -723,7 +740,10 @@ func (manager *firmwareManager) updateBoardConfigStatus(status, errorStr string)
 	defer manager.statusMutex.Unlock()
 
 	manager.BoardConfigStatus.Status = status
-	manager.BoardConfigStatus.Error = errorStr
+
+	if errorStr != "" {
+		manager.BoardConfigStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: errorStr}
+	}
 
 	manager.statusHandler.updateBoardConfigStatus(manager.BoardConfigStatus)
 }

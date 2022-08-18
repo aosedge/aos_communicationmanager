@@ -27,9 +27,10 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
@@ -56,24 +57,23 @@ type TestSender struct {
 }
 
 type TestBoardConfigUpdater struct {
-	BoardConfigInfo cloudprotocol.BoardConfigInfo
-	UpdateVersion   string
-	UpdateError     error
+	BoardConfigStatus cloudprotocol.BoardConfigStatus
+	UpdateVersion     string
+	UpdateError       error
 }
 
 type TestFirmwareUpdater struct {
 	UpdateTime           time.Duration
-	InitComponentsInfo   []cloudprotocol.ComponentInfo
-	UpdateComponentsInfo []cloudprotocol.ComponentInfo
+	InitComponentsInfo   []cloudprotocol.ComponentStatus
+	UpdateComponentsInfo []cloudprotocol.ComponentStatus
 	UpdateError          error
 }
 
 type TestSoftwareUpdater struct {
-	UsersServices []cloudprotocol.ServiceInfo
-	UsersLayers   []cloudprotocol.LayerInfo
-	AllServices   []cloudprotocol.ServiceInfo
-	AllLayers     []cloudprotocol.LayerInfo
-	UpdateError   error
+	AllServices     []ServiceStatus
+	AllLayers       []LayerStatus
+	UpdateError     error
+	runInstanceChan chan []cloudprotocol.InstanceInfo
 }
 
 type TestDownloader struct {
@@ -85,7 +85,7 @@ type TestDownloader struct {
 }
 
 type TestResult struct {
-	ctx          context.Context
+	ctx          context.Context // nolint:containedctx
 	downloadTime time.Duration
 	fileName     string
 	err          error
@@ -150,7 +150,7 @@ func TestDownload(t *testing.T) {
 	testDownloader := NewTestDownloader()
 
 	statusHandler, err := New(&config.Config{},
-		NewTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{}), NewTestFirmwareUpdater(nil),
+		NewTestBoardConfigUpdater(cloudprotocol.BoardConfigStatus{}), NewTestFirmwareUpdater(nil),
 		NewTestSoftwareUpdater(nil, nil), testDownloader, NewTestStorage(), NewTestSender())
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -239,46 +239,46 @@ func TestFirmwareManager(t *testing.T) {
 		testID                  string
 		initState               *firmwareManager
 		initStatus              *cmserver.UpdateStatus
-		initComponentStatuses   []cloudprotocol.ComponentInfo
+		initComponentStatuses   []cloudprotocol.ComponentStatus
 		desiredStatus           *cloudprotocol.DecodedDesiredStatus
 		downloadTime            time.Duration
 		downloadResult          map[string]*downloadResult
 		updateTime              time.Duration
-		updateComponentStatuses []cloudprotocol.ComponentInfo
+		updateComponentStatuses []cloudprotocol.ComponentStatus
 		boardConfigError        error
 		triggerUpdate           bool
 		updateWaitStatuses      []cmserver.UpdateStatus
 	}
 
-	updateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	updateComponents := []cloudprotocol.ComponentInfo{
 		{
 			ID:                "comp1",
-			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "1.0"},
+			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "1.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 		},
 		{
 			ID:                "comp2",
-			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "2.0"},
+			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "2.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{2}},
 		},
 	}
 
-	otherUpdateComponents := []cloudprotocol.ComponentInfoFromCloud{
+	otherUpdateComponents := []cloudprotocol.ComponentInfo{
 		{
 			ID:                "comp3",
-			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "3.0"},
+			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "3.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 		},
 		{
 			ID:                "comp4",
-			VersionFromCloud:  cloudprotocol.VersionFromCloud{VendorVersion: "4.0"},
+			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "4.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 		},
 	}
 
 	updateTimeSlots := []cloudprotocol.TimeSlot{{
-		Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-		Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
+		Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+		Finish: aostypes.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
 	}}
 
 	updateTimetable := []cloudprotocol.TimetableEntry{
@@ -295,7 +295,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "success update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -304,7 +304,7 @@ func TestFirmwareManager(t *testing.T) {
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -318,7 +318,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "download error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -327,7 +327,7 @@ func TestFirmwareManager(t *testing.T) {
 				updateComponents[0].ID: {Error: "download error"},
 				updateComponents[1].ID: {},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -338,7 +338,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "update error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -347,9 +347,12 @@ func TestFirmwareManager(t *testing.T) {
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.ErrorStatus, Error: "update error"},
+				{
+					ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.ErrorStatus,
+					ErrorInfo: &cloudprotocol.ErrorInfo{Message: "update error"},
+				},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
@@ -365,7 +368,7 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -374,7 +377,7 @@ func TestFirmwareManager(t *testing.T) {
 				updateComponents[1].ID: {},
 			},
 			downloadTime: 1 * time.Second,
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -391,7 +394,7 @@ func TestFirmwareManager(t *testing.T) {
 					updateComponents[0].ID: {},
 					updateComponents[1].ID: {},
 				},
-				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					updateComponents[0].ID: {
 						ID:            updateComponents[0].ID,
 						VendorVersion: updateComponents[0].VendorVersion,
@@ -402,12 +405,12 @@ func TestFirmwareManager(t *testing.T) {
 					},
 				},
 			},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
 			downloadTime: 1 * time.Second,
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -422,7 +425,7 @@ func TestFirmwareManager(t *testing.T) {
 					updateComponents[0].ID: {},
 					updateComponents[1].ID: {},
 				},
-				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					updateComponents[0].ID: {
 						ID:            updateComponents[0].ID,
 						VendorVersion: updateComponents[0].VendorVersion,
@@ -433,11 +436,11 @@ func TestFirmwareManager(t *testing.T) {
 					},
 				},
 			},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -455,7 +458,7 @@ func TestFirmwareManager(t *testing.T) {
 					updateComponents[0].ID: {},
 					updateComponents[1].ID: {},
 				},
-				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					updateComponents[0].ID: {
 						ID:            updateComponents[0].ID,
 						VendorVersion: updateComponents[0].VendorVersion,
@@ -467,7 +470,7 @@ func TestFirmwareManager(t *testing.T) {
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -475,7 +478,7 @@ func TestFirmwareManager(t *testing.T) {
 				Components:   updateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -493,7 +496,7 @@ func TestFirmwareManager(t *testing.T) {
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
@@ -507,7 +510,7 @@ func TestFirmwareManager(t *testing.T) {
 				otherUpdateComponents[1].ID: {},
 			},
 			downloadTime: 1 * time.Second,
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp3", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp4", VendorVersion: "4.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -529,7 +532,7 @@ func TestFirmwareManager(t *testing.T) {
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
@@ -543,7 +546,7 @@ func TestFirmwareManager(t *testing.T) {
 				otherUpdateComponents[0].ID: {},
 				otherUpdateComponents[1].ID: {},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp3", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp4", VendorVersion: "4.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -564,7 +567,7 @@ func TestFirmwareManager(t *testing.T) {
 					updateComponents[0].ID: {},
 					updateComponents[1].ID: {},
 				},
-				ComponentStatuses: map[string]*cloudprotocol.ComponentInfo{
+				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					updateComponents[0].ID: {
 						ID:            updateComponents[0].ID,
 						VendorVersion: updateComponents[0].VendorVersion,
@@ -578,7 +581,7 @@ func TestFirmwareManager(t *testing.T) {
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Updating},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
@@ -591,7 +594,7 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			downloadTime: 1 * time.Second,
 			updateTime:   1 * time.Second,
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp3", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
@@ -628,7 +631,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "timetable update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -643,7 +646,7 @@ func TestFirmwareManager(t *testing.T) {
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
 			},
-			updateComponentStatuses: []cloudprotocol.ComponentInfo{
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -657,7 +660,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:     "update TTL",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			initComponentStatuses: []cloudprotocol.ComponentInfo{
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
@@ -681,7 +684,7 @@ func TestFirmwareManager(t *testing.T) {
 	}
 
 	firmwareUpdater := NewTestFirmwareUpdater(nil)
-	boardConfigUpdater := NewTestBoardConfigUpdater(cloudprotocol.BoardConfigInfo{})
+	boardConfigUpdater := NewTestBoardConfigUpdater(cloudprotocol.BoardConfigStatus{})
 	statusHandler := newTestStatusHandler()
 	testStorage := NewTestStorage()
 
@@ -766,33 +769,33 @@ func TestSoftwareManager(t *testing.T) {
 		updateWaitStatuses []cmserver.UpdateStatus
 	}
 
-	updateLayers := []cloudprotocol.LayerInfoFromCloud{
+	updateLayers := []cloudprotocol.LayerInfo{
 		{
-			ID:               "layer1",
-			Digest:           "digest1",
-			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+			ID:          "layer1",
+			Digest:      "digest1",
+			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 		},
 		{
-			ID:               "layer2",
-			Digest:           "digest2",
-			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+			ID:          "layer2",
+			Digest:      "digest2",
+			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
 		},
 	}
 
-	updateServices := []cloudprotocol.ServiceInfoFromCloud{
+	updateServices := []cloudprotocol.ServiceInfo{
 		{
-			ID:               "service1",
-			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 1},
+			ID:          "service1",
+			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
 		},
 		{
-			ID:               "service2",
-			VersionFromCloud: cloudprotocol.VersionFromCloud{AosVersion: 2},
+			ID:          "service2",
+			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
 		},
 	}
 
 	updateTimeSlots := []cloudprotocol.TimeSlot{{
-		Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-		Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
+		Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+		Finish: aostypes.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
 	}}
 
 	updateTimetable := []cloudprotocol.TimetableEntry{
@@ -900,7 +903,7 @@ func TestSoftwareManager(t *testing.T) {
 					updateLayers[0].Digest: {}, updateLayers[1].Digest: {},
 					updateServices[0].ID: {}, updateServices[1].ID: {},
 				},
-				LayerStatuses: map[string]*cloudprotocol.LayerInfo{
+				LayerStatuses: map[string]*cloudprotocol.LayerStatus{
 					updateLayers[0].Digest: {
 						ID:         updateLayers[0].ID,
 						Digest:     updateLayers[0].Digest,
@@ -914,7 +917,7 @@ func TestSoftwareManager(t *testing.T) {
 						Status:     cloudprotocol.InstallingStatus,
 					},
 				},
-				ServiceStatuses: map[string]*cloudprotocol.ServiceInfo{
+				ServiceStatuses: map[string]*cloudprotocol.ServiceStatus{
 					updateServices[0].ID: {
 						ID:         updateServices[0].ID,
 						AosVersion: updateServices[0].AosVersion,
@@ -1024,6 +1027,12 @@ func TestSoftwareManager(t *testing.T) {
 		}
 
 		for _, expectedStatus := range item.updateWaitStatuses {
+			if expectedStatus.State == cmserver.Updating {
+				if _, err := softwareUpdater.WaitForRunInstance(time.Second); err != nil {
+					t.Errorf("Wait run instances error: %v", err)
+				}
+			}
+
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
 				t.Errorf("Wait for update status error: %s", err)
 
@@ -1068,8 +1077,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1081,8 +1090,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1094,8 +1103,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1108,8 +1117,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1122,32 +1131,32 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1160,48 +1169,48 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 4, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 5, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  cloudprotocol.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: cloudprotocol.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1324,12 +1333,12 @@ func (sender *TestSender) WaitForStatus(timeout time.Duration) (status cloudprot
  * TestBoardConfigUpdater
  **********************************************************************************************************************/
 
-func NewTestBoardConfigUpdater(boardConfigInfo cloudprotocol.BoardConfigInfo) (updater *TestBoardConfigUpdater) {
-	return &TestBoardConfigUpdater{BoardConfigInfo: boardConfigInfo}
+func NewTestBoardConfigUpdater(boardConfigInfo cloudprotocol.BoardConfigStatus) (updater *TestBoardConfigUpdater) {
+	return &TestBoardConfigUpdater{BoardConfigStatus: boardConfigInfo}
 }
 
-func (updater *TestBoardConfigUpdater) GetStatus() (info cloudprotocol.BoardConfigInfo, err error) {
-	return updater.BoardConfigInfo, nil
+func (updater *TestBoardConfigUpdater) GetStatus() (info cloudprotocol.BoardConfigStatus, err error) {
+	return updater.BoardConfigStatus, nil
 }
 
 func (updater *TestBoardConfigUpdater) GetBoardConfigVersion(configJSON json.RawMessage) (version string, err error) {
@@ -1348,16 +1357,17 @@ func (updater *TestBoardConfigUpdater) UpdateBoardConfig(configJSON json.RawMess
  * TestFirmwareUpdater
  **********************************************************************************************************************/
 
-func NewTestFirmwareUpdater(componentsInfo []cloudprotocol.ComponentInfo) (updater *TestFirmwareUpdater) {
+func NewTestFirmwareUpdater(componentsInfo []cloudprotocol.ComponentStatus) (updater *TestFirmwareUpdater) {
 	return &TestFirmwareUpdater{InitComponentsInfo: componentsInfo}
 }
 
-func (updater *TestFirmwareUpdater) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
+func (updater *TestFirmwareUpdater) GetStatus() (info []cloudprotocol.ComponentStatus, err error) {
 	return updater.InitComponentsInfo, nil
 }
 
-func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.ComponentInfoFromCloud) (
-	componentsInfo []cloudprotocol.ComponentInfo, err error) {
+func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.ComponentInfo) (
+	componentsInfo []cloudprotocol.ComponentStatus, err error,
+) {
 	time.Sleep(updater.UpdateTime)
 	return updater.UpdateComponentsInfo, updater.UpdateError
 }
@@ -1366,32 +1376,58 @@ func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.
  * TestSoftwareUpdater
  **********************************************************************************************************************/
 
-func NewTestSoftwareUpdater(usersServices []cloudprotocol.ServiceInfo,
-	usersLayers []cloudprotocol.LayerInfo) (updater *TestSoftwareUpdater) {
-	return &TestSoftwareUpdater{UsersServices: usersServices, UsersLayers: usersLayers}
+func NewTestSoftwareUpdater(services []ServiceStatus, layers []LayerStatus) *TestSoftwareUpdater {
+	return &TestSoftwareUpdater{
+		AllServices: services, AllLayers: layers, runInstanceChan: make(chan []cloudprotocol.InstanceInfo, 1),
+	}
 }
 
-func (updater *TestSoftwareUpdater) GetUsersStatus(users []string) (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
-	return updater.UsersServices, updater.UsersLayers, nil
+func (updater *TestSoftwareUpdater) GetServicesStatus() ([]ServiceStatus, error) {
+	return updater.AllServices, nil
 }
 
-func (updater *TestSoftwareUpdater) GetAllStatus() (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
-	return updater.AllServices, updater.AllLayers, nil
+func (updater *TestSoftwareUpdater) GetLayersStatus() ([]LayerStatus, error) {
+	return updater.AllLayers, nil
 }
 
-func (updater *TestSoftwareUpdater) InstallService(users []string,
-	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
-	return "", updater.UpdateError
-}
-
-func (updater *TestSoftwareUpdater) RemoveService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
+func (updater *TestSoftwareUpdater) InstallService(serviceInfo cloudprotocol.ServiceInfo) error {
 	return updater.UpdateError
 }
 
-func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error) {
+func (updater *TestSoftwareUpdater) RestoreService(serviceID string) error {
+	return nil
+}
+
+func (updater *TestSoftwareUpdater) RemoveService(serviceID string) error {
 	return updater.UpdateError
+}
+
+func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo) error {
+	return updater.UpdateError
+}
+
+func (updater *TestSoftwareUpdater) RemoveLayer(digest string) error {
+	return nil
+}
+
+func (updater *TestSoftwareUpdater) RestoreLayer(digest string) error {
+	return nil
+}
+
+func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) error {
+	updater.runInstanceChan <- instances
+
+	return nil
+}
+
+func (updater *TestSoftwareUpdater) WaitForRunInstance(timeout time.Duration) ([]cloudprotocol.InstanceInfo, error) {
+	select {
+	case receivedRunInstances := <-updater.runInstanceChan:
+		return receivedRunInstances, nil
+
+	case <-time.After(timeout):
+		return nil, aoserrors.New("receive run instances timeout")
+	}
 }
 
 /***********************************************************************************************************************
@@ -1464,7 +1500,8 @@ func newTestStatusHandler() (statusHandler *testStatusHandler) {
 func (statusHandler *testStatusHandler) download(
 	ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
 	continueOnError bool, updateStatus statusNotifier,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult) {
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+) (result map[string]*downloadResult) {
 	for id := range request {
 		updateStatus(id, cloudprotocol.DownloadingStatus, "")
 	}
@@ -1499,40 +1536,39 @@ func (statusHandler *testStatusHandler) download(
 	}
 }
 
-func (statusHandler *testStatusHandler) updateComponentStatus(componentInfo cloudprotocol.ComponentInfo) {
+func (statusHandler *testStatusHandler) updateComponentStatus(componentInfo cloudprotocol.ComponentStatus) {
 	log.WithFields(log.Fields{
 		"id":      componentInfo.ID,
 		"version": componentInfo.VendorVersion,
 		"status":  componentInfo.Status,
-		"error":   componentInfo.Error,
+		"error":   componentInfo.ErrorInfo,
 	}).Debug("Update component status")
 }
 
-func (statusHandler *testStatusHandler) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigInfo) {
+func (statusHandler *testStatusHandler) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigStatus) {
 	log.WithFields(log.Fields{
 		"version": boardConfigInfo.VendorVersion,
 		"status":  boardConfigInfo.Status,
-		"error":   boardConfigInfo.Error,
+		"error":   boardConfigInfo.ErrorInfo,
 	}).Debug("Update board config status")
 }
 
-func (statusHandler *testStatusHandler) updateLayerStatus(layerInfo cloudprotocol.LayerInfo) {
+func (statusHandler *testStatusHandler) updateLayerStatus(layerInfo cloudprotocol.LayerStatus) {
 	log.WithFields(log.Fields{
 		"id":      layerInfo.ID,
 		"digest":  layerInfo.Digest,
 		"version": layerInfo.AosVersion,
 		"status":  layerInfo.Status,
-		"error":   layerInfo.Error,
+		"error":   layerInfo.ErrorInfo,
 	}).Debug("Update layer status")
 }
 
-func (statusHandler *testStatusHandler) updateServiceStatus(serviceInfo cloudprotocol.ServiceInfo) {
+func (statusHandler *testStatusHandler) updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus) {
 	log.WithFields(log.Fields{
-		"id":            serviceInfo.ID,
-		"version":       serviceInfo.AosVersion,
-		"stateChecksum": serviceInfo.StateChecksum,
-		"status":        serviceInfo.Status,
-		"error":         serviceInfo.Error,
+		"id":      serviceInfo.ID,
+		"version": serviceInfo.AosVersion,
+		"status":  serviceInfo.Status,
+		"error":   serviceInfo.ErrorInfo,
 	}).Debug("Update service status")
 }
 
@@ -1645,7 +1681,8 @@ func compareStatuses(expectedStatus, comparedStatus cmserver.UpdateStatus) (err 
 }
 
 func waitForFOTAUpdateStatus(
-	statusChannel <-chan cmserver.UpdateFOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+	statusChannel <-chan cmserver.UpdateFOTAStatus, expectedStatus cmserver.UpdateStatus,
+) (err error) {
 	select {
 	case status := <-statusChannel:
 		if err = compareStatuses(expectedStatus, status.UpdateStatus); err != nil {
@@ -1660,7 +1697,8 @@ func waitForFOTAUpdateStatus(
 }
 
 func waitForSOTAUpdateStatus(
-	statusChannel <-chan cmserver.UpdateSOTAStatus, expectedStatus cmserver.UpdateStatus) (err error) {
+	statusChannel <-chan cmserver.UpdateSOTAStatus, expectedStatus cmserver.UpdateStatus,
+) (err error) {
 	select {
 	case status := <-statusChannel:
 		if err = compareStatuses(expectedStatus, status.UpdateStatus); err != nil {

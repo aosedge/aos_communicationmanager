@@ -28,7 +28,7 @@ import (
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -50,7 +50,7 @@ type Controller struct {
 	stopChannel   chan bool
 
 	connections       []umConnection
-	currentComponents []cloudprotocol.ComponentInfo
+	currentComponents []cloudprotocol.ComponentStatus
 	fsm               *fsm.FSM
 	connectionMonitor allConnectionMonitor
 	operable          bool
@@ -181,7 +181,8 @@ const connectionTimeout = 300 * time.Second
 // New creates new update managers controller.
 func New(config *config.Config, storage storage, urlTranslator URLTranslator, certProvider CertificateProvider,
 	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (
-	umCtrl *Controller, err error) {
+	umCtrl *Controller, err error,
+) {
 	umCtrl = &Controller{
 		storage:           storage,
 		urlTranslator:     urlTranslator,
@@ -280,7 +281,7 @@ func (umCtrl *Controller) Close() {
 }
 
 // GetStatus returns list of system components information.
-func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err error) {
+func (umCtrl *Controller) GetStatus() ([]cloudprotocol.ComponentStatus, error) {
 	currentState := umCtrl.fsm.Current()
 	if currentState != stateInit {
 		return umCtrl.currentComponents, nil
@@ -293,7 +294,8 @@ func (umCtrl *Controller) GetStatus() (info []cloudprotocol.ComponentInfo, err e
 
 // UpdateComponents updates components.
 func (umCtrl *Controller) UpdateComponents(
-	components []cloudprotocol.ComponentInfoFromCloud) (status []cloudprotocol.ComponentInfo, err error) {
+	components []cloudprotocol.ComponentInfo,
+) ([]cloudprotocol.ComponentStatus, error) {
 	log.Debug("Update components")
 
 	currentState := umCtrl.fsm.Current()
@@ -319,7 +321,7 @@ func (umCtrl *Controller) UpdateComponents(
 				Sha256: component.Sha256, Sha512: component.Sha512, Size: component.Size,
 			}
 
-			if err = umCtrl.addComponentForUpdateToUm(componentInfo); err != nil {
+			if err := umCtrl.addComponentForUpdateToUm(componentInfo); err != nil {
 				return umCtrl.currentComponents, aoserrors.Wrap(err)
 			}
 
@@ -328,7 +330,7 @@ func (umCtrl *Controller) UpdateComponents(
 			umCtrl.updateComponentElement(componentStatus)
 		}
 
-		if err = umCtrl.storage.SetComponentsUpdateInfo(componentsUpdateInfo); err != nil {
+		if err := umCtrl.storage.SetComponentsUpdateInfo(componentsUpdateInfo); err != nil {
 			go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.Wrap(err))
 
 			return umCtrl.currentComponents, aoserrors.Wrap(err)
@@ -516,20 +518,28 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 
 			if curElement.Status != component.status {
 				umCtrl.currentComponents[i].Status = component.status
-				umCtrl.currentComponents[i].Error = component.err
+
+				if component.err != "" {
+					umCtrl.currentComponents[i].ErrorInfo = &cloudprotocol.ErrorInfo{Message: component.err}
+				}
 			}
 
 			return
 		}
 	}
 
-	umCtrl.currentComponents = append(umCtrl.currentComponents, cloudprotocol.ComponentInfo{
+	newComponentStatus := cloudprotocol.ComponentStatus{
 		ID:            component.id,
 		VendorVersion: component.vendorVersion,
 		AosVersion:    component.aosVersion,
 		Status:        component.status,
-		Error:         component.err,
-	})
+	}
+
+	if component.err != "" {
+		newComponentStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: component.err}
+	}
+
+	umCtrl.currentComponents = append(umCtrl.currentComponents, newComponentStatus)
 }
 
 func (umCtrl *Controller) cleanupCurrentComponentStatus() {

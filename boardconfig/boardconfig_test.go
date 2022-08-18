@@ -24,8 +24,9 @@ import (
 	"path"
 	"testing"
 
+	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/boardconfig"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 
 	log "github.com/sirupsen/logrus"
@@ -202,6 +203,15 @@ func TestUpdateBoardConfig(t *testing.T) {
 		t.Fatalf("Can't update board config: %s", err)
 	}
 
+	vendorVersion, err := boardConfig.GetBoardConfigVersion(json.RawMessage(newBoardConfig))
+	if err != nil {
+		t.Errorf("Get board config version error: %s", err)
+	}
+
+	if vendorVersion != "2.0.0" {
+		t.Errorf("Wrong board config version: %s", vendorVersion)
+	}
+
 	readBoardConfig, err := ioutil.ReadFile(path.Join(tmpDir, "aos_board.cfg"))
 	if err != nil {
 		t.Fatalf("Can't read board config file: %s", err)
@@ -216,10 +226,10 @@ func TestUpdateBoardConfig(t *testing.T) {
  * testClient
  **********************************************************************************************************************/
 
-func (client *testClient) CheckBoardConfig(boardConfig boardconfig.BoardConfig) (err error) {
+func (client *testClient) CheckBoardConfig(boardConfig aostypes.BoardConfig) (err error) {
 	return nil
 }
 
-func (client *testClient) SetBoardConfig(boardConfig boardconfig.BoardConfig) (err error) {
+func (client *testClient) SetBoardConfig(boardConfig aostypes.BoardConfig) (err error) {
 	return nil
 }

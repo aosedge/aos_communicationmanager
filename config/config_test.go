@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
+
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
@@ -58,26 +60,29 @@ const testConfigContent = `{
 		"downloadPartLimit": 57
 	},
 	"monitoring": {
-		"sendPeriod": "5m",
-		"pollPeriod": "1s",
-		"maxOfflineMessages": 25,
-		"ram": {
-			"minTimeout": "10s",
-			"minThreshold": 10,
-			"maxThreshold": 150
+		"monitorConfig": {
+			"sendPeriod": "5m",
+			"pollPeriod": "1s",
+			"ram": {
+				"minTimeout": "10s",
+				"minThreshold": 10,
+				"maxThreshold": 150
+			},
+			"outTraffic": {
+				"minTimeout": "20s",
+				"minThreshold": 10,
+				"maxThreshold": 150
+			}
 		},
-		"outTraffic": {
-			"minTimeout": "20s",
-			"minThreshold": 10,
-			"maxThreshold": 150
-		}
+		"maxOfflineMessages": 25
 	},
-	"alerts": {
-		"enableSystemAlerts": true,
+	"alerts": {		
 		"sendPeriod": "20s",
 		"maxMessageSize": 1024,
 		"maxOfflineMessages": 32,
-		"filter": ["(test)", "(regexp)"]
+		"journalAlerts": {
+			"filter": ["(test)", "(regexp)"]
+		}
 	},
 	"migration": {
 		"migrationPath" : "/usr/share/aos_communicationmanager/migration",
@@ -184,7 +189,7 @@ func TestGetIAMPublicServerURL(t *testing.T) {
 }
 
 func TestDurationMarshal(t *testing.T) {
-	d := config.Duration{Duration: 32 * time.Second}
+	d := aostypes.Duration{Duration: 32 * time.Second}
 
 	result, err := json.Marshal(d)
 	if err != nil {
@@ -197,28 +202,24 @@ func TestDurationMarshal(t *testing.T) {
 }
 
 func TestGetMonitoringConfig(t *testing.T) {
-	if testCfg.Monitoring.SendPeriod.Duration != 5*time.Minute {
-		t.Errorf("Wrong send period value: %s", testCfg.Monitoring.SendPeriod)
+	if testCfg.Monitoring.MonitorConfig.SendPeriod.Duration != 5*time.Minute {
+		t.Errorf("Wrong send period value: %s", testCfg.Monitoring.MonitorConfig.SendPeriod)
 	}
 
-	if testCfg.Monitoring.PollPeriod.Duration != 1*time.Second {
-		t.Errorf("Wrong poll period value: %s", testCfg.Monitoring.PollPeriod)
+	if testCfg.Monitoring.MonitorConfig.PollPeriod.Duration != 1*time.Second {
+		t.Errorf("Wrong poll period value: %s", testCfg.Monitoring.MonitorConfig.PollPeriod)
 	}
 
-	if testCfg.Monitoring.RAM.MinTimeout.Duration != 10*time.Second {
-		t.Errorf("Wrong value: %s", testCfg.Monitoring.RAM.MinTimeout)
+	if testCfg.Monitoring.MonitorConfig.RAM.MinTimeout.Duration != 10*time.Second {
+		t.Errorf("Wrong value: %s", testCfg.Monitoring.MonitorConfig.RAM.MinTimeout)
 	}
 
-	if testCfg.Monitoring.OutTraffic.MinTimeout.Duration != 20*time.Second {
-		t.Errorf("Wrong value: %s", testCfg.Monitoring.RAM.MinTimeout)
+	if testCfg.Monitoring.MonitorConfig.OutTraffic.MinTimeout.Duration != 20*time.Second {
+		t.Errorf("Wrong value: %s", testCfg.Monitoring.MonitorConfig.RAM.MinTimeout)
 	}
 }
 
 func TestGetAlertsConfig(t *testing.T) {
-	if !testCfg.Alerts.EnableSystemAlerts {
-		t.Errorf("Wrong enable system alerts value: %v", testCfg.Alerts.EnableSystemAlerts)
-	}
-
 	if testCfg.Alerts.SendPeriod.Duration != 20*time.Second {
 		t.Errorf("Wrong poll period value: %s", testCfg.Alerts.SendPeriod)
 	}
@@ -233,8 +234,8 @@ func TestGetAlertsConfig(t *testing.T) {
 
 	filter := []string{"(test)", "(regexp)"}
 
-	if !reflect.DeepEqual(testCfg.Alerts.Filter, filter) {
-		t.Errorf("Wrong filter value: %v", testCfg.Alerts.Filter)
+	if !reflect.DeepEqual(testCfg.Alerts.JournalAlerts.Filter, filter) {
+		t.Errorf("Wrong filter value: %v", testCfg.Alerts.JournalAlerts.Filter)
 	}
 }
 
@@ -244,7 +245,7 @@ func TestUMControllerConfig(t *testing.T) {
 	originalConfig := config.UMController{
 		ServerURL: "localhost:8091",
 		UMClients: []config.UMClientConfig{umClient},
-		UpdateTTL: config.Duration{100 * time.Hour},
+		UpdateTTL: aostypes.Duration{Duration: 100 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {
@@ -257,8 +258,8 @@ func TestDownloaderConfig(t *testing.T) {
 		DownloadDir:            "/path/to/download",
 		DecryptDir:             "/path/to/decrypt",
 		MaxConcurrentDownloads: 10,
-		RetryDelay:             config.Duration{10 * time.Second},
-		MaxRetryDelay:          config.Duration{30 * time.Second},
+		RetryDelay:             aostypes.Duration{Duration: 10 * time.Second},
+		MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Second},
 		DownloadPartLimit:      57,
 	}
 
@@ -273,7 +274,7 @@ func TestSMControllerConfig(t *testing.T) {
 			{SMID: "sm0", ServerURL: "localhost:8888", IsLocal: true},
 			{SMID: "sm1", ServerURL: "remotehost:8888"},
 		},
-		UpdateTTL: config.Duration{30 * time.Hour},
+		UpdateTTL: aostypes.Duration{Duration: 30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {

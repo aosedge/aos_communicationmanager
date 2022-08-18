@@ -30,11 +30,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/utils/contextreader"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
@@ -48,6 +51,13 @@ const (
 	onlineCertificate  = "online"
 	offlineCertificate = "offline"
 )
+
+/***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+// nolint:gochecknoglobals // use as const
+var issuerAltNameExtID = asn1.ObjectIdentifier{2, 5, 29, 18}
 
 /***********************************************************************************************************************
  * Types
@@ -70,8 +80,9 @@ type CryptoSessionKeyInfo struct {
 
 // CryptoHandler crypto handler.
 type CryptoHandler struct {
-	certProvider  CertificateProvider
-	cryptoContext *cryptutils.CryptoContext
+	certProvider        CertificateProvider
+	cryptoContext       *cryptutils.CryptoContext
+	serviceDiscoveryURL string
 }
 
 // SymmetricContextInterface interface for SymmetricCipherContext.
@@ -101,7 +112,7 @@ type SignContext struct {
 type SignContextInterface interface {
 	AddCertificate(fingerprint string, asn1Bytes []byte) (err error)
 	AddCertificateChain(name string, fingerprints []string) (err error)
-	VerifySign(ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error)
+	VerifySign(ctx context.Context, f *os.File, sign *cloudprotocol.Signs) (err error)
 }
 
 // CertificateProvider interface to get certificate.
@@ -125,29 +136,41 @@ type certificateChainInfo struct {
 
 // New create context for crypto operations.
 func New(
-	provider CertificateProvider, cryptocontext *cryptutils.CryptoContext) (handler *CryptoHandler, err error) {
-	handler = &CryptoHandler{certProvider: provider, cryptoContext: cryptocontext}
+	provider CertificateProvider, cryptocontext *cryptutils.CryptoContext, serviceDiscoveryURL string,
+) (handler *CryptoHandler, err error) {
+	handler = &CryptoHandler{
+		certProvider:        provider,
+		cryptoContext:       cryptocontext,
+		serviceDiscoveryURL: serviceDiscoveryURL,
+	}
 
 	return handler, nil
 }
 
-// GetOrganization returns online certificate origanizarion names.
-func (handler *CryptoHandler) GetOrganization() (names []string, err error) {
-	certURLStr, _, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
+// GetServiceDiscoveryURLs returns service discovery URLs.
+func (handler *CryptoHandler) GetServiceDiscoveryURLs() (serviceDiscoveryURLs []string) {
+	defer func() {
+		if len(serviceDiscoveryURLs) == 0 {
+			log.Warning("Service discovery URL can't be found in certificate and will be used from config")
+
+			serviceDiscoveryURLs = append(serviceDiscoveryURLs, handler.serviceDiscoveryURL)
+		}
+	}()
+
+	certs, err := handler.getOnlineCert()
+	if err != nil || len(certs) == 0 {
+		return nil
 	}
 
-	certs, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
+	if serviceDiscoveryURLs, err = handler.getServiceDiscoveryFromExtensions(certs[0]); err == nil {
+		return serviceDiscoveryURLs
 	}
 
-	if certs[0].Subject.Organization == nil {
-		return nil, aoserrors.New("online certificate does not have organizations")
+	if serviceDiscoveryURLs, err = handler.getServiceDiscoveryFromOrgName(certs[0]); err == nil {
+		return serviceDiscoveryURLs
 	}
 
-	return certs[0].Subject.Organization, nil
+	return nil
 }
 
 // GetCertSerial returns certificate serial number.
@@ -194,8 +217,6 @@ func (handler *CryptoHandler) GetTLSConfig() (cfg *tls.Config, err error) {
 		return nil
 	}
 
-	cfg.BuildNameToCertificate()
-
 	return cfg, nil
 }
 
@@ -229,7 +250,8 @@ func (handler *CryptoHandler) DecryptMetadata(input []byte) (output []byte, err 
 
 // ImportSessionKey function retrieves a symmetric key from crypto context.
 func (handler *CryptoHandler) ImportSessionKey(
-	keyInfo CryptoSessionKeyInfo) (symContext SymmetricContextInterface, err error) {
+	keyInfo CryptoSessionKeyInfo,
+) (symContext SymmetricContextInterface, err error) {
 	_, keyURLStr, err := handler.certProvider.GetCertificate(
 		offlineCertificate, keyInfo.ReceiverInfo.Issuer, keyInfo.ReceiverInfo.Serial)
 	if err != nil {
@@ -342,17 +364,18 @@ func (signContext *SignContext) AddCertificateChain(name string, fingerprints []
 
 // VerifySign verifies signature.
 func (signContext *SignContext) VerifySign(
-	ctx context.Context, f *os.File, chainName string, algName string, signValue []byte) (err error) {
+	ctx context.Context, f *os.File, sign *cloudprotocol.Signs,
+) (err error) {
 	if len(signContext.signCertificateChains) == 0 || len(signContext.signCertificates) == 0 {
 		return aoserrors.New("sign context not initialized (no certificates)")
 	}
 
-	signCert, chain, err := signContext.getSignCertificate(chainName)
+	signCert, chain, err := signContext.getSignCertificate(sign.ChainName)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	signAlgName, signHash, signPadding := decodeSignAlgNames(algName)
+	signAlgName, signHash, signPadding := decodeSignAlgNames(sign.Alg)
 
 	hashFunc, err := getHashFuncBySignHash(signHash)
 	if err != nil {
@@ -375,12 +398,12 @@ func (signContext *SignContext) VerifySign(
 
 		switch signPadding {
 		case "PKCS1v1_5":
-			if err = rsa.VerifyPKCS1v15(publicKey, hashFunc.HashFunc(), hash.Sum(nil), signValue); err != nil {
+			if err = rsa.VerifyPKCS1v15(publicKey, hashFunc.HashFunc(), hash.Sum(nil), sign.Value); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
 		case "PSS":
-			if err = rsa.VerifyPSS(publicKey, hashFunc.HashFunc(), hash.Sum(nil), signValue, nil); err != nil {
+			if err = rsa.VerifyPSS(publicKey, hashFunc.HashFunc(), hash.Sum(nil), sign.Value, nil); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
@@ -394,18 +417,18 @@ func (signContext *SignContext) VerifySign(
 
 	// Sign ok, verify certs
 
-	intermediatePool := x509.NewCertPool()
+	intermediatePool, err := signContext.getIntermediateCertPool(chain)
+	if err != nil {
+		return err
+	}
 
-	for _, certFingerprints := range chain.fingerprints[1:] {
-		crt := signContext.getCertificateByFingerprint(certFingerprints)
-		if crt == nil {
-			return aoserrors.Errorf("cannot find certificate in chain fingerprint: %s", certFingerprints)
-		}
-
-		intermediatePool.AddCert(crt)
+	signTime, err := time.Parse(time.RFC3339, sign.TrustedTimestamp)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
 	verifyOptions := x509.VerifyOptions{
+		CurrentTime:   signTime,
 		Intermediates: intermediatePool,
 		Roots:         signContext.handler.cryptoContext.GetCACertPool(),
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
@@ -427,7 +450,8 @@ func CreateSymmetricCipherContext() (symContext *SymmetricCipherContext) {
 
 // DecryptFile decrypts file.
 func (symmetricContext *SymmetricCipherContext) DecryptFile(
-	ctx context.Context, encryptedFile, clearFile *os.File) (err error) {
+	ctx context.Context, encryptedFile, clearFile *os.File,
+) (err error) {
 	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
@@ -497,6 +521,20 @@ func getRawCertificate(certs []*x509.Certificate) (rawCerts [][]byte) {
 	return rawCerts
 }
 
+func (handler *CryptoHandler) getOnlineCert() ([]*x509.Certificate, error) {
+	certURLStr, _, err := handler.certProvider.GetCertificate(onlineCertificate, nil, "")
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	certs, err := handler.cryptoContext.LoadCertificateByURL(certURLStr)
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return certs, nil
+}
+
 func (handler *CryptoHandler) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (key []byte, err error) {
 	issuer, err := asn1.Marshal(keyInfo.Rid.Issuer)
 	if err != nil {
@@ -526,6 +564,67 @@ func (handler *CryptoHandler) getKeyForEnvelope(keyInfo keyTransRecipientInfo) (
 	return key, nil
 }
 
+func (handler *CryptoHandler) getServiceDiscoveryFromExtensions(
+	cert *x509.Certificate,
+) (serviceDiscoveryURLs []string, err error) {
+	for _, ext := range cert.Extensions {
+		if !issuerAltNameExtID.Equal(ext.Id) {
+			continue
+		}
+
+		var aosNames asn1.RawValue
+
+		rest, err := asn1.Unmarshal(ext.Value, &aosNames)
+		if err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if len(rest) != 0 {
+			return nil, aoserrors.New("x509: trailing data after X.509 authority information")
+		}
+
+		rest = aosNames.Bytes
+
+		for len(rest) > 0 {
+			var aosName asn1.RawValue
+
+			rest, err = asn1.Unmarshal(rest, &aosName)
+			if err != nil {
+				return nil, aoserrors.Wrap(err)
+			}
+
+			if aosName.Tag == asn1.TagOID {
+				serviceDiscoveryURLs = append(serviceDiscoveryURLs, string(aosName.Bytes))
+			}
+		}
+	}
+
+	if len(serviceDiscoveryURLs) == 0 {
+		return nil, aoserrors.New("URL is not in the certificate")
+	}
+
+	return serviceDiscoveryURLs, nil
+}
+
+func (handler *CryptoHandler) getServiceDiscoveryFromOrgName(
+	cert *x509.Certificate,
+) (serviceDiscoveryURLs []string, err error) {
+	if cert.Subject.Organization == nil {
+		return nil, aoserrors.New("certificate does not have organizations")
+	}
+
+	if len(cert.Subject.Organization) == 0 || cert.Subject.Organization[0] == "" {
+		return nil, aoserrors.New("URLs are not in the certificate")
+	}
+
+	url := url.URL{
+		Scheme: "https",
+		Host:   cert.Subject.Organization[0],
+	}
+
+	return append(serviceDiscoveryURLs, url.String()+":9000"), nil
+}
+
 func (symmetricContext *SymmetricCipherContext) generateKeyAndIV(algString string) (err error) {
 	// Get alg name
 	algName, _, _ := decodeAlgNames(algString)
@@ -553,7 +652,8 @@ func (symmetricContext *SymmetricCipherContext) generateKeyAndIV(algString strin
 }
 
 func (symmetricContext *SymmetricCipherContext) encryptFile(
-	ctx context.Context, clearFile, encryptedFile *os.File) (err error) {
+	ctx context.Context, clearFile, encryptedFile *os.File,
+) (err error) {
 	if !symmetricContext.isReady() {
 		return aoserrors.New("symmetric key is not ready")
 	}
@@ -645,7 +745,8 @@ func (symmetricContext *SymmetricCipherContext) appendPadding(dataIn []byte, dat
 }
 
 func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, dataLen int) (
-	removedSize int, err error) {
+	removedSize int, err error,
+) {
 	switch strings.ToUpper(symmetricContext.paddingName) {
 	case "PKCS7PADDING", "PKCS7":
 		if removedSize, err = symmetricContext.removePkcs7Padding(dataIn, dataLen); err != nil {
@@ -660,7 +761,8 @@ func (symmetricContext *SymmetricCipherContext) getPaddingSize(dataIn []byte, da
 }
 
 func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte, dataLen int) (
-	fullSize int, err error) {
+	fullSize int, err error,
+) {
 	blockSize := symmetricContext.encrypter.BlockSize()
 	appendSize := blockSize - (dataLen % blockSize)
 
@@ -678,7 +780,8 @@ func (symmetricContext *SymmetricCipherContext) appendPkcs7Padding(dataIn []byte
 }
 
 func (symmetricContext *SymmetricCipherContext) removePkcs7Padding(dataIn []byte, dataLen int) (
-	removedSize int, err error) {
+	removedSize int, err error,
+) {
 	blockLen := symmetricContext.decrypter.BlockSize()
 
 	if dataLen%blockLen != 0 || dataLen == 0 {
@@ -759,7 +862,8 @@ func (signContext *SignContext) getCertificateByFingerprint(fingerprint string) 
 }
 
 func (signContext *SignContext) getSignCertificate(
-	chainName string) (signCert *x509.Certificate, chain certificateChainInfo, err error) {
+	chainName string,
+) (signCert *x509.Certificate, chain certificateChainInfo, err error) {
 	var signCertFingerprint string
 
 	// Find chain
@@ -783,6 +887,21 @@ func (signContext *SignContext) getSignCertificate(
 	}
 
 	return signCert, chain, nil
+}
+
+func (signContext *SignContext) getIntermediateCertPool(chain certificateChainInfo) (*x509.CertPool, error) {
+	intermediatePool := x509.NewCertPool()
+
+	for _, certFingerprints := range chain.fingerprints[1:] {
+		crt := signContext.getCertificateByFingerprint(certFingerprints)
+		if crt == nil {
+			return nil, aoserrors.Errorf("cannot find certificate in chain fingerprint: %v", certFingerprints)
+		}
+
+		intermediatePool.AddCert(crt)
+	}
+
+	return intermediatePool, nil
 }
 
 func getHashFuncBySignHash(hash string) (hashFunc crypto.Hash, err error) {

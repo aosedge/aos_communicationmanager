@@ -24,14 +24,16 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/aoscloud/aos_communicationmanager/boardconfig"
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
 )
 
 /***********************************************************************************************************************
@@ -39,6 +41,8 @@ import (
  **********************************************************************************************************************/
 
 const connectClientTimeout = 1 * time.Minute
+
+const statusChanSize = 10
 
 /***********************************************************************************************************************
  * Types
@@ -48,15 +52,16 @@ const connectClientTimeout = 1 * time.Minute
 type Controller struct {
 	sync.Mutex
 
-	messageSender    MessageSender
-	alertSender      AlertSender
-	monitoringSender MonitoringSender
-	urlTranslator    URLTranslator
-	clientsWG        sync.WaitGroup
-	readyWG          sync.WaitGroup
-	clients          map[string]*smClient
-	context          context.Context // nolint:containedctx
-	cancelFunction   context.CancelFunc
+	messageSender             MessageSender
+	alertSender               AlertSender
+	monitoringSender          MonitoringSender
+	urlTranslator             URLTranslator
+	clientsWG                 sync.WaitGroup
+	readyWG                   sync.WaitGroup
+	updateInstancesStatusChan chan []cloudprotocol.InstanceStatus
+	runInstancesStatusChan    chan unitstatushandler.RunInstancesStatus
+	clients                   map[string]*smClient
+	cancelFunction            context.CancelFunc
 }
 
 // URLTranslator translates URL from local to remote if required.
@@ -66,20 +71,20 @@ type URLTranslator interface {
 
 // AlertSender sends alert.
 type AlertSender interface {
-	SendAlert(alert cloudprotocol.AlertItem) (err error)
+	SendAlert(alert cloudprotocol.AlertItem)
 }
 
 // MonitoringSender sends monitoring data.
 type MonitoringSender interface {
-	SendMonitoringData(monitoringData cloudprotocol.MonitoringData) (err error)
+	SendMonitoringData(monitoringData cloudprotocol.MonitoringData)
 }
 
 // MessageSender sends messages to the cloud.
 type MessageSender interface {
-	SendServiceNewState(correlationID, serviceID, state, checksum string) (err error)
-	SendServiceStateRequest(serviceID string, defaultState bool) (err error)
-	SendOverrideEnvVarsStatus(envs []cloudprotocol.EnvVarInfoStatus) (err error)
-	SendLog(serviceLog cloudprotocol.PushLog) (err error)
+	SendInstanceNewState(newState cloudprotocol.NewState) error
+	SendInstanceStateRequest(request cloudprotocol.StateRequest) error
+	SendOverrideEnvVarsStatus(envs cloudprotocol.OverrideEnvVarsStatus) error
+	SendLog(serviceLog cloudprotocol.PushLog) error
 }
 
 // CertificateProvider certificate and key provider interface.
@@ -94,19 +99,23 @@ type CertificateProvider interface {
 // New creates new SM controller.
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
-	urlTranslator URLTranslator, certProvider CertificateProvider,
-	cryptcoxontext *cryptutils.CryptoContext, insecure bool) (controller *Controller, err error) {
+	urlTranslator URLTranslator, certProvider CertificateProvider, cryptcoxontext *cryptutils.CryptoContext,
+	insecureConn bool,
+) (controller *Controller, err error) {
 	log.Debug("Create SM controller")
 
 	controller = &Controller{
-		messageSender:    messageSender,
-		alertSender:      alertSender,
-		monitoringSender: monitoringSender,
-		urlTranslator:    urlTranslator,
-		clients:          make(map[string]*smClient),
+		messageSender:             messageSender,
+		alertSender:               alertSender,
+		monitoringSender:          monitoringSender,
+		urlTranslator:             urlTranslator,
+		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
+		runInstancesStatusChan:    make(chan unitstatushandler.RunInstancesStatus, statusChanSize),
+		clients:                   make(map[string]*smClient),
 	}
 
-	controller.context, controller.cancelFunction = context.WithCancel(context.Background())
+	ctx, cancelFunction := context.WithCancel(context.Background())
+	controller.cancelFunction = cancelFunction
 
 	defer func() {
 		if err != nil {
@@ -117,8 +126,8 @@ func New(
 
 	var secureOpt grpc.DialOption
 
-	if insecure {
-		secureOpt = grpc.WithInsecure()
+	if insecureConn {
+		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
 	} else {
 		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
 		if err != nil {
@@ -136,7 +145,7 @@ func New(
 	for _, smConfig := range cfg.SMController.SMList {
 		controller.readyWG.Add(1)
 
-		go controller.connectClient(smConfig, secureOpt)
+		go controller.connectClient(ctx, smConfig, secureOpt)
 	}
 
 	return controller, nil
@@ -159,69 +168,53 @@ func (controller *Controller) Close() (err error) {
 	return nil
 }
 
-// GetUsersStatus returns SM users status.
-func (controller *Controller) GetUsersStatus(users []string) (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+// GetServicesStatus returns SM all existing services status.
+func (controller *Controller) GetServicesStatus() (servicesStatus []unitstatushandler.ServiceStatus, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	for _, client := range clients {
-		clientServices, clientLayers, err := client.getUsersStatus(users)
+		clientServices, err := client.getServicesStatus()
 		if err != nil {
-			return nil, nil, aoserrors.Wrap(err)
+			return nil, aoserrors.Wrap(err)
 		}
 
-		servicesInfo = append(servicesInfo, clientServices...)
-		layersInfo = append(layersInfo, clientLayers...)
+		servicesStatus = append(servicesStatus, clientServices...)
 	}
 
-	return servicesInfo, layersInfo, nil
+	return servicesStatus, nil
 }
 
-// GetAllStatus returns SM all existing layers and services status.
-func (controller *Controller) GetAllStatus() (
-	servicesInfo []cloudprotocol.ServiceInfo, layersInfo []cloudprotocol.LayerInfo, err error) {
+// GetUsersStatus returns SM users status.
+func (controller *Controller) GetLayersStatus() (layersStatus []unitstatushandler.LayerStatus, err error) {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	for _, client := range clients {
-		clientServices, clientLayers, err := client.getAllStatus()
+		clientLayers, err := client.getLayersStatus()
 		if err != nil {
-			return nil, nil, aoserrors.Wrap(err)
+			return nil, aoserrors.Wrap(err)
 		}
 
-		servicesInfo = append(servicesInfo, clientServices...)
-		layersInfo = append(layersInfo, clientLayers...)
+		layersStatus = append(layersStatus, clientLayers...)
 	}
 
-	return servicesInfo, layersInfo, nil
+	return layersStatus, nil
 }
 
 // CheckBoardConfig checks board config.
-func (controller *Controller) CheckBoardConfig(boardConfig boardconfig.BoardConfig) (err error) {
+func (controller *Controller) CheckBoardConfig(boardConfig aostypes.BoardConfig) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	// we do not support multiple SM right now, check the same config for all SM's
 
-	clientBoardConfig := clientBoardConfig{
-		FormatVersion: boardConfig.FormatVersion,
-		VendorVersion: boardConfig.VendorVersion,
-		Devices:       boardConfig.Devices,
-		Resources:     boardConfig.Resources,
-	}
-
 	for _, client := range clients {
-		vendorVersion, err := client.checkBoardConfig(clientBoardConfig)
-		if err != nil {
+		if err := client.checkBoardConfig(boardConfig); err != nil {
 			return aoserrors.Wrap(err)
-		}
-
-		if vendorVersion != boardConfig.VendorVersion {
-			return aoserrors.New("wrong vendor version")
 		}
 	}
 
@@ -229,19 +222,12 @@ func (controller *Controller) CheckBoardConfig(boardConfig boardconfig.BoardConf
 }
 
 // SetBoardConfig sets board config.
-func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig) (err error) {
+func (controller *Controller) SetBoardConfig(boardConfig aostypes.BoardConfig) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	// we do not support multiple SM right now, set the same config for all SM's
-
-	clientBoardConfig := clientBoardConfig{
-		FormatVersion: boardConfig.FormatVersion,
-		VendorVersion: boardConfig.VendorVersion,
-		Devices:       boardConfig.Devices,
-		Resources:     boardConfig.Resources,
-	}
 
 	// Check board config version and set if it is different
 	for _, client := range clients {
@@ -250,11 +236,28 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 			return aoserrors.Wrap(err)
 		}
 
-		if currentVendorVersion == clientBoardConfig.VendorVersion {
+		if currentVendorVersion == boardConfig.VendorVersion {
 			continue
 		}
 
-		if err = client.setBoardConfig(clientBoardConfig); err != nil {
+		if err = client.setBoardConfig(boardConfig); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// RunInstances runs desired services instances.
+func (controller *Controller) RunInstances(instances []cloudprotocol.InstanceInfo) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, ran same instances for all SM's
+
+	for _, client := range clients {
+		if err := client.runInstances(instances); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -263,42 +266,60 @@ func (controller *Controller) SetBoardConfig(boardConfig boardconfig.BoardConfig
 }
 
 // InstallService requests to install servie.
-func (controller *Controller) InstallService(users []string,
-	serviceInfo cloudprotocol.ServiceInfoFromCloud) (stateChecksum string, err error) {
+func (controller *Controller) InstallService(serviceInfo cloudprotocol.ServiceInfo) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
 	if len(serviceInfo.URLs) == 0 {
-		return "", aoserrors.New("no service URL")
+		return aoserrors.New("no service URL")
 	}
+
+	var err error
 
 	// we do not support multiple SM right now, install same service for all SM's
 
 	for _, client := range clients {
 		if serviceInfo.URLs[0], err = controller.urlTranslator.TranslateURL(
 			client.cfg.IsLocal, serviceInfo.URLs[0]); err != nil {
-			return "", aoserrors.Wrap(err)
+			return aoserrors.Wrap(err)
 		}
 
-		if stateChecksum, err = client.installService(users, serviceInfo); err != nil {
-			return "", aoserrors.Wrap(err)
+		if err = client.installService(serviceInfo); err != nil {
+			return aoserrors.Wrap(err)
 		}
 	}
 
-	return stateChecksum, nil
+	return nil
 }
 
-// RemoveService remove service request.
-func (controller *Controller) RemoveService(users []string, serviceInfo cloudprotocol.ServiceInfo) (err error) {
+// RestoreService restores service.
+func (controller *Controller) RestoreService(serviceID string) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
 
-	// we do not support multiple SM right now, remove service for all SM's
+	// we do not support multiple SM right now, restore same service for all SM's
 
 	for _, client := range clients {
-		if err = client.removeService(users, serviceInfo); err != nil {
+		if err := client.restoreService(serviceID); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// RemoveService requests to install servie.
+func (controller *Controller) RemoveService(serviceID string) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, remove same service for all SM's
+
+	for _, client := range clients {
+		if err := client.removeService(serviceID); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -307,7 +328,7 @@ func (controller *Controller) RemoveService(users []string, serviceInfo cloudpro
 }
 
 // InstallLayer install layer request.
-func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFromCloud) (err error) {
+func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfo) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -315,6 +336,8 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFrom
 	if len(layerInfo.URLs) == 0 {
 		return aoserrors.New("no layer URL")
 	}
+
+	var err error
 
 	// we do not support multiple SM right now, install same layer for all SM's
 
@@ -332,9 +355,42 @@ func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfoFrom
 	return nil
 }
 
-// ServiceStateAcceptance handles service state acceptance.
-func (controller *Controller) ServiceStateAcceptance(
-	correlationID string, stateAcceptance cloudprotocol.StateAcceptance) (err error) {
+// RemoveLayer remove layer request.
+func (controller *Controller) RemoveLayer(digest string) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, remove same layer for all SM's
+
+	for _, client := range clients {
+		if err := client.removeLayer(digest); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// RestoreLayer restore layer request.
+func (controller *Controller) RestoreLayer(digest string) error {
+	controller.waitAndLock()
+	clients := controller.clients
+	controller.Unlock()
+
+	// we do not support multiple SM right now, restore same layer for all SM's
+
+	for _, client := range clients {
+		if err := client.restoreLayer(digest); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// InstanceStateAcceptance handles instance state acceptance.
+func (controller *Controller) InstanceStateAcceptance(stateAcceptance cloudprotocol.StateAcceptance) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -342,7 +398,7 @@ func (controller *Controller) ServiceStateAcceptance(
 	// we do not support multiple SM right now, send service state acceptance for all SM's
 
 	for _, client := range clients {
-		if err = client.serviceStateAcceptance(correlationID, stateAcceptance); err != nil {
+		if err := client.instanceStateAcceptance(stateAcceptance); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -350,8 +406,8 @@ func (controller *Controller) ServiceStateAcceptance(
 	return nil
 }
 
-// SetServiceState sets service state.
-func (controller *Controller) SetServiceState(users []string, state cloudprotocol.UpdateState) (err error) {
+// SetServiceState sets instance state.
+func (controller *Controller) SetInstanceState(state cloudprotocol.UpdateState) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -359,7 +415,7 @@ func (controller *Controller) SetServiceState(users []string, state cloudprotoco
 	// we do not support multiple SM right now, set service state for all SM's
 
 	for _, client := range clients {
-		if err = client.setServiceState(users, state); err != nil {
+		if err := client.setInstanceState(state); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -367,8 +423,8 @@ func (controller *Controller) SetServiceState(users []string, state cloudprotoco
 	return nil
 }
 
-// OverrideEnvVars overrides service env vars.
-func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverrideEnvVars) (err error) {
+// OverrideEnvVars overrides instance env vars.
+func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverrideEnvVars) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -376,7 +432,7 @@ func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverr
 	// we do not support multiple SM right now, override service env vars for all SM's
 
 	for _, client := range clients {
-		if err = client.overrideEnvVars(envVars); err != nil {
+		if err := client.overrideEnvVars(envVars); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -385,7 +441,7 @@ func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverr
 }
 
 // GetSystemLog requests system log from SM.
-func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSystemLog) (err error) {
+func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSystemLog) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -393,7 +449,7 @@ func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSyste
 	// we do not support multiple SM right now, get system log from all SM's
 
 	for _, client := range clients {
-		if err = client.GetSystemLog(logRequest); err != nil {
+		if err := client.getSystemLog(logRequest); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -401,8 +457,8 @@ func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSyste
 	return nil
 }
 
-// GetServiceLog requests service log from SM.
-func (controller *Controller) GetServiceLog(logRequest cloudprotocol.RequestServiceLog) (err error) {
+// GetInstanceLog requests service instance log from SM.
+func (controller *Controller) GetInstanceLog(logRequest cloudprotocol.RequestServiceLog) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -410,7 +466,7 @@ func (controller *Controller) GetServiceLog(logRequest cloudprotocol.RequestServ
 	// we do not support multiple SM right now, get service log from all SM's
 
 	for _, client := range clients {
-		if err = client.GetServiceLog(logRequest); err != nil {
+		if err := client.getInstanceLog(logRequest); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -418,8 +474,8 @@ func (controller *Controller) GetServiceLog(logRequest cloudprotocol.RequestServ
 	return nil
 }
 
-// GetServiceCrashLog requests service crash log from SM.
-func (controller *Controller) GetServiceCrashLog(logRequest cloudprotocol.RequestServiceCrashLog) (err error) {
+// GetInstanceCrashLog requests service instance crash log from SM.
+func (controller *Controller) GetInstanceCrashLog(logRequest cloudprotocol.RequestServiceCrashLog) error {
 	controller.waitAndLock()
 	clients := controller.clients
 	controller.Unlock()
@@ -427,12 +483,22 @@ func (controller *Controller) GetServiceCrashLog(logRequest cloudprotocol.Reques
 	// we do not support multiple SM right now, get service crash log from all SM's
 
 	for _, client := range clients {
-		if err = client.GetServiceCrashLog(logRequest); err != nil {
+		if err := client.getInstanceCrashLog(logRequest); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
 
 	return nil
+}
+
+// GetUpdateInstancesStatusChannel returns channel with update instances status.
+func (controller *Controller) GetUpdateInstancesStatusChannel() <-chan []cloudprotocol.InstanceStatus {
+	return controller.updateInstancesStatusChan
+}
+
+// GetRunInstancesStatusChannel returns channel with run instances status.
+func (controller *Controller) GetRunInstancesStatusChannel() <-chan unitstatushandler.RunInstancesStatus {
+	return controller.runInstancesStatusChan
 }
 
 /***********************************************************************************************************************
@@ -444,7 +510,7 @@ func (controller *Controller) waitAndLock() {
 	controller.Lock()
 }
 
-func (controller *Controller) connectClient(smConfig config.SMConfig, secureOpt grpc.DialOption) {
+func (controller *Controller) connectClient(ctx context.Context, smConfig config.SMConfig, secureOpt grpc.DialOption) {
 	defer controller.readyWG.Done()
 
 	connectChannel := make(chan struct{}, 1)
@@ -454,8 +520,8 @@ func (controller *Controller) connectClient(smConfig config.SMConfig, secureOpt 
 	go func() {
 		defer controller.clientsWG.Done()
 
-		client, err := newSMClient(controller.context, smConfig,
-			controller.messageSender, controller.alertSender, controller.monitoringSender, secureOpt)
+		client, err := newSMClient(ctx, smConfig, controller.messageSender, controller.alertSender,
+			controller.monitoringSender, controller.updateInstancesStatusChan, controller.runInstancesStatusChan, secureOpt)
 
 		connectChannel <- struct{}{}
 

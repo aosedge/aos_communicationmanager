@@ -24,27 +24,28 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/aoscloud/aos_communicationmanager/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Consts
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 const (
 	serverURL = "localhost:8094"
 )
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Types
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 type testClient struct {
 	connection *grpc.ClientConn
@@ -54,11 +55,13 @@ type testClient struct {
 type testUpdateHandler struct {
 	fotaChannel chan cmserver.UpdateFOTAStatus
 	sotaChannel chan cmserver.UpdateSOTAStatus
+	startFOTA   bool
+	startSOTA   bool
 }
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Init
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 func init() {
 	log.SetFormatter(&log.TextFormatter{
@@ -70,13 +73,9 @@ func init() {
 	log.SetOutput(os.Stdout)
 }
 
-/*******************************************************************************
- * Main
- ******************************************************************************/
-
-/*******************************************************************************
+/***********************************************************************************************************************
  * Tests
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 func TestConnection(t *testing.T) {
 	cmConfig := config.Config{
@@ -127,8 +126,8 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusFotaNotification := cmserver.UpdateFOTAStatus{
-		Components:   []cloudprotocol.ComponentInfo{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
-		BoardConfig:  &cloudprotocol.BoardConfigInfo{VendorVersion: "bc_version"},
+		Components:   []cloudprotocol.ComponentStatus{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
+		BoardConfig:  &cloudprotocol.BoardConfigStatus{VendorVersion: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
 
@@ -173,8 +172,10 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusNotification := cmserver.UpdateSOTAStatus{
-		InstallServices: []cloudprotocol.ServiceInfo{{ID: "s1", AosVersion: 42}},
-		InstallLayers:   []cloudprotocol.LayerInfo{{ID: "l1", Digest: "someSha", AosVersion: 42}},
+		InstallServices: []cloudprotocol.ServiceStatus{{ID: "s1", AosVersion: 42}},
+		RemoveServices:  []cloudprotocol.ServiceStatus{{ID: "s2", AosVersion: 42}},
+		InstallLayers:   []cloudprotocol.LayerStatus{{ID: "l1", Digest: "someSha", AosVersion: 42}},
+		RemoveLayers:    []cloudprotocol.LayerStatus{{ID: "l2", Digest: "someSha", AosVersion: 42}},
 		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
 	}
 
@@ -226,12 +227,30 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect layer aos version")
 	}
 
+	if _, err := client.pbclient.StartFOTAUpdate(ctx, &emptypb.Empty{}); err != nil {
+		t.Fatalf("Can't start FOTA update: %v", err)
+	}
+
+	if !unitStatusHandler.startFOTA {
+		t.Error("FOTA update should be started")
+	}
+
+	if _, err := client.pbclient.StartSOTAUpdate(ctx, &emptypb.Empty{}); err != nil {
+		t.Fatalf("Can't start SOTA update: %v", err)
+	}
+
+	if !unitStatusHandler.startSOTA {
+		t.Error("SOTA update should be started")
+	}
+
 	client.close()
+
+	time.Sleep(time.Second)
 }
 
-/*******************************************************************************
+/***********************************************************************************************************************
  * Private
- ******************************************************************************/
+ **********************************************************************************************************************/
 
 func newTestClient(url string) (client *testClient, err error) {
 	client = &testClient{}
@@ -239,7 +258,8 @@ func newTestClient(url string) (client *testClient, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if client.connection, err = grpc.DialContext(ctx, url, grpc.WithInsecure(), grpc.WithBlock()); err != nil {
+	if client.connection, err = grpc.DialContext(
+		ctx, url, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock()); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -275,9 +295,13 @@ func (handler *testUpdateHandler) GetSOTAStatus() (status cmserver.UpdateSOTASta
 }
 
 func (handler *testUpdateHandler) StartFOTAUpdate() (err error) {
+	handler.startFOTA = true
+
 	return nil
 }
 
 func (handler *testUpdateHandler) StartSOTAUpdate() (err error) {
+	handler.startSOTA = true
+
 	return nil
 }
