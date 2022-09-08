@@ -486,7 +486,7 @@ func (handler *AmqpHandler) runSender(amqpChannel *amqp.Channel, params cloudpro
 
 		case message := <-handler.pendingChannel:
 			if err := handler.sendMessage(message, amqpChannel, params); err != nil {
-				log.Errorf("Can't send message message: %v", err)
+				log.Warnf("Can't send message: %v", err)
 
 				sendChannel = handler.sendChannel
 
