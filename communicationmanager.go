@@ -394,7 +394,7 @@ func (cm *communicationManager) handleMessages(ctx context.Context) {
 		select {
 		case message := <-cm.amqp.MessageChannel:
 			if err, ok := message.(error); ok {
-				log.Errorf("AMQP error: %s", err)
+				log.Warnf("AMQP error: %s", err)
 				return
 			}
 
