@@ -633,6 +633,14 @@ func (manager *softwareManager) readyToUpdate() {
 func (manager *softwareManager) update(ctx context.Context) {
 	var updateErr string
 
+	if manager.LayerStatuses == nil {
+		manager.LayerStatuses = make(map[string]*cloudprotocol.LayerStatus)
+	}
+
+	if manager.ServiceStatuses == nil {
+		manager.ServiceStatuses = make(map[string]*cloudprotocol.ServiceStatus)
+	}
+
 	defer func() {
 		go func() {
 			manager.Lock()
