@@ -60,7 +60,7 @@ type softwareUpdate struct {
 	RestoreServices []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
 	InstallLayers   []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
 	RemoveLayers    []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
-	RestoreLayers   []cloudprotocol.LayerStatus      `json:"remstoreLayers,omitempty"`
+	RestoreLayers   []cloudprotocol.LayerStatus      `json:"restoreLayers,omitempty"`
 	RunInstances    []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
 	CertChains      []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
 	Certs           []cloudprotocol.Certificate      `json:"certs,omitempty"`
