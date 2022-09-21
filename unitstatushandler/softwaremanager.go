@@ -397,10 +397,6 @@ func (manager *softwareManager) getServiceStatus() (serviceStatuses []cloudproto
 
 	// Append currently processing info
 
-	if manager.CurrentState == stateNoUpdate {
-		return serviceStatuses, nil
-	}
-
 	for _, service := range manager.ServiceStatuses {
 		serviceStatuses = append(serviceStatuses, *service)
 	}
