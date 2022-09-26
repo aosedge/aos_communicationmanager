@@ -197,15 +197,15 @@ func (instance *Instance) Close() (err error) {
 
 	instance.statusMutex.Unlock()
 
-	if managertErr := instance.firmwareManager.close(); managertErr != nil {
+	if managerErr := instance.firmwareManager.close(); managerErr != nil {
 		if err == nil {
-			err = aoserrors.Wrap(managertErr)
+			err = aoserrors.Wrap(managerErr)
 		}
 	}
 
-	if managertErr := instance.softwareManager.close(); managertErr != nil {
+	if managerErr := instance.softwareManager.close(); managerErr != nil {
 		if err == nil {
-			err = aoserrors.Wrap(managertErr)
+			err = aoserrors.Wrap(managerErr)
 		}
 	}
 
