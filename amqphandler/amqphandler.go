@@ -44,6 +44,7 @@ const (
 	sendMaxTry         = 3
 	sendTimeout        = 1 * time.Minute
 	receiveChannelSize = 16
+	maxLenLogMessage   = 340
 )
 
 const (
@@ -807,10 +808,16 @@ func (handler *AmqpHandler) sendMessage(
 		return aoserrors.Wrap(err)
 	}
 
+	logMessage := string(data)
+
+	if len(logMessage) > maxLenLogMessage {
+		logMessage = logMessage[:maxLenLogMessage] + "..."
+	}
+
 	if handler.sendTry > 1 {
-		log.WithFields(log.Fields{"data": string(data)}).Debug("AMQP retry message")
+		log.WithFields(log.Fields{"data": logMessage}).Debug("AMQP retry message")
 	} else {
-		log.WithFields(log.Fields{"data": string(data)}).Debug("AMQP send message")
+		log.WithFields(log.Fields{"data": logMessage}).Debug("AMQP send message")
 	}
 
 	if handler.sendTry++; handler.sendTry > sendMaxTry {
