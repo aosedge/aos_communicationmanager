@@ -19,11 +19,29 @@ package aostypes
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+)
+
+/***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+// nolint
+const (
+	alternativePattern = `^P(((?P<year>\d+)-)((?P<month>\d+)-)((?P<day>\d+)))?(T((?P<hour>\d+):)((?P<minute>\d+):)(?P<second>\d+))?$`
+	canonicPattern     = `^P((?P<year>\d+)Y)?((?P<month>\d+)M)?((?P<week>\d+)W)?((?P<day>\d+)D)?(T((?P<hour>\d+)H)?((?P<minute>\d+)M)?((?P<second>\d+)S)?)?$`
+)
+
+const (
+	dayDuration   = 24 * time.Hour
+	weekDuration  = 7 * dayDuration
+	yearDuration  = 365*dayDuration + 6*time.Hour
+	monthDuration = yearDuration / 12
 )
 
 /***********************************************************************************************************************
@@ -180,16 +198,78 @@ func (d *Duration) UnmarshalJSON(b []byte) (err error) {
 		return nil
 
 	case string:
-		duration, err := time.ParseDuration(value)
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
+		if !strings.HasPrefix(value, "P") {
+			duration, err := time.ParseDuration(value)
+			if err != nil {
+				return aoserrors.Wrap(err)
+			}
 
-		d.Duration = duration
+			d.Duration = duration
+		} else {
+			duration, err := parseISO8601Duration(value)
+			if err != nil {
+				return aoserrors.Wrap(err)
+			}
+
+			d.Duration = duration
+		}
 
 		return nil
 
 	default:
 		return aoserrors.Errorf("invalid duration value: %v", value)
 	}
+}
+
+func parseISO8601Duration(value string) (time.Duration, error) {
+	var (
+		patternStr = canonicPattern
+		match      []string
+		d          time.Duration
+	)
+
+	if strings.Contains(value, "-") || strings.Contains(value, ":") {
+		patternStr = alternativePattern
+	}
+
+	pattern := regexp.MustCompile(patternStr)
+
+	if !pattern.MatchString(value) {
+		return d, aoserrors.New("could not parse duration string")
+	}
+
+	match = pattern.FindStringSubmatch(value)
+
+	for i, name := range pattern.SubexpNames() {
+		part := match[i]
+		if i == 0 || name == "" || part == "" {
+			continue
+		}
+
+		val, err := strconv.Atoi(part)
+		if err != nil {
+			return d, aoserrors.Wrap(err)
+		}
+
+		switch name {
+		case "year":
+			d += time.Duration(val) * yearDuration
+		case "month":
+			d += time.Duration(val) * monthDuration
+		case "week":
+			d += time.Duration(val) * weekDuration
+		case "day":
+			d += time.Duration(val) * dayDuration
+		case "hour":
+			d += time.Duration(val) * time.Hour
+		case "minute":
+			d += time.Duration(val) * time.Minute
+		case "second":
+			d += time.Duration(val) * time.Second
+		default:
+			return d, aoserrors.Errorf("unknown field %s", name)
+		}
+	}
+
+	return d, nil
 }
