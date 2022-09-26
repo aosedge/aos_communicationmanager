@@ -214,6 +214,9 @@ func (instance *Instance) Close() (err error) {
 
 // SendUnitStatus send unit status.
 func (instance *Instance) SendUnitStatus() error {
+	instance.Lock()
+	defer instance.Unlock()
+
 	instance.sendCurrentStatus()
 
 	return nil
@@ -221,6 +224,9 @@ func (instance *Instance) SendUnitStatus() error {
 
 // ProcessRunStatus process current run instances status.
 func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
+	instance.Lock()
+	defer instance.Unlock()
+
 	if err := instance.initCurrentStatus(); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -236,6 +242,9 @@ func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 
 // ProcessUpdateInstanceStatus process update instances status.
 func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+	instance.Lock()
+	defer instance.Unlock()
+
 	instance.updateInstanceStatus(status)
 }
 
