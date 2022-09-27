@@ -63,8 +63,8 @@ type AmqpHandler struct { // nolint:stylecheck
 	// MessageChannel channel for amqp messages
 	MessageChannel chan Message
 
-	sendChannel    chan Message
-	pendingChannel chan Message
+	sendChannel    chan cloudprotocol.Message
+	pendingChannel chan cloudprotocol.Message
 	sendTry        int
 
 	sendConnection    *amqp.Connection
@@ -138,6 +138,14 @@ var (
 	ErrSendChannelFull = errors.New("send channel full")
 )
 
+var importantMessages = []string{ // nolint:gochecknoglobals // used as const
+	cloudprotocol.DesiredStatusType, cloudprotocol.StateAcceptanceType,
+	cloudprotocol.RenewCertsNotificationType, cloudprotocol.IssuedUnitCertsType, cloudprotocol.OverrideEnvVarsType,
+	cloudprotocol.NewStateType, cloudprotocol.StateRequestType, cloudprotocol.UnitStatusType,
+	cloudprotocol.IssueUnitCertsType, cloudprotocol.InstallUnitCertsConfirmationType,
+	cloudprotocol.OverrideEnvVarsStatusType,
+}
+
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
@@ -147,8 +155,8 @@ func New() (*AmqpHandler, error) {
 	log.Debug("New AMQP")
 
 	handler := &AmqpHandler{
-		sendChannel:    make(chan Message, sendChannelSize),
-		pendingChannel: make(chan Message, 1),
+		sendChannel:    make(chan cloudprotocol.Message, sendChannelSize),
+		pendingChannel: make(chan cloudprotocol.Message, 1),
 	}
 
 	return handler, nil
@@ -588,10 +596,8 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 				continue
 			}
 
-			log.WithFields(log.Fields{
-				"version": incomingMsg.Header.Version,
-				"type":    incomingMsg.Header.MessageType,
-			}).Debug("AMQP received message")
+			log.WithField("data", getMessageDataForLog(
+				incomingMsg.Header.MessageType, delivery.Body)).Debug("AMQP receive message")
 
 			if incomingMsg.Header.Version != cloudprotocol.ProtocolVersion {
 				log.Errorf("Unsupported protocol version: %d", incomingMsg.Header.Version)
@@ -800,24 +806,36 @@ func (handler *AmqpHandler) scheduleMessage(messageType string, data interface{}
 	}
 }
 
+func isMessageImportant(messageType string) bool {
+	for _, importantType := range importantMessages {
+		if messageType == importantType {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getMessageDataForLog(messageType string, data []byte) string {
+	if len(data) > maxLenLogMessage && !isMessageImportant(messageType) {
+		return string(data[:maxLenLogMessage]) + "..."
+	}
+
+	return string(data)
+}
+
 func (handler *AmqpHandler) sendMessage(
-	message Message, amqpChannel *amqp.Channel, params cloudprotocol.SendParams,
+	message cloudprotocol.Message, amqpChannel *amqp.Channel, params cloudprotocol.SendParams,
 ) error {
 	data, err := json.Marshal(message)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	logMessage := string(data)
-
-	if len(logMessage) > maxLenLogMessage {
-		logMessage = logMessage[:maxLenLogMessage] + "..."
-	}
-
 	if handler.sendTry > 1 {
-		log.WithFields(log.Fields{"data": logMessage}).Debug("AMQP retry message")
+		log.WithField("data", getMessageDataForLog(message.Header.MessageType, data)).Debug("AMQP retry message")
 	} else {
-		log.WithFields(log.Fields{"data": logMessage}).Debug("AMQP send message")
+		log.WithField("data", getMessageDataForLog(message.Header.MessageType, data)).Debug("AMQP send message")
 	}
 
 	if handler.sendTry++; handler.sendTry > sendMaxTry {
