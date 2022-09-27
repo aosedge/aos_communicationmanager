@@ -117,6 +117,8 @@ func TestSendInitialStatus(t *testing.T) {
 	}
 	defer statusHandler.Close()
 
+	sender.Consumer.CloudConnected()
+
 	if err := statusHandler.SendUnitStatus(); err != nil {
 		t.Fatalf("Can't send unit status: %v", err)
 	}
@@ -134,6 +136,17 @@ func TestSendInitialStatus(t *testing.T) {
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
+
+	sender.Consumer.CloudDisconnected()
+
+	if err := statusHandler.ProcessRunStatus(
+		unitstatushandler.RunInstancesStatus{UnitSubjects: []string{"subject10"}}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	if _, err := sender.WaitForStatus(time.Second); err == nil {
+		t.Fatal("Should be receive status timeout")
+	}
 }
 
 func TestUpdateBoardConfig(t *testing.T) {
@@ -150,6 +163,8 @@ func TestUpdateBoardConfig(t *testing.T) {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	sender.Consumer.CloudConnected()
 
 	go handleUpdateStatus(statusHandler)
 
@@ -227,6 +242,8 @@ func TestUpdateComponents(t *testing.T) {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	sender.Consumer.CloudConnected()
 
 	go handleUpdateStatus(statusHandler)
 
@@ -330,6 +347,8 @@ func TestUpdateLayers(t *testing.T) {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	sender.Consumer.CloudConnected()
 
 	go handleUpdateStatus(statusHandler)
 
@@ -481,6 +500,8 @@ func TestUpdateServices(t *testing.T) {
 	}
 	defer statusHandler.Close()
 
+	sender.Consumer.CloudConnected()
+
 	go handleUpdateStatus(statusHandler)
 
 	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
@@ -621,6 +642,8 @@ func TestRunInstances(t *testing.T) {
 	}
 	defer statusHandler.Close()
 
+	sender.Consumer.CloudConnected()
+
 	go handleUpdateStatus(statusHandler)
 
 	initialInstancesStatus := []cloudprotocol.InstanceStatus{
@@ -734,6 +757,8 @@ func TestUpdateInstancesStatus(t *testing.T) {
 	}
 	defer statusHandler.Close()
 
+	sender.Consumer.CloudConnected()
+
 	go handleUpdateStatus(statusHandler)
 
 	if err := statusHandler.ProcessRunStatus(
@@ -839,6 +864,8 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
 	defer statusHandler.Close()
+
+	sender.Consumer.CloudConnected()
 
 	go handleUpdateStatus(statusHandler)
 

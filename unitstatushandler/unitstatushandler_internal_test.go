@@ -31,6 +31,7 @@ import (
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
@@ -53,6 +54,7 @@ const waitStatusTimeout = 5 * time.Second
  **********************************************************************************************************************/
 
 type TestSender struct {
+	Consumer      amqphandler.ConnectionEventsConsumer
 	statusChannel chan cloudprotocol.UnitStatus
 }
 
@@ -1327,6 +1329,12 @@ func (sender *TestSender) WaitForStatus(timeout time.Duration) (status cloudprot
 	case <-time.After(timeout):
 		return status, aoserrors.New("receive status timeout")
 	}
+}
+
+func (sender *TestSender) SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
+	sender.Consumer = consumer
+
+	return nil
 }
 
 /***********************************************************************************************************************
