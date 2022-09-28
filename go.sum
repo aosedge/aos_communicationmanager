@@ -65,6 +65,8 @@ github.com/anexia-it/fsquota v0.1.3/go.mod h1:XkcUA9mQoL+AZ8j9XHB9Hi/g3xzt2nBW1C
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/aoscloud/aos_common v0.0.0-20220705145231-2a45068e4296 h1:8FnTWsrvHxBsXItDu6yIqY+kwOosWIIsxY4WG2Uzi8A=
 github.com/aoscloud/aos_common v0.0.0-20220705145231-2a45068e4296/go.mod h1:oBjSXlkXlK/IRpA6jons7Ji7m8RW1ykEluohgRQdqTA=
+github.com/aoscloud/aos_common v0.0.0-20220926114048-c73feb449869 h1:EBvUvEbbFyeXcQN+/I348YnVMntEgTFtBCKPyGkvbhc=
+github.com/aoscloud/aos_common v0.0.0-20220926114048-c73feb449869/go.mod h1:oBjSXlkXlK/IRpA6jons7Ji7m8RW1ykEluohgRQdqTA=
 github.com/aoscloud/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f h1:1CPr+UrVduUABuDLGzsKaz7Dp8Nu6zSfp8WqR5TiH0I=
 github.com/aoscloud/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f/go.mod h1:ILDKtnCKiQ7zRoNxcp36Y1ZR8LBPmR2E23+wTQe/MlE=
 github.com/apache/arrow/go/arrow v0.0.0-20200601151325-b2287a20f230/go.mod h1:QNYViu/X0HXDHw7m3KXzWSVXIbfUvJqBFe6Gj8/pYA0=

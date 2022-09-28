@@ -60,7 +60,7 @@ type softwareUpdate struct {
 	RestoreServices []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
 	InstallLayers   []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
 	RemoveLayers    []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
-	RestoreLayers   []cloudprotocol.LayerStatus      `json:"remstoreLayers,omitempty"`
+	RestoreLayers   []cloudprotocol.LayerStatus      `json:"restoreLayers,omitempty"`
 	RunInstances    []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
 	CertChains      []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
 	Certs           []cloudprotocol.Certificate      `json:"certs,omitempty"`
@@ -397,10 +397,6 @@ func (manager *softwareManager) getServiceStatus() (serviceStatuses []cloudproto
 
 	// Append currently processing info
 
-	if manager.CurrentState == stateNoUpdate {
-		return serviceStatuses, nil
-	}
-
 	for _, service := range manager.ServiceStatuses {
 		serviceStatuses = append(serviceStatuses, *service)
 	}
@@ -632,6 +628,14 @@ func (manager *softwareManager) readyToUpdate() {
 
 func (manager *softwareManager) update(ctx context.Context) {
 	var updateErr string
+
+	if manager.LayerStatuses == nil {
+		manager.LayerStatuses = make(map[string]*cloudprotocol.LayerStatus)
+	}
+
+	if manager.ServiceStatuses == nil {
+		manager.ServiceStatuses = make(map[string]*cloudprotocol.ServiceStatus)
+	}
 
 	defer func() {
 		go func() {

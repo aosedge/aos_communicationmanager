@@ -26,6 +26,7 @@ import (
 	"path"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
@@ -53,6 +54,7 @@ type Downloader interface {
 // StatusSender sends unit status to cloud.
 type StatusSender interface {
 	SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error)
+	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
 }
 
 // BoardConfigUpdater updates board configuration.
@@ -131,8 +133,9 @@ type Instance struct {
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
 
-	decryptDir string
-	initDone   bool
+	decryptDir  string
+	initDone    bool
+	isConnected int32
 }
 
 type statusDescriptor struct {
@@ -179,6 +182,10 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
+	if err = instance.statusSender.SubscribeForConnectionEvents(instance); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
 	return instance, nil
 }
 
@@ -197,15 +204,15 @@ func (instance *Instance) Close() (err error) {
 
 	instance.statusMutex.Unlock()
 
-	if managertErr := instance.firmwareManager.close(); managertErr != nil {
+	if managerErr := instance.firmwareManager.close(); managerErr != nil {
 		if err == nil {
-			err = aoserrors.Wrap(managertErr)
+			err = aoserrors.Wrap(managerErr)
 		}
 	}
 
-	if managertErr := instance.softwareManager.close(); managertErr != nil {
+	if managerErr := instance.softwareManager.close(); managerErr != nil {
 		if err == nil {
-			err = aoserrors.Wrap(managertErr)
+			err = aoserrors.Wrap(managerErr)
 		}
 	}
 
@@ -214,6 +221,9 @@ func (instance *Instance) Close() (err error) {
 
 // SendUnitStatus send unit status.
 func (instance *Instance) SendUnitStatus() error {
+	instance.Lock()
+	defer instance.Unlock()
+
 	instance.sendCurrentStatus()
 
 	return nil
@@ -221,6 +231,9 @@ func (instance *Instance) SendUnitStatus() error {
 
 // ProcessRunStatus process current run instances status.
 func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
+	instance.Lock()
+	defer instance.Unlock()
+
 	if err := instance.initCurrentStatus(); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -236,6 +249,9 @@ func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 
 // ProcessUpdateInstanceStatus process update instances status.
 func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+	instance.Lock()
+	defer instance.Unlock()
+
 	instance.updateInstanceStatus(status)
 }
 
@@ -307,6 +323,16 @@ func (instance *Instance) StartSOTAUpdate() (err error) {
 	defer instance.Unlock()
 
 	return instance.softwareManager.startUpdate()
+}
+
+// CloudConnected indicates unit connected to cloud.
+func (instance *Instance) CloudConnected() {
+	atomic.StoreInt32(&instance.isConnected, 1)
+}
+
+// CloudDisconnected indicates unit disconnected from cloud.
+func (instance *Instance) CloudDisconnected() {
+	atomic.StoreInt32(&instance.isConnected, 0)
 }
 
 /***********************************************************************************************************************
@@ -604,7 +630,16 @@ func (instance *Instance) updateStatus(status *itemStatus, descriptor statusDesc
 }
 
 func (instance *Instance) sendCurrentStatus() {
+	if instance.statusTimer != nil {
+		instance.statusTimer.Stop()
+		instance.statusTimer = nil
+	}
+
 	if !instance.initDone {
+		return
+	}
+
+	if atomic.LoadInt32(&instance.isConnected) != 1 {
 		return
 	}
 
@@ -665,11 +700,6 @@ func (instance *Instance) sendCurrentStatus() {
 	if err := instance.statusSender.SendUnitStatus(
 		unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 		log.Errorf("Can't send unit status: %s", err)
-	}
-
-	if instance.statusTimer != nil {
-		instance.statusTimer.Stop()
-		instance.statusTimer = nil
 	}
 }
 

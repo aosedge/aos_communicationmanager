@@ -100,7 +100,7 @@ func New(config config.Alerts, sender Sender) (instance *Alerts, err error) {
 func (instance *Alerts) Close() {
 	log.Debug("Close alerts")
 
-	if err := instance.sender.SubscribeForConnectionEvents(instance); err != nil {
+	if err := instance.sender.UnsubscribeFromConnectionEvents(instance); err != nil {
 		log.Errorf("Can't unsubscribe from connection events: %v", err)
 	}
 
