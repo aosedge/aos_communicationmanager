@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/utils/action"
 	"github.com/looplab/fsm"
@@ -325,15 +326,15 @@ removeLayersLoop:
 }
 
 func (manager *softwareManager) needRunInstances(desiredInstances []cloudprotocol.InstanceInfo) bool {
-	currentIdents := make([]cloudprotocol.InstanceIdent, len(manager.InstanceStatuses))
-	desiredIdents := []cloudprotocol.InstanceIdent{}
+	currentIdents := make([]aostypes.InstanceIdent, len(manager.InstanceStatuses))
+	desiredIdents := []aostypes.InstanceIdent{}
 
 	for i, ident := range manager.InstanceStatuses {
 		currentIdents[i] = ident.InstanceIdent
 	}
 
 	for _, instance := range desiredInstances {
-		ident := cloudprotocol.InstanceIdent{
+		ident := aostypes.InstanceIdent{
 			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 		}
 

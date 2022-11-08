@@ -272,8 +272,8 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ID: "comp0", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2.0"}},
-			{ID: "comp2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2.0"}},
+			{ID: "comp0", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
+			{ID: "comp2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
 		},
 	})
 
@@ -309,7 +309,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ID: "comp1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2.0"}},
+			{ID: "comp1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
 		},
 	})
 
@@ -378,15 +378,15 @@ func TestUpdateLayers(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer1", Digest: "digest1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "layer1", Digest: "digest1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 			},
 			{
-				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 			{
-				ID: "layer4", Digest: "digest4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "layer4", Digest: "digest4", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 			},
 		},
@@ -447,15 +447,15 @@ func TestUpdateLayers(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 			{
-				ID: "layer4", Digest: "digest4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "layer4", Digest: "digest4", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 			},
 			{
-				ID: "layer5", Digest: "digest5", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "layer5", Digest: "digest5", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{5}},
 			},
 		},
@@ -529,15 +529,15 @@ func TestUpdateServices(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service0", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "service0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{0}},
 			},
 			{
-				ID: "service1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 			},
 			{
-				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "service3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 		},
@@ -600,15 +600,15 @@ func TestUpdateServices(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 			},
 			{
-				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
+				ID: "service3", VersionInfo: aostypes.VersionInfo{AosVersion: 2},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 			},
 			{
-				ID: "service4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
+				ID: "service4", VersionInfo: aostypes.VersionInfo{AosVersion: 2},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 			},
 		},
@@ -648,10 +648,10 @@ func TestRunInstances(t *testing.T) {
 
 	initialInstancesStatus := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
 		},
 	}
 
@@ -697,19 +697,19 @@ func TestRunInstances(t *testing.T) {
 
 	updatedInstancesStatus := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 2}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 2}, AosVersion: 1,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj2", Instance: 0}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj2", Instance: 0}, AosVersion: 1,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
 		},
 	}
 
@@ -764,13 +764,13 @@ func TestUpdateInstancesStatus(t *testing.T) {
 	if err := statusHandler.ProcessRunStatus(
 		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
 			},
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
 			},
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
 			},
 		}}); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
@@ -784,14 +784,14 @@ func TestUpdateInstancesStatus(t *testing.T) {
 		BoardConfig: []cloudprotocol.BoardConfigStatus{boardConfigUpdater.BoardConfigStatus},
 		Instances: []cloudprotocol.InstanceStatus{
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
 				RunState: "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 			},
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, AosVersion: 1,
 			},
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
 				StateChecksum: "newState",
 			},
 		},
@@ -799,11 +799,11 @@ func TestUpdateInstancesStatus(t *testing.T) {
 
 	statusHandler.ProcessUpdateInstanceStatus([]cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, AosVersion: 1,
 			RunState: "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, AosVersion: 1,
 			StateChecksum: "newState",
 		},
 	})
@@ -899,45 +899,45 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service0", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "service0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service0"}, Sha256: []byte{0}},
 			},
 			{
-				ID: "service1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service1"}, Sha256: []byte{1}},
 			},
 			{
-				ID: "service2", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "service2", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service2"}, Sha256: []byte{2}},
 			},
 			{
-				ID: "service3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "service3", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
 			},
 			{
-				ID: "service4", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "service4", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
 			},
 		},
 		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer0", Digest: "digest0", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "layer0", Digest: "digest0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer0"}, Sha256: []byte{0}},
 			},
 			{
-				ID: "layer1", Digest: "digest1", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "layer1", Digest: "digest1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer1"}, Sha256: []byte{1}},
 			},
 			{
-				ID: "layer2", Digest: "digest2", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "layer2", Digest: "digest2", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer2"}, Sha256: []byte{2}},
 			},
 			{
-				ID: "layer3", Digest: "digest3", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer3"}, Sha256: []byte{3}},
 			},
 			{
-				ID: "layer5", Digest: "digest5", VersionInfo: cloudprotocol.VersionInfo{AosVersion: 0},
+				ID: "layer5", Digest: "digest5", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
 				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer5"}, Sha256: []byte{3}},
 			},
 		},
