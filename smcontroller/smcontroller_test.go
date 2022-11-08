@@ -197,7 +197,7 @@ func TestServicesMessages(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		installRequest := cloudprotocol.ServiceInfo{
-			VersionInfo: cloudprotocol.VersionInfo{AosVersion: uint64(i), Description: "description" + strconv.Itoa(i)},
+			VersionInfo: aostypes.VersionInfo{AosVersion: uint64(i), Description: "description" + strconv.Itoa(i)},
 			ID:          "testService" + strconv.Itoa(i),
 			ProviderID:  "provider" + strconv.Itoa(i),
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{
@@ -290,7 +290,7 @@ func TestLayerMessages(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		installLayerRequest := cloudprotocol.LayerInfo{
-			VersionInfo: cloudprotocol.VersionInfo{
+			VersionInfo: aostypes.VersionInfo{
 				AosVersion: uint64(i), Description: "description" + strconv.Itoa(i),
 				VendorVersion: strconv.Itoa(i + 1),
 			},
@@ -385,7 +385,7 @@ func TestInstanceStateMessages(t *testing.T) {
 	defer controller.Close()
 
 	expectedNewState := cloudprotocol.NewState{
-		InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
 		Checksum:      "someChecksum", State: "someState",
 	}
 
@@ -402,7 +402,7 @@ func TestInstanceStateMessages(t *testing.T) {
 	}
 
 	expectedStateRequest := cloudprotocol.StateRequest{
-		InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
 		Default:       true,
 	}
 
@@ -731,7 +731,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag: cloudprotocol.AlertTagDeviceAllocate,
 				Payload: cloudprotocol.DeviceAllocateAlert{
-					InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
 					Device:        "someDevice", Message: "someMessage",
 				},
 			},
@@ -761,7 +761,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag: cloudprotocol.AlertTagInstanceQuota,
 				Payload: cloudprotocol.InstanceQuotaAlert{
-					InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
 					Parameter:     "param1", Value: 42,
 				},
 			},
@@ -779,7 +779,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag: cloudprotocol.AlertTagServiceInstance,
 				Payload: cloudprotocol.ServiceInstanceAlert{
-					InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
 					Message:       "ServiceInstanceAlert", AosVersion: 42,
 				},
 			},
@@ -849,11 +849,11 @@ func TestSMMonitoringNotifications(t *testing.T) {
 				Global: cloudprotocol.GlobalMonitoringData{RAM: 10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50},
 				ServiceInstances: []cloudprotocol.InstanceMonitoringData{
 					{
-						InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
+						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
 						RAM:           10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 0,
 					},
 					{
-						InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
+						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
 						RAM:           0, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50,
 					},
 				},
@@ -928,7 +928,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		UnitSubjects: []string{"unitsubject"},
 		Instances: []cloudprotocol.InstanceStatus{
 			{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
 				AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
 			},
 		},
@@ -966,11 +966,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	expextedUpdateState := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
 			AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
 			AosVersion:    1, StateChecksum: "superCheckSum2", RunState: "fail",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 		},
