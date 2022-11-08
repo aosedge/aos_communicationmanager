@@ -85,17 +85,11 @@ type Downloader struct {
 	DownloadPartLimit      int               `json:"downloadPartLimit"`
 }
 
-// SMConfig SM configuration.
-type SMConfig struct {
-	SMID      string `json:"smId"`
-	ServerURL string `json:"serverUrl"`
-	IsLocal   bool   `json:"isLocal,omitempty"`
-}
-
 // SMController SM controller configuration.
 type SMController struct {
-	SMList    []SMConfig        `json:"smList"`
-	UpdateTTL aostypes.Duration `json:"updateTtl"`
+	SMServerURL string            `json:"smServerUrl"`
+	NodeIDs     []string          `json:"nodeIds"`
+	UpdateTTL   aostypes.Duration `json:"updateTtl"`
 }
 
 // Config instance.
