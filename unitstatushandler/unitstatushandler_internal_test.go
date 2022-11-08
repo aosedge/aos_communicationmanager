@@ -255,12 +255,12 @@ func TestFirmwareManager(t *testing.T) {
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
 			ID:                "comp1",
-			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "1.0"},
+			VersionInfo:       aostypes.VersionInfo{VendorVersion: "1.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
 		},
 		{
 			ID:                "comp2",
-			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "2.0"},
+			VersionInfo:       aostypes.VersionInfo{VendorVersion: "2.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{2}},
 		},
 	}
@@ -268,12 +268,12 @@ func TestFirmwareManager(t *testing.T) {
 	otherUpdateComponents := []cloudprotocol.ComponentInfo{
 		{
 			ID:                "comp3",
-			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "3.0"},
+			VersionInfo:       aostypes.VersionInfo{VendorVersion: "3.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
 		},
 		{
 			ID:                "comp4",
-			VersionInfo:       cloudprotocol.VersionInfo{VendorVersion: "4.0"},
+			VersionInfo:       aostypes.VersionInfo{VendorVersion: "4.0"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
 		},
 	}
@@ -775,23 +775,23 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			ID:          "layer1",
 			Digest:      "digest1",
-			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+			VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 		},
 		{
 			ID:          "layer2",
 			Digest:      "digest2",
-			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
+			VersionInfo: aostypes.VersionInfo{AosVersion: 2},
 		},
 	}
 
 	updateServices := []cloudprotocol.ServiceInfo{
 		{
 			ID:          "service1",
-			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1},
+			VersionInfo: aostypes.VersionInfo{AosVersion: 1},
 		},
 		{
 			ID:          "service2",
-			VersionInfo: cloudprotocol.VersionInfo{AosVersion: 2},
+			VersionInfo: aostypes.VersionInfo{AosVersion: 2},
 		},
 	}
 

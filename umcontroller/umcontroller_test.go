@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
 
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
@@ -227,15 +228,15 @@ func TestFullUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um1C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um1C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um2C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um2C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um2C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um2C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -378,15 +379,15 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um3C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um3C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um4C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um4C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um4C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um4C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -546,15 +547,15 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um5C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um5C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um6C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um6C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um6C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um6C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -737,15 +738,15 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um7C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um7C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um8C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um8C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um8C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um8C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -861,15 +862,15 @@ func TestRevertOnUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um9C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um9C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um10C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um10C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um10C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um10C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -1009,15 +1010,15 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um11C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um11C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um12C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um12C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um12C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um12C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}
@@ -1162,15 +1163,15 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um13C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um13C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um14C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um14C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 		{
-			ID: "um14C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
+			ID: "um14C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
 			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
 		},
 	}

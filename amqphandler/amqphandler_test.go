@@ -34,6 +34,7 @@ import (
 	"github.com/streadway/amqp"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 )
@@ -226,7 +227,7 @@ func TestReceiveMessages(t *testing.T) {
 				MessageType: cloudprotocol.StateAcceptanceType, Version: cloudprotocol.ProtocolVersion,
 			},
 			Data: &cloudprotocol.StateAcceptance{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj0", Instance: 1},
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj0", Instance: 1},
 				Checksum:      "0123456890", Result: "accepted", Reason: "just because",
 			},
 		},
@@ -235,7 +236,7 @@ func TestReceiveMessages(t *testing.T) {
 				MessageType: cloudprotocol.UpdateStateType, Version: cloudprotocol.ProtocolVersion,
 			},
 			Data: &cloudprotocol.UpdateState{
-				InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 				Checksum:      "0993478847", State: "This is new state",
 			},
 		},
@@ -447,13 +448,13 @@ func TestDesiredStatusMessages(t *testing.T) {
 			expectedDesiredStaus: cloudprotocol.DecodedDesiredStatus{
 				BoardConfig: json.RawMessage([]byte("{}")),
 				Components: []cloudprotocol.ComponentInfo{
-					{VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1}, ID: "rootfs"},
+					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "rootfs"},
 				},
 				Layers: []cloudprotocol.LayerInfo{
-					{VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1}, ID: "l1", Digest: "digest"},
+					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "l1", Digest: "digest"},
 				},
 				Services: []cloudprotocol.ServiceInfo{
-					{VersionInfo: cloudprotocol.VersionInfo{AosVersion: 1}, ID: "serv1", ProviderID: "p1"},
+					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "serv1", ProviderID: "p1"},
 				},
 				Instances:    []cloudprotocol.InstanceInfo{{ServiceID: "s1", SubjectID: "subj1", NumInstances: 1}},
 				FOTASchedule: cloudprotocol.ScheduleRule{TTL: uint64(100), Type: "type"},
@@ -539,7 +540,7 @@ func TestSendMessages(t *testing.T) {
 
 	instances := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 			AosVersion:    1, StateChecksum: "12345", RunState: "running",
 		},
 	}
@@ -568,19 +569,19 @@ func TestSendMessages(t *testing.T) {
 	}
 	monitoringData.ServiceInstances = []cloudprotocol.InstanceMonitoringData{
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 			RAM:           1024, CPU: 50, UsedDisk: 100000,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 			RAM:           128, CPU: 60, UsedDisk: 200000,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
 			RAM:           256, CPU: 70, UsedDisk: 300000,
 		},
 		{
-			InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
 			RAM:           512, CPU: 80, UsedDisk: 400000,
 		},
 	}
@@ -695,7 +696,7 @@ func TestSendMessages(t *testing.T) {
 				return aoserrors.Wrap(
 					amqpHandler.SendInstanceNewState(
 						cloudprotocol.NewState{
-							InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+							InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 							Checksum:      "12345679", State: "This is state",
 						}))
 			},
@@ -706,7 +707,7 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.NewState{
-					InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 					Checksum:      "12345679", State: "This is state",
 				},
 			},
@@ -718,7 +719,7 @@ func TestSendMessages(t *testing.T) {
 			call: func() error {
 				return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(
 					cloudprotocol.StateRequest{
-						InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 						Default:       true,
 					}))
 			},
@@ -729,7 +730,7 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.StateRequest{
-					InstanceIdent: cloudprotocol.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 					Default:       true,
 				},
 			},
