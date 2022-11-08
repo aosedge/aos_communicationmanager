@@ -89,17 +89,8 @@ const testConfigContent = `{
 		"mergedMigrationPath" : "/var/aos/communicationmanager/migration"
 	},
 	"smController": {
-		"smList": [
-			{
-				"smId": "sm0",
-				"serverUrl": "localhost:8888",
-				"isLocal": true
-			},
-			{
-				"smId": "sm1",
-				"serverUrl": "remotehost:8888"
-			}
-		],
+		"smServerUrl": "localhost:8093",
+		"nodeIds": [ "sm1", "sm2"],	
 		"updateTTL": "30h"
 	},
 	"umController": {
@@ -270,11 +261,9 @@ func TestDownloaderConfig(t *testing.T) {
 
 func TestSMControllerConfig(t *testing.T) {
 	originalConfig := config.SMController{
-		SMList: []config.SMConfig{
-			{SMID: "sm0", ServerURL: "localhost:8888", IsLocal: true},
-			{SMID: "sm1", ServerURL: "remotehost:8888"},
-		},
-		UpdateTTL: aostypes.Duration{Duration: 30 * time.Hour},
+		SMServerURL: "localhost:8093",
+		NodeIDs:     []string{"sm1", "sm2"},
+		UpdateTTL:   aostypes.Duration{Duration: 30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {
