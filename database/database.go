@@ -33,6 +33,7 @@ import (
 
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
+	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -119,6 +120,14 @@ func New(config *config.Config) (db *Database, err error) {
 	}
 
 	if err := db.createDownloadTable(); err != nil {
+		return db, aoserrors.Wrap(err)
+	}
+
+	if err := db.createServiceTable(); err != nil {
+		return db, aoserrors.Wrap(err)
+	}
+
+	if err := db.createLayersTable(); err != nil {
 		return db, aoserrors.Wrap(err)
 	}
 
@@ -312,6 +321,142 @@ func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err e
 	return nil
 }
 
+// GetServicesInfo returns services info.
+func (db *Database) GetServicesInfo() ([]imagemanager.ServiceInfo, error) {
+	return db.getServicesFromQuery(`SELECT * FROM services WHERE(id, aosVersion)
+                                    IN (SELECT id, MAX(aosVersion) FROM services GROUP BY id)`)
+}
+
+// GetServiceInfo returns service info by ID.
+func (db *Database) GetServiceInfo(serviceID string) (service imagemanager.ServiceInfo, err error) {
+	var (
+		configJSON []byte
+		layers     []byte
+	)
+
+	if err = db.getDataFromQuery(
+		"SELECT * FROM services WHERE aosVersion = (SELECT MAX(aosVersion) FROM services WHERE id = ?) AND id = ?",
+		[]any{serviceID, serviceID},
+		&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion, &service.Description,
+		&service.URL, &service.RemoteURL, &service.Path, &service.Size, &service.Timestamp, &service.Cached,
+		&configJSON, &layers, &service.Sha256, &service.Sha512, &service.GID); err != nil {
+		if errors.Is(err, errNotExist) {
+			return service, imagemanager.ErrNotExist
+		}
+
+		return service, err
+	}
+
+	if err = json.Unmarshal(configJSON, &service.Config); err != nil {
+		return service, aoserrors.Wrap(err)
+	}
+
+	if err = json.Unmarshal(layers, &service.Layers); err != nil {
+		return service, aoserrors.Wrap(err)
+	}
+
+	return service, nil
+}
+
+// AddService adds new service.
+func (db *Database) AddService(service imagemanager.ServiceInfo) error {
+	configJSON, err := json.Marshal(&service.Config)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	layers, err := json.Marshal(&service.Layers)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		service.ID, service.AosVersion, service.ProviderID, service.VendorVersion, service.Description,
+		service.URL, service.RemoteURL, service.Path, service.Size, service.Timestamp, service.Cached,
+		configJSON, layers, service.Sha256, service.Sha512, service.GID)
+}
+
+// SetServiceCached sets cached status for the service.
+func (db *Database) SetServiceCached(serviceID string, cached bool) (err error) {
+	if err = db.executeQuery("UPDATE services SET cached = ? WHERE id = ?",
+		cached, serviceID); errors.Is(err, errNotExist) {
+		return imagemanager.ErrNotExist
+	}
+
+	return err
+}
+
+// RemoveService removes existing service.
+func (db *Database) RemoveService(serviceID string, aosVersion uint64) (err error) {
+	if err = db.executeQuery("DELETE FROM services WHERE id = ? AND aosVersion = ?",
+		serviceID, aosVersion); errors.Is(err, errNotExist) {
+		return nil
+	}
+
+	return err
+}
+
+// GetAllServiceVersions returns all service versions.
+func (db *Database) GetServiceVersions(serviceID string) (services []imagemanager.ServiceInfo, err error) {
+	if services, err = db.getServicesFromQuery(
+		"SELECT * FROM services WHERE id = ? ORDER BY aosVersion", serviceID); err != nil {
+		return nil, err
+	}
+
+	if len(services) == 0 {
+		return nil, imagemanager.ErrNotExist
+	}
+
+	return services, nil
+}
+
+// GetLayersInfo returns layers info.
+func (db *Database) GetLayersInfo() ([]imagemanager.LayerInfo, error) {
+	return db.getLayersFromQuery("SELECT * FROM layers")
+}
+
+// GetLayerInfo returns layer info by ID.
+func (db *Database) GetLayerInfo(digest string) (layer imagemanager.LayerInfo, err error) {
+	if err = db.getDataFromQuery("SELECT * FROM layers WHERE digest = ?",
+		[]any{digest}, &layer.Digest, &layer.ID, &layer.AosVersion, &layer.VendorVersion, &layer.Description,
+		&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256, &layer.Sha512,
+		&layer.Cached); err != nil {
+		if errors.Is(err, errNotExist) {
+			return layer, imagemanager.ErrNotExist
+		}
+
+		return layer, err
+	}
+
+	return layer, nil
+}
+
+// AddLayer adds new layer.
+func (db *Database) AddLayer(layer imagemanager.LayerInfo) error {
+	return db.executeQuery("INSERT INTO layers values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		layer.Digest, layer.ID, layer.AosVersion, layer.VendorVersion, layer.Description, layer.URL, layer.RemoteURL,
+		layer.Path, layer.Size, layer.Timestamp, layer.Sha256, layer.Sha512, layer.Cached)
+}
+
+// SetLayerCached sets cached status for the layer.
+func (db *Database) SetLayerCached(digest string, cached bool) (err error) {
+	if err = db.executeQuery("UPDATE layers SET cached = ? WHERE digest = ?",
+		cached, digest); errors.Is(err, errNotExist) {
+		return imagemanager.ErrNotExist
+	}
+
+	return err
+}
+
+// RemoveLayer removes existing layer.
+func (db *Database) RemoveLayer(digest string) (err error) {
+	if err = db.executeQuery("DELETE FROM layers WHERE digest = ?", digest); errors.Is(err, errNotExist) {
+		return nil
+	}
+
+	return err
+}
+
 // Close closes database.
 func (db *Database) Close() {
 	db.sql.Close()
@@ -374,6 +519,50 @@ func (db *Database) createDownloadTable() (err error) {
 	return aoserrors.Wrap(err)
 }
 
+func (db *Database) createServiceTable() (err error) {
+	log.Info("Create service table")
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS services (id TEXT NOT NULL ,
+                                                               aosVersion INTEGER,
+                                                               providerId TEXT,
+                                                               vendorVersion TEXT,
+                                                               description TEXT,
+                                                               localURL   TEXT,
+                                                               remoteURL  TEXT,
+                                                               path TEXT,
+                                                               size INTEGER,
+                                                               timestamp TIMESTAMP,
+                                                               cached INTEGER,
+                                                               config BLOB,
+                                                               layers BLOB,
+                                                               sha256 BLOB,
+                                                               sha512 BLOB,
+                                                               gid INTEGER,
+                                                               PRIMARY KEY(id, aosVersion))`)
+
+	return aoserrors.Wrap(err)
+}
+
+func (db *Database) createLayersTable() (err error) {
+	log.Info("Create layers table")
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS layers (digest TEXT NOT NULL PRIMARY KEY,
+                                                             layerId TEXT,
+                                                             aosVersion INTEGER,
+                                                             vendorVersion TEXT,
+                                                             description TEXT,
+                                                             localURL   TEXT,
+                                                             remoteURL  TEXT,
+                                                             Path       TEXT,
+                                                             Size       INTEGER,
+                                                             Timestamp  TIMESTAMP,
+                                                             sha256 BLOB,
+                                                             sha512 BLOB,
+                                                             cached INTEGER)`)
+
+	return aoserrors.Wrap(err)
+}
+
 func (db *Database) isTableExist(name string) (result bool, err error) {
 	rows, err := db.sql.Query("SELECT * FROM sqlite_master WHERE name = ? and type='table'", name)
 	if err != nil {
@@ -408,4 +597,74 @@ func (db *Database) createConfigTable() (err error) {
 	}
 
 	return nil
+}
+
+func (db *Database) getServicesFromQuery(
+	query string, args ...interface{},
+) (services []imagemanager.ServiceInfo, err error) {
+	rows, err := db.sql.Query(query, args...)
+	if err != nil {
+		return services, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
+	for rows.Next() {
+		var (
+			service    imagemanager.ServiceInfo
+			configJSON []byte
+			layers     []byte
+		)
+
+		if err = rows.Scan(&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion,
+			&service.Description, &service.URL, &service.RemoteURL, &service.Path, &service.Size,
+			&service.Timestamp, &service.Cached, &configJSON, &layers, &service.Sha256,
+			&service.Sha512, &service.GID); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if err = json.Unmarshal(configJSON, &service.Config); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if err = json.Unmarshal(layers, &service.Layers); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		services = append(services, service)
+	}
+
+	return services, nil
+}
+
+func (db *Database) getLayersFromQuery(
+	query string, args ...interface{},
+) (layers []imagemanager.LayerInfo, err error) {
+	rows, err := db.sql.Query(query, args...)
+	if err != nil {
+		return layers, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
+	for rows.Next() {
+		var layer imagemanager.LayerInfo
+
+		if err = rows.Scan(
+			&layer.Digest, &layer.ID, &layer.AosVersion, &layer.VendorVersion, &layer.Description,
+			&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256, &layer.Sha512,
+			&layer.Cached); err != nil {
+			return layers, aoserrors.Wrap(err)
+		}
+
+		layers = append(layers, layer)
+	}
+
+	return layers, nil
 }
