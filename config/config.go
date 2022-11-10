@@ -102,7 +102,10 @@ type Config struct {
 	CMServerURL           string            `json:"cmServerUrl"`
 	Downloader            Downloader        `json:"downloader"`
 	WorkingDir            string            `json:"workingDir"`
+	ImageStoreDir         string            `json:"imageStoreDir"`
 	UnitConfigFile        string            `json:"unitConfigFile"`
+	ServiceTTLDays        uint64            `json:"serviceTtlDays"`
+	LayerTTLDays          uint64            `json:"layerTtlDays"`
 	UnitStatusSendTimeout aostypes.Duration `json:"unitStatusSendTimeout"`
 	Monitoring            Monitoring        `json:"monitoring"`
 	Alerts                Alerts            `json:"alerts"`
@@ -156,6 +159,10 @@ func New(fileName string) (config *Config, err error) {
 
 	if config.Downloader.DownloadDir == "" {
 		config.Downloader.DownloadDir = path.Join(config.WorkingDir, "download")
+	}
+
+	if config.ImageStoreDir == "" {
+		config.ImageStoreDir = path.Join(config.WorkingDir, "imagestore")
 	}
 
 	if config.UnitConfigFile == "" {

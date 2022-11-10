@@ -50,6 +50,9 @@ const testConfigContent = `{
 	"fileServerUrl":"localhost:8092",
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
+	"imageStoreDir": "imagestoreDir",
+	"serviceTtlDays": 30,
+	"layerTtlDays": 40,
 	"unitConfigFile" : "/var/aos/aos_unit.cfg",
 	"downloader": {
 		"downloadDir": "/path/to/download",
@@ -151,6 +154,12 @@ func TestGetCrypt(t *testing.T) {
 func TestGetServiceDiscoveryURL(t *testing.T) {
 	if testCfg.ServiceDiscoveryURL != "www.aos.com" {
 		t.Errorf("Wrong server URL value: %s", testCfg.ServiceDiscoveryURL)
+	}
+}
+
+func TestGetImageStoreDir(t *testing.T) {
+	if testCfg.ImageStoreDir != "imagestoreDir" {
+		t.Errorf("Wrong image store directory value: %s", testCfg.ImageStoreDir)
 	}
 }
 
@@ -294,6 +303,18 @@ func TestFileServer(t *testing.T) {
 func TestCMServer(t *testing.T) {
 	if testCfg.CMServerURL != "localhost:8094" {
 		t.Errorf("Wrong cm server URL value: %s", testCfg.CMServerURL)
+	}
+}
+
+func TestGetLayerTTLDays(t *testing.T) {
+	if testCfg.LayerTTLDays != 40 {
+		t.Errorf("Wrong LayerTTLDays value: %d", testCfg.LayerTTLDays)
+	}
+}
+
+func TestGetServiceTTLDays(t *testing.T) {
+	if testCfg.ServiceTTLDays != 30 {
+		t.Errorf("Wrong ServiceTTLDays value: %d", testCfg.ServiceTTLDays)
 	}
 }
 
