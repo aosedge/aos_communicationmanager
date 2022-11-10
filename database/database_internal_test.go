@@ -19,18 +19,22 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/aoscloud/aos_common/aostypes"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
+	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -229,6 +233,237 @@ func TestMultiThread(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestServiceStore(t *testing.T) {
+	cases := []struct {
+		service                      imagemanager.ServiceInfo
+		expectedServiceVersionsCount int
+		expectedServiceCount         int
+		serviceErrorAfterRemove      error
+	}{
+		{
+			service: imagemanager.ServiceInfo{
+				ServiceInfo: aostypes.ServiceInfo{
+					ID: "service1",
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion:    1,
+						VendorVersion: "1",
+					},
+					URL:  "file:///path/service1",
+					Size: 30,
+				},
+				RemoteURL: "http://path/service1",
+				Path:      "/path/service1", Timestamp: time.Now().UTC(), Cached: false, Config: aostypes.ServiceConfig{
+					Hostname: allocateString("service1"),
+					Author:   "test",
+					Quotas: aostypes.ServiceQuotas{
+						UploadSpeed:   allocateUint64(1000),
+						DownloadSpeed: allocateUint64(1000),
+					},
+				},
+				GID: 1000,
+			},
+			expectedServiceVersionsCount: 1,
+			expectedServiceCount:         1,
+			serviceErrorAfterRemove:      imagemanager.ErrNotExist,
+		},
+		{
+			service: imagemanager.ServiceInfo{
+				ServiceInfo: aostypes.ServiceInfo{
+					ID: "service2",
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion:    1,
+						VendorVersion: "1",
+					},
+					URL:  "file:///path/service2",
+					Size: 60,
+				},
+				RemoteURL: "http://path/service2",
+				Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true, Config: aostypes.ServiceConfig{
+					Hostname: allocateString("service2"),
+					Author:   "test1",
+					Quotas: aostypes.ServiceQuotas{
+						UploadSpeed:   allocateUint64(500),
+						DownloadSpeed: allocateUint64(500),
+					},
+					Resources: []string{"resource1", "resource2"},
+				},
+				GID: 2000,
+			},
+			expectedServiceVersionsCount: 1,
+			expectedServiceCount:         2,
+			serviceErrorAfterRemove:      nil,
+		},
+		{
+			service: imagemanager.ServiceInfo{
+				ServiceInfo: aostypes.ServiceInfo{
+					ID: "service2",
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion:    2,
+						VendorVersion: "1",
+					},
+					URL:  "file:///path/service2/new",
+					Size: 20,
+				},
+				RemoteURL: "http://path/service2/new",
+				Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
+				GID: 1000,
+			},
+			expectedServiceVersionsCount: 2,
+			expectedServiceCount:         2,
+			serviceErrorAfterRemove:      imagemanager.ErrNotExist,
+		},
+	}
+
+	for _, tCase := range cases {
+		if err := db.AddService(tCase.service); err != nil {
+			t.Errorf("Can't add service: %v", err)
+		}
+
+		service, err := db.GetServiceInfo(tCase.service.ID)
+		if err != nil {
+			t.Errorf("Can't get service: %v", err)
+		}
+
+		if !reflect.DeepEqual(service, tCase.service) {
+			t.Errorf("service %s doesn't match stored one", tCase.service.ID)
+		}
+
+		serviceVersions, err := db.GetServiceVersions(tCase.service.ID)
+		if err != nil {
+			t.Errorf("Can't get service versions: %v", err)
+		}
+
+		if len(serviceVersions) != tCase.expectedServiceVersionsCount {
+			t.Errorf("Incorrect count of service versions: %v", len(serviceVersions))
+		}
+
+		services, err := db.GetServicesInfo()
+		if err != nil {
+			t.Errorf("Can't get services: %v", err)
+		}
+
+		if len(services) != tCase.expectedServiceCount {
+			t.Errorf("Incorrect count of services: %v", len(services))
+		}
+
+		if err := db.SetServiceCached(tCase.service.ID, !tCase.service.Cached); err != nil {
+			t.Errorf("Can't set service cached: %v", err)
+		}
+
+		if service, err = db.GetServiceInfo(tCase.service.ID); err != nil {
+			t.Errorf("Can't get service: %v", err)
+		}
+
+		if service.Cached != !tCase.service.Cached {
+			t.Error("Unexpected service cached status")
+		}
+	}
+
+	for _, tCase := range cases {
+		if err := db.RemoveService(tCase.service.ID, tCase.service.AosVersion); err != nil {
+			t.Errorf("Can't remove service: %v", err)
+		}
+
+		if _, err := db.GetServiceInfo(tCase.service.ID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
+func TestLayerStore(t *testing.T) {
+	cases := []struct {
+		layer              imagemanager.LayerInfo
+		expectedLayerCount int
+	}{
+		{
+			layer: imagemanager.LayerInfo{
+				LayerInfo: aostypes.LayerInfo{
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion: 1,
+					},
+					ID:     "layer1",
+					Digest: "digest1",
+					URL:    "file:///path/layer1",
+					Size:   30,
+				},
+				RemoteURL: "http://path/layer1", Path: "/path/layer1",
+				Timestamp: time.Now().UTC(), Cached: false,
+			},
+			expectedLayerCount: 1,
+		},
+		{
+			layer: imagemanager.LayerInfo{
+				LayerInfo: aostypes.LayerInfo{
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion: 1,
+					},
+					ID:     "layer2",
+					Digest: "digest2",
+					URL:    "file:///path/layer2",
+					Size:   60,
+				},
+				RemoteURL: "http://path/layer2",
+				Path:      "/path/layer2", Timestamp: time.Now().UTC(), Cached: true,
+			},
+			expectedLayerCount: 2,
+		},
+	}
+
+	for _, tCase := range cases {
+		if err := db.AddLayer(tCase.layer); err != nil {
+			t.Errorf("Can't add layer: %v", err)
+		}
+
+		layer, err := db.GetLayerInfo(tCase.layer.Digest)
+		if err != nil {
+			t.Errorf("Can't get layer: %v", err)
+		}
+
+		if !reflect.DeepEqual(layer, tCase.layer) {
+			t.Errorf("layer %s doesn't match stored one", tCase.layer.ID)
+		}
+
+		layers, err := db.GetLayersInfo()
+		if err != nil {
+			t.Errorf("Can't get layers: %v", err)
+		}
+
+		if len(layers) != tCase.expectedLayerCount {
+			t.Errorf("Incorrect count of layers: %v", len(layers))
+		}
+
+		if err := db.SetLayerCached(tCase.layer.Digest, !tCase.layer.Cached); err != nil {
+			t.Errorf("Can't set layer cached: %v", err)
+		}
+
+		if layer, err = db.GetLayerInfo(tCase.layer.Digest); err != nil {
+			t.Errorf("Can't get layer: %v", err)
+		}
+
+		if layer.Cached != !tCase.layer.Cached {
+			t.Error("Unexpected layer cached status")
+		}
+	}
+
+	for _, tCase := range cases {
+		if err := db.RemoveLayer(tCase.layer.Digest); err != nil {
+			t.Errorf("Can't remove service: %v", err)
+		}
+
+		if _, err := db.GetServiceInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
+func allocateString(value string) *string {
+	return &value
+}
+
+func allocateUint64(value uint64) *uint64 {
+	return &value
 }
 
 func TestDownloadInfo(t *testing.T) {
