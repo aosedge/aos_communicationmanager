@@ -78,7 +78,6 @@ type Migration struct {
 // Downloader downloader configuration.
 type Downloader struct {
 	DownloadDir            string            `json:"downloadDir"`
-	DecryptDir             string            `json:"decryptDir"`
 	MaxConcurrentDownloads int               `json:"maxConcurrentDownloads"`
 	RetryDelay             aostypes.Duration `json:"retryDelay"`
 	MaxRetryDelay          aostypes.Duration `json:"maxRetryDelay"`
@@ -157,10 +156,6 @@ func New(fileName string) (config *Config, err error) {
 
 	if config.Downloader.DownloadDir == "" {
 		config.Downloader.DownloadDir = path.Join(config.WorkingDir, "download")
-	}
-
-	if config.Downloader.DecryptDir == "" {
-		config.Downloader.DecryptDir = path.Join(config.WorkingDir, "decrypt")
 	}
 
 	if config.UnitConfigFile == "" {
