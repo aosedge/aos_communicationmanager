@@ -53,7 +53,6 @@ const testConfigContent = `{
 	"unitConfigFile" : "/var/aos/aos_unit.cfg",
 	"downloader": {
 		"downloadDir": "/path/to/download",
-		"decryptDir": "/path/to/decrypt",
 		"maxConcurrentDownloads": 10,
 		"retryDelay": "10s",
 		"maxRetryDelay": "30s",
@@ -247,7 +246,6 @@ func TestUMControllerConfig(t *testing.T) {
 func TestDownloaderConfig(t *testing.T) {
 	originalConfig := config.Downloader{
 		DownloadDir:            "/path/to/download",
-		DecryptDir:             "/path/to/decrypt",
 		MaxConcurrentDownloads: 10,
 		RetryDelay:             aostypes.Duration{Duration: 10 * time.Second},
 		MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Second},
