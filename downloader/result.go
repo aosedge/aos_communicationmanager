@@ -52,17 +52,13 @@ type downloadResult struct {
 
 	ctx         context.Context // nolint:containedctx
 	packageInfo cloudprotocol.DecryptDataStruct
-	chains      []cloudprotocol.CertificateChain
-	certs       []cloudprotocol.Certificate
 
 	statusChannel chan error
 
-	decryptedFileName string
 	downloadFileName  string
 	interruptFileName string
 
 	downloadSpace spaceallocator.Space
-	decryptSpace  spaceallocator.Space
 }
 
 /***********************************************************************************************************************
@@ -70,7 +66,7 @@ type downloadResult struct {
  **********************************************************************************************************************/
 
 func (result *downloadResult) GetFileName() (fileName string) {
-	return result.decryptedFileName
+	return result.downloadFileName
 }
 
 func (result *downloadResult) Wait() (err error) {
