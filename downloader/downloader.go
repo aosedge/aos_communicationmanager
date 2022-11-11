@@ -42,7 +42,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/fcrypt"
 )
 
 /***********************************************************************************************************************
@@ -53,7 +52,6 @@ const updateDownloadsTime = 30 * time.Second
 
 const (
 	encryptedFileExt = ".enc"
-	decryptedFileExt = ".dec"
 	interruptFileExt = ".int"
 )
 
@@ -61,24 +59,16 @@ const (
  * Types
  **********************************************************************************************************************/
 
-// CryptoContext interface to access crypto functions.
-type CryptoContext interface {
-	ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (symmetricContext fcrypt.SymmetricContextInterface, err error)
-	CreateSignContext() (signContext fcrypt.SignContextInterface, err error)
-}
-
 // Downloader instance.
 type Downloader struct {
 	sync.Mutex
 
-	moduleID          string
-	cryptoContext     CryptoContext
-	config            config.Downloader
-	sender            AlertSender
-	currentDownloads  map[string]*downloadResult
-	waitQueue         *list.List
-	downloadAllocator spaceallocator.Allocator
-	decryptAllocator  spaceallocator.Allocator
+	moduleID         string
+	config           config.Downloader
+	sender           AlertSender
+	currentDownloads map[string]*downloadResult
+	waitQueue        *list.List
+	allocator        spaceallocator.Allocator
 }
 
 // AlertSender provides alert sender interface.
@@ -95,7 +85,7 @@ var NewSpaceAllocator = spaceallocator.New
 ***********************************************************************************************************************/
 
 // New creates new downloader object.
-func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (
+func New(moduleID string, cfg *config.Config, sender AlertSender) (
 	downloader *Downloader, err error,
 ) {
 	log.Debug("Create downloader instance")
@@ -104,7 +94,6 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 		moduleID:         moduleID,
 		config:           cfg.Downloader,
 		sender:           sender,
-		cryptoContext:    cryptoContext,
 		currentDownloads: make(map[string]*downloadResult),
 		waitQueue:        list.New(),
 	}
@@ -113,17 +102,8 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = os.MkdirAll(downloader.config.DecryptDir, 0o755); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	downloader.downloadAllocator, err = NewSpaceAllocator(
+	downloader.allocator, err = NewSpaceAllocator(
 		downloader.config.DownloadDir, uint(downloader.config.DownloadPartLimit), downloader.removeOutdatedItem)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	downloader.decryptAllocator, err = NewSpaceAllocator(downloader.config.DecryptDir, 0, nil)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -137,20 +117,16 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 
 // Close closes downloader.
 func (downloader *Downloader) Close() (err error) {
-	if downloadAllocatorErr := downloader.downloadAllocator.Close(); downloadAllocatorErr != nil && err == nil {
+	if downloadAllocatorErr := downloader.allocator.Close(); downloadAllocatorErr != nil && err == nil {
 		err = aoserrors.Wrap(downloadAllocatorErr)
-	}
-
-	if decryptAllocatorErr := downloader.decryptAllocator.Close(); decryptAllocatorErr != nil && err == nil {
-		err = aoserrors.Wrap(decryptAllocatorErr)
 	}
 
 	return err
 }
 
-// DownloadAndDecrypt downloads, decrypts and verifies package.
-func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+// Download downloads, decrypts and verifies package.
+func (downloader *Downloader) Download(
+	ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
 ) (result Result, err error) {
 	downloader.Lock()
 	defer downloader.Unlock()
@@ -161,15 +137,12 @@ func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInf
 		id:                id,
 		ctx:               ctx,
 		packageInfo:       packageInfo,
-		chains:            chains,
-		certs:             certs,
 		statusChannel:     make(chan error, 1),
-		decryptedFileName: path.Join(downloader.config.DecryptDir, id+decryptedFileExt),
 		downloadFileName:  path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
 		interruptFileName: path.Join(downloader.config.DownloadDir, id+interruptFileExt),
 	}
 
-	log.WithField("id", id).Debug("Download and decrypt")
+	log.WithField("id", id).Debug("Download")
 
 	if err = downloader.addToQueue(downloadResult); err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -187,14 +160,6 @@ func (downloader *Downloader) addToQueue(result *downloadResult) error {
 		return aoserrors.New("download URLs is empty")
 	}
 
-	if result.packageInfo.DecryptionInfo == nil {
-		return aoserrors.New("no decrypt image info")
-	}
-
-	if result.packageInfo.Signs == nil {
-		return aoserrors.New("no signs info")
-	}
-
 	if downloader.isResultInQueue(result) {
 		return aoserrors.Errorf("download ID %s is being already processed", result.id)
 	}
@@ -208,7 +173,7 @@ func (downloader *Downloader) addToQueue(result *downloadResult) error {
 		return nil
 	}
 
-	// try to allocate space for download and decrypt. If there is no current downloads and allocation fails then
+	// try to allocate space for download. If there is no current downloads and allocation fails then
 	// there is no space left. Otherwise, wait till other downloads finished and we will have more room to download.
 	if err := downloader.tryAllocateSpace(result); err != nil {
 		if len(downloader.currentDownloads) == 0 {
@@ -277,12 +242,6 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 					log.Errorf("Can't release download space: %v", err)
 				}
 			}
-
-			if result.decryptSpace != nil {
-				if err := result.decryptSpace.Release(); err != nil {
-					log.Errorf("Can't release decrypt space: %v", err)
-				}
-			}
 		}
 	}()
 
@@ -291,16 +250,7 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 		return aoserrors.Wrap(err)
 	}
 
-	if result.downloadSpace, err = downloader.downloadAllocator.AllocateSpace(requiredDownloadSize); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	requiredDecryptSize, err := downloader.getRequiredSize(result.decryptedFileName, result.packageInfo.Size)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if result.decryptSpace, err = downloader.decryptAllocator.AllocateSpace(requiredDecryptSize); err != nil {
+	if result.downloadSpace, err = downloader.allocator.AllocateSpace(requiredDownloadSize); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -319,21 +269,7 @@ func (downloader *Downloader) acceptSpace(result *downloadResult) (err error) {
 
 	// free space if file is not fully downloaded
 	if downloadSize < result.packageInfo.Size {
-		downloader.downloadAllocator.FreeSpace(result.packageInfo.Size - downloadSize)
-	}
-
-	if decryptErr := result.decryptSpace.Accept(); decryptErr != nil && err == nil {
-		err = decryptErr
-	}
-
-	decryptSize, decryptErr := getFileSize(result.decryptedFileName)
-	if decryptErr != nil && err == nil {
-		err = downloadErr
-	}
-
-	// free space if file is not fully decrypted
-	if decryptSize < result.packageInfo.Size {
-		downloader.decryptAllocator.FreeSpace(result.packageInfo.Size - decryptSize)
+		downloader.allocator.FreeSpace(result.packageInfo.Size - downloadSize)
 	}
 
 	return err
@@ -390,7 +326,7 @@ func (downloader *Downloader) setItemOutdated(itemPath string) error {
 		}
 	}
 
-	if err := downloader.downloadAllocator.AddOutdatedItem(itemPath, size, timestamp); err != nil {
+	if err := downloader.allocator.AddOutdatedItem(itemPath, size, timestamp); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -430,14 +366,6 @@ func (downloader *Downloader) process(result *downloadResult) error {
 	log.WithFields(log.Fields{"id": result.id}).Debug("Process download")
 
 	if err := downloader.downloadPackage(result); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := downloader.decryptPackage(result); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := downloader.validateSigns(result); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -605,75 +533,6 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 			return nil
 		}
 	}
-}
-
-func (downloader *Downloader) decryptPackage(result *downloadResult) (err error) {
-	symmetricCtx, err := downloader.cryptoContext.ImportSessionKey(fcrypt.CryptoSessionKeyInfo{
-		SymmetricAlgName:  result.packageInfo.DecryptionInfo.BlockAlg,
-		SessionKey:        result.packageInfo.DecryptionInfo.BlockKey,
-		SessionIV:         result.packageInfo.DecryptionInfo.BlockIv,
-		AsymmetricAlgName: result.packageInfo.DecryptionInfo.AsymAlg,
-		ReceiverInfo: fcrypt.ReceiverInfo{
-			Issuer: result.packageInfo.DecryptionInfo.ReceiverInfo.Issuer,
-			Serial: result.packageInfo.DecryptionInfo.ReceiverInfo.Serial,
-		},
-	})
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	srcFile, err := os.Open(result.downloadFileName)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(result.decryptedFileName, os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-	defer dstFile.Close()
-
-	log.WithFields(log.Fields{"srcFile": srcFile.Name(), "dstFile": dstFile.Name()}).Debug("Decrypt image")
-
-	if err = symmetricCtx.DecryptFile(result.ctx, srcFile, dstFile); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return aoserrors.Wrap(err)
-}
-
-func (downloader *Downloader) validateSigns(result *downloadResult) (err error) {
-	signCtx, err := downloader.cryptoContext.CreateSignContext()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, cert := range result.certs {
-		if err = signCtx.AddCertificate(cert.Fingerprint, cert.Certificate); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	for _, chain := range result.chains {
-		if err = signCtx.AddCertificateChain(chain.Name, chain.Fingerprints); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	file, err := os.Open(result.decryptedFileName)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-	defer file.Close()
-
-	log.WithField("file", file.Name()).Debug("Check signature")
-
-	if err = signCtx.VerifySign(result.ctx, file, result.packageInfo.Signs); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
 }
 
 func (downloader *Downloader) prepareDownloadAlert(resp *grab.Response, msg string) cloudprotocol.AlertItem {

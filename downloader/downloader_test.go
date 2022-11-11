@@ -22,7 +22,6 @@ package downloader_test
 import (
 	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -43,7 +42,6 @@ import (
 
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
-	"github.com/aoscloud/aos_communicationmanager/fcrypt"
 )
 
 /***********************************************************************************************************************
@@ -58,12 +56,6 @@ const (
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
-
-type testCryptoContext struct{}
-
-type testSymmetricContext struct{}
-
-type testSignContext struct{}
 
 type testAlertSender struct {
 	alertStarted     int
@@ -104,7 +96,6 @@ var (
 	tmpDir      string
 	serverDir   string
 	downloadDir string
-	decryptDir  string
 
 	downloadAllocator = &testAllocator{}
 )
@@ -161,20 +152,19 @@ func TestDownload(t *testing.T) {
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &sender)
+	}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
 	defer downloadInstance.Close()
 
-	result, err := downloadInstance.DownloadAndDecrypt(
-		context.Background(), preparePackageInfo("http://localhost:8001/", fileName), nil, nil)
+	result, err := downloadInstance.Download(
+		context.Background(), preparePackageInfo("http://localhost:8001/", fileName))
 	if err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
+		t.Fatalf("Can't download package: %s", err)
 	}
 
 	if err = result.Wait(); err != nil {
@@ -226,11 +216,10 @@ func TestInterruptResumeDownload(t *testing.T) {
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &sender)
+	}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -238,9 +227,9 @@ func TestInterruptResumeDownload(t *testing.T) {
 
 	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
 
-	result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+	result, err := downloadInstance.Download(context.Background(), packageInfo)
 	if err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
+		t.Fatalf("Can't download package: %s", err)
 	}
 
 	if err = result.Wait(); err != nil {
@@ -301,11 +290,10 @@ func TestContinueDownload(t *testing.T) {
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &sender)
+	}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -316,17 +304,17 @@ func TestContinueDownload(t *testing.T) {
 
 	cancelDownloadIn(cancel, 10*time.Second)
 
-	result, err := downloadInstance.DownloadAndDecrypt(ctx, packageInfo, nil, nil)
+	result, err := downloadInstance.Download(ctx, packageInfo)
 	if err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
+		t.Fatalf("Can't download package: %s", err)
 	}
 
 	if err = result.Wait(); err == nil {
 		t.Error("Error expected")
 	}
 
-	if result, err = downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
+	if result, err = downloadInstance.Download(context.Background(), packageInfo); err != nil {
+		t.Fatalf("Can't download package: %s", err)
 	}
 
 	if err = result.Wait(); err != nil {
@@ -373,11 +361,10 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &sender)
+	}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -390,9 +377,9 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 	// Cancel first download and try resume from another server
 	cancelDownloadIn(cancel, 10*time.Second)
 
-	result, err := downloadInstance.DownloadAndDecrypt(ctx, packageInfo, nil, nil)
+	result, err := downloadInstance.Download(ctx, packageInfo)
 	if err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
+		t.Fatalf("Can't download package: %s", err)
 	}
 
 	if err = result.Wait(); err == nil {
@@ -401,8 +388,8 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 
 	packageInfo = preparePackageInfo("http://localhost:8002/", fileName)
 
-	if result, err = downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil); err != nil {
-		t.Fatalf("Can't download and decrypt package: %s", err)
+	if result, err = downloadInstance.Download(context.Background(), packageInfo); err != nil {
+		t.Fatalf("Can't download package: %s", err)
 	}
 
 	if err = result.Wait(); err != nil {
@@ -444,11 +431,10 @@ func TestConcurrentDownloads(t *testing.T) {
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 5,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &sender)
+	}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -459,9 +445,9 @@ func TestConcurrentDownloads(t *testing.T) {
 	for i := 0; i < numDownloads; i++ {
 		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
 
-		result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+		result, err := downloadInstance.Download(context.Background(), packageInfo)
 		if err != nil {
-			t.Errorf("Can't download and decrypt package: %s", err)
+			t.Errorf("Can't download package: %s", err)
 			continue
 		}
 
@@ -517,11 +503,10 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
 			DownloadDir:            downloadDir,
-			DecryptDir:             decryptDir,
 			MaxConcurrentDownloads: 3,
 			DownloadPartLimit:      100,
 		},
-	}, &testCryptoContext{}, &sender)
+	}, &sender)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -532,9 +517,9 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 	for i := 0; i < numDownloads; i++ {
 		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
 
-		result, err := downloadInstance.DownloadAndDecrypt(context.Background(), packageInfo, nil, nil)
+		result, err := downloadInstance.Download(context.Background(), packageInfo)
 		if err != nil {
-			t.Errorf("Can't download and decrypt package: %s", err)
+			t.Errorf("Can't download package: %s", err)
 			continue
 		}
 
@@ -555,36 +540,6 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
-
-func (context *testCryptoContext) ImportSessionKey(
-	keyInfo fcrypt.CryptoSessionKeyInfo,
-) (fcrypt.SymmetricContextInterface, error) {
-	return &testSymmetricContext{}, nil
-}
-
-func (context *testCryptoContext) CreateSignContext() (fcrypt.SignContextInterface, error) {
-	return &testSignContext{}, nil
-}
-
-func (context *testSymmetricContext) DecryptFile(ctx context.Context, encryptedFile, decryptedFile *os.File) error {
-	if _, err := io.Copy(decryptedFile, encryptedFile); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (context *testSignContext) AddCertificate(fingerprint string, asn1Bytes []byte) (err error) {
-	return nil
-}
-
-func (context *testSignContext) AddCertificateChain(name string, fingerprints []string) (err error) {
-	return nil
-}
-
-func (context *testSignContext) VerifySign(ctx context.Context, f *os.File, sign *cloudprotocol.Signs) (err error) {
-	return nil
-}
 
 func (instance *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
 	downloadAlert, ok := alert.Payload.(cloudprotocol.DownloadAlert)
@@ -711,7 +666,6 @@ func setup() (err error) {
 	}
 
 	downloadDir = filepath.Join(tmpDir, "download")
-	decryptDir = filepath.Join(tmpDir, "decrypt")
 	serverDir = path.Join(tmpDir, "fileServer")
 
 	if err = os.MkdirAll(serverDir, 0o755); err != nil {
@@ -775,25 +729,9 @@ func preparePackageInfo(host, fileName string) (packageInfo cloudprotocol.Decryp
 		return packageInfo
 	}
 
-	recInfo := struct {
-		Serial string `json:"serial"`
-		Issuer []byte `json:"issuer"`
-	}{
-		Serial: "string",
-		Issuer: []byte("issuer"),
-	}
-
 	packageInfo.Sha256 = imageFileInfo.Sha256
 	packageInfo.Sha512 = imageFileInfo.Sha512
 	packageInfo.Size = imageFileInfo.Size
-	packageInfo.DecryptionInfo = &cloudprotocol.DecryptionInfo{
-		BlockAlg:     "AES256/CBC/pkcs7",
-		BlockIv:      []byte{},
-		BlockKey:     []byte{},
-		AsymAlg:      "RSA/PKCS1v1_5",
-		ReceiverInfo: &recInfo,
-	}
-	packageInfo.Signs = new(cloudprotocol.Signs)
 
 	return packageInfo
 }
@@ -826,10 +764,6 @@ func clearWondershaperLimit(iface string) (err error) {
 
 func clearDirs() error {
 	if err := os.RemoveAll(downloadDir); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := os.RemoveAll(decryptDir); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
