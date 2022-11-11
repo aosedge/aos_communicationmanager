@@ -23,7 +23,6 @@ import (
 	"os"
 
 	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/spaceallocator"
 	log "github.com/sirupsen/logrus"
 )
@@ -51,7 +50,7 @@ type downloadResult struct {
 	id string
 
 	ctx         context.Context // nolint:containedctx
-	packageInfo cloudprotocol.DecryptDataStruct
+	packageInfo PackageInfo
 
 	statusChannel chan error
 

@@ -71,6 +71,18 @@ type Downloader struct {
 	allocator        spaceallocator.Allocator
 }
 
+// PackageInfo struct contains package info data.
+type PackageInfo struct {
+	URLs                []string
+	Sha256              []byte
+	Sha512              []byte
+	Size                uint64
+	TargetType          string
+	TargetID            string
+	TargetAosVersion    uint64
+	TargetVendorVersion string
+}
+
 // AlertSender provides alert sender interface.
 type AlertSender interface {
 	SendAlert(alert cloudprotocol.AlertItem)
@@ -126,7 +138,7 @@ func (downloader *Downloader) Close() (err error) {
 
 // Download downloads, decrypts and verifies package.
 func (downloader *Downloader) Download(
-	ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
+	ctx context.Context, packageInfo PackageInfo,
 ) (result Result, err error) {
 	downloader.Lock()
 	defer downloader.Unlock()
@@ -488,13 +500,13 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 	if !resp.DidResume {
 		log.WithFields(log.Fields{"url": url, "id": result.id}).Debug("Download started")
 
-		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download started"))
+		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download started"))
 	} else {
 		reason := result.retrieveInterruptReason()
 
 		log.WithFields(log.Fields{"url": url, "id": result.id, "reason": reason}).Debug("Download resumed")
 
-		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download resumed reason: "+reason))
+		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download resumed reason: "+reason))
 
 		result.removeInterruptReason()
 	}
@@ -502,7 +514,7 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 	for {
 		select {
 		case <-timer.C:
-			downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download status"))
+			downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download status"))
 
 			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size}).Debug("Download progress")
 
@@ -516,7 +528,8 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 
 				result.storeInterruptReason(err.Error())
 
-				downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download interrupted reason: "+err.Error()))
+				downloader.sender.SendAlert(downloader.prepareDownloadAlert(
+					resp, result, "Download interrupted reason: "+err.Error()))
 
 				return aoserrors.Wrap(err)
 			}
@@ -528,22 +541,29 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 			}).Debug("Download completed")
 
 			downloader.sender.SendAlert(
-				downloader.prepareDownloadAlert(resp, "Download finished code: "+strconv.Itoa(resp.HTTPResponse.StatusCode)))
+				downloader.prepareDownloadAlert(
+					resp, result, "Download finished code: "+strconv.Itoa(resp.HTTPResponse.StatusCode)))
 
 			return nil
 		}
 	}
 }
 
-func (downloader *Downloader) prepareDownloadAlert(resp *grab.Response, msg string) cloudprotocol.AlertItem {
+func (downloader *Downloader) prepareDownloadAlert(
+	resp *grab.Response, result *downloadResult, msg string,
+) cloudprotocol.AlertItem {
 	return cloudprotocol.AlertItem{
 		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
 		Payload: cloudprotocol.DownloadAlert{
-			Progress:        fmt.Sprintf("%.2f%%", resp.Progress()*100),
-			URL:             resp.Request.HTTPRequest.URL.String(),
-			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
-			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
-			Message:         msg,
+			TargetType:          result.packageInfo.TargetType,
+			TargetID:            result.packageInfo.TargetID,
+			TargetAosVersion:    result.packageInfo.TargetAosVersion,
+			TargetVendorVersion: result.packageInfo.TargetVendorVersion,
+			Progress:            fmt.Sprintf("%.2f%%", resp.Progress()*100),
+			URL:                 resp.Request.HTTPRequest.URL.String(),
+			DownloadedBytes:     bytefmt.ByteSize(uint64(resp.BytesComplete())),
+			TotalBytes:          bytefmt.ByteSize(uint64(resp.Size())),
+			Message:             msg,
 		},
 	}
 }

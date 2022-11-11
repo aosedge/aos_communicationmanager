@@ -716,7 +716,7 @@ func killConnectionIn(host string, port int16, delay time.Duration) {
 	}()
 }
 
-func preparePackageInfo(host, fileName string) (packageInfo cloudprotocol.DecryptDataStruct) {
+func preparePackageInfo(host, fileName string) (packageInfo downloader.PackageInfo) {
 	fileName = path.Base(fileName)
 
 	packageInfo.URLs = []string{host + fileName}
@@ -732,6 +732,10 @@ func preparePackageInfo(host, fileName string) (packageInfo cloudprotocol.Decryp
 	packageInfo.Sha256 = imageFileInfo.Sha256
 	packageInfo.Sha512 = imageFileInfo.Sha512
 	packageInfo.Size = imageFileInfo.Size
+	packageInfo.TargetType = cloudprotocol.DownloadTargetLayer
+	packageInfo.TargetID = "targetID"
+	packageInfo.TargetAosVersion = 1
+	packageInfo.TargetVendorVersion = "vendorVersion1"
 
 	return packageInfo
 }
