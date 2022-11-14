@@ -681,7 +681,7 @@ func (handler *AmqpHandler) decodeDesiredStatus(
 		Certificates:      encodedStatus.Certificates,
 	}
 
-	if err := handler.decodeData(encodedStatus.BoardConfig, &decodedStatus.BoardConfig); err != nil {
+	if err := handler.decodeData(encodedStatus.UnitConfig, &decodedStatus.UnitConfig); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 

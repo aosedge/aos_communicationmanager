@@ -346,7 +346,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 	testData := []testDesiredMessages{
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("error"),
+				UnitConfig:   []byte("error"),
 				Services:     []byte("error"),
 				Layers:       []byte("error"),
 				Instances:    []byte("error"),
@@ -359,7 +359,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("error"),
 				Layers:       []byte("error"),
 				Instances:    []byte("error"),
@@ -372,7 +372,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("services"),
 				Layers:       []byte("error"),
 				Instances:    []byte("error"),
@@ -385,7 +385,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("services"),
 				Layers:       []byte("layers"),
 				Instances:    []byte("error"),
@@ -398,7 +398,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("services"),
 				Layers:       []byte("layers"),
 				Instances:    []byte("instances"),
@@ -411,7 +411,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("services"),
 				Layers:       []byte("layers"),
 				Instances:    []byte("instances"),
@@ -424,7 +424,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("services"),
 				Layers:       []byte("layers"),
 				Instances:    []byte("instances"),
@@ -437,7 +437,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 		},
 		{
 			sendDesiredStatus: cloudprotocol.DesiredStatus{
-				BoardConfig:  []byte("boardconfig"),
+				UnitConfig:   []byte("unitconfig"),
 				Services:     []byte("services"),
 				Layers:       []byte("layers"),
 				Instances:    []byte("instances"),
@@ -446,7 +446,7 @@ func TestDesiredStatusMessages(t *testing.T) {
 				SOTASchedule: []byte("sotashedule"),
 			},
 			expectedDesiredStaus: cloudprotocol.DecodedDesiredStatus{
-				BoardConfig: json.RawMessage([]byte("{}")),
+				UnitConfig: json.RawMessage([]byte("{}")),
 				Components: []cloudprotocol.ComponentInfo{
 					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "rootfs"},
 				},
@@ -524,7 +524,7 @@ func TestSendMessages(t *testing.T) {
 		getDataType func() interface{}
 	}
 
-	boardConfigData := []cloudprotocol.BoardConfigStatus{{VendorVersion: "1.0"}}
+	unitConfigData := []cloudprotocol.UnitConfigStatus{{VendorVersion: "1.0"}}
 
 	serviceSetupData := []cloudprotocol.ServiceStatus{
 		{ID: "service0", AosVersion: 1, Status: "running", ErrorInfo: nil},
@@ -648,7 +648,7 @@ func TestSendMessages(t *testing.T) {
 		{
 			call: func() error {
 				return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{
-					BoardConfig:  boardConfigData,
+					UnitConfig:   unitConfigData,
 					Components:   componentSetupData,
 					Layers:       layersSetupData,
 					Services:     serviceSetupData,
@@ -663,7 +663,7 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.UnitStatus{
-					BoardConfig:  boardConfigData,
+					UnitConfig:   unitConfigData,
 					Components:   componentSetupData,
 					Layers:       layersSetupData,
 					Services:     serviceSetupData,
@@ -1079,8 +1079,8 @@ func (context *testCryptoContext) GetTLSConfig() (config *tls.Config, err error)
 
 func (context *testCryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
 	switch string(input) {
-	case "boardconfig":
-		output, err = json.Marshal(context.decodedData.BoardConfig)
+	case "unitconfig":
+		output, err = json.Marshal(context.decodedData.UnitConfig)
 
 	case "services":
 		output, err = json.Marshal(context.decodedData.Services)
