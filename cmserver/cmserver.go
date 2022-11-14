@@ -24,7 +24,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
+	pb "github.com/aoscloud/aos_common/api/communicationmanager/v2"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
@@ -66,8 +66,8 @@ type UpdateStatus struct {
 
 // UpdateFOTAStatus FOTA update status for update scheduler service.
 type UpdateFOTAStatus struct {
-	Components  []cloudprotocol.ComponentStatus
-	BoardConfig *cloudprotocol.BoardConfigStatus
+	Components []cloudprotocol.ComponentStatus
+	UnitConfig *cloudprotocol.UnitConfigStatus
 	UpdateStatus
 }
 
@@ -365,8 +365,8 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 		})
 	}
 
-	if updateStatus.BoardConfig != nil {
-		pbStatus.BoardConfig = &pb.BoardConfigInfo{VendorVersion: updateStatus.BoardConfig.VendorVersion}
+	if updateStatus.UnitConfig != nil {
+		pbStatus.UnitConfig = &pb.UnitConfigInfo{VendorVersion: updateStatus.UnitConfig.VendorVersion}
 	}
 
 	return pbStatus
