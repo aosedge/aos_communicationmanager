@@ -25,7 +25,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/communicationmanager/v1"
+	pb "github.com/aoscloud/aos_common/api/communicationmanager/v2"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -127,7 +127,7 @@ func TestConnection(t *testing.T) {
 
 	statusFotaNotification := cmserver.UpdateFOTAStatus{
 		Components:   []cloudprotocol.ComponentStatus{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
-		BoardConfig:  &cloudprotocol.BoardConfigStatus{VendorVersion: "bc_version"},
+		UnitConfig:   &cloudprotocol.UnitConfigStatus{VendorVersion: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
 
@@ -163,12 +163,12 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect aos version")
 	}
 
-	if status.BoardConfig == nil {
-		t.Fatal("Board Config is nil")
+	if status.UnitConfig == nil {
+		t.Fatal("Unit Config is nil")
 	}
 
-	if status.BoardConfig.VendorVersion != "bc_version" {
-		t.Error("Incorrect board config version")
+	if status.UnitConfig.VendorVersion != "bc_version" {
+		t.Error("Incorrect unit config version")
 	}
 
 	statusNotification := cmserver.UpdateSOTAStatus{
