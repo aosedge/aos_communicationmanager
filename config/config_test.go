@@ -50,7 +50,7 @@ const testConfigContent = `{
 	"fileServerUrl":"localhost:8092",
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
-	"boardConfigFile" : "/var/aos/aos_board.cfg",
+	"unitConfigFile" : "/var/aos/aos_unit.cfg",
 	"downloader": {
 		"downloadDir": "/path/to/download",
 		"decryptDir": "/path/to/decrypt",
@@ -161,9 +161,9 @@ func TestGetWorkingDir(t *testing.T) {
 	}
 }
 
-func TestGetBoardConfigFile(t *testing.T) {
-	if testCfg.BoardConfigFile != "/var/aos/aos_board.cfg" {
-		t.Errorf("Wrong board config file value: %s", testCfg.BoardConfigFile)
+func TestGetUnitConfigFile(t *testing.T) {
+	if testCfg.UnitConfigFile != "/var/aos/aos_unit.cfg" {
+		t.Errorf("Wrong unit config file value: %s", testCfg.UnitConfigFile)
 	}
 }
 

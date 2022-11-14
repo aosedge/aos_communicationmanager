@@ -41,7 +41,6 @@ import (
 
 	"github.com/aoscloud/aos_communicationmanager/alerts"
 	amqp "github.com/aoscloud/aos_communicationmanager/amqphandler"
-	"github.com/aoscloud/aos_communicationmanager/boardconfig"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/database"
@@ -52,6 +51,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/monitorcontroller"
 	"github.com/aoscloud/aos_communicationmanager/smcontroller"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
+	"github.com/aoscloud/aos_communicationmanager/unitconfig"
 	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
 )
 
@@ -82,7 +82,7 @@ type communicationManager struct {
 	fileServer        *fileserver.FileServer
 	smController      *smcontroller.Controller
 	umController      *umcontroller.Controller
-	boardConfig       *boardconfig.Instance
+	unitConfig        *unitconfig.Instance
 	statusHandler     *unitstatushandler.Instance
 	cmServer          *cmserver.CMServer
 }
@@ -196,11 +196,11 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.boardConfig, err = boardconfig.New(cfg, cm.smController); err != nil {
+	if cm.unitConfig, err = unitconfig.New(cfg, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.boardConfig, cm.umController, cm.smController,
+	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.unitConfig, cm.umController, cm.smController,
 		cm.downloader, cm.db, cm.amqp); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}

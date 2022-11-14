@@ -103,7 +103,7 @@ type Config struct {
 	CMServerURL           string            `json:"cmServerUrl"`
 	Downloader            Downloader        `json:"downloader"`
 	WorkingDir            string            `json:"workingDir"`
-	BoardConfigFile       string            `json:"boardConfigFile"`
+	UnitConfigFile        string            `json:"unitConfigFile"`
 	UnitStatusSendTimeout aostypes.Duration `json:"unitStatusSendTimeout"`
 	Monitoring            Monitoring        `json:"monitoring"`
 	Alerts                Alerts            `json:"alerts"`
@@ -163,8 +163,8 @@ func New(fileName string) (config *Config, err error) {
 		config.Downloader.DecryptDir = path.Join(config.WorkingDir, "decrypt")
 	}
 
-	if config.BoardConfigFile == "" {
-		config.BoardConfigFile = path.Join(config.WorkingDir, "aos_board.cfg")
+	if config.UnitConfigFile == "" {
+		config.UnitConfigFile = path.Join(config.WorkingDir, "aos_unit.cfg")
 	}
 
 	if config.Migration.MigrationPath == "" {

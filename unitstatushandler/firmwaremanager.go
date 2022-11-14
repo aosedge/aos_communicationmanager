@@ -34,8 +34,8 @@ import (
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/boardconfig"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
+	"github.com/aoscloud/aos_communicationmanager/unitconfig"
 )
 
 /***********************************************************************************************************************
@@ -51,15 +51,15 @@ type firmwareStatusHandler interface {
 		continueOnError bool, notifier statusNotifier,
 		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult)
 	updateComponentStatus(componentInfo cloudprotocol.ComponentStatus)
-	updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigStatus)
+	updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus)
 }
 
 type firmwareUpdate struct {
-	Schedule    cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
-	BoardConfig json.RawMessage                  `json:"boardConfig,omitempty"`
-	Components  []cloudprotocol.ComponentInfo    `json:"components,omitempty"`
-	CertChains  []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
-	Certs       []cloudprotocol.Certificate      `json:"certs,omitempty"`
+	Schedule   cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
+	UnitConfig json.RawMessage                  `json:"unitConfig,omitempty"`
+	Components []cloudprotocol.ComponentInfo    `json:"components,omitempty"`
+	CertChains []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
+	Certs      []cloudprotocol.Certificate      `json:"certs,omitempty"`
 }
 
 type firmwareManager struct {
@@ -67,17 +67,17 @@ type firmwareManager struct {
 
 	statusChannel chan cmserver.UpdateFOTAStatus
 
-	statusHandler      firmwareStatusHandler
-	firmwareUpdater    FirmwareUpdater
-	boardConfigUpdater BoardConfigUpdater
-	storage            Storage
+	statusHandler     firmwareStatusHandler
+	firmwareUpdater   FirmwareUpdater
+	unitConfigUpdater UnitConfigUpdater
+	storage           Storage
 
 	stateMachine  *updateStateMachine
 	statusMutex   sync.RWMutex
 	pendingUpdate *firmwareUpdate
 
 	ComponentStatuses map[string]*cloudprotocol.ComponentStatus `json:"componentStatuses,omitempty"`
-	BoardConfigStatus cloudprotocol.BoardConfigStatus           `json:"boardConfigStatus,omitempty"`
+	UnitConfigStatus  cloudprotocol.UnitConfigStatus            `json:"unitConfigStatus,omitempty"`
 	CurrentUpdate     *firmwareUpdate                           `json:"currentUpdate,omitempty"`
 	DownloadResult    map[string]*downloadResult                `json:"downloadResult,omitempty"`
 	CurrentState      string                                    `json:"currentState,omitempty"`
@@ -90,16 +90,16 @@ type firmwareManager struct {
  **********************************************************************************************************************/
 
 func newFirmwareManager(statusHandler firmwareStatusHandler,
-	firmwareUpdater FirmwareUpdater, boardConfigUpdater BoardConfigUpdater,
+	firmwareUpdater FirmwareUpdater, unitConfigUpdater UnitConfigUpdater,
 	storage Storage, defaultTTL time.Duration,
 ) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
-		statusChannel:      make(chan cmserver.UpdateFOTAStatus, 1),
-		statusHandler:      statusHandler,
-		firmwareUpdater:    firmwareUpdater,
-		boardConfigUpdater: boardConfigUpdater,
-		storage:            storage,
-		CurrentState:       stateNoUpdate,
+		statusChannel:     make(chan cmserver.UpdateFOTAStatus, 1),
+		statusHandler:     statusHandler,
+		firmwareUpdater:   firmwareUpdater,
+		unitConfigUpdater: unitConfigUpdater,
+		storage:           storage,
+		CurrentState:      stateNoUpdate,
 	}
 
 	if err = manager.loadState(); err != nil {
@@ -157,9 +157,9 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 		})
 	}
 
-	if len(manager.CurrentUpdate.BoardConfig) != 0 {
-		version, _ := manager.boardConfigUpdater.GetBoardConfigVersion(manager.CurrentUpdate.BoardConfig)
-		status.BoardConfig = &cloudprotocol.BoardConfigStatus{VendorVersion: version}
+	if len(manager.CurrentUpdate.UnitConfig) != 0 {
+		version, _ := manager.unitConfigUpdater.GetUnitConfigVersion(manager.CurrentUpdate.UnitConfig)
+		status.UnitConfig = &cloudprotocol.UnitConfigStatus{VendorVersion: version}
 	}
 
 	return status
@@ -177,11 +177,11 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	defer manager.Unlock()
 
 	update := &firmwareUpdate{
-		Schedule:    desiredStatus.FOTASchedule,
-		BoardConfig: desiredStatus.BoardConfig,
-		Components:  make([]cloudprotocol.ComponentInfo, 0),
-		CertChains:  desiredStatus.CertificateChains,
-		Certs:       desiredStatus.Certificates,
+		Schedule:   desiredStatus.FOTASchedule,
+		UnitConfig: desiredStatus.UnitConfig,
+		Components: make([]cloudprotocol.ComponentInfo, 0),
+		CertChains: desiredStatus.CertificateChains,
+		Certs:      desiredStatus.Certificates,
 	}
 
 	installedComponents, err := manager.firmwareUpdater.GetStatus()
@@ -209,7 +209,7 @@ desiredLoop:
 		}).Error("Desired component not found")
 	}
 
-	if len(update.BoardConfig) != 0 || len(update.Components) != 0 {
+	if len(update.UnitConfig) != 0 || len(update.Components) != 0 {
 		if err = manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
@@ -264,14 +264,14 @@ func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.C
 	return status, nil
 }
 
-func (manager *firmwareManager) getBoardConfigStatuses() (status []cloudprotocol.BoardConfigStatus, err error) {
+func (manager *firmwareManager) getUnitConfigStatuses() (status []cloudprotocol.UnitConfigStatus, err error) {
 	manager.Lock()
 	defer manager.Unlock()
 
 	manager.statusMutex.RLock()
 	defer manager.statusMutex.RUnlock()
 
-	info, err := manager.boardConfigUpdater.GetStatus()
+	info, err := manager.unitConfigUpdater.GetStatus()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -280,11 +280,11 @@ func (manager *firmwareManager) getBoardConfigStatuses() (status []cloudprotocol
 
 	// Append currently processing info
 
-	if manager.CurrentState == stateNoUpdate || len(manager.CurrentUpdate.BoardConfig) == 0 {
+	if manager.CurrentState == stateNoUpdate || len(manager.CurrentUpdate.UnitConfig) == 0 {
 		return status, nil
 	}
 
-	status = append(status, manager.BoardConfigStatus)
+	status = append(status, manager.UnitConfigStatus)
 
 	return status, nil
 }
@@ -301,9 +301,9 @@ func (manager *firmwareManager) stateChanged(event, state string, updateErr stri
 			}
 		}
 
-		if len(manager.CurrentUpdate.BoardConfig) != 0 {
-			if manager.BoardConfigStatus.Status != cloudprotocol.ErrorStatus {
-				manager.updateBoardConfigStatus(cloudprotocol.ErrorStatus, updateErr)
+		if len(manager.CurrentUpdate.UnitConfig) != 0 {
+			if manager.UnitConfigStatus.Status != cloudprotocol.ErrorStatus {
+				manager.updateUnitConfigStatus(cloudprotocol.ErrorStatus, updateErr)
 			}
 		}
 	}
@@ -377,25 +377,25 @@ func (manager *firmwareManager) download(ctx context.Context) {
 
 	manager.DownloadResult = nil
 
-	if len(manager.CurrentUpdate.BoardConfig) != 0 {
-		manager.BoardConfigStatus.VendorVersion = ""
+	if len(manager.CurrentUpdate.UnitConfig) != 0 {
+		manager.UnitConfigStatus.VendorVersion = ""
 
-		version, err := manager.boardConfigUpdater.GetBoardConfigVersion(manager.CurrentUpdate.BoardConfig)
+		version, err := manager.unitConfigUpdater.GetUnitConfigVersion(manager.CurrentUpdate.UnitConfig)
 
-		manager.BoardConfigStatus.VendorVersion = version
+		manager.UnitConfigStatus.VendorVersion = version
 
 		if err != nil {
-			log.Errorf("Error getting board config version: %s", err)
+			log.Errorf("Error getting unit config version: %s", err)
 
 			downloadErr = aoserrors.Wrap(err).Error()
-			manager.updateBoardConfigStatus(cloudprotocol.ErrorStatus, downloadErr)
+			manager.updateUnitConfigStatus(cloudprotocol.ErrorStatus, downloadErr)
 
 			return
 		}
 
-		log.WithFields(log.Fields{"version": version}).Debug("Get board config version")
+		log.WithFields(log.Fields{"version": version}).Debug("Get unit config version")
 
-		manager.updateBoardConfigStatus(cloudprotocol.PendingStatus, "")
+		manager.updateUnitConfigStatus(cloudprotocol.PendingStatus, "")
 	}
 
 	manager.statusMutex.Lock()
@@ -472,8 +472,8 @@ func (manager *firmwareManager) update(ctx context.Context) {
 		}
 	}
 
-	if len(manager.CurrentUpdate.BoardConfig) != 0 {
-		if err := manager.updateBoardConfig(ctx); err != "" {
+	if len(manager.CurrentUpdate.UnitConfig) != 0 {
+		if err := manager.updateUnitConfig(ctx); err != "" {
 			updateErr = err
 			return
 		}
@@ -514,7 +514,7 @@ func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 
 	default:
 		if reflect.DeepEqual(update.Components, manager.CurrentUpdate.Components) &&
-			boardConfigsEqual(update.BoardConfig, manager.CurrentUpdate.BoardConfig) {
+			unitConfigsEqual(update.UnitConfig, manager.CurrentUpdate.UnitConfig) {
 			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
 				return nil
 			}
@@ -670,20 +670,20 @@ func (manager *firmwareManager) saveState() (err error) {
 	return nil
 }
 
-func (manager *firmwareManager) updateBoardConfig(ctx context.Context) (boardConfigErr string) {
-	log.Debug("Update board config")
+func (manager *firmwareManager) updateUnitConfig(ctx context.Context) (unitConfigErr string) {
+	log.Debug("Update unit config")
 
 	defer func() {
-		if boardConfigErr != "" {
-			manager.updateBoardConfigStatus(cloudprotocol.ErrorStatus, boardConfigErr)
+		if unitConfigErr != "" {
+			manager.updateUnitConfigStatus(cloudprotocol.ErrorStatus, unitConfigErr)
 		}
 	}()
 
-	if _, err := manager.boardConfigUpdater.CheckBoardConfig(manager.CurrentUpdate.BoardConfig); err != nil {
-		if errors.Is(err, boardconfig.ErrAlreadyInstalled) {
-			log.Error("Board config already installed")
+	if _, err := manager.unitConfigUpdater.CheckUnitConfig(manager.CurrentUpdate.UnitConfig); err != nil {
+		if errors.Is(err, unitconfig.ErrAlreadyInstalled) {
+			log.Error("Unit config already installed")
 
-			manager.updateBoardConfigStatus(cloudprotocol.InstalledStatus, "")
+			manager.updateUnitConfigStatus(cloudprotocol.InstalledStatus, "")
 
 			return ""
 		}
@@ -691,13 +691,13 @@ func (manager *firmwareManager) updateBoardConfig(ctx context.Context) (boardCon
 		return aoserrors.Wrap(err).Error()
 	}
 
-	manager.updateBoardConfigStatus(cloudprotocol.InstallingStatus, "")
+	manager.updateUnitConfigStatus(cloudprotocol.InstallingStatus, "")
 
-	if err := manager.boardConfigUpdater.UpdateBoardConfig(manager.CurrentUpdate.BoardConfig); err != nil {
+	if err := manager.unitConfigUpdater.UpdateUnitConfig(manager.CurrentUpdate.UnitConfig); err != nil {
 		return aoserrors.Wrap(err).Error()
 	}
 
-	manager.updateBoardConfigStatus(cloudprotocol.InstalledStatus, "")
+	manager.updateUnitConfigStatus(cloudprotocol.InstalledStatus, "")
 
 	return ""
 }
@@ -735,20 +735,20 @@ func (manager *firmwareManager) asyncUpdate(
 	return finishChannel
 }
 
-func (manager *firmwareManager) updateBoardConfigStatus(status, errorStr string) {
+func (manager *firmwareManager) updateUnitConfigStatus(status, errorStr string) {
 	manager.statusMutex.Lock()
 	defer manager.statusMutex.Unlock()
 
-	manager.BoardConfigStatus.Status = status
+	manager.UnitConfigStatus.Status = status
 
 	if errorStr != "" {
-		manager.BoardConfigStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: errorStr}
+		manager.UnitConfigStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: errorStr}
 	}
 
-	manager.statusHandler.updateBoardConfigStatus(manager.BoardConfigStatus)
+	manager.statusHandler.updateUnitConfigStatus(manager.UnitConfigStatus)
 }
 
-func boardConfigsEqual(config1, config2 json.RawMessage) (equal bool) {
+func unitConfigsEqual(config1, config2 json.RawMessage) (equal bool) {
 	var configData1, configData2 interface{}
 
 	if config1 == nil && config2 == nil {
@@ -760,11 +760,11 @@ func boardConfigsEqual(config1, config2 json.RawMessage) (equal bool) {
 	}
 
 	if err := json.Unmarshal(config1, &configData1); err != nil {
-		log.Errorf("Can't marshal board config: %s", err)
+		log.Errorf("Can't marshal unit config: %s", err)
 	}
 
 	if err := json.Unmarshal(config2, &configData2); err != nil {
-		log.Errorf("Can't marshal board config: %s", err)
+		log.Errorf("Can't marshal unit config: %s", err)
 	}
 
 	return reflect.DeepEqual(configData1, configData2)

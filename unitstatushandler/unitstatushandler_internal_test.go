@@ -58,10 +58,10 @@ type TestSender struct {
 	statusChannel chan cloudprotocol.UnitStatus
 }
 
-type TestBoardConfigUpdater struct {
-	BoardConfigStatus cloudprotocol.BoardConfigStatus
-	UpdateVersion     string
-	UpdateError       error
+type TestUnitConfigUpdater struct {
+	UnitConfigStatus cloudprotocol.UnitConfigStatus
+	UpdateVersion    string
+	UpdateError      error
 }
 
 type TestFirmwareUpdater struct {
@@ -152,7 +152,7 @@ func TestDownload(t *testing.T) {
 	testDownloader := NewTestDownloader()
 
 	statusHandler, err := New(&config.Config{},
-		NewTestBoardConfigUpdater(cloudprotocol.BoardConfigStatus{}), NewTestFirmwareUpdater(nil),
+		NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{}), NewTestFirmwareUpdater(nil),
 		NewTestSoftwareUpdater(nil, nil), testDownloader, NewTestStorage(), NewTestSender())
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -247,7 +247,7 @@ func TestFirmwareManager(t *testing.T) {
 		downloadResult          map[string]*downloadResult
 		updateTime              time.Duration
 		updateComponentStatuses []cloudprotocol.ComponentStatus
-		boardConfigError        error
+		unitConfigError         error
 		triggerUpdate           bool
 		updateWaitStatuses      []cmserver.UpdateStatus
 	}
@@ -611,9 +611,9 @@ func TestFirmwareManager(t *testing.T) {
 			},
 		},
 		{
-			testID:        "update board config",
+			testID:        "update unit config",
 			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
+			desiredStatus: &cloudprotocol.DecodedDesiredStatus{UnitConfig: json.RawMessage("{}")},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
@@ -622,12 +622,12 @@ func TestFirmwareManager(t *testing.T) {
 			},
 		},
 		{
-			testID:           "error board config",
-			initStatus:       &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus:    &cloudprotocol.DecodedDesiredStatus{BoardConfig: json.RawMessage("{}")},
-			boardConfigError: aoserrors.New("board config error"),
+			testID:          "error unit config",
+			initStatus:      &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus:   &cloudprotocol.DecodedDesiredStatus{UnitConfig: json.RawMessage("{}")},
+			unitConfigError: aoserrors.New("unit config error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "board config error"},
+				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "unit config error"},
 			},
 		},
 		{
@@ -686,7 +686,7 @@ func TestFirmwareManager(t *testing.T) {
 	}
 
 	firmwareUpdater := NewTestFirmwareUpdater(nil)
-	boardConfigUpdater := NewTestBoardConfigUpdater(cloudprotocol.BoardConfigStatus{})
+	unitConfigUpdater := NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{})
 	statusHandler := newTestStatusHandler()
 	testStorage := NewTestStorage()
 
@@ -698,7 +698,7 @@ func TestFirmwareManager(t *testing.T) {
 		firmwareUpdater.InitComponentsInfo = item.initComponentStatuses
 		firmwareUpdater.UpdateComponentsInfo = item.updateComponentStatuses
 		firmwareUpdater.UpdateTime = item.updateTime
-		boardConfigUpdater.UpdateError = item.boardConfigError
+		unitConfigUpdater.UpdateError = item.unitConfigError
 
 		if err := testStorage.saveFirmwareState(item.initState); err != nil {
 			t.Errorf("Can't save init state: %s", err)
@@ -707,7 +707,7 @@ func TestFirmwareManager(t *testing.T) {
 
 		// Create firmware manager
 
-		firmwareManager, err := newFirmwareManager(statusHandler, firmwareUpdater, boardConfigUpdater,
+		firmwareManager, err := newFirmwareManager(statusHandler, firmwareUpdater, unitConfigUpdater,
 			testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create firmware manager: %s", err)
@@ -1338,26 +1338,26 @@ func (sender *TestSender) SubscribeForConnectionEvents(consumer amqphandler.Conn
 }
 
 /***********************************************************************************************************************
- * TestBoardConfigUpdater
+ * TestUnitConfigUpdater
  **********************************************************************************************************************/
 
-func NewTestBoardConfigUpdater(boardConfigInfo cloudprotocol.BoardConfigStatus) (updater *TestBoardConfigUpdater) {
-	return &TestBoardConfigUpdater{BoardConfigStatus: boardConfigInfo}
+func NewTestUnitConfigUpdater(unitConfigInfo cloudprotocol.UnitConfigStatus) (updater *TestUnitConfigUpdater) {
+	return &TestUnitConfigUpdater{UnitConfigStatus: unitConfigInfo}
 }
 
-func (updater *TestBoardConfigUpdater) GetStatus() (info cloudprotocol.BoardConfigStatus, err error) {
-	return updater.BoardConfigStatus, nil
+func (updater *TestUnitConfigUpdater) GetStatus() (info cloudprotocol.UnitConfigStatus, err error) {
+	return updater.UnitConfigStatus, nil
 }
 
-func (updater *TestBoardConfigUpdater) GetBoardConfigVersion(configJSON json.RawMessage) (version string, err error) {
+func (updater *TestUnitConfigUpdater) GetUnitConfigVersion(configJSON json.RawMessage) (version string, err error) {
 	return updater.UpdateVersion, updater.UpdateError
 }
 
-func (updater *TestBoardConfigUpdater) CheckBoardConfig(configJSON json.RawMessage) (version string, err error) {
+func (updater *TestUnitConfigUpdater) CheckUnitConfig(configJSON json.RawMessage) (version string, err error) {
 	return updater.UpdateVersion, updater.UpdateError
 }
 
-func (updater *TestBoardConfigUpdater) UpdateBoardConfig(configJSON json.RawMessage) (err error) {
+func (updater *TestUnitConfigUpdater) UpdateUnitConfig(configJSON json.RawMessage) (err error) {
 	return updater.UpdateError
 }
 
@@ -1553,12 +1553,12 @@ func (statusHandler *testStatusHandler) updateComponentStatus(componentInfo clou
 	}).Debug("Update component status")
 }
 
-func (statusHandler *testStatusHandler) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigStatus) {
+func (statusHandler *testStatusHandler) updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus) {
 	log.WithFields(log.Fields{
-		"version": boardConfigInfo.VendorVersion,
-		"status":  boardConfigInfo.Status,
-		"error":   boardConfigInfo.ErrorInfo,
-	}).Debug("Update board config status")
+		"version": unitConfigInfo.VendorVersion,
+		"status":  unitConfigInfo.Status,
+		"error":   unitConfigInfo.ErrorInfo,
+	}).Debug("Update unit config status")
 }
 
 func (statusHandler *testStatusHandler) updateLayerStatus(layerInfo cloudprotocol.LayerStatus) {
