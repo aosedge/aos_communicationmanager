@@ -57,12 +57,12 @@ type StatusSender interface {
 	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
 }
 
-// BoardConfigUpdater updates board configuration.
-type BoardConfigUpdater interface {
-	GetStatus() (boardConfigInfo cloudprotocol.BoardConfigStatus, err error)
-	GetBoardConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error)
-	CheckBoardConfig(configJSON json.RawMessage) (vendorVersion string, err error)
-	UpdateBoardConfig(configJSON json.RawMessage) (err error)
+// UnitConfigUpdater updates unit configuration.
+type UnitConfigUpdater interface {
+	GetStatus() (unitConfigInfo cloudprotocol.UnitConfigStatus, err error)
+	GetUnitConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error)
+	CheckUnitConfig(configJSON json.RawMessage) (vendorVersion string, err error)
+	UpdateUnitConfig(configJSON json.RawMessage) (err error)
 }
 
 // FirmwareUpdater updates system components.
@@ -122,7 +122,7 @@ type Instance struct {
 
 	statusTimer       *time.Timer
 	unitSubjects      []string
-	boardConfigStatus itemStatus
+	unitConfigStatus  itemStatus
 	componentStatuses map[string]*itemStatus
 	layerStatuses     map[string]*itemStatus
 	serviceStatuses   map[string]*itemStatus
@@ -151,7 +151,7 @@ type itemStatus []statusDescriptor
 // New creates new unit status handler instance.
 func New(
 	cfg *config.Config,
-	boardConfigUpdater BoardConfigUpdater,
+	unitConfigUpdater UnitConfigUpdater,
 	firmwareUpdater FirmwareUpdater,
 	softwareUpdater SoftwareUpdater,
 	downloader Downloader,
@@ -172,7 +172,7 @@ func New(
 	instance.layerStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
 
-	if instance.firmwareManager, err = newFirmwareManager(instance, firmwareUpdater, boardConfigUpdater,
+	if instance.firmwareManager, err = newFirmwareManager(instance, firmwareUpdater, unitConfigUpdater,
 		storage, cfg.UMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -340,26 +340,26 @@ func (instance *Instance) CloudDisconnected() {
  **********************************************************************************************************************/
 
 func (instance *Instance) initCurrentStatus() error {
-	instance.boardConfigStatus = nil
+	instance.unitConfigStatus = nil
 	instance.componentStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
 	instance.layerStatuses = make(map[string]*itemStatus)
 
-	// Get initial board config info
+	// Get initial unit config info
 
-	boardConfigStatuses, err := instance.firmwareManager.getBoardConfigStatuses()
+	unitConfigStatuses, err := instance.firmwareManager.getUnitConfigStatuses()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	for _, status := range boardConfigStatuses {
+	for _, status := range unitConfigStatuses {
 		log.WithFields(log.Fields{
 			"status":        status.Status,
 			"vendorVersion": status.VendorVersion,
 			"error":         status.ErrorInfo,
-		}).Debug("Initial board config status")
+		}).Debug("Initial unit config status")
 
-		instance.processBoardConfigStatus(status)
+		instance.processUnitConfigStatus(status)
 	}
 
 	// Get initial components info
@@ -430,7 +430,7 @@ func (instance *Instance) initCurrentStatus() error {
 
 func (descriptor *statusDescriptor) getStatus() (status string) {
 	switch amqpStatus := descriptor.amqpStatus.(type) {
-	case *cloudprotocol.BoardConfigStatus:
+	case *cloudprotocol.UnitConfigStatus:
 		return amqpStatus.Status
 
 	case *cloudprotocol.ComponentStatus:
@@ -449,7 +449,7 @@ func (descriptor *statusDescriptor) getStatus() (status string) {
 
 func (descriptor *statusDescriptor) getVersion() (version string) {
 	switch amqpStatus := descriptor.amqpStatus.(type) {
-	case *cloudprotocol.BoardConfigStatus:
+	case *cloudprotocol.UnitConfigStatus:
 		return amqpStatus.VendorVersion
 
 	case *cloudprotocol.ComponentStatus:
@@ -466,22 +466,22 @@ func (descriptor *statusDescriptor) getVersion() (version string) {
 	}
 }
 
-func (instance *Instance) updateBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigStatus) {
+func (instance *Instance) updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"status":        boardConfigInfo.Status,
-		"vendorVersion": boardConfigInfo.VendorVersion,
-		"error":         boardConfigInfo.ErrorInfo,
-	}).Debug("Update board config status")
+		"status":        unitConfigInfo.Status,
+		"vendorVersion": unitConfigInfo.VendorVersion,
+		"error":         unitConfigInfo.ErrorInfo,
+	}).Debug("Update unit config status")
 
-	instance.processBoardConfigStatus(boardConfigInfo)
+	instance.processUnitConfigStatus(unitConfigInfo)
 	instance.statusChanged()
 }
 
-func (instance *Instance) processBoardConfigStatus(boardConfigInfo cloudprotocol.BoardConfigStatus) {
-	instance.updateStatus(&instance.boardConfigStatus, statusDescriptor{&boardConfigInfo})
+func (instance *Instance) processUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus) {
+	instance.updateStatus(&instance.unitConfigStatus, statusDescriptor{&unitConfigInfo})
 }
 
 func (instance *Instance) updateComponentStatus(componentInfo cloudprotocol.ComponentStatus) {
@@ -651,14 +651,14 @@ func (instance *Instance) sendCurrentStatus() {
 		Instances:    instance.instanceStatuses,
 	}
 
-	for _, status := range instance.boardConfigStatus {
-		boardConfig, ok := status.amqpStatus.(*cloudprotocol.BoardConfigStatus)
+	for _, status := range instance.unitConfigStatus {
+		unitConfig, ok := status.amqpStatus.(*cloudprotocol.UnitConfigStatus)
 		if !ok {
-			log.Error("Incorrect board config type")
+			log.Error("Incorrect unit config type")
 			continue
 		}
 
-		unitStatus.BoardConfig = append(unitStatus.BoardConfig, *boardConfig)
+		unitStatus.UnitConfig = append(unitStatus.UnitConfig, *unitConfig)
 	}
 
 	for _, componentStatus := range instance.componentStatuses {

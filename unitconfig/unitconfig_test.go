@@ -15,7 +15,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package boardconfig_test
+package unitconfig_test
 
 import (
 	"encoding/json"
@@ -26,8 +26,8 @@ import (
 
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_communicationmanager/boardconfig"
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/unitconfig"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -36,7 +36,7 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const validTestBoardConfig = `
+const validTestUnitConfig = `
  {
 	 "formatVersion": 1,
 	 "vendorVersion": "1.0.0"
@@ -93,132 +93,132 @@ func TestMain(m *testing.M) {
  **********************************************************************************************************************/
 
 func TestValidGetStatus(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(validTestBoardConfig), 0o600); err != nil {
-		t.Fatalf("Can't create board config file: %s", err)
+	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	boardConfig, err := boardconfig.New(&config.Config{BoardConfigFile: path.Join(tmpDir, "aos_board.cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
 	if err != nil {
-		t.Fatalf("Can't create board config instance: %s", err)
+		t.Fatalf("Can't create unit config instance: %s", err)
 	}
 
-	info, err := boardConfig.GetStatus()
+	info, err := unitConfig.GetStatus()
 	if err != nil {
-		t.Fatalf("Can't get board config status: %s", err)
+		t.Fatalf("Can't get unit config status: %s", err)
 	}
 
 	if info.Status != cloudprotocol.InstalledStatus {
-		t.Errorf("Wrong board config status: %s", info.Status)
+		t.Errorf("Wrong unit config status: %s", info.Status)
 	}
 
 	if info.VendorVersion != "1.0.0" {
-		t.Errorf("Wrong board config version: %s", info.VendorVersion)
+		t.Errorf("Wrong unit config version: %s", info.VendorVersion)
 	}
 }
 
 func TestInvalidGetStatus(t *testing.T) {
-	testBoardConfig := `
+	testUnitConfig := `
 {
 	"formatVersion": 1,
 	"vendorVersion": "1.0.0",
 	something not valid
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(testBoardConfig), 0o600); err != nil {
-		t.Fatalf("Can't create board config file: %s", err)
+	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(testUnitConfig), 0o600); err != nil {
+		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	boardConfig, err := boardconfig.New(&config.Config{BoardConfigFile: path.Join(tmpDir, "aos_board.cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, " aos_unit .cfg")}, &testClient{})
 	if err != nil {
-		t.Fatalf("Can't create board config instance: %s", err)
+		t.Fatalf("Can't create unit config instance: %s", err)
 	}
 
-	info, err := boardConfig.GetStatus()
+	info, err := unitConfig.GetStatus()
 	if err != nil {
-		t.Fatalf("Can't get board config status: %s", err)
+		t.Fatalf("Can't get unit config status: %s", err)
 	}
 
 	if info.Status != cloudprotocol.ErrorStatus {
-		t.Errorf("Wrong board config status: %s", info.Status)
+		t.Errorf("Wrong unit config status: %s", info.Status)
 	}
 }
 
-func TestCheckBoardConfig(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(validTestBoardConfig), 0o600); err != nil {
-		t.Fatalf("Can't create board config file: %s", err)
+func TestCheckUnitConfig(t *testing.T) {
+	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	boardConfig, err := boardconfig.New(&config.Config{BoardConfigFile: path.Join(tmpDir, "aos_board.cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, " aos_unit .cfg")}, &testClient{})
 	if err != nil {
-		t.Fatalf("Can't create board config instance: %s", err)
+		t.Fatalf("Can't create unit config instance: %s", err)
 	}
 
-	validBoardConfig := `
+	validUnitConfig := `
 	{
 		"formatVersion": 1,
 		"vendorVersion": "2.0.0"
 	}`
 
-	vendorVersion, err := boardConfig.CheckBoardConfig(json.RawMessage(validBoardConfig))
+	vendorVersion, err := unitConfig.CheckUnitConfig(json.RawMessage(validUnitConfig))
 	if err != nil {
-		t.Errorf("Check board config error: %s", err)
+		t.Errorf("Check unit config error: %s", err)
 	}
 
 	if vendorVersion != "2.0.0" {
-		t.Errorf("Wrong board config version: %s", vendorVersion)
+		t.Errorf("Wrong unit config version: %s", vendorVersion)
 	}
 
-	invalidBoardConfig := `
+	invalidUnitConfig := `
 	{
 		"formatVersion": 1,
 		"vendorVersion": "1.0.0"
 	}`
 
-	if vendorVersion, err = boardConfig.CheckBoardConfig(json.RawMessage(invalidBoardConfig)); err == nil {
+	if vendorVersion, err = unitConfig.CheckUnitConfig(json.RawMessage(invalidUnitConfig)); err == nil {
 		t.Error("Error expected")
 	}
 
 	if vendorVersion != "1.0.0" {
-		t.Errorf("Wrong board config version: %s", vendorVersion)
+		t.Errorf("Wrong unit config version: %s", vendorVersion)
 	}
 }
 
-func TestUpdateBoardConfig(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_board.cfg"), []byte(validTestBoardConfig), 0o600); err != nil {
-		t.Fatalf("Can't create board config file: %s", err)
+func TestUpdateUnitConfig(t *testing.T) {
+	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	boardConfig, err := boardconfig.New(&config.Config{BoardConfigFile: path.Join(tmpDir, "aos_board.cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, " aos_unit .cfg")}, &testClient{})
 	if err != nil {
-		t.Fatalf("Can't create board config instance: %s", err)
+		t.Fatalf("Can't create unit config instance: %s", err)
 	}
 
-	newBoardConfig := `
+	newUnitConfig := `
 	{
 		"formatVersion": 1,
 		"vendorVersion": "2.0.0"
 	}`
 
-	if err = boardConfig.UpdateBoardConfig(json.RawMessage(newBoardConfig)); err != nil {
-		t.Fatalf("Can't update board config: %s", err)
+	if err = unitConfig.UpdateUnitConfig(json.RawMessage(newUnitConfig)); err != nil {
+		t.Fatalf("Can't update unit config: %s", err)
 	}
 
-	vendorVersion, err := boardConfig.GetBoardConfigVersion(json.RawMessage(newBoardConfig))
+	vendorVersion, err := unitConfig.GetUnitConfigVersion(json.RawMessage(newUnitConfig))
 	if err != nil {
-		t.Errorf("Get board config version error: %s", err)
+		t.Errorf("Get unit config version error: %s", err)
 	}
 
 	if vendorVersion != "2.0.0" {
-		t.Errorf("Wrong board config version: %s", vendorVersion)
+		t.Errorf("Wrong unit config version: %s", vendorVersion)
 	}
 
-	readBoardConfig, err := ioutil.ReadFile(path.Join(tmpDir, "aos_board.cfg"))
+	readUnitConfig, err := ioutil.ReadFile(path.Join(tmpDir, " aos_unit .cfg"))
 	if err != nil {
-		t.Fatalf("Can't read board config file: %s", err)
+		t.Fatalf("Can't read unit config file: %s", err)
 	}
 
-	if string(readBoardConfig) != newBoardConfig {
-		t.Errorf("Read wrong board config: %s", readBoardConfig)
+	if string(readUnitConfig) != newUnitConfig {
+		t.Errorf("Read wrong unit config: %s", readUnitConfig)
 	}
 }
 
@@ -226,10 +226,10 @@ func TestUpdateBoardConfig(t *testing.T) {
  * testClient
  **********************************************************************************************************************/
 
-func (client *testClient) CheckBoardConfig(boardConfig aostypes.BoardConfig) (err error) {
+func (client *testClient) CheckUnitConfig(unitConfig aostypes.UnitConfig) (err error) {
 	return nil
 }
 
-func (client *testClient) SetBoardConfig(boardConfig aostypes.BoardConfig) (err error) {
+func (client *testClient) SetUnitConfig(unitConfig aostypes.UnitConfig) (err error) {
 	return nil
 }
