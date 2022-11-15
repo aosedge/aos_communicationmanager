@@ -19,12 +19,9 @@ package downloader
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/spaceallocator"
-	log "github.com/sirupsen/logrus"
 )
 
 /***********************************************************************************************************************
@@ -54,10 +51,8 @@ type downloadResult struct {
 
 	statusChannel chan error
 
-	downloadFileName  string
-	interruptFileName string
-
-	downloadSpace spaceallocator.Space
+	downloadFileName string
+	downloadSpace    spaceallocator.Space
 }
 
 /***********************************************************************************************************************
@@ -74,33 +69,4 @@ func (result *downloadResult) Wait() (err error) {
 	close(result.statusChannel)
 
 	return aoserrors.Wrap(err)
-}
-
-/***********************************************************************************************************************
- * Private
- **********************************************************************************************************************/
-
-func (result *downloadResult) storeInterruptReason(reason string) {
-	if len(reason) > maxReasonSize {
-		reason = reason[:maxReasonSize]
-	}
-
-	if err := ioutil.WriteFile(result.interruptFileName, []byte(reason), 0o600); err != nil {
-		log.Errorf("Can't store interrupt reason: %s", err)
-	}
-}
-
-func (result *downloadResult) retrieveInterruptReason() (reason string) {
-	data, err := ioutil.ReadFile(result.interruptFileName)
-	if err != nil {
-		return unknownInterruptReason
-	}
-
-	return string(data)
-}
-
-func (result *downloadResult) removeInterruptReason() {
-	if err := os.RemoveAll(result.interruptFileName); err != nil {
-		log.Errorf("Can't remove interrupt reason file: %s", err)
-	}
 }
