@@ -50,10 +50,7 @@ import (
 
 const updateDownloadsTime = 30 * time.Second
 
-const (
-	encryptedFileExt = ".enc"
-	interruptFileExt = ".int"
-)
+const encryptedFileExt = ".enc"
 
 /***********************************************************************************************************************
  * Types
@@ -69,6 +66,15 @@ type Downloader struct {
 	currentDownloads map[string]*downloadResult
 	waitQueue        *list.List
 	allocator        spaceallocator.Allocator
+	storage          Storage
+}
+
+// PackageInfo struct contains download info data.
+type DownloadInfo struct {
+	Path            string
+	TargetType      string
+	InterruptReason string
+	Downloaded      bool
 }
 
 // PackageInfo struct contains package info data.
@@ -83,21 +89,35 @@ type PackageInfo struct {
 	TargetVendorVersion string
 }
 
+// Storage provides API to add, remove, update or access download info data.
+type Storage interface {
+	GetDownloadInfo(filePath string) (DownloadInfo, error)
+	GetDownloadInfos() ([]DownloadInfo, error)
+	RemoveDownloadInfo(filePath string) error
+	SetDownloadInfo(downloadInfo DownloadInfo) error
+}
+
 // AlertSender provides alert sender interface.
 type AlertSender interface {
 	SendAlert(alert cloudprotocol.AlertItem)
 }
 
-// NewSpaceAllocator space allocator constructor.
-// nolint:gochecknoglobals // used for unit test mock
-var NewSpaceAllocator = spaceallocator.New
+var (
+	// NewSpaceAllocator space allocator constructor.
+	// nolint:gochecknoglobals // used for unit test mock
+	NewSpaceAllocator = spaceallocator.New
+
+	// ErrNotExist not exist download info error.
+	ErrNotExist         = errors.New("download info not exist")
+	ErrPartlyDownloaded = errors.New("file not fully downloaded")
+)
 
 /***********************************************************************************************************************
 * Public
 ***********************************************************************************************************************/
 
 // New creates new downloader object.
-func New(moduleID string, cfg *config.Config, sender AlertSender) (
+func New(moduleID string, cfg *config.Config, sender AlertSender, storage Storage) (
 	downloader *Downloader, err error,
 ) {
 	log.Debug("Create downloader instance")
@@ -108,6 +128,7 @@ func New(moduleID string, cfg *config.Config, sender AlertSender) (
 		sender:           sender,
 		currentDownloads: make(map[string]*downloadResult),
 		waitQueue:        list.New(),
+		storage:          storage,
 	}
 
 	if err = os.MkdirAll(downloader.config.DownloadDir, 0o755); err != nil {
@@ -146,12 +167,11 @@ func (downloader *Downloader) Download(
 	id := base64.URLEncoding.EncodeToString(packageInfo.Sha256)
 
 	downloadResult := &downloadResult{
-		id:                id,
-		ctx:               ctx,
-		packageInfo:       packageInfo,
-		statusChannel:     make(chan error, 1),
-		downloadFileName:  path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
-		interruptFileName: path.Join(downloader.config.DownloadDir, id+interruptFileExt),
+		id:               id,
+		ctx:              ctx,
+		packageInfo:      packageInfo,
+		statusChannel:    make(chan error, 1),
+		downloadFileName: path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
 	}
 
 	log.WithField("id", id).Debug("Download")
@@ -163,9 +183,61 @@ func (downloader *Downloader) Download(
 	return downloadResult, nil
 }
 
+func (downloader *Downloader) Release(filePath string) error {
+	downloadInfo, err := downloader.storage.GetDownloadInfo(filePath)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if !downloadInfo.Downloaded {
+		return ErrPartlyDownloaded
+	}
+
+	if err := downloader.releaseDownload(downloadInfo.Path); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (downloader *Downloader) ReleaseByType(targetType string) error {
+	downloadInfos, err := downloader.storage.GetDownloadInfos()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, downloadInfo := range downloadInfos {
+		if downloadInfo.TargetType != targetType {
+			continue
+		}
+
+		if !downloadInfo.Downloaded && err == nil {
+			err = ErrPartlyDownloaded
+		}
+
+		if errDB := downloader.releaseDownload(downloadInfo.Path); errDB != nil && err == nil {
+			err = errDB
+		}
+	}
+
+	return nil
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (downloader *Downloader) releaseDownload(filePath string) error {
+	if err := downloader.setItemOutdated(filePath); err != nil {
+		return err
+	}
+
+	if err := downloader.storage.RemoveDownloadInfo(filePath); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
 
 func (downloader *Downloader) addToQueue(result *downloadResult) error {
 	if len(result.packageInfo.URLs) == 0 {
@@ -206,10 +278,6 @@ func (downloader *Downloader) addToQueue(result *downloadResult) error {
 
 		if err := downloader.acceptSpace(result); err != nil {
 			log.Errorf("Error accepting space: %v", err)
-		}
-
-		if err := downloader.setDownloadResultOutdated(result); err != nil {
-			log.Errorf("Error setting download outdated: %v", err)
 		}
 
 		downloader.Lock()
@@ -257,6 +325,8 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 		}
 	}()
 
+	downloader.allocator.RestoreOutdatedItem(result.downloadFileName)
+
 	requiredDownloadSize, err := downloader.getRequiredSize(result.downloadFileName, result.packageInfo.Size)
 	if err != nil {
 		return aoserrors.Wrap(err)
@@ -287,32 +357,33 @@ func (downloader *Downloader) acceptSpace(result *downloadResult) (err error) {
 	return err
 }
 
-func (downloader *Downloader) setDownloadResultOutdated(result *downloadResult) (err error) {
-	if setOutdatedErr := downloader.setItemOutdated(result.downloadFileName); setOutdatedErr != nil && err == nil {
-		err = setOutdatedErr
+func (downloader *Downloader) setDownloadDirOutdated() error {
+	downloadInfos, err := downloader.storage.GetDownloadInfos()
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	if setOutdatedErr := downloader.setItemOutdated(result.interruptFileName); setOutdatedErr != nil && err == nil {
-		err = setOutdatedErr
-	}
-
-	return err
-}
-
-func (downloader *Downloader) setDownloadDirOutdated() (err error) {
 	entries, err := os.ReadDir(downloader.config.DownloadDir)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
+nextEntry:
 	for _, entry := range entries {
-		if setOutdatedErr := downloader.setItemOutdated(
-			filepath.Join(downloader.config.DownloadDir, entry.Name())); setOutdatedErr != nil && err == nil {
-			err = setOutdatedErr
+		downloadFilePath := filepath.Join(downloader.config.DownloadDir, entry.Name())
+
+		for _, downloadInfo := range downloadInfos {
+			if downloadFilePath == downloadInfo.Path && downloadInfo.Downloaded {
+				continue nextEntry
+			}
+		}
+
+		if err := downloader.setItemOutdated(downloadFilePath); err != nil {
+			return aoserrors.Wrap(err)
 		}
 	}
 
-	return err
+	return nil
 }
 
 func (downloader *Downloader) setItemOutdated(itemPath string) error {
@@ -349,6 +420,10 @@ func (downloader *Downloader) removeOutdatedItem(itemPath string) error {
 	log.WithField("itemPath", itemPath).Debug("Remove outdated item")
 
 	if err := os.RemoveAll(itemPath); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err := downloader.storage.RemoveDownloadInfo(itemPath); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -502,14 +577,31 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 
 		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download started"))
 	} else {
-		reason := result.retrieveInterruptReason()
+		downloadInfo, err := downloader.storage.GetDownloadInfo(result.downloadFileName)
+		if err != nil && !errors.Is(err, ErrNotExist) {
+			return aoserrors.Wrap(err)
+		}
 
-		log.WithFields(log.Fields{"url": url, "id": result.id, "reason": reason}).Debug("Download resumed")
+		if !errors.Is(err, ErrNotExist) {
+			log.WithFields(log.Fields{
+				"url": url, "id": result.id, "reason": downloadInfo.InterruptReason,
+			}).Debug("Download resumed")
 
-		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download resumed reason: "+reason))
-
-		result.removeInterruptReason()
+			downloader.sender.SendAlert(downloader.prepareDownloadAlert(
+				resp, result, "Download resumed reason: "+downloadInfo.InterruptReason))
+		}
 	}
+
+	downloadInfo := DownloadInfo{
+		Path:       result.downloadFileName,
+		TargetType: result.packageInfo.TargetType,
+	}
+
+	defer func() {
+		if errDB := downloader.storage.SetDownloadInfo(downloadInfo); errDB != nil && err == nil {
+			err = errDB
+		}
+	}()
 
 	for {
 		select {
@@ -526,7 +618,7 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 					"downloaded": resp.BytesComplete(), "reason": err,
 				}).Warn("Download interrupted")
 
-				result.storeInterruptReason(err.Error())
+				downloadInfo.InterruptReason = err.Error()
 
 				downloader.sender.SendAlert(downloader.prepareDownloadAlert(
 					resp, result, "Download interrupted reason: "+err.Error()))
@@ -539,6 +631,8 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 				"file":       resp.Filename,
 				"downloaded": resp.BytesComplete(),
 			}).Debug("Download completed")
+
+			downloadInfo.Downloaded = true
 
 			downloader.sender.SendAlert(
 				downloader.prepareDownloadAlert(
