@@ -19,37 +19,34 @@ package smcontroller_test
 
 import (
 	"context"
-	"encoding/json"
-	"net"
 	"os"
 	"reflect"
-	"strconv"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
-	pb "github.com/aoscloud/aos_common/api/servicemanager/v2"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	pb "github.com/aoscloud/aos_common/api/servicemanager/v3"
 	"github.com/aoscloud/aos_common/utils/pbconvert"
-	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/launcher"
 	"github.com/aoscloud/aos_communicationmanager/smcontroller"
-	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
 )
 
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
 
-const smURL = "localhost:8888"
+const smServerURL = "localhost:8093"
 
 const messageTimeout = 5 * time.Second
 
@@ -57,34 +54,14 @@ const messageTimeout = 5 * time.Second
  * Types
  **********************************************************************************************************************/
 
-type testSM struct {
-	sync.Mutex
-	pb.UnimplementedSMServiceServer
-	grpcServer                   *grpc.Server
-	messageChannel               chan *pb.SMNotifications
-	currentServiceInstallRequest *pb.InstallServiceRequest
-	currentServiceRestoreRequest *pb.RestoreServiceRequest
-	currentServiceRemoveRequest  *pb.RemoveServiceRequest
-	servicesStatus               pb.ServicesStatus
-	currentLayerInstallRequest   *pb.InstallLayerRequest
-	currentRemoveLayerRequest    *pb.RemoveLayerRequest
-	currentRestoreLayerRequest   *pb.RestoreLayerRequest
-	layersStatus                 pb.LayersStatus
-	currentStateAcceptance       *pb.StateAcceptance
-	currentSetState              *pb.InstanceState
-	currentEnvVarRequest         *pb.OverrideEnvVarsRequest
-	envVarStatus                 *pb.OverrideEnvVarStatus
-	currentSysLogRequest         *pb.SystemLogRequest
-	currentInstanceLogRequest    *pb.InstanceLogRequest
-	currentRunRequest            *pb.RunInstancesRequest
-	setBoardConfig               aostypes.BoardConfig
-	checkBoardConfig             aostypes.BoardConfig
-	boardConfigWasSet            bool
-	ctx                          context.Context // nolint:containedctx
-	cancelFunction               context.CancelFunc
+type testSMClient struct {
+	connection              *grpc.ClientConn
+	pbClient                pb.SMServiceClient
+	stream                  pb.SMService_RegisterSMClient
+	sendMessageChannel      chan *pb.SMOutgoingMessages
+	receivedMessagesChannel chan *pb.SMIncomingMessages
+	cancelFunction          context.CancelFunc
 }
-
-type testURLTranslator struct{}
 
 type testMessageSender struct {
 	messageChannel chan interface{}
@@ -116,280 +93,283 @@ func init() {
  * Tests
  **********************************************************************************************************************/
 
-func TestBoardConfigMessages(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	config := config.Config{SMController: config.SMController{
-		SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-	}}
-
-	controller, err := smcontroller.New(&config, nil, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
-	}
-	defer controller.Close()
-
-	boardConfig := aostypes.BoardConfig{
-		VendorVersion: "3.0",
-		Devices:       []aostypes.DeviceInfo{{Name: "dev1", SharedCount: 2, Groups: []string{"gid1"}}},
-	}
-
-	// test check board config
-	if err = controller.CheckBoardConfig(boardConfig); err != nil {
-		t.Fatalf("Check board config error: %v", err)
-	}
-
-	if !reflect.DeepEqual(boardConfig, sm.checkBoardConfig) {
-		t.Error("Incorrect board config in check request")
-	}
-
-	// test set the same board config
-	sm.setBoardConfig = boardConfig
-
-	if err = controller.SetBoardConfig(boardConfig); err != nil {
-		t.Fatalf("Can't send set board config: %v", err)
-	}
-
-	if sm.boardConfigWasSet {
-		t.Error("New board config should not be set")
-	}
-
-	boardConfig.VendorVersion = "4.0"
-
-	if err = controller.SetBoardConfig(boardConfig); err != nil {
-		t.Fatalf("Can't send set board config: %v", err)
-	}
-
-	if !sm.boardConfigWasSet {
-		t.Error("New board config should be set")
-	}
-
-	if !reflect.DeepEqual(boardConfig, sm.setBoardConfig) {
-		t.Error("Incorrect board config")
-	}
-}
-
-func TestServicesMessages(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	config := config.Config{SMController: config.SMController{
-		SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-	}}
-
-	controller, err := smcontroller.New(&config, nil, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
-	}
-	defer controller.Close()
-
-	expectedStatus := make([]unitstatushandler.ServiceStatus, 5)
-	sm.servicesStatus.Services = make([]*pb.ServiceStatus, 5)
-
-	for i := 0; i < 5; i++ {
-		installRequest := cloudprotocol.ServiceInfo{
-			VersionInfo: aostypes.VersionInfo{AosVersion: uint64(i), Description: "description" + strconv.Itoa(i)},
-			ID:          "testService" + strconv.Itoa(i),
-			ProviderID:  "provider" + strconv.Itoa(i),
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{
-				URLs:   []string{"someurl" + strconv.Itoa(i)},
-				Sha256: []byte{0, 0, 0, byte(i + 200)},
-				Sha512: []byte{byte(i + 300), 0, 0, 0},
-				Size:   uint64(i + 500),
-			},
-		}
-		expectedInstallRequest := &pb.InstallServiceRequest{
-			Url:         "someurl" + strconv.Itoa(i),
-			ServiceId:   "testService" + strconv.Itoa(i),
-			ProviderId:  "provider" + strconv.Itoa(i),
-			AosVersion:  uint64(i),
-			Description: "description" + strconv.Itoa(i),
-			Sha256:      []byte{0, 0, 0, byte(i + 200)},
-			Sha512:      []byte{byte(i + 300), 0, 0, 0},
-			Size:        uint64(i + 500),
-		}
-		expectedStatus[i] = unitstatushandler.ServiceStatus{
-			ServiceStatus: cloudprotocol.ServiceStatus{
-				AosVersion: uint64(i),
-				ID:         "testService" + strconv.Itoa(i),
-				Status:     cloudprotocol.InstalledStatus,
-			},
-		}
-		sm.servicesStatus.Services[i] = &pb.ServiceStatus{ServiceId: "testService" + strconv.Itoa(i), AosVersion: uint64(i)}
-
-		if err := controller.InstallService(installRequest); err != nil {
-			t.Fatalf("Can't install service: %v", err)
-		}
-
-		if !proto.Equal(expectedInstallRequest, sm.currentServiceInstallRequest) {
-			t.Error("Incorrect install service request")
-		}
-	}
-
-	servicesResult, err := controller.GetServicesStatus()
-	if err != nil {
-		t.Fatalf("Can't get all services status: %v", err)
-	}
-
-	if !reflect.DeepEqual(servicesResult, expectedStatus) {
-		t.Error("Incorrect services status")
-	}
-
+func TestSMInstancesStatusNotifications(t *testing.T) {
 	var (
-		serviceID              = "someserviceID"
-		expectedRemoveRequest  = &pb.RemoveServiceRequest{ServiceId: serviceID}
-		expectedRestoreRequest = &pb.RestoreServiceRequest{ServiceId: serviceID}
+		nodeID = "mainSM"
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		nodeConfig = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		expectedNodeConfiguration = launcher.NodeConfiguration{
+			NodeInfo: cloudprotocol.NodeInfo{
+				NodeID: nodeID, NumCPUs: 1, TotalRAM: 100,
+				Partitions: []cloudprotocol.PartitionInfo{
+					{Name: "services", Type: []string{"t1"}, TotalSize: 50},
+				},
+			},
+			RemoteNode:    true,
+			RunnerFeature: []string{"runc"},
+		}
+		sendRuntimeStatus = &pb.RunInstancesStatus{
+			Instances: []*pb.InstanceStatus{
+				{
+					Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
+					AosVersion: 1, StateChecksum: "superCheckSum", RunState: "running",
+				},
+				{
+					Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
+					AosVersion: 1, StateChecksum: "superCheckSum2", RunState: "fail",
+					ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+				},
+			},
+		}
+		expectedRuntimeStatus = launcher.NodeRunInstanceStatus{
+			NodeID: nodeID,
+			Instances: []cloudprotocol.InstanceStatus{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+					AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
+					AosVersion:    1, StateChecksum: "superCheckSum2", RunState: "fail",
+					ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+				},
+			},
+		}
+
+		sendUpdateStatus = &pb.SMOutgoingMessages{
+			SMOutgoingMessage: &pb.SMOutgoingMessages_UpdateInstancesStatus{
+				UpdateInstancesStatus: &pb.UpdateInstancesStatus{
+					Instances: []*pb.InstanceStatus{
+						{
+							Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
+							AosVersion: 1, StateChecksum: "superCheckSum", RunState: "running",
+						},
+						{
+							Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
+							AosVersion: 1, StateChecksum: "superCheckSum2", RunState: "fail",
+							ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+						},
+					},
+				},
+			},
+		}
+		expectedUpdateState = []cloudprotocol.InstanceStatus{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+				AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
+				AosVersion:    1, StateChecksum: "superCheckSum2", RunState: "fail",
+				ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+			},
+		}
 	)
 
-	if err := controller.RemoveService(serviceID); err != nil {
-		t.Fatalf("Can't remove service: %v", err)
-	}
-
-	if !proto.Equal(expectedRemoveRequest, sm.currentServiceRemoveRequest) {
-		t.Error("incorrect remove service request")
-	}
-
-	if err := controller.RestoreService(serviceID); err != nil {
-		t.Fatalf("Can't restore service: %v", err)
-	}
-
-	if !proto.Equal(expectedRestoreRequest, sm.currentServiceRestoreRequest) {
-		t.Error("incorrect restore service request")
-	}
-}
-
-func TestLayerMessages(t *testing.T) {
-	sm, err := newTestSM(smURL)
+	controller, err := smcontroller.New(&config, nil, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	config := config.Config{SMController: config.SMController{
-		SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-	}}
-
-	controller, err := smcontroller.New(&config, nil, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
+		t.Fatalf("Can't create SM constoller: %v", err)
 	}
 	defer controller.Close()
 
-	expectedLayersStatus := make([]unitstatushandler.LayerStatus, 5)
-	sm.layersStatus.Layers = make([]*pb.LayerStatus, 5)
-
-	for i := 0; i < 5; i++ {
-		installLayerRequest := cloudprotocol.LayerInfo{
-			VersionInfo: aostypes.VersionInfo{
-				AosVersion: uint64(i), Description: "description" + strconv.Itoa(i),
-				VendorVersion: strconv.Itoa(i + 1),
-			},
-			ID:     "testLayer" + strconv.Itoa(i),
-			Digest: "digest" + strconv.Itoa(i),
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{
-				URLs:   []string{"someurl" + strconv.Itoa(i)},
-				Sha256: []byte{0, 0, 0, byte(i + 100)},
-				Sha512: []byte{byte(i + 100), 0, 0, 0},
-				Size:   uint64(i + 500),
-			},
-		}
-		expectedInstallRequest := &pb.InstallLayerRequest{
-			Url: "someurl" + strconv.Itoa(i), LayerId: "testLayer" + strconv.Itoa(i), AosVersion: uint64(i),
-			VendorVersion: strconv.Itoa(i + 1), Digest: "digest" + strconv.Itoa(i),
-			Description: "description" + strconv.Itoa(i),
-			Sha256:      []byte{0, 0, 0, byte(i + 100)},
-			Sha512:      []byte{byte(i + 100), 0, 0, 0},
-			Size:        uint64(i + 500),
-		}
-		expectedLayersStatus[i] = unitstatushandler.LayerStatus{LayerStatus: cloudprotocol.LayerStatus{
-			AosVersion: uint64(i),
-			Status:     cloudprotocol.InstalledStatus,
-			ID:         "testLayer" + strconv.Itoa(i),
-			Digest:     "digest" + strconv.Itoa(i),
-		}}
-		sm.layersStatus.Layers[i] = &pb.LayerStatus{
-			LayerId: "testLayer" + strconv.Itoa(i), AosVersion: uint64(i), VendorVersion: strconv.Itoa(i + 1),
-			Digest: "digest" + strconv.Itoa(i),
-		}
-
-		if err := controller.InstallLayer(installLayerRequest); err != nil {
-			t.Fatalf("Can't install layer: %v", err)
-		}
-
-		if !proto.Equal(expectedInstallRequest, sm.currentLayerInstallRequest) {
-			t.Error("Incorrect layer install request")
-		}
-	}
-
-	layersResult, err := controller.GetLayersStatus()
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, sendRuntimeStatus)
 	if err != nil {
-		t.Fatalf("Can't get all layers status: %v", err)
+		t.Fatalf("Can't create test SM: %v", err)
 	}
 
-	if !reflect.DeepEqual(layersResult, expectedLayersStatus) {
-		t.Error("Incorrect layers status")
+	defer smClient.close()
+
+	if err := waitRunInstancesStatus(
+		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
+		t.Errorf("Incorrect runtime status notification: %v", err)
 	}
 
-	const layerDigest = "layerDigest"
-
-	expectedRemoveReq := &pb.RemoveLayerRequest{Digest: layerDigest}
-
-	if err := controller.RemoveLayer(layerDigest); err != nil {
-		t.Fatalf("Can't remove layer: %v", err)
+	cfg, err := controller.GetNodeConfiguration(nodeID)
+	if err != nil {
+		t.Errorf("Can't get node configuration: %v", err)
 	}
 
-	if !proto.Equal(sm.currentRemoveLayerRequest, expectedRemoveReq) {
-		t.Error("Incorrect remove layer request")
+	if !reflect.DeepEqual(cfg, expectedNodeConfiguration) {
+		t.Error("Incorrect node configuration")
 	}
 
-	expectedRestoreReq := &pb.RestoreLayerRequest{Digest: layerDigest}
+	smClient.sendMessageChannel <- sendUpdateStatus
 
-	if err := controller.RestoreLayer(layerDigest); err != nil {
-		t.Fatalf("Can't restore layer: %v", err)
+	if err := waitUpdateInstancesStatus(
+		controller.GetUpdateInstancesStatusChannel(), expectedUpdateState, messageTimeout); err != nil {
+		t.Error("Incorrect instance update status")
+	}
+}
+
+func TestUnitConfigMessages(t *testing.T) {
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		testWaitChan    = make(chan struct{})
+		originalVersion = "version_1"
+		configStatus    = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_UnitConfigStatus{
+			UnitConfigStatus: &pb.UnitConfigStatus{VendorVersion: originalVersion},
+		}}
+		newVersion = "version_2"
+	)
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create SM constoller: %v", err)
+	}
+	defer controller.Close()
+
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
 	}
 
-	if !proto.Equal(sm.currentRestoreLayerRequest, expectedRestoreReq) {
-		t.Error("Incorrect restore layer request")
+	defer smClient.close()
+
+	_ = waitRunInstancesStatus(
+		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+
+	go func() {
+		version, err := controller.GetUnitConfigStatus(nodeID)
+		if err != nil {
+			t.Errorf("Can't get unit config status: %v", err)
+		}
+
+		if version != originalVersion {
+			t.Error("incorrect unit config version")
+		}
+
+		testWaitChan <- struct{}{}
+	}()
+
+	if err := waitClientMessage(smClient.receivedMessagesChannel,
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.stream.Send(configStatus); err != nil {
+		t.Errorf("Can't send unit config status: %v", err)
+	}
+
+	<-testWaitChan
+
+	go func() {
+		if err := controller.CheckUnitConfig(aostypes.NodeConfig{NodeID: nodeID}, newVersion); err != nil {
+			t.Errorf("Error check unit config: %v", err)
+		}
+		testWaitChan <- struct{}{}
+	}()
+
+	if err := waitClientMessage(smClient.receivedMessagesChannel,
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
+			CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: "", VendorVersion: newVersion},
+		}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	configStatus.GetUnitConfigStatus().VendorVersion = newVersion
+
+	if err := smClient.stream.Send(configStatus); err != nil {
+		t.Errorf("Can't send unit config status")
+	}
+
+	<-testWaitChan
+
+	go func() {
+		if err := controller.SetUnitConfig(aostypes.NodeConfig{NodeID: nodeID}, newVersion); err != nil {
+			t.Errorf("Error check unit config: %v", err)
+		}
+		testWaitChan <- struct{}{}
+	}()
+
+	if err := waitClientMessage(smClient.receivedMessagesChannel,
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
+			SetUnitConfig: &pb.SetUnitConfig{UnitConfig: "", VendorVersion: newVersion},
+		}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	configStatus.GetUnitConfigStatus().VendorVersion = newVersion
+
+	if err := smClient.stream.Send(configStatus); err != nil {
+		t.Errorf("Can't send unit config status")
 	}
 }
 
 func TestInstanceStateMessages(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
 	var (
-		config = config.Config{SMController: config.SMController{
-			SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-		}}
+		nodeID        = "mainSM"
 		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		expectedNewState = cloudprotocol.NewState{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+			Checksum:      "someChecksum", State: "someState",
+		}
+		expectedStateRequest = cloudprotocol.StateRequest{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+			Default:       true,
+		}
+		expectedPBStateAcceptance = &pb.SMIncomingMessages{
+			SMIncomingMessage: &pb.SMIncomingMessages_InstanceStateAcceptance{
+				InstanceStateAcceptance: &pb.InstanceStateAcceptance{
+					Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
+					StateChecksum: "someCheckSum", Result: "OK", Reason: "good",
+				},
+			},
+		}
+		expectedPBNewState = &pb.SMIncomingMessages{
+			SMIncomingMessage: &pb.SMIncomingMessages_SetInstanceState{
+				SetInstanceState: &pb.SetInstanceState{
+					State: &pb.InstanceState{
+						Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
+						StateChecksum: "someCheckSum", State: []byte("someState"),
+					},
+				},
+			},
+		}
 	)
 
-	controller, err := smcontroller.New(&config, messageSender, nil, nil, &testURLTranslator{}, nil, nil, true)
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
+		t.Fatalf("Can't create SM constoller: %v", err)
 	}
 	defer controller.Close()
 
-	expectedNewState := cloudprotocol.NewState{
-		InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-		Checksum:      "someChecksum", State: "someState",
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, nil)
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
 	}
 
-	sm.messageChannel <- &pb.SMNotifications{SMNotification: &pb.SMNotifications_NewInstanceState{
+	defer smClient.close()
+
+	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_NewInstanceState{
 		NewInstanceState: &pb.NewInstanceState{State: &pb.InstanceState{
 			Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
 			StateChecksum: expectedNewState.Checksum,
@@ -398,15 +378,10 @@ func TestInstanceStateMessages(t *testing.T) {
 	}}
 
 	if err := waitMessage(messageSender.messageChannel, expectedNewState, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %s", err)
+		t.Fatalf("Wait message error: %v", err)
 	}
 
-	expectedStateRequest := cloudprotocol.StateRequest{
-		InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-		Default:       true,
-	}
-
-	sm.messageChannel <- &pb.SMNotifications{SMNotification: &pb.SMNotifications_InstanceStateRequest{
+	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_InstanceStateRequest{
 		InstanceStateRequest: &pb.InstanceStateRequest{
 			Instance: pbconvert.InstanceIdentToPB(expectedStateRequest.InstanceIdent),
 			Default:  true,
@@ -414,269 +389,60 @@ func TestInstanceStateMessages(t *testing.T) {
 	}}
 
 	if err := waitMessage(messageSender.messageChannel, expectedStateRequest, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %s", err)
+		t.Fatalf("Wait message error: %v", err)
 	}
 
-	if err = controller.InstanceStateAcceptance(cloudprotocol.StateAcceptance{
+	if err = controller.InstanceStateAcceptance(nodeID, cloudprotocol.StateAcceptance{
 		InstanceIdent: expectedNewState.InstanceIdent,
 		Checksum:      "someCheckSum", Result: "OK", Reason: "good",
 	}); err != nil {
 		t.Errorf("Error sending instance state acceptance: %v", err)
 	}
 
-	expectedPBStateAcceptance := &pb.StateAcceptance{
-		Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
-		StateChecksum: "someCheckSum", Result: "OK", Reason: "good",
+	if err := waitClientMessage(smClient.receivedMessagesChannel, expectedPBStateAcceptance, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
 	}
 
-	if !proto.Equal(expectedPBStateAcceptance, sm.currentStateAcceptance) {
-		log.Error("Incorrect state acceptance")
-	}
-
-	if err := controller.SetInstanceState(cloudprotocol.UpdateState{
+	if err := controller.SetInstanceState(nodeID, cloudprotocol.UpdateState{
 		InstanceIdent: expectedNewState.InstanceIdent, Checksum: "someCheckSum", State: "someState",
 	}); err != nil {
 		t.Fatalf("Can't send set instance state: %v", err)
 	}
 
-	expectedPBNewState := &pb.NewInstanceState{State: &pb.InstanceState{
-		Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
-		StateChecksum: "someCheckSum", State: []byte("someState"),
-	}}
-
-	if !proto.Equal(expectedPBNewState, sm.currentSetState) {
-		log.Error("Incorrect new instance state")
-	}
-}
-
-func TestOverrideEnvVars(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	var (
-		config = config.Config{SMController: config.SMController{
-			SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-		}}
-		messageSender = newTestMessageSender()
-		currentTime   = time.Now()
-		envVars       = cloudprotocol.DecodedOverrideEnvVars{
-			OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{
-				{
-					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
-					EnvVars: []cloudprotocol.EnvVarInfo{
-						{ID: "id0", Variable: "var0", TTL: &currentTime},
-					},
-				},
-			},
-		}
-		expectedPBEnvVarRequest = &pb.OverrideEnvVarsRequest{
-			EnvVars: []*pb.OverrideInstanceEnvVar{{Instance: &pb.InstanceIdent{
-				ServiceId: "service0",
-				SubjectId: "subject0", Instance: -1,
-			}, Vars: []*pb.EnvVarInfo{{VarId: "id0", Variable: "var0", Ttl: timestamppb.New(currentTime)}}}},
-		}
-		exepctedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
-			OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
-				{
-					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
-					Statuses:       []cloudprotocol.EnvVarStatus{{ID: "id0", Error: "someError"}},
-				},
-			},
-		}
-	)
-
-	controller, err := smcontroller.New(&config, messageSender, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
-	}
-	defer controller.Close()
-
-	sm.envVarStatus = &pb.OverrideEnvVarStatus{EnvVarsStatus: []*pb.EnvVarInstanceStatus{
-		{Instance: &pb.InstanceIdent{
-			ServiceId: "service0",
-			SubjectId: "subject0", Instance: -1,
-		}, VarsStatus: []*pb.EnvVarStatus{{VarId: "id0", Error: "someError"}}},
-	}}
-
-	if err = controller.OverrideEnvVars(envVars); err != nil {
-		t.Fatalf("Error sending override env vars: %v", err)
-	}
-
-	if !proto.Equal(sm.currentEnvVarRequest, expectedPBEnvVarRequest) {
-		t.Error("Incorrect set env vars request")
-	}
-
-	if err := waitMessage(messageSender.messageChannel, exepctedEnvVarStatus, messageTimeout); err != nil {
+	if err := waitClientMessage(smClient.receivedMessagesChannel, expectedPBNewState, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 }
 
-func TestLogMessages(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	var (
-		config = config.Config{SMController: config.SMController{
-			SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-		}}
-		messageSender = newTestMessageSender()
-		currentTime   = time.Now().UTC()
-	)
-
-	controller, err := smcontroller.New(&config, messageSender, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
-	}
-	defer controller.Close()
-
-	// Test get system log
-	type testSystemLogRequest struct {
-		sendLogRequest     cloudprotocol.RequestSystemLog
-		expectedLogRequest *pb.SystemLogRequest
-	}
-
-	testRequests := []testSystemLogRequest{
-		{
-			sendLogRequest:     cloudprotocol.RequestSystemLog{LogID: "sysLogID1", From: &currentTime},
-			expectedLogRequest: &pb.SystemLogRequest{LogId: "sysLogID1", From: timestamppb.New(currentTime)},
-		},
-		{
-			sendLogRequest:     cloudprotocol.RequestSystemLog{LogID: "sysLogID2", Till: &currentTime},
-			expectedLogRequest: &pb.SystemLogRequest{LogId: "sysLogID2", Till: timestamppb.New(currentTime)},
-		},
-	}
-
-	for _, request := range testRequests {
-		if err := controller.GetSystemLog(request.sendLogRequest); err != nil {
-			t.Fatalf("Can't send get system log request: %v", err)
-		}
-
-		if !proto.Equal(request.expectedLogRequest, sm.currentSysLogRequest) {
-			t.Error("Incorrect system log request")
-		}
-	}
-
-	// Test get service log
-	type testServiceLogRequest struct {
-		sendLogRequest     cloudprotocol.RequestServiceLog
-		expectedLogRequest *pb.InstanceLogRequest
-	}
-
-	instanceLogRequests := []testServiceLogRequest{
-		{
-			sendLogRequest: cloudprotocol.RequestServiceLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
-				LogID:          "serviceLogID1", From: &currentTime,
-			},
-			expectedLogRequest: &pb.InstanceLogRequest{
-				Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
-				LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
-			},
-		},
-		{
-			sendLogRequest: cloudprotocol.RequestServiceLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
-				LogID:          "serviceLogID1", Till: &currentTime,
-			},
-			expectedLogRequest: &pb.InstanceLogRequest{
-				Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
-				LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
-			},
-		},
-	}
-
-	for _, request := range instanceLogRequests {
-		if err := controller.GetInstanceLog(request.sendLogRequest); err != nil {
-			t.Fatalf("Can't send get service log request: %v", err)
-		}
-
-		if !proto.Equal(request.expectedLogRequest, sm.currentInstanceLogRequest) {
-			t.Error("Incorrect service log request")
-		}
-	}
-
-	// Test get service crash log
-	type testCrashLogRequest struct {
-		sendLogRequest     cloudprotocol.RequestServiceCrashLog
-		expectedLogRequest *pb.InstanceLogRequest
-	}
-
-	crashLogRequests := []testCrashLogRequest{
-		{
-			sendLogRequest: cloudprotocol.RequestServiceCrashLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
-				LogID:          "serviceLogID1", From: &currentTime,
-			},
-			expectedLogRequest: &pb.InstanceLogRequest{
-				Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
-				LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
-			},
-		},
-		{
-			sendLogRequest: cloudprotocol.RequestServiceCrashLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
-				LogID:          "serviceLogID1", Till: &currentTime,
-			},
-			expectedLogRequest: &pb.InstanceLogRequest{
-				Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
-				LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
-			},
-		},
-	}
-
-	for _, request := range crashLogRequests {
-		if err := controller.GetInstanceCrashLog(request.sendLogRequest); err != nil {
-			t.Fatalf("Can't send get service log request: %v", err)
-		}
-
-		if !proto.Equal(request.expectedLogRequest, sm.currentInstanceLogRequest) {
-			t.Error("Incorrect service log request")
-		}
-	}
-
-	expectedLog := cloudprotocol.PushLog{
-		LogID: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error",
-	}
-
-	sm.messageChannel <- &pb.SMNotifications{
-		SMNotification: &pb.SMNotifications_Log{
-			Log: &pb.LogData{LogId: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error"},
-		},
-	}
-
-	if err := waitMessage(messageSender.messageChannel, expectedLog, messageTimeout); err != nil {
-		t.Errorf("Incorrect log message: %v", err)
-	}
-}
-
 func TestSMAlertNotifications(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
 	var (
-		config = config.Config{SMController: config.SMController{
-			SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-		}}
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
 		alertSender = newTestAlertSender()
 	)
 
-	controller, err := smcontroller.New(&config, nil, alertSender, nil, &testURLTranslator{}, nil, nil, true)
+	controller, err := smcontroller.New(&config, messageSender, alertSender, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
+		t.Fatalf("Can't create SM constoller: %v", err)
 	}
 	defer controller.Close()
+
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, nil)
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
 
 	// Test alert notifications
 	type testAlert struct {
@@ -688,7 +454,7 @@ func TestSMAlertNotifications(t *testing.T) {
 		{
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag:     cloudprotocol.AlertTagSystemError,
-				Payload: cloudprotocol.SystemAlert{Message: "SystemAlertMessage"},
+				Payload: cloudprotocol.SystemAlert{Message: "SystemAlertMessage", NodeID: nodeID},
 			},
 			sendAlert: &pb.Alert{
 				Tag:     cloudprotocol.AlertTagSystemError,
@@ -698,7 +464,7 @@ func TestSMAlertNotifications(t *testing.T) {
 		{
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag:     cloudprotocol.AlertTagAosCore,
-				Payload: cloudprotocol.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage"},
+				Payload: cloudprotocol.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage", NodeID: nodeID},
 			},
 			sendAlert: &pb.Alert{
 				Tag:     cloudprotocol.AlertTagAosCore,
@@ -713,6 +479,7 @@ func TestSMAlertNotifications(t *testing.T) {
 						{Name: "someName1", Errors: []string{"error1", "error2"}},
 						{Name: "someName2", Errors: []string{"error3", "error4"}},
 					},
+					NodeID: nodeID,
 				},
 			},
 			sendAlert: &pb.Alert{
@@ -733,6 +500,7 @@ func TestSMAlertNotifications(t *testing.T) {
 				Payload: cloudprotocol.DeviceAllocateAlert{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
 					Device:        "someDevice", Message: "someMessage",
+					NodeID: nodeID,
 				},
 			},
 			sendAlert: &pb.Alert{
@@ -748,7 +516,7 @@ func TestSMAlertNotifications(t *testing.T) {
 		{
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag:     cloudprotocol.AlertTagSystemQuota,
-				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "param1", Value: 42},
+				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "param1", Value: 42, NodeID: nodeID},
 			},
 			sendAlert: &pb.Alert{
 				Tag: cloudprotocol.AlertTagSystemQuota,
@@ -800,7 +568,9 @@ func TestSMAlertNotifications(t *testing.T) {
 		testAlert.expectedAlert.Timestamp = currentTime
 		testAlert.sendAlert.Timestamp = timestamppb.New(currentTime)
 
-		sm.messageChannel <- &pb.SMNotifications{SMNotification: &pb.SMNotifications_Alert{Alert: testAlert.sendAlert}}
+		smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
+			SMOutgoingMessage: &pb.SMOutgoingMessages_Alert{Alert: testAlert.sendAlert},
+		}
 
 		if err := waitMessage(alertSender.messageChannel, testAlert.expectedAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect alert notification: %v", err)
@@ -809,65 +579,100 @@ func TestSMAlertNotifications(t *testing.T) {
 }
 
 func TestSMMonitoringNotifications(t *testing.T) {
-	sm, err := newTestSM(smURL)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
 	var (
-		config = config.Config{SMController: config.SMController{
-			SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-		}}
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
 		monitoringSender = newTestMonitoringSender()
 	)
 
-	controller, err := smcontroller.New(&config, nil, nil, monitoringSender, &testURLTranslator{}, nil, nil, true)
+	controller, err := smcontroller.New(&config, messageSender, nil, monitoringSender, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
+		t.Fatalf("Can't create SM constoller: %v", err)
 	}
 	defer controller.Close()
 
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, nil)
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
+
 	type testMonitoringElement struct {
-		expectedMonitoring cloudprotocol.MonitoringData
-		sendMonitoring     *pb.Monitoring
+		expectedMonitoring cloudprotocol.NodeMonitoringData
+		sendMonitoring     *pb.NodeMonitoring
 	}
 
 	testMonitoringData := []testMonitoringElement{
 		{
-			expectedMonitoring: cloudprotocol.MonitoringData{
-				Global:           cloudprotocol.GlobalMonitoringData{RAM: 10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50},
+			expectedMonitoring: cloudprotocol.NodeMonitoringData{
+				NodeID: nodeID,
+				MonitoringData: cloudprotocol.MonitoringData{
+					RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
+					Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				},
 				ServiceInstances: []cloudprotocol.InstanceMonitoringData{},
 			},
-			sendMonitoring: &pb.Monitoring{
-				SystemMonitoring: &pb.SystemMonitoring{Ram: 10, Cpu: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50},
+			sendMonitoring: &pb.NodeMonitoring{
+				MonitoringData: &pb.MonitoringData{
+					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
+					Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				},
 			},
 		},
 		{
-			expectedMonitoring: cloudprotocol.MonitoringData{
-				Global: cloudprotocol.GlobalMonitoringData{RAM: 10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50},
+			expectedMonitoring: cloudprotocol.NodeMonitoringData{
+				NodeID: nodeID,
+				MonitoringData: cloudprotocol.MonitoringData{
+					RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
+					Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				},
 				ServiceInstances: []cloudprotocol.InstanceMonitoringData{
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
-						RAM:           10, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 0,
+						MonitoringData: cloudprotocol.MonitoringData{
+							RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 0,
+							Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+						},
 					},
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
-						RAM:           0, CPU: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50,
+						MonitoringData: cloudprotocol.MonitoringData{
+							RAM: 20, CPU: 30, InTraffic: 50, OutTraffic: 10,
+							Disk: []cloudprotocol.PartitionUsage{{Name: "p2", UsedSize: 50}},
+						},
 					},
 				},
 			},
-			sendMonitoring: &pb.Monitoring{
-				SystemMonitoring: &pb.SystemMonitoring{Ram: 10, Cpu: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50},
+			sendMonitoring: &pb.NodeMonitoring{
+				MonitoringData: &pb.MonitoringData{
+					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
+					Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				},
 				InstanceMonitoring: []*pb.InstanceMonitoring{
 					{
 						Instance: &pb.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
-						Ram:      10, Cpu: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 0,
+						MonitoringData: &pb.MonitoringData{
+							Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 0,
+							Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+						},
 					},
 					{
 						Instance: &pb.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
-						Ram:      0, Cpu: 20, UsedDisk: 30, InTraffic: 40, OutTraffic: 50,
+						MonitoringData: &pb.MonitoringData{
+							Ram: 20, Cpu: 30, InTraffic: 50, OutTraffic: 10,
+							Disk: []*pb.PartitionUsage{{Name: "p2", UsedSize: 50}},
+						},
 					},
 				},
 			},
@@ -879,9 +684,9 @@ func TestSMMonitoringNotifications(t *testing.T) {
 		testMonitoring.expectedMonitoring.Timestamp = currentTime
 		testMonitoring.sendMonitoring.Timestamp = timestamppb.New(currentTime)
 
-		sm.messageChannel <- &pb.SMNotifications{
-			SMNotification: &pb.SMNotifications_Monitoring{Monitoring: testMonitoring.sendMonitoring},
-		}
+		smClient.sendMessageChannel <- &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_NodeMonitoring{
+			NodeMonitoring: testMonitoring.sendMonitoring,
+		}}
 
 		if err := waitMessage(
 			monitoringSender.messageChannel, testMonitoring.expectedMonitoring, messageTimeout); err != nil {
@@ -890,145 +695,448 @@ func TestSMMonitoringNotifications(t *testing.T) {
 	}
 }
 
-func TestSMInstancesStatusNotifications(t *testing.T) {
-	sm, err := newTestSM(smURL)
+func TestLogMessages(t *testing.T) {
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		currentTime = time.Now().UTC()
+	)
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	config := config.Config{SMController: config.SMController{
-		SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-	}}
-
-	controller, err := smcontroller.New(&config, nil, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
+		t.Fatalf("Can't create SM constoller: %v", err)
 	}
 	defer controller.Close()
 
-	sendRuntimeStatus := &pb.SMNotifications_RunInstancesStatus{
-		RunInstancesStatus: &pb.RunInstancesStatus{
-			UnitSubjects: []string{"unitsubject"},
-			Instances: []*pb.InstanceStatus{
-				{
-					Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-					AosVersion: 1, StateChecksum: "superCheckSum", RunState: "running",
-				},
-			},
-			ErrorServices: []*pb.ServiceError{
-				{ServiceId: "serv2", AosVersion: 2},
-				{ServiceId: "serv3", AosVersion: 2, ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"}},
-			},
-		},
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
 	}
 
-	expectedRuntimeStatus := unitstatushandler.RunInstancesStatus{
-		UnitSubjects: []string{"unitsubject"},
-		Instances: []cloudprotocol.InstanceStatus{
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-				AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
-			},
-		},
-		ErrorServices: []cloudprotocol.ServiceStatus{
-			{ID: "serv2", AosVersion: 2, Status: cloudprotocol.ErrorStatus},
-			{
-				ID: "serv3", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
-				ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
-			},
-		},
+	defer smClient.close()
+
+	_ = waitRunInstancesStatus(
+		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+
+	// Test get system log
+	type testSystemLogRequest struct {
+		sendLogRequest     cloudprotocol.RequestSystemLog
+		expectedLogRequest *pb.SMIncomingMessages
 	}
 
-	sm.messageChannel <- &pb.SMNotifications{SMNotification: sendRuntimeStatus}
-
-	if err := waitRunInstancesStatus(
-		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
-		t.Errorf("Incorrect runtime status notification: %v", err)
-	}
-
-	sendUpdateStatus := &pb.SMNotifications_UpdateInstancesStatus{
-		UpdateInstancesStatus: &pb.UpdateInstancesStatus{
-			Instances: []*pb.InstanceStatus{
-				{
-					Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-					AosVersion: 1, StateChecksum: "superCheckSum", RunState: "running",
-				},
-				{
-					Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-					AosVersion: 1, StateChecksum: "superCheckSum2", RunState: "fail",
-					ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
-				},
-			},
-		},
-	}
-
-	expextedUpdateState := []cloudprotocol.InstanceStatus{
+	testRequests := []testSystemLogRequest{
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-			AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
+			sendLogRequest: cloudprotocol.RequestSystemLog{LogID: "sysLogID1", From: &currentTime},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
+				SystemLogRequest: &pb.SystemLogRequest{LogId: "sysLogID1", From: timestamppb.New(currentTime)},
+			}},
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-			AosVersion:    1, StateChecksum: "superCheckSum2", RunState: "fail",
-			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+			sendLogRequest: cloudprotocol.RequestSystemLog{LogID: "sysLogID2", Till: &currentTime},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
+				SystemLogRequest: &pb.SystemLogRequest{LogId: "sysLogID2", Till: timestamppb.New(currentTime)},
+			}},
 		},
 	}
 
-	sm.messageChannel <- &pb.SMNotifications{SMNotification: sendUpdateStatus}
+	for _, request := range testRequests {
+		if err := controller.GetSystemLog(nodeID, request.sendLogRequest); err != nil {
+			t.Fatalf("Can't send get system log request: %v", err)
+		}
 
-	if err := waitUpdateInstancesStatus(
-		controller.GetUpdateInstancesStatusChannel(), expextedUpdateState, messageTimeout); err != nil {
-		t.Errorf("Incorrect update status notification: %v", err)
+		if err := waitClientMessage(
+			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
+			t.Fatalf("Wait message error: %v", err)
+		}
+	}
+
+	// Test get service log
+	type testServiceLogRequest struct {
+		sendLogRequest     cloudprotocol.RequestServiceLog
+		expectedLogRequest *pb.SMIncomingMessages
+	}
+
+	instanceLogRequests := []testServiceLogRequest{
+		{
+			sendLogRequest: cloudprotocol.RequestServiceLog{
+				InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
+				LogID:          "serviceLogID1", From: &currentTime,
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
+				InstanceLogRequest: &pb.InstanceLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
+					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestServiceLog{
+				InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
+				LogID:          "serviceLogID1", Till: &currentTime,
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
+				InstanceLogRequest: &pb.InstanceLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
+					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+				},
+			}},
+		},
+	}
+
+	for _, request := range instanceLogRequests {
+		if err := controller.GetInstanceLog(nodeID, request.sendLogRequest); err != nil {
+			t.Fatalf("Can't send get service log request: %v", err)
+		}
+
+		if err := waitClientMessage(
+			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
+			t.Fatalf("Wait message error: %v", err)
+		}
+	}
+
+	// Test get service crash log
+	type testCrashLogRequest struct {
+		sendLogRequest     cloudprotocol.RequestServiceCrashLog
+		expectedLogRequest *pb.SMIncomingMessages
+	}
+
+	crashLogRequests := []testCrashLogRequest{
+		{
+			sendLogRequest: cloudprotocol.RequestServiceCrashLog{
+				InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
+				LogID:          "serviceLogID1", From: &currentTime,
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
+				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
+					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestServiceCrashLog{
+				InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
+				LogID:          "serviceLogID1", Till: &currentTime,
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
+				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
+					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+				},
+			}},
+		},
+	}
+
+	for _, request := range crashLogRequests {
+		if err := controller.GetInstanceCrashLog(nodeID, request.sendLogRequest); err != nil {
+			t.Fatalf("Can't send get service log request: %v", err)
+		}
+
+		if err := waitClientMessage(
+			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
+			t.Fatalf("Wait message error: %v", err)
+		}
+	}
+
+	expectedLog := cloudprotocol.PushLog{
+		LogID: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error",
+	}
+
+	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
+		SMOutgoingMessage: &pb.SMOutgoingMessages_Log{
+			Log: &pb.LogData{LogId: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error"},
+		},
+	}
+
+	if err := waitMessage(messageSender.messageChannel, expectedLog, messageTimeout); err != nil {
+		t.Errorf("Incorrect log message: %v", err)
+	}
+}
+
+func TestOverrideEnvVars(t *testing.T) {
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		currentTime = time.Now().UTC()
+		envVars     = cloudprotocol.OverrideEnvVars{
+			OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{
+				{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
+					EnvVars: []cloudprotocol.EnvVarInfo{
+						{ID: "id0", Variable: "var0", TTL: &currentTime},
+					},
+				},
+			},
+		}
+		expectedPbEnvVarRequest = &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_OverrideEnvVars{
+			OverrideEnvVars: &pb.OverrideEnvVars{
+				EnvVars: []*pb.OverrideInstanceEnvVar{{Instance: &pb.InstanceIdent{
+					ServiceId: "service0",
+					SubjectId: "subject0", Instance: -1,
+				}, Vars: []*pb.EnvVarInfo{{VarId: "id0", Variable: "var0", Ttl: timestamppb.New(currentTime)}}}},
+			},
+		}}
+		pbEnvVarStatus = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_OverrideEnvVarStatus{
+			OverrideEnvVarStatus: &pb.OverrideEnvVarStatus{EnvVarsStatus: []*pb.EnvVarInstanceStatus{
+				{Instance: &pb.InstanceIdent{
+					ServiceId: "service0",
+					SubjectId: "subject0", Instance: -1,
+				}, VarsStatus: []*pb.EnvVarStatus{{VarId: "id0", Error: "someError"}}},
+			}},
+		}}
+		exepctedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
+			OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
+				{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
+					Statuses:       []cloudprotocol.EnvVarStatus{{ID: "id0", Error: "someError"}},
+				},
+			},
+		}
+	)
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create SM constoller: %v", err)
+	}
+	defer controller.Close()
+
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
+
+	_ = waitRunInstancesStatus(
+		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+
+	if err = controller.OverrideEnvVars(nodeID, envVars); err != nil {
+		t.Fatalf("Error sending override env vars: %v", err)
+	}
+
+	if err := waitClientMessage(
+		smClient.receivedMessagesChannel, expectedPbEnvVarRequest, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	smClient.sendMessageChannel <- pbEnvVarStatus
+
+	if err := waitMessage(messageSender.messageChannel, exepctedEnvVarStatus, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
 	}
 }
 
 func TestRunInstances(t *testing.T) {
-	sm, err := newTestSM(smURL)
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		expectedRunInstances = &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_RunInstances{
+			RunInstances: &pb.RunInstances{
+				Services: []*pb.ServiceInfo{{
+					VersionInfo: &pb.VesionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
+					Url:         "url1", ServiceId: "s1", ProviderId: "p1", Sha256: []byte{0, 0, 0, byte(100)},
+					Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+				}},
+				Layers: []*pb.LayerInfo{
+					{
+						VersionInfo: &pb.VesionInfo{AosVersion: 2, VendorVersion: "2", Description: "desc2"},
+						Url:         "url2", LayerId: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
+						Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+					},
+				},
+				Instances: []*pb.InstanceInfo{
+					{
+						Instance: &pb.InstanceIdent{ServiceId: "s1", SubjectId: "subj1", Instance: 1},
+						Uid:      500, Gid: 600, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+					},
+				},
+			},
+		}}
+		sendServices = []aostypes.ServiceInfo{{
+			VersionInfo: aostypes.VersionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
+			ID:          "s1", ProviderID: "p1", URL: "url1", Sha256: []byte{0, 0, 0, byte(100)},
+			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+		}}
+		sendLayers = []aostypes.LayerInfo{{
+			VersionInfo: aostypes.VersionInfo{AosVersion: 2, VendorVersion: "3", Description: "desc2"},
+			URL:         "url2", ID: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
+			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+		}}
+		sednInstances = []aostypes.InstanceInfo{{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
+			UID:           500, GID: 600, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+		}}
+	)
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create test SM: %s", err)
-	}
-
-	defer sm.close()
-
-	config := config.Config{SMController: config.SMController{
-		SMList: []config.SMConfig{{SMID: "testSM", ServerURL: smURL}},
-	}}
-
-	controller, err := smcontroller.New(&config, nil, nil, nil, &testURLTranslator{}, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %s", err)
+		t.Fatalf("Can't create SM constoller: %v", err)
 	}
 	defer controller.Close()
 
-	instances := []cloudprotocol.InstanceInfo{
-		{ServiceID: "serv1", SubjectID: "subj1", NumInstances: 10},
-		{ServiceID: "serv2", SubjectID: "subj1", NumInstances: 1},
-	}
-	expectedRequest := &pb.RunInstancesRequest{Instances: []*pb.RunInstanceRequest{
-		{ServiceId: "serv1", SubjectId: "subj1", NumInstances: 10},
-		{ServiceId: "serv2", SubjectId: "subj1", NumInstances: 1},
-	}}
-
-	if err := controller.RunInstances(instances); err != nil {
-		t.Fatalf("Can't run instances: %v", err)
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
 	}
 
-	if !proto.Equal(expectedRequest, sm.currentRunRequest) {
-		t.Error("Incorrect run instances request")
+	defer smClient.close()
+
+	_ = waitRunInstancesStatus(
+		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+
+	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sednInstances); err != nil {
+		t.Fatalf("Can't send run instances: %v", err)
 	}
+
+	if err := waitClientMessage(
+		smClient.receivedMessagesChannel, expectedRunInstances, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+}
+
+func TestGetNodeMonitoringData(t *testing.T) {
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				SMServerURL: smServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+		testWaitChan       = make(chan struct{})
+		currentTime        = time.Now().UTC()
+		expectedMonitoring = cloudprotocol.NodeMonitoringData{
+			NodeID:    nodeID,
+			Timestamp: currentTime,
+			MonitoringData: cloudprotocol.MonitoringData{
+				RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
+				Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+			},
+			ServiceInstances: []cloudprotocol.InstanceMonitoringData{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
+					MonitoringData: cloudprotocol.MonitoringData{
+						RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 0,
+						Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					},
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
+					MonitoringData: cloudprotocol.MonitoringData{
+						RAM: 20, CPU: 30, InTraffic: 50, OutTraffic: 10,
+						Disk: []cloudprotocol.PartitionUsage{{Name: "p2", UsedSize: 50}},
+					},
+				},
+			},
+		}
+		sendMonitoring = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_NodeMonitoring{
+			NodeMonitoring: &pb.NodeMonitoring{
+				Timestamp: timestamppb.New(currentTime),
+				MonitoringData: &pb.MonitoringData{
+					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
+					Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				},
+				InstanceMonitoring: []*pb.InstanceMonitoring{
+					{
+						Instance: &pb.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
+						MonitoringData: &pb.MonitoringData{
+							Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 0,
+							Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+						},
+					},
+					{
+						Instance: &pb.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
+						MonitoringData: &pb.MonitoringData{
+							Ram: 20, Cpu: 30, InTraffic: 50, OutTraffic: 10,
+							Disk: []*pb.PartitionUsage{{Name: "p2", UsedSize: 50}},
+						},
+					},
+				},
+			},
+		}}
+	)
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create SM constoller: %v", err)
+	}
+	defer controller.Close()
+
+	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
+
+	_ = waitRunInstancesStatus(
+		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+
+	go func() {
+		data, err := controller.GetNodeMonitoringData(nodeID)
+		if err != nil {
+			t.Errorf("Can't get node monitoring data: %v", err)
+		}
+
+		if !reflect.DeepEqual(data, expectedMonitoring) {
+			log.Debug("Exp: ", expectedMonitoring)
+			log.Debug("Rec: ", data)
+			t.Errorf("Incorrect monitoring data")
+		}
+
+		testWaitChan <- struct{}{}
+	}()
+
+	if err := waitClientMessage(smClient.receivedMessagesChannel,
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.stream.Send(sendMonitoring); err != nil {
+		t.Errorf("Can't send unit config status")
+	}
+
+	<-testWaitChan
 }
 
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
-
-func (translator *testURLTranslator) TranslateURL(isLocal bool, inURL string) (outURL string, err error) {
-	outURL = inURL
-
-	return outURL, nil
-}
 
 func newTestAlertSender() *testAlertSender {
 	return &testAlertSender{messageChannel: make(chan interface{}, 1)}
@@ -1042,7 +1150,7 @@ func newTestMonitoringSender() *testMonitoringSender {
 	return &testMonitoringSender{messageChannel: make(chan interface{}, 1)}
 }
 
-func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) {
+func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData) {
 	sender.messageChannel <- monitoringData
 }
 
@@ -1092,8 +1200,24 @@ func waitMessage(messageChannel <-chan interface{}, expectedMsg interface{}, tim
 	return nil
 }
 
+func waitClientMessage(
+	messageChannel <-chan *pb.SMIncomingMessages, expectedMsg *pb.SMIncomingMessages, timeout time.Duration,
+) error {
+	select {
+	case <-time.After(timeout):
+		return aoserrors.New("wait message timeout")
+
+	case message := <-messageChannel:
+		if !proto.Equal(message, expectedMsg) {
+			log.Error("Incorrect received client message")
+		}
+	}
+
+	return nil
+}
+
 func waitRunInstancesStatus(
-	messageChannel <-chan unitstatushandler.RunInstancesStatus, expectedMsg unitstatushandler.RunInstancesStatus,
+	messageChannel <-chan launcher.NodeRunInstanceStatus, expectedMsg launcher.NodeRunInstanceStatus,
 	timeout time.Duration,
 ) error {
 	select {
@@ -1126,161 +1250,89 @@ func waitUpdateInstancesStatus(
 	return nil
 }
 
-func newTestSM(url string) (sm *testSM, err error) {
-	sm = &testSM{messageChannel: make(chan *pb.SMNotifications, 1)}
+func newTestSMClient(
+	url string, config *pb.NodeConfiguration, runStatus *pb.RunInstancesStatus,
+) (client *testSMClient, err error) {
+	client = &testSMClient{
+		sendMessageChannel:      make(chan *pb.SMOutgoingMessages, 10),
+		receivedMessagesChannel: make(chan *pb.SMIncomingMessages, 10),
+	}
 
-	sm.ctx, sm.cancelFunction = context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	sm.grpcServer = grpc.NewServer()
-
-	pb.RegisterSMServiceServer(sm.grpcServer, sm)
-
-	listener, err := net.Listen("tcp", url)
-	if err != nil {
+	if client.connection, err = grpc.DialContext(
+		ctx, url, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock()); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	go func() {
-		if err := sm.grpcServer.Serve(listener); err != nil {
-			log.Errorf("Can't serve gRPC server: %s", err)
-		}
-	}()
+	client.pbClient = pb.NewSMServiceClient(client.connection)
 
-	return sm, nil
-}
-
-func (sm *testSM) close() (err error) {
-	if sm.grpcServer != nil {
-		sm.grpcServer.Stop()
+	if client.stream, err = pb.NewSMServiceClient(client.connection).RegisterSM(context.Background()); err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
-	sm.cancelFunction()
+	if err := client.stream.Send(
+		&pb.SMOutgoingMessages{
+			SMOutgoingMessage: &pb.SMOutgoingMessages_NodeConfiguration{NodeConfiguration: config},
+		}); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
 
-	return nil
+	if runStatus != nil {
+		if err := client.stream.Send(
+			&pb.SMOutgoingMessages{
+				SMOutgoingMessage: &pb.SMOutgoingMessages_RunInstancesStatus{RunInstancesStatus: runStatus},
+			}); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+	}
+
+	ctxMessages, cancelFunction := context.WithCancel(context.Background())
+
+	client.cancelFunction = cancelFunction
+
+	go client.processReceiveMessages()
+	go client.processSendMessages(ctxMessages)
+
+	return client, nil
 }
 
-func (sm *testSM) SubscribeSMNotifications(
-	request *empty.Empty, stream pb.SMService_SubscribeSMNotificationsServer,
-) (err error) {
+func (client *testSMClient) close() {
+	if client.connection != nil {
+		client.connection.Close()
+	}
+
+	client.cancelFunction()
+}
+
+func (client *testSMClient) processReceiveMessages() {
 	for {
-		select {
-		case message := <-sm.messageChannel:
-			if err = stream.Send(message); err != nil {
-				return aoserrors.Wrap(err)
+		data, err := client.stream.Recv()
+		if err != nil {
+			if code, ok := status.FromError(err); ok {
+				if code.Code() == codes.Canceled {
+					log.Debug("SM client connection closed")
+				}
 			}
 
-		case <-sm.ctx.Done():
-			return nil
+			return
+		}
+
+		client.receivedMessagesChannel <- data
+	}
+}
+
+func (client *testSMClient) processSendMessages(ctx context.Context) {
+	for {
+		select {
+		case message := <-client.sendMessageChannel:
+			if err := client.stream.Send(message); err != nil {
+				log.Error("Can't send msg")
+			}
+
+		case <-ctx.Done():
+			return
 		}
 	}
-}
-
-func (sm *testSM) GetBoardConfigStatus(context.Context, *empty.Empty) (*pb.BoardConfigStatus, error) {
-	return &pb.BoardConfigStatus{VendorVersion: sm.setBoardConfig.VendorVersion}, nil
-}
-
-func (sm *testSM) SetBoardConfig(ctx context.Context, request *pb.BoardConfig) (response *empty.Empty, err error) {
-	if err = json.Unmarshal([]byte(request.BoardConfig), &sm.setBoardConfig); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	sm.boardConfigWasSet = true
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) CheckBoardConfig(ctx context.Context, request *pb.BoardConfig) (*empty.Empty, error) {
-	if err := json.Unmarshal([]byte(request.BoardConfig), &sm.checkBoardConfig); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) InstallService(ctx context.Context, service *pb.InstallServiceRequest) (*empty.Empty, error) {
-	sm.currentServiceInstallRequest = service
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) RestoreService(ctx context.Context, req *pb.RestoreServiceRequest) (*empty.Empty, error) {
-	sm.currentServiceRestoreRequest = req
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) RemoveService(ctx context.Context, req *pb.RemoveServiceRequest) (*empty.Empty, error) {
-	sm.currentServiceRemoveRequest = req
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) GetServicesStatus(context.Context, *empty.Empty) (*pb.ServicesStatus, error) {
-	return &sm.servicesStatus, nil
-}
-
-func (sm *testSM) InstallLayer(ctx context.Context, layer *pb.InstallLayerRequest) (*empty.Empty, error) {
-	sm.currentLayerInstallRequest = layer
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) RemoveLayer(ctx context.Context, req *pb.RemoveLayerRequest) (*empty.Empty, error) {
-	sm.currentRemoveLayerRequest = req
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) RestoreLayer(ctx context.Context, req *pb.RestoreLayerRequest) (*empty.Empty, error) {
-	sm.currentRestoreLayerRequest = req
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) GetLayersStatus(context.Context, *empty.Empty) (*pb.LayersStatus, error) {
-	return &sm.layersStatus, nil
-}
-
-func (sm *testSM) InstanceStateAcceptance(ctx context.Context, accept *pb.StateAcceptance) (*empty.Empty, error) {
-	sm.currentStateAcceptance = accept
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) SetInstanceState(ctx context.Context, state *pb.InstanceState) (*empty.Empty, error) {
-	sm.currentSetState = state
-
-	return &empty.Empty{}, nil
-}
-
-func (sm *testSM) OverrideEnvVars(
-	ctx context.Context, envVars *pb.OverrideEnvVarsRequest,
-) (*pb.OverrideEnvVarStatus, error) {
-	sm.currentEnvVarRequest = envVars
-
-	return sm.envVarStatus, nil
-}
-
-func (sm *testSM) GetSystemLog(ctx context.Context, req *pb.SystemLogRequest) (*empty.Empty, error) {
-	sm.currentSysLogRequest = req
-
-	return &emptypb.Empty{}, nil
-}
-
-func (sm *testSM) GetInstanceLog(ctx context.Context, req *pb.InstanceLogRequest) (*empty.Empty, error) {
-	sm.currentInstanceLogRequest = req
-
-	return &emptypb.Empty{}, nil
-}
-
-func (sm *testSM) GetInstanceCrashLog(ctx context.Context, req *pb.InstanceLogRequest) (*empty.Empty, error) {
-	sm.currentInstanceLogRequest = req
-
-	return &emptypb.Empty{}, nil
-}
-
-func (sm *testSM) RunInstances(ctx context.Context, runRequest *pb.RunInstancesRequest) (*empty.Empty, error) {
-	sm.currentRunRequest = runRequest
-
-	return &emptypb.Empty{}, nil
 }
