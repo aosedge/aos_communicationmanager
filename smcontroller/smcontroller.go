@@ -19,30 +19,32 @@ package smcontroller
 
 import (
 	"context"
-	"strings"
+	"net"
 	"sync"
-	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	pb "github.com/aoscloud/aos_common/api/servicemanager/v3"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
+	"github.com/aoscloud/aos_communicationmanager/launcher"
 )
 
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
 
-const connectClientTimeout = 1 * time.Minute
-
 const statusChanSize = 10
+
+const (
+	openConnection = iota
+	closeConnection
+)
 
 /***********************************************************************************************************************
  * Types
@@ -52,21 +54,25 @@ const statusChanSize = 10
 type Controller struct {
 	sync.Mutex
 
+	nodes map[string]*smHandler
+
 	messageSender             MessageSender
 	alertSender               AlertSender
 	monitoringSender          MonitoringSender
-	urlTranslator             URLTranslator
-	clientsWG                 sync.WaitGroup
-	readyWG                   sync.WaitGroup
 	updateInstancesStatusChan chan []cloudprotocol.InstanceStatus
-	runInstancesStatusChan    chan unitstatushandler.RunInstancesStatus
-	clients                   map[string]*smClient
+	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
 	cancelFunction            context.CancelFunc
+
+	grpcServer *grpc.Server
+	listener   net.Listener
+	url        string
+	pb.UnimplementedSMServiceServer
 }
 
-// URLTranslator translates URL from local to remote if required.
-type URLTranslator interface {
-	TranslateURL(isLocal bool, inURL string) (outURL string, err error)
+type smCtrlInternalMsg struct {
+	nodeID      string
+	handler     *smHandler
+	requestType int
 }
 
 // AlertSender sends alert.
@@ -76,7 +82,7 @@ type AlertSender interface {
 
 // MonitoringSender sends monitoring data.
 type MonitoringSender interface {
-	SendMonitoringData(monitoringData cloudprotocol.MonitoringData)
+	SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData)
 }
 
 // MessageSender sends messages to the cloud.
@@ -99,7 +105,7 @@ type CertificateProvider interface {
 // New creates new SM controller.
 func New(
 	cfg *config.Config, messageSender MessageSender, alertSender AlertSender, monitoringSender MonitoringSender,
-	urlTranslator URLTranslator, certProvider CertificateProvider, cryptcoxontext *cryptutils.CryptoContext,
+	certProvider CertificateProvider, cryptcoxontext *cryptutils.CryptoContext,
 	insecureConn bool,
 ) (controller *Controller, err error) {
 	log.Debug("Create SM controller")
@@ -108,27 +114,19 @@ func New(
 		messageSender:             messageSender,
 		alertSender:               alertSender,
 		monitoringSender:          monitoringSender,
-		urlTranslator:             urlTranslator,
+		runInstancesStatusChan:    make(chan launcher.NodeRunInstanceStatus, statusChanSize),
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
-		runInstancesStatusChan:    make(chan unitstatushandler.RunInstancesStatus, statusChanSize),
-		clients:                   make(map[string]*smClient),
+		nodes:                     make(map[string]*smHandler),
+		url:                       cfg.SMController.SMServerURL,
 	}
 
-	ctx, cancelFunction := context.WithCancel(context.Background())
-	controller.cancelFunction = cancelFunction
+	for _, nodeID := range cfg.SMController.NodeIDs {
+		controller.nodes[nodeID] = nil
+	}
 
-	defer func() {
-		if err != nil {
-			controller.Close()
-			controller = nil
-		}
-	}()
+	var opts []grpc.ServerOption
 
-	var secureOpt grpc.DialOption
-
-	if insecureConn {
-		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
-	} else {
+	if !insecureConn {
 		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
 		if err != nil {
 			return nil, aoserrors.Wrap(err)
@@ -139,356 +137,217 @@ func New(
 			return nil, aoserrors.Wrap(err)
 		}
 
-		secureOpt = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	} else {
+		log.Info("GRPC server starts in insecure mode")
 	}
 
-	for _, smConfig := range cfg.SMController.SMList {
-		controller.readyWG.Add(1)
+	controller.grpcServer = grpc.NewServer(opts...)
 
-		go controller.connectClient(ctx, smConfig, secureOpt)
-	}
+	pb.RegisterSMServiceServer(controller.grpcServer, controller)
+
+	go func() {
+		if err := controller.startServer(); err != nil {
+			log.Errorf("Can't start SM controller server: %s", err)
+		}
+	}()
 
 	return controller, nil
 }
 
 // Close closes SM controller.
-func (controller *Controller) Close() (err error) {
+func (controller *Controller) Close() error {
 	log.Debug("Close SM controller")
 
-	controller.cancelFunction()
-	controller.clientsWG.Wait()
+	controller.stopServer()
 
+	return nil
+}
+
+// GetNodeConfiguration gets node static configuration.
+func (controller *Controller) GetNodeConfiguration(nodeID string) (cfg launcher.NodeConfiguration, err error) {
 	controller.Lock()
 	defer controller.Unlock()
 
-	for _, client := range controller.clients {
-		client.close()
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return cfg, aoserrors.Wrap(err)
 	}
 
-	return nil
+	return handler.config, nil
 }
 
-// GetServicesStatus returns SM all existing services status.
-func (controller *Controller) GetServicesStatus() (servicesStatus []unitstatushandler.ServiceStatus, err error) {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+// GetUnitConfigStatus gets unit configuration status fot he node.
+func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error) {
+	controller.Lock()
+	defer controller.Unlock()
 
-	for _, client := range clients {
-		clientServices, err := client.getServicesStatus()
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		servicesStatus = append(servicesStatus, clientServices...)
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return "", aoserrors.Wrap(err)
 	}
 
-	return servicesStatus, nil
+	return handler.getUnitConfigState()
 }
 
-// GetUsersStatus returns SM users status.
-func (controller *Controller) GetLayersStatus() (layersStatus []unitstatushandler.LayerStatus, err error) {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+// CheckUnitConfig checks unit config for the node.
+func (controller *Controller) CheckUnitConfig(nodeCfg aostypes.NodeConfig, vendorVersion string) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	for _, client := range clients {
-		clientLayers, err := client.getLayersStatus()
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		layersStatus = append(layersStatus, clientLayers...)
+	handler, err := controller.getNodeHandlerByID(nodeCfg.NodeID)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	return layersStatus, nil
+	return handler.checkUnitConfigState(nodeCfg, vendorVersion)
 }
 
-// CheckBoardConfig checks board config.
-func (controller *Controller) CheckBoardConfig(boardConfig aostypes.BoardConfig) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+// SetUnitConfig sets usint config for the node.
+func (controller *Controller) SetUnitConfig(nodeCfg aostypes.NodeConfig, vendorVersion string) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, check the same config for all SM's
-
-	for _, client := range clients {
-		if err := client.checkBoardConfig(boardConfig); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	handler, err := controller.getNodeHandlerByID(nodeCfg.NodeID)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	return nil
-}
-
-// SetBoardConfig sets board config.
-func (controller *Controller) SetBoardConfig(boardConfig aostypes.BoardConfig) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	// we do not support multiple SM right now, set the same config for all SM's
-
-	// Check board config version and set if it is different
-	for _, client := range clients {
-		currentVendorVersion, err := client.getBoardConfigStatus()
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if currentVendorVersion == boardConfig.VendorVersion {
-			continue
-		}
-
-		if err = client.setBoardConfig(boardConfig); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
+	return handler.setUnitConfig(nodeCfg, vendorVersion)
 }
 
 // RunInstances runs desired services instances.
-func (controller *Controller) RunInstances(instances []cloudprotocol.InstanceInfo) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) RunInstances(nodeID string,
+	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo,
+) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, ran same instances for all SM's
-
-	for _, client := range clients {
-		if err := client.runInstances(instances); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
 	}
 
-	return nil
-}
-
-// InstallService requests to install servie.
-func (controller *Controller) InstallService(serviceInfo cloudprotocol.ServiceInfo) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	if len(serviceInfo.URLs) == 0 {
-		return aoserrors.New("no service URL")
-	}
-
-	var err error
-
-	// we do not support multiple SM right now, install same service for all SM's
-
-	for _, client := range clients {
-		if serviceInfo.URLs[0], err = controller.urlTranslator.TranslateURL(
-			client.cfg.IsLocal, serviceInfo.URLs[0]); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if err = client.installService(serviceInfo); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-// RestoreService restores service.
-func (controller *Controller) RestoreService(serviceID string) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	// we do not support multiple SM right now, restore same service for all SM's
-
-	for _, client := range clients {
-		if err := client.restoreService(serviceID); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-// RemoveService requests to install servie.
-func (controller *Controller) RemoveService(serviceID string) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	// we do not support multiple SM right now, remove same service for all SM's
-
-	for _, client := range clients {
-		if err := client.removeService(serviceID); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-// InstallLayer install layer request.
-func (controller *Controller) InstallLayer(layerInfo cloudprotocol.LayerInfo) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	if len(layerInfo.URLs) == 0 {
-		return aoserrors.New("no layer URL")
-	}
-
-	var err error
-
-	// we do not support multiple SM right now, install same layer for all SM's
-
-	for _, client := range clients {
-		if layerInfo.URLs[0], err = controller.urlTranslator.TranslateURL(
-			client.cfg.IsLocal, layerInfo.URLs[0]); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if err = client.installLayer(layerInfo); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-// RemoveLayer remove layer request.
-func (controller *Controller) RemoveLayer(digest string) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	// we do not support multiple SM right now, remove same layer for all SM's
-
-	for _, client := range clients {
-		if err := client.removeLayer(digest); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-// RestoreLayer restore layer request.
-func (controller *Controller) RestoreLayer(digest string) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
-
-	// we do not support multiple SM right now, restore same layer for all SM's
-
-	for _, client := range clients {
-		if err := client.restoreLayer(digest); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
+	return handler.runInstances(services, layers, instances)
 }
 
 // InstanceStateAcceptance handles instance state acceptance.
-func (controller *Controller) InstanceStateAcceptance(stateAcceptance cloudprotocol.StateAcceptance) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) InstanceStateAcceptance(
+	nodeID string, stateAcceptance cloudprotocol.StateAcceptance,
+) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, send service state acceptance for all SM's
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-	for _, client := range clients {
-		if err := client.instanceStateAcceptance(stateAcceptance); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	if err := handler.instanceStateAcceptance(stateAcceptance); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // SetServiceState sets instance state.
-func (controller *Controller) SetInstanceState(state cloudprotocol.UpdateState) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) SetInstanceState(nodeID string, state cloudprotocol.UpdateState) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, set service state for all SM's
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-	for _, client := range clients {
-		if err := client.setInstanceState(state); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	if err := handler.setInstanceState(state); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // OverrideEnvVars overrides instance env vars.
-func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.DecodedOverrideEnvVars) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) OverrideEnvVars(nodeID string, envVars cloudprotocol.OverrideEnvVars) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, override service env vars for all SM's
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-	for _, client := range clients {
-		if err := client.overrideEnvVars(envVars); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	if err := handler.overrideEnvVars(envVars); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // GetSystemLog requests system log from SM.
-func (controller *Controller) GetSystemLog(logRequest cloudprotocol.RequestSystemLog) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) GetSystemLog(nodeID string, logRequest cloudprotocol.RequestSystemLog) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, get system log from all SM's
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-	for _, client := range clients {
-		if err := client.getSystemLog(logRequest); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	if err := handler.getSystemLog(logRequest); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // GetInstanceLog requests service instance log from SM.
-func (controller *Controller) GetInstanceLog(logRequest cloudprotocol.RequestServiceLog) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) GetInstanceLog(nodeID string, logRequest cloudprotocol.RequestServiceLog) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, get service log from all SM's
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-	for _, client := range clients {
-		if err := client.getInstanceLog(logRequest); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	if err := handler.getInstanceLog(logRequest); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // GetInstanceCrashLog requests service instance crash log from SM.
-func (controller *Controller) GetInstanceCrashLog(logRequest cloudprotocol.RequestServiceCrashLog) error {
-	controller.waitAndLock()
-	clients := controller.clients
-	controller.Unlock()
+func (controller *Controller) GetInstanceCrashLog(
+	nodeID string, logRequest cloudprotocol.RequestServiceCrashLog,
+) error {
+	controller.Lock()
+	defer controller.Unlock()
 
-	// we do not support multiple SM right now, get service crash log from all SM's
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-	for _, client := range clients {
-		if err := client.getInstanceCrashLog(logRequest); err != nil {
-			return aoserrors.Wrap(err)
-		}
+	if err := handler.getInstanceCrashLog(logRequest); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+// GetInstanceCrashLog requests service instance crash log from SM.
+func (controller *Controller) GetNodeMonitoringData(nodeID string) (data cloudprotocol.NodeMonitoringData, err error) {
+	controller.Lock()
+	defer controller.Unlock()
+
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return data, err
+	}
+
+	return handler.getNodeMonitoring()
 }
 
 // GetUpdateInstancesStatusChannel returns channel with update instances status.
@@ -497,52 +356,143 @@ func (controller *Controller) GetUpdateInstancesStatusChannel() <-chan []cloudpr
 }
 
 // GetRunInstancesStatusChannel returns channel with run instances status.
-func (controller *Controller) GetRunInstancesStatusChannel() <-chan unitstatushandler.RunInstancesStatus {
+func (controller *Controller) GetRunInstancesStatusChannel() <-chan launcher.NodeRunInstanceStatus {
 	return controller.runInstancesStatusChan
+}
+
+// RegisterSM registers new SM client connection.
+func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) error {
+	message, err := stream.Recv()
+	if err != nil {
+		log.Errorf("Error receive message from SM: %v", err)
+
+		return aoserrors.Wrap(err)
+	}
+
+	nodeConfig, ok := message.SMOutgoingMessage.(*pb.SMOutgoingMessages_NodeConfiguration)
+	if !ok {
+		log.Error("unexpected first messager from stream")
+
+		return aoserrors.New("Unexpected first messager from stream")
+	}
+
+	log.Debugf("Register SM id %s", nodeConfig.NodeConfiguration.NodeId)
+
+	nodeCfg := launcher.NodeConfiguration{
+		NodeInfo: cloudprotocol.NodeInfo{
+			NodeID: nodeConfig.NodeConfiguration.NodeId, NumCPUs: nodeConfig.NodeConfiguration.NumCpus,
+			TotalRAM:   nodeConfig.NodeConfiguration.TotalRam,
+			Partitions: make([]cloudprotocol.PartitionInfo, len(nodeConfig.NodeConfiguration.Partitions)),
+		},
+		RemoteNode:    nodeConfig.NodeConfiguration.RemoteNode,
+		RunnerFeature: message.GetNodeConfiguration().RunnerFeatures,
+	}
+
+	for i, pbPartition := range nodeConfig.NodeConfiguration.Partitions {
+		nodeCfg.Partitions[i] = cloudprotocol.PartitionInfo{
+			Name: pbPartition.Name,
+			Type: pbPartition.Type, TotalSize: pbPartition.TotalSize,
+		}
+	}
+
+	handler, err := newSMHandler(stream, controller.messageSender, controller.alertSender, controller.monitoringSender, nodeCfg,
+		controller.runInstancesStatusChan, controller.updateInstancesStatusChan)
+	if err != nil {
+		return err
+	}
+
+	controller.handleNewConnection(nodeConfig.NodeConfiguration.NodeId, handler)
+
+	// wait for close
+	<-handler.closeChannel
+
+	controller.handleCloseConnection(nodeConfig.NodeConfiguration.NodeId)
+
+	return nil
 }
 
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
-func (controller *Controller) waitAndLock() {
-	controller.readyWG.Wait()
-	controller.Lock()
+func (controller *Controller) establishGRPCServer(
+	cfg *config.Config, certProvider CertificateProvider, cryptcoxontext *cryptutils.CryptoContext, insecure bool,
+) (err error) {
+	log.WithField("host", cfg.SMController.SMServerURL).Debug("Start SM server")
+
+	return nil
 }
 
-func (controller *Controller) connectClient(ctx context.Context, smConfig config.SMConfig, secureOpt grpc.DialOption) {
-	defer controller.readyWG.Done()
+func (controller *Controller) startServer() (err error) {
+	controller.listener, err = net.Listen("tcp", controller.url)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
 
-	connectChannel := make(chan struct{}, 1)
+	if err := controller.grpcServer.Serve(controller.listener); err != nil {
+		log.Errorf("Can't serve gRPC server: %s", err)
 
-	controller.clientsWG.Add(1)
+		return err
+	}
 
-	go func() {
-		defer controller.clientsWG.Done()
+	return nil
+}
 
-		client, err := newSMClient(ctx, smConfig, controller.messageSender, controller.alertSender,
-			controller.monitoringSender, controller.updateInstancesStatusChan, controller.runInstancesStatusChan, secureOpt)
+func (controller *Controller) stopServer() {
+	if controller.grpcServer != nil {
+		controller.grpcServer.Stop()
+	}
 
-		connectChannel <- struct{}{}
+	if controller.listener != nil {
+		controller.listener.Close()
+	}
+}
 
-		if err != nil {
-			if !strings.Contains(err.Error(), context.Canceled.Error()) {
-				log.WithField("id", smConfig.SMID).Errorf("Can't connect to SM: %s", err)
-			}
+func (controller *Controller) handleNewConnection(nodeID string, newHandler *smHandler) {
+	controller.Lock()
+	defer controller.Unlock()
 
+	if handler, ok := controller.nodes[nodeID]; ok {
+		if handler != nil {
+			log.Warnf("Connection for nodeID %s already exist. Replace it", nodeID)
+		}
+	} else {
+		log.Warnf("Unknown nodeID connection with nodeID %s", nodeID)
+	}
+
+	controller.nodes[nodeID] = newHandler
+
+	for _, node := range controller.nodes {
+		if node == nil {
 			return
 		}
-
-		controller.Lock()
-		defer controller.Unlock()
-
-		controller.clients[smConfig.SMID] = client
-	}()
-
-	select {
-	case <-connectChannel:
-
-	case <-time.After(connectClientTimeout):
-		log.WithField("id", smConfig.SMID).Error("SM connection timeout")
 	}
+
+	log.Info("All SM client connected")
+}
+
+func (controller *Controller) handleCloseConnection(nodeID string) {
+	controller.Lock()
+	defer controller.Unlock()
+
+	if _, ok := controller.nodes[nodeID]; !ok {
+		log.Errorf("Connection for nodeID %s doesn't exist.", nodeID)
+
+		return
+	}
+
+	controller.nodes[nodeID] = nil
+}
+
+func (controller *Controller) getNodeHandlerByID(nodeID string) (*smHandler, error) {
+	handler, ok := controller.nodes[nodeID]
+	if !ok {
+		return nil, aoserrors.Errorf("unknown nodeID %s", nodeID)
+	}
+
+	if handler == nil {
+		return nil, aoserrors.Errorf("connection for nodeID %s doesn't exist", nodeID)
+	}
+
+	return handler, nil
 }
