@@ -28,7 +28,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -227,4 +229,73 @@ func TestMultiThread(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestDownloadInfo(t *testing.T) {
+	cases := []struct {
+		downloadInfo      downloader.DownloadInfo
+		downloadInfoCount int
+	}{
+		{
+			downloadInfo: downloader.DownloadInfo{
+				Path:       "home",
+				TargetType: cloudprotocol.DownloadTargetComponent,
+			},
+			downloadInfoCount: 1,
+		},
+		{
+			downloadInfo: downloader.DownloadInfo{
+				Path:            "/path/file",
+				TargetType:      cloudprotocol.DownloadTargetLayer,
+				InterruptReason: "error",
+				Downloaded:      true,
+			},
+			downloadInfoCount: 2,
+		},
+	}
+
+	for _, tCase := range cases {
+		if err := db.SetDownloadInfo(tCase.downloadInfo); err != nil {
+			t.Errorf("Can't set download info: %v", err)
+		}
+
+		downloadInfo, err := db.GetDownloadInfo(tCase.downloadInfo.Path)
+		if err != nil {
+			t.Errorf("Can't get download info: %v", err)
+		}
+
+		if !reflect.DeepEqual(downloadInfo, tCase.downloadInfo) {
+			t.Error("Unexpected download info")
+		}
+
+		downloadInfos, err := db.GetDownloadInfos()
+		if err != nil {
+			t.Errorf("Can't get download info list: %v", err)
+		}
+
+		if len(downloadInfos) != tCase.downloadInfoCount {
+			t.Error("Unexpected download info count")
+		}
+	}
+
+	casesRemove := []struct {
+		path string
+	}{
+		{
+			path: "home",
+		},
+		{
+			path: "/path/file",
+		},
+	}
+
+	for _, tCase := range casesRemove {
+		if err := db.RemoveDownloadInfo(tCase.path); err != nil {
+			t.Errorf("Can't remove download info: %v", err)
+		}
+
+		if _, err := db.GetDownloadInfo(tCase.path); err == nil {
+			t.Error("Download info should be removed")
+		}
+	}
 }

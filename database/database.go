@@ -32,6 +32,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -117,23 +118,17 @@ func New(config *config.Config) (db *Database, err error) {
 		}
 	}
 
+	if err := db.createDownloadTable(); err != nil {
+		return db, aoserrors.Wrap(err)
+	}
+
 	return db, nil
 }
 
 // SetJournalCursor stores system logger cursor.
 func (db *Database) SetJournalCursor(cursor string) (err error) {
-	result, err := db.sql.Exec("UPDATE config SET cursor = ?", cursor)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	count, err := result.RowsAffected()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if count == 0 {
-		return aoserrors.Wrap(errNotExist)
+	if err = db.executeQuery(`UPDATE config SET cursor = ?`, cursor); err != nil {
+		return err
 	}
 
 	return nil
@@ -141,19 +136,12 @@ func (db *Database) SetJournalCursor(cursor string) (err error) {
 
 // GetJournalCursor retrieves logger cursor.
 func (db *Database) GetJournalCursor() (cursor string, err error) {
-	stmt, err := db.sql.Prepare("SELECT cursor FROM config")
-	if err != nil {
-		return cursor, aoserrors.Wrap(err)
-	}
-	defer stmt.Close()
-
-	err = stmt.QueryRow().Scan(&cursor)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return cursor, aoserrors.Wrap(errNotExist)
+	if err = db.getDataFromQuery(
+		"SELECT cursor FROM config",
+		[]any{}, &cursor); err != nil {
+		if errors.Is(err, errNotExist) {
+			return cursor, downloader.ErrNotExist
 		}
-
-		return cursor, aoserrors.Wrap(err)
 	}
 
 	return cursor, nil
@@ -166,18 +154,8 @@ func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComp
 		return aoserrors.Wrap(err)
 	}
 
-	result, err := db.sql.Exec("UPDATE config SET componentsUpdateInfo = ?", dataJSON)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	count, err := result.RowsAffected()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if count == 0 {
-		return errNotExist
+	if err = db.executeQuery(`UPDATE config SET componentsUpdateInfo = ?`, dataJSON); err != nil {
+		return err
 	}
 
 	return nil
@@ -218,18 +196,8 @@ func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemC
 
 // SetFirmwareUpdateState sets FOTA update state.
 func (db *Database) SetFirmwareUpdateState(state json.RawMessage) (err error) {
-	result, err := db.sql.Exec("UPDATE config SET fotaUpdateState = ?", state)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	count, err := result.RowsAffected()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if count == 0 {
-		return errNotExist
+	if err = db.executeQuery(`UPDATE config SET fotaUpdateState = ?`, state); err != nil {
+		return err
 	}
 
 	return nil
@@ -237,18 +205,12 @@ func (db *Database) SetFirmwareUpdateState(state json.RawMessage) (err error) {
 
 // GetFirmwareUpdateState returns FOTA update state.
 func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) {
-	stmt, err := db.sql.Prepare("SELECT fotaUpdateState FROM config")
-	if err != nil {
-		return state, aoserrors.Wrap(err)
-	}
-	defer stmt.Close()
-
-	if err = stmt.QueryRow().Scan(&state); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return state, errNotExist
+	if err = db.getDataFromQuery(
+		"SELECT fotaUpdateState FROM config",
+		[]any{}, &state); err != nil {
+		if errors.Is(err, errNotExist) {
+			return state, downloader.ErrNotExist
 		}
-
-		return state, aoserrors.Wrap(err)
 	}
 
 	return state, nil
@@ -256,18 +218,8 @@ func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) 
 
 // SetSoftwareUpdateState sets SOTA update state.
 func (db *Database) SetSoftwareUpdateState(state json.RawMessage) (err error) {
-	result, err := db.sql.Exec("UPDATE config SET sotaUpdateState = ?", state)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	count, err := result.RowsAffected()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if count == 0 {
-		return errNotExist
+	if err = db.executeQuery(`UPDATE config SET sotaUpdateState = ?`, state); err != nil {
+		return err
 	}
 
 	return nil
@@ -275,21 +227,89 @@ func (db *Database) SetSoftwareUpdateState(state json.RawMessage) (err error) {
 
 // GetSoftwareUpdateState returns SOTA update state.
 func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) {
-	stmt, err := db.sql.Prepare("SELECT sotaUpdateState FROM config")
-	if err != nil {
-		return state, aoserrors.Wrap(err)
-	}
-	defer stmt.Close()
-
-	if err = stmt.QueryRow().Scan(&state); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return state, errNotExist
+	if err = db.getDataFromQuery(
+		"SELECT sotaUpdateState FROM config",
+		[]any{}, &state); err != nil {
+		if errors.Is(err, errNotExist) {
+			return state, downloader.ErrNotExist
 		}
-
-		return state, aoserrors.Wrap(err)
 	}
 
 	return state, nil
+}
+
+func (db *Database) GetDownloadInfo(filePath string) (downloadInfo downloader.DownloadInfo, err error) {
+	if err = db.getDataFromQuery(
+		"SELECT * FROM download WHERE path = ?",
+		[]any{filePath}, &downloadInfo.Path, &downloadInfo.TargetType,
+		&downloadInfo.InterruptReason, &downloadInfo.Downloaded); err != nil {
+		if errors.Is(err, errNotExist) {
+			return downloadInfo, downloader.ErrNotExist
+		}
+	}
+
+	return downloadInfo, err
+}
+
+func (db *Database) GetDownloadInfos() (downloadInfos []downloader.DownloadInfo, err error) {
+	rows, err := db.sql.Query("SELECT * FROM download")
+	if err != nil {
+		return downloadInfos, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
+	for rows.Next() {
+		var downloadInfo downloader.DownloadInfo
+
+		if err = rows.Scan(
+			&downloadInfo.Path, &downloadInfo.TargetType,
+			&downloadInfo.InterruptReason, &downloadInfo.Downloaded); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		downloadInfos = append(downloadInfos, downloadInfo)
+	}
+
+	return downloadInfos, nil
+}
+
+func (db *Database) RemoveDownloadInfo(filePath string) (err error) {
+	if err = db.executeQuery("DELETE FROM download WHERE path = ?", filePath); errors.Is(err, errNotExist) {
+		return nil
+	}
+
+	return err
+}
+
+func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err error) {
+	var path string
+
+	if err = db.getDataFromQuery(
+		"SELECT * FROM download WHERE path = ?",
+		[]any{downloadInfo.Path}, &path); err != nil && !errors.Is(err, errNotExist) {
+		return err
+	}
+
+	if !errors.Is(err, errNotExist) {
+		if err = db.executeQuery(`UPDATE download SET targetType = ?,
+		    interruptReason = ?, downloaded = ? WHERE path = ?`, downloadInfo.Path,
+			downloadInfo.TargetType, downloadInfo.InterruptReason, downloadInfo.Downloaded); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if err = db.executeQuery("INSERT INTO download values(?, ?, ?, ?)", downloadInfo.Path,
+		downloadInfo.TargetType, downloadInfo.InterruptReason, downloadInfo.Downloaded); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Close closes database.
@@ -300,6 +320,59 @@ func (db *Database) Close() {
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (db *Database) getDataFromQuery(query string, queryParams []interface{}, result ...interface{}) error {
+	stmt, err := db.sql.Prepare(query)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer stmt.Close()
+
+	if err = stmt.QueryRow(queryParams...).Scan(result...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errNotExist
+		}
+
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (db *Database) executeQuery(query string, args ...interface{}) error {
+	stmt, err := db.sql.Prepare(query)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(args...)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if count == 0 {
+		return aoserrors.Wrap(errNotExist)
+	}
+
+	return nil
+}
+
+func (db *Database) createDownloadTable() (err error) {
+	log.Info("Create service table")
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS download (path TEXT NOT NULL PRIMARY KEY,
+                                                               targetType TEXT NOT NULL,
+                                                               interruptReason TEXT,
+                                                               downloaded INTEGER)`)
+
+	return aoserrors.Wrap(err)
+}
 
 func (db *Database) isTableExist(name string) (result bool, err error) {
 	rows, err := db.sql.Query("SELECT * FROM sqlite_master WHERE name = ? and type='table'", name)
