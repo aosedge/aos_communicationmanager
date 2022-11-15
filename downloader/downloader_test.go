@@ -21,6 +21,8 @@ package downloader_test
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -72,6 +74,10 @@ type testAllocator struct {
 	allocatedSize uint64
 	remover       spaceallocator.ItemRemover
 	outdatedItems []testOutdatedItem
+}
+
+type testStorage struct {
+	data map[string]downloader.DownloadInfo
 }
 
 type testSpace struct {
@@ -137,6 +143,9 @@ func TestMain(m *testing.M) {
 func TestDownload(t *testing.T) {
 	sender := testAlertSender{}
 	downloadAllocator = &testAllocator{}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
+	}
 
 	if err := clearDirs(); err != nil {
 		t.Fatalf("Can't clear dirs: %v", err)
@@ -155,14 +164,14 @@ func TestDownload(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &sender)
+	}, &sender, testStorage)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
 	defer downloadInstance.Close()
 
 	result, err := downloadInstance.Download(
-		context.Background(), preparePackageInfo("http://localhost:8001/", fileName))
+		context.Background(), preparePackageInfo("http://localhost:8001/", fileName, cloudprotocol.DownloadTargetLayer))
 	if err != nil {
 		t.Fatalf("Can't download package: %s", err)
 	}
@@ -192,6 +201,9 @@ func TestDownload(t *testing.T) {
 func TestInterruptResumeDownload(t *testing.T) {
 	sender := testAlertSender{}
 	downloadAllocator = &testAllocator{}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
+	}
 
 	if err := clearDirs(); err != nil {
 		t.Fatalf("Can't clear dirs: %v", err)
@@ -219,13 +231,13 @@ func TestInterruptResumeDownload(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &sender)
+	}, &sender, testStorage)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
 	defer downloadInstance.Close()
 
-	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
+	packageInfo := preparePackageInfo("http://localhost:8001/", fileName, cloudprotocol.DownloadTargetLayer)
 
 	result, err := downloadInstance.Download(context.Background(), packageInfo)
 	if err != nil {
@@ -269,6 +281,9 @@ func TestInterruptResumeDownload(t *testing.T) {
 func TestContinueDownload(t *testing.T) {
 	sender := testAlertSender{}
 	downloadAllocator = &testAllocator{}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
+	}
 
 	if err := clearDirs(); err != nil {
 		t.Fatalf("Can't clear dirs: %s", err)
@@ -293,12 +308,12 @@ func TestContinueDownload(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &sender)
+	}, &sender, testStorage)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
 
-	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
+	packageInfo := preparePackageInfo("http://localhost:8001/", fileName, cloudprotocol.DownloadTargetLayer)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -334,6 +349,9 @@ func TestContinueDownload(t *testing.T) {
 func TestResumeDownloadFromTwoServers(t *testing.T) {
 	sender := testAlertSender{}
 	downloadAllocator = &testAllocator{}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
+	}
 
 	if err := clearDirs(); err != nil {
 		t.Fatalf("Can't clear disks: %v", err)
@@ -364,13 +382,13 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 			MaxConcurrentDownloads: 1,
 			DownloadPartLimit:      100,
 		},
-	}, &sender)
+	}, &sender, testStorage)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
 	defer downloadInstance.Close()
 
-	packageInfo := preparePackageInfo("http://localhost:8001/", fileName)
+	packageInfo := preparePackageInfo("http://localhost:8001/", fileName, cloudprotocol.DownloadTargetLayer)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -386,7 +404,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 		t.Error("Error expected")
 	}
 
-	packageInfo = preparePackageInfo("http://localhost:8002/", fileName)
+	packageInfo = preparePackageInfo("http://localhost:8002/", fileName, cloudprotocol.DownloadTargetLayer)
 
 	if result, err = downloadInstance.Download(context.Background(), packageInfo); err != nil {
 		t.Fatalf("Can't download package: %s", err)
@@ -405,6 +423,9 @@ func TestConcurrentDownloads(t *testing.T) {
 
 	sender := testAlertSender{}
 	downloadAllocator = &testAllocator{}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
+	}
 
 	if err := clearDirs(); err != nil {
 		t.Fatalf("Can't clear dirs: %v", err)
@@ -434,7 +455,7 @@ func TestConcurrentDownloads(t *testing.T) {
 			MaxConcurrentDownloads: 5,
 			DownloadPartLimit:      100,
 		},
-	}, &sender)
+	}, &sender, testStorage)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -443,7 +464,8 @@ func TestConcurrentDownloads(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	for i := 0; i < numDownloads; i++ {
-		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
+		packageInfo := preparePackageInfo(
+			"http://localhost:8001/", fmt.Sprintf(fileNamePattern, i), cloudprotocol.DownloadTargetLayer)
 
 		result, err := downloadInstance.Download(context.Background(), packageInfo)
 		if err != nil {
@@ -466,13 +488,12 @@ func TestConcurrentDownloads(t *testing.T) {
 }
 
 func TestConcurrentLimitSpaceDownloads(t *testing.T) {
-	const numDownloads = 3
-
-	const fileNamePattern = "package%d.txt"
-
 	sender := testAlertSender{}
 	downloadAllocator = &testAllocator{
 		totalSize: 2 * Megabyte,
+	}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
 	}
 
 	if err := clearDirs(); err != nil {
@@ -485,20 +506,25 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 
 	defer clearWondershaperLimit("lo") // nolint:errcheck
 
-	// Create files half of available size
-	fileSize := downloadAllocator.totalSize / 2
-
-	for i := 0; i < numDownloads; i++ {
-		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), fileSize); err != nil {
-			t.Fatalf("Can't generate file: %s", err)
-		}
+	cases := []struct {
+		fileName    string
+		downloadErr error
+		fileSize    uint64
+	}{
+		{
+			fileName: "package1.txt",
+			fileSize: 1 * Megabyte,
+		},
+		{
+			fileName: "package2.txt",
+			fileSize: 1 * Megabyte,
+		},
+		{
+			fileName:    "package3.txt",
+			downloadErr: spaceallocator.ErrNoSpace,
+			fileSize:    1 * Megabyte,
+		},
 	}
-
-	defer func() {
-		for i := 0; i < numDownloads; i++ {
-			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
-		}
-	}()
 
 	downloadInstance, err := downloader.New("testModule", &config.Config{
 		Downloader: config.Downloader{
@@ -506,7 +532,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 			MaxConcurrentDownloads: 3,
 			DownloadPartLimit:      100,
 		},
-	}, &sender)
+	}, &sender, testStorage)
 	if err != nil {
 		t.Fatalf("Can't create downloader: %s", err)
 	}
@@ -514,8 +540,18 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	for i := 0; i < numDownloads; i++ {
-		packageInfo := preparePackageInfo("http://localhost:8001/", fmt.Sprintf(fileNamePattern, i))
+	defer func() {
+		for _, tCases := range cases {
+			os.RemoveAll(path.Join(serverDir, tCases.fileName))
+		}
+	}()
+
+	for _, tCases := range cases {
+		if err := generateFile(path.Join(serverDir, tCases.fileName), tCases.fileSize); err != nil {
+			t.Fatalf("Can't generate file: %s", err)
+		}
+
+		packageInfo := preparePackageInfo("http://localhost:8001/", tCases.fileName, cloudprotocol.DownloadTargetLayer)
 
 		result, err := downloadInstance.Download(context.Background(), packageInfo)
 		if err != nil {
@@ -525,16 +561,197 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 
 		wg.Add(1)
 
-		go func() {
+		go func(expectedDownloadErr error) {
 			defer wg.Done()
 
-			if err = result.Wait(); err != nil {
-				t.Errorf("Download error: %s", err)
+			if err = result.Wait(); !errors.Is(err, expectedDownloadErr) {
+				t.Error("Unexpected error")
 			}
-		}()
+		}(tCases.downloadErr)
 	}
 
 	wg.Wait()
+
+	casesRemove := []struct {
+		fileName       string
+		fileSize       uint64
+		removeFileName string
+	}{
+		{
+			removeFileName: "package1.txt",
+		},
+		{
+			fileName: "package3.txt",
+			fileSize: 1 * Megabyte,
+		},
+	}
+
+	for _, tCases := range casesRemove {
+		if tCases.removeFileName != "" {
+			filePath := path.Join(serverDir, tCases.removeFileName)
+
+			imageFileInfo, err := image.CreateFileInfo(context.Background(), filePath)
+			if err != nil {
+				t.Errorf("error CreateFileInfo: %v", err)
+			}
+
+			fileName := path.Join(downloadDir, base64.URLEncoding.EncodeToString(imageFileInfo.Sha256)+".enc")
+
+			if err := downloadInstance.Release(fileName); err != nil {
+				t.Errorf("Can't remove download file: %v", err)
+			}
+
+			continue
+		}
+
+		packageInfo := preparePackageInfo("http://localhost:8001/", tCases.fileName, cloudprotocol.DownloadTargetLayer)
+
+		result, err := downloadInstance.Download(context.Background(), packageInfo)
+		if err != nil {
+			t.Errorf("Can't download package: %s", err)
+			continue
+		}
+
+		if err = result.Wait(); err != nil {
+			t.Errorf("Download error: %v", err)
+		}
+	}
+}
+
+func TestReleaseByType(t *testing.T) {
+	sender := testAlertSender{}
+	downloadAllocator = &testAllocator{
+		totalSize: 3 * Megabyte,
+	}
+	testStorage := &testStorage{
+		data: make(map[string]downloader.DownloadInfo),
+	}
+
+	if err := clearDirs(); err != nil {
+		t.Fatalf("Can't clear dirs: %v", err)
+	}
+
+	downloadInstance, err := downloader.New("testModule", &config.Config{
+		Downloader: config.Downloader{
+			DownloadDir:            downloadDir,
+			MaxConcurrentDownloads: 3,
+			DownloadPartLimit:      100,
+		},
+	}, &sender, testStorage)
+	if err != nil {
+		t.Fatalf("Can't create downloader: %s", err)
+	}
+	defer downloadInstance.Close()
+
+	cases := []struct {
+		fileName   string
+		fileSize   uint64
+		targetType string
+	}{
+		{
+			fileName:   "package1.txt",
+			fileSize:   1 * Megabyte,
+			targetType: cloudprotocol.DownloadTargetLayer,
+		},
+		{
+			fileName:   "package2.txt",
+			fileSize:   1 * Megabyte,
+			targetType: cloudprotocol.DownloadTargetLayer,
+		},
+		{
+			fileName:   "package3.txt",
+			fileSize:   1 * Megabyte,
+			targetType: cloudprotocol.DownloadTargetService,
+		},
+	}
+
+	defer func() {
+		for _, tCases := range cases {
+			os.RemoveAll(path.Join(serverDir, tCases.fileName))
+		}
+	}()
+
+	for _, tCases := range cases {
+		if err := generateFile(path.Join(serverDir, tCases.fileName), tCases.fileSize); err != nil {
+			t.Fatalf("Can't generate file: %s", err)
+		}
+
+		packageInfo := preparePackageInfo("http://localhost:8001/", tCases.fileName, tCases.targetType)
+
+		result, err := downloadInstance.Download(context.Background(), packageInfo)
+		if err != nil {
+			t.Errorf("Can't download package: %s", err)
+			continue
+		}
+
+		if err = result.Wait(); err != nil {
+			t.Errorf("Download error: %v", err)
+		}
+	}
+
+	removeCases := []struct {
+		removedTargetType   string
+		fileName            string
+		addTargetType       string
+		expectedTargetCount int
+		fileSize            uint64
+	}{
+		{
+			removedTargetType: cloudprotocol.DownloadTargetLayer,
+		},
+		{
+			removedTargetType: cloudprotocol.DownloadTargetService,
+		},
+		{
+			fileName:            "package4.txt",
+			removedTargetType:   cloudprotocol.DownloadTargetLayer,
+			addTargetType:       cloudprotocol.DownloadTargetComponent,
+			expectedTargetCount: 1,
+			fileSize:            1 * Megabyte,
+		},
+	}
+
+	for _, tCases := range removeCases {
+		if err := downloadInstance.ReleaseByType(tCases.removedTargetType); err != nil {
+			t.Errorf("Can't remove download files: %v", err)
+		}
+
+		for _, downloadInfo := range testStorage.data {
+			if downloadInfo.TargetType == tCases.removedTargetType {
+				t.Errorf("Target type %s should be released", tCases.removedTargetType)
+			}
+		}
+
+		if tCases.fileName != "" {
+			if err := generateFile(path.Join(serverDir, tCases.fileName), tCases.fileSize); err != nil {
+				t.Fatalf("Can't generate file: %s", err)
+			}
+
+			packageInfo := preparePackageInfo("http://localhost:8001/", tCases.fileName, tCases.addTargetType)
+
+			result, err := downloadInstance.Download(context.Background(), packageInfo)
+			if err != nil {
+				t.Errorf("Can't download package: %s", err)
+				continue
+			}
+
+			if err = result.Wait(); err != nil {
+				t.Errorf("Download error: %v", err)
+			}
+
+			var countTargetType int
+
+			for _, downloadInfo := range testStorage.data {
+				if downloadInfo.TargetType == tCases.addTargetType {
+					countTargetType++
+				}
+			}
+
+			if countTargetType != tCases.expectedTargetCount {
+				t.Error("Unexpected count target type")
+			}
+		}
+	}
 }
 
 /***********************************************************************************************************************
@@ -568,6 +785,44 @@ func (instance *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
+
+func (storage *testStorage) GetDownloadInfo(filePath string) (downloader.DownloadInfo, error) {
+	downloadInfo, ok := storage.data[filePath]
+	if !ok {
+		return downloader.DownloadInfo{}, downloader.ErrNotExist
+	}
+
+	return downloadInfo, nil
+}
+
+func (storage *testStorage) GetDownloadInfos() ([]downloader.DownloadInfo, error) {
+	downloadInfos := make([]downloader.DownloadInfo, len(storage.data))
+
+	var i int
+
+	for _, downloadInfo := range storage.data {
+		downloadInfos[i] = downloadInfo
+		i++
+	}
+
+	return downloadInfos, nil
+}
+
+func (storage *testStorage) RemoveDownloadInfo(filePath string) error {
+	if _, ok := storage.data[filePath]; !ok {
+		return nil
+	}
+
+	delete(storage.data, filePath)
+
+	return nil
+}
+
+func (storage *testStorage) SetDownloadInfo(downloadInfo downloader.DownloadInfo) error {
+	storage.data[downloadInfo.Path] = downloadInfo
+
+	return nil
+}
 
 func newSpaceAllocator(
 	path string, partLimit uint, remover spaceallocator.ItemRemover,
@@ -716,7 +971,7 @@ func killConnectionIn(host string, port int16, delay time.Duration) {
 	}()
 }
 
-func preparePackageInfo(host, fileName string) (packageInfo downloader.PackageInfo) {
+func preparePackageInfo(host, fileName, targetType string) (packageInfo downloader.PackageInfo) {
 	fileName = path.Base(fileName)
 
 	packageInfo.URLs = []string{host + fileName}
@@ -732,7 +987,7 @@ func preparePackageInfo(host, fileName string) (packageInfo downloader.PackageIn
 	packageInfo.Sha256 = imageFileInfo.Sha256
 	packageInfo.Sha512 = imageFileInfo.Sha512
 	packageInfo.Size = imageFileInfo.Size
-	packageInfo.TargetType = cloudprotocol.DownloadTargetLayer
+	packageInfo.TargetType = targetType
 	packageInfo.TargetID = "targetID"
 	packageInfo.TargetAosVersion = 1
 	packageInfo.TargetVendorVersion = "vendorVersion1"
