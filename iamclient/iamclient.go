@@ -25,7 +25,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
+	pb "github.com/aoscloud/aos_common/api/iamanager/v4"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
@@ -56,8 +56,9 @@ type Client struct {
 
 	publicConnection    *grpc.ClientConn
 	protectedConnection *grpc.ClientConn
-	pbProtected         pb.IAMProtectedServiceClient
-	pbPublic            pb.IAMPublicServiceClient
+	publicService       pb.IAMPublicServiceClient
+	identService        pb.IAMPublicIdentityServiceClient
+	certificateService  pb.IAMCertificateServiceClient
 
 	closeChannel chan struct{}
 }
@@ -103,14 +104,15 @@ func New(
 		return nil, err
 	}
 
-	localClient.pbPublic = pb.NewIAMPublicServiceClient(localClient.publicConnection)
+	localClient.publicService = pb.NewIAMPublicServiceClient(localClient.publicConnection)
+	localClient.identService = pb.NewIAMPublicIdentityServiceClient(localClient.publicConnection)
 
 	if localClient.protectedConnection, err = localClient.createProtectedConnection(
 		config, cryptocontext, insecure); err != nil {
 		return nil, err
 	}
 
-	localClient.pbProtected = pb.NewIAMProtectedServiceClient(localClient.protectedConnection)
+	localClient.certificateService = pb.NewIAMCertificateServiceClient(localClient.protectedConnection)
 
 	log.Debug("Connected to IAM")
 
@@ -140,7 +142,7 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 
 		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd}
 
-		response, err := client.pbProtected.CreateKey(ctx, request)
+		response, err := client.certificateService.CreateKey(ctx, request)
 		if err != nil {
 			return aoserrors.Wrap(err)
 		}
@@ -174,7 +176,7 @@ func (client *Client) InstallCertificates(
 		request := &pb.ApplyCertRequest{Type: cert.Type, Cert: cert.CertificateChain}
 		certConfirmation := cloudprotocol.InstallCertData{Type: cert.Type}
 
-		response, err := client.pbProtected.ApplyCert(ctx, request)
+		response, err := client.certificateService.ApplyCert(ctx, request)
 		if err == nil {
 			certConfirmation.Serial, err = certProvider.GetCertSerial(response.CertUrl)
 		}
@@ -215,7 +217,8 @@ func (client *Client) GetCertificate(
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	response, err := client.pbPublic.GetCert(ctx, &pb.GetCertRequest{Type: certType, Issuer: issuer, Serial: serial})
+	response, err := client.publicService.GetCert(
+		ctx, &pb.GetCertRequest{Type: certType, Issuer: issuer, Serial: serial})
 	if err != nil {
 		return "", "", aoserrors.Wrap(err)
 	}
@@ -312,7 +315,7 @@ func (client *Client) getSystemID() (systemID string, err error) {
 
 	request := &empty.Empty{}
 
-	response, err := client.pbPublic.GetSystemInfo(ctx, request)
+	response, err := client.identService.GetSystemInfo(ctx, request)
 	if err != nil {
 		return "", aoserrors.Wrap(err)
 	}
