@@ -33,7 +33,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
+	pb "github.com/aoscloud/aos_common/api/iamanager/v4"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
@@ -58,6 +58,7 @@ const (
 
 type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
+	pb.UnimplementedIAMPublicIdentityServiceServer
 
 	grpcServer *grpc.Server
 	systemID   string
@@ -66,7 +67,7 @@ type testPublicServer struct {
 }
 
 type testProtectedServer struct {
-	pb.UnimplementedIAMProtectedServiceServer
+	pb.UnimplementedIAMCertificateServiceServer
 
 	grpcServer *grpc.Server
 	csr        map[string]string
@@ -346,6 +347,7 @@ func newTestServer(
 	publicServer.grpcServer = grpc.NewServer()
 
 	pb.RegisterIAMPublicServiceServer(publicServer.grpcServer, publicServer)
+	pb.RegisterIAMPublicIdentityServiceServer(publicServer.grpcServer, publicServer)
 
 	go func() {
 		if err := publicServer.grpcServer.Serve(publicListener); err != nil {
@@ -362,7 +364,7 @@ func newTestServer(
 
 	protectedServer.grpcServer = grpc.NewServer()
 
-	pb.RegisterIAMProtectedServiceServer(protectedServer.grpcServer, protectedServer)
+	pb.RegisterIAMCertificateServiceServer(protectedServer.grpcServer, protectedServer)
 
 	go func() {
 		if err := protectedServer.grpcServer.Serve(protectedListener); err != nil {
