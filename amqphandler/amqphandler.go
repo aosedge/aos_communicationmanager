@@ -244,7 +244,7 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 }
 
 // SendMonitoringData sends monitoring data.
-func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) error {
+func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.Monitoring) error {
 	handler.Lock()
 	defer handler.Unlock()
 
@@ -596,154 +596,29 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 				continue
 			}
 
-			log.WithField("data", getMessageDataForLog(
-				incomingMsg.Header.MessageType, delivery.Body)).Debug("AMQP receive message")
-
 			if incomingMsg.Header.Version != cloudprotocol.ProtocolVersion {
 				log.Errorf("Unsupported protocol version: %d", incomingMsg.Header.Version)
 				continue
 			}
 
-			handler.processReceivedMessages(rawData, incomingMsg.Header.MessageType)
+			messageTypeFunc, ok := messageMap[incomingMsg.Header.MessageType]
+			if !ok {
+				log.Warnf("AMQP unsupported message type: %s", incomingMsg.Header.MessageType)
+				continue
+			}
+
+			decodedData := messageTypeFunc()
+
+			log.Infof("AMQP receive message: %s", incomingMsg.Header.MessageType)
+
+			if err := handler.decodeData(rawData, decodedData); err != nil {
+				log.Errorf("Can't decode incoming message %s", err)
+				continue
+			}
+
+			handler.MessageChannel <- decodedData
 		}
 	}
-}
-
-func (handler *AmqpHandler) processReceivedMessages(rawData json.RawMessage, messageType string) {
-	messageTypeFunc, ok := messageMap[messageType]
-	if !ok {
-		log.Warnf("AMQP unsupported message type: %s", messageType)
-		return
-	}
-
-	decodedData := messageTypeFunc()
-
-	if err := json.Unmarshal(rawData, decodedData); err != nil {
-		log.Errorf("Can't parse message body: %s", err)
-		return
-	}
-
-	switch messageType {
-	case cloudprotocol.DesiredStatusType:
-		encodedStatus, ok := decodedData.(*cloudprotocol.DesiredStatus)
-		if !ok {
-			log.Error("Wrong data type: expect desired status")
-			return
-		}
-
-		decodedStatus, err := handler.decodeDesiredStatus(encodedStatus)
-		if err != nil {
-			log.Errorf("Can't decode desired status: %s", err)
-			return
-		}
-
-		decodedData = decodedStatus
-
-	case cloudprotocol.RenewCertsNotificationType:
-		notification, ok := decodedData.(*cloudprotocol.RenewCertsNotification)
-		if !ok {
-			log.Error("Wrong data type: expect renew certificate notification")
-			return
-		}
-
-		notificationWithPwd, err := handler.decodeRenewCertsNotification(notification)
-		if err != nil {
-			log.Errorf("Can't decode renew certificate notification: %s", err)
-			return
-		}
-
-		decodedData = notificationWithPwd
-
-	case cloudprotocol.OverrideEnvVarsType:
-		encodedEnvVars, ok := decodedData.(*cloudprotocol.OverrideEnvVars)
-		if !ok {
-			log.Error("Wrong data type: expect override env")
-			return
-		}
-
-		decodedEnvVars, err := handler.decodeEnvVars(encodedEnvVars)
-		if err != nil {
-			log.Errorf("Can't decode env vars: %s", err)
-			return
-		}
-
-		decodedData = decodedEnvVars
-	}
-
-	handler.MessageChannel <- decodedData
-}
-
-func (handler *AmqpHandler) decodeDesiredStatus(
-	encodedStatus *cloudprotocol.DesiredStatus,
-) (*cloudprotocol.DecodedDesiredStatus, error) {
-	decodedStatus := &cloudprotocol.DecodedDesiredStatus{
-		CertificateChains: encodedStatus.CertificateChains,
-		Certificates:      encodedStatus.Certificates,
-	}
-
-	if err := handler.decodeData(encodedStatus.UnitConfig, &decodedStatus.UnitConfig); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if err := handler.decodeData(encodedStatus.Services, &decodedStatus.Services); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if err := handler.decodeData(encodedStatus.Layers, &decodedStatus.Layers); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if err := handler.decodeData(encodedStatus.Components, &decodedStatus.Components); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if err := handler.decodeData(encodedStatus.FOTASchedule, &decodedStatus.FOTASchedule); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if err := handler.decodeData(encodedStatus.SOTASchedule, &decodedStatus.SOTASchedule); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	if err := handler.decodeData(encodedStatus.Instances, &decodedStatus.Instances); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	return decodedStatus, nil
-}
-
-func (handler *AmqpHandler) decodeRenewCertsNotification(
-	encodedNotification *cloudprotocol.RenewCertsNotification) (
-	*cloudprotocol.RenewCertsNotificationWithPwd, error,
-) {
-	var secret cloudprotocol.UnitSecret
-
-	if len(encodedNotification.UnitSecureData) > 0 {
-		if err := handler.decodeData(encodedNotification.UnitSecureData, &secret); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		if secret.Version != cloudprotocol.UnitSecretVersion {
-			return nil, aoserrors.New("unit secure version mismatch")
-		}
-	}
-
-	return &cloudprotocol.RenewCertsNotificationWithPwd{
-		Certificates: encodedNotification.Certificates,
-		Password:     secret.Data.OwnerPassword,
-	}, nil
-}
-
-func (handler *AmqpHandler) decodeEnvVars(
-	encodedEnvVars *cloudprotocol.OverrideEnvVars,
-) (*cloudprotocol.DecodedOverrideEnvVars, error) {
-	decodedEnvVars := &cloudprotocol.DecodedOverrideEnvVars{}
-
-	if err := handler.decodeData(encodedEnvVars.OverrideEnvVars, decodedEnvVars); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	return decodedEnvVars, nil
 }
 
 func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
@@ -760,11 +635,7 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 		return aoserrors.Wrap(err)
 	}
 
-	if rawJSON, ok := result.(*json.RawMessage); ok {
-		log.WithField("data", string(*rawJSON)).Debug("Decrypted data")
-	} else {
-		log.WithField("data", result).Debug("Decrypted data")
-	}
+	log.WithField("data", string(decryptData)).Debug("Decrypted data")
 
 	return nil
 }
