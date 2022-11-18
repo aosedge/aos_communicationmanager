@@ -242,7 +242,7 @@ func TestFirmwareManager(t *testing.T) {
 		initState               *firmwareManager
 		initStatus              *cmserver.UpdateStatus
 		initComponentStatuses   []cloudprotocol.ComponentStatus
-		desiredStatus           *cloudprotocol.DecodedDesiredStatus
+		desiredStatus           *cloudprotocol.DesiredStatus
 		downloadTime            time.Duration
 		downloadResult          map[string]*downloadResult
 		updateTime              time.Duration
@@ -301,7 +301,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
@@ -324,7 +324,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {Error: "download error"},
 				updateComponents[1].ID: {},
@@ -344,7 +344,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: updateComponents},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID: {},
 				updateComponents[1].ID: {},
@@ -476,7 +476,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				Components:   updateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
 			},
@@ -504,7 +504,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp4", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: otherUpdateComponents},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
 				updateComponents[0].ID:      {},
 				updateComponents[1].ID:      {},
@@ -540,7 +540,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp4", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				Components:   otherUpdateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
 			},
@@ -589,7 +589,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp3", VendorVersion: "2.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp4", VendorVersion: "3.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{Components: otherUpdateComponents},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
 				otherUpdateComponents[0].ID: {},
 				otherUpdateComponents[1].ID: {},
@@ -613,7 +613,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:        "update unit config",
 			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{UnitConfig: json.RawMessage("{}")},
+			desiredStatus: &cloudprotocol.DesiredStatus{UnitConfig: json.RawMessage("{}")},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
@@ -624,7 +624,7 @@ func TestFirmwareManager(t *testing.T) {
 		{
 			testID:          "error unit config",
 			initStatus:      &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus:   &cloudprotocol.DecodedDesiredStatus{UnitConfig: json.RawMessage("{}")},
+			desiredStatus:   &cloudprotocol.DesiredStatus{UnitConfig: json.RawMessage("{}")},
 			unitConfigError: aoserrors.New("unit config error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "unit config error"},
@@ -637,7 +637,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				FOTASchedule: cloudprotocol.ScheduleRule{
 					Type:      cloudprotocol.TimetableUpdate,
 					Timetable: updateTimetable,
@@ -666,7 +666,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ID: "comp1", VendorVersion: "0.0", Status: cloudprotocol.InstalledStatus},
 				{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				FOTASchedule: cloudprotocol.ScheduleRule{
 					Type: cloudprotocol.TriggerUpdate,
 					TTL:  3,
@@ -763,7 +763,7 @@ func TestSoftwareManager(t *testing.T) {
 		testID             string
 		initState          *softwareManager
 		initStatus         *cmserver.UpdateStatus
-		desiredStatus      *cloudprotocol.DecodedDesiredStatus
+		desiredStatus      *cloudprotocol.DesiredStatus
 		downloadTime       time.Duration
 		downloadResult     map[string]*downloadResult
 		triggerUpdate      bool
@@ -814,7 +814,7 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			testID:     "success update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				Layers: updateLayers, Services: updateServices,
 			},
 			downloadResult: map[string]*downloadResult{
@@ -831,7 +831,7 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			testID:     "one item download error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				Layers: updateLayers, Services: updateServices,
 			},
 			downloadResult: map[string]*downloadResult{
@@ -848,7 +848,7 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			testID:     "all items download error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				Layers: updateLayers, Services: updateServices,
 			},
 			downloadResult: map[string]*downloadResult{
@@ -862,7 +862,7 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			testID:     "update error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				Layers: updateLayers, Services: updateServices,
 			},
 			downloadResult: map[string]*downloadResult{
@@ -939,7 +939,7 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			testID:     "timetable update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				SOTASchedule: cloudprotocol.ScheduleRule{
 					Type:      cloudprotocol.TimetableUpdate,
 					Timetable: updateTimetable,
@@ -960,7 +960,7 @@ func TestSoftwareManager(t *testing.T) {
 		{
 			testID:     "update TTL",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DecodedDesiredStatus{
+			desiredStatus: &cloudprotocol.DesiredStatus{
 				SOTASchedule: cloudprotocol.ScheduleRule{
 					TTL:  3,
 					Type: cloudprotocol.TriggerUpdate,

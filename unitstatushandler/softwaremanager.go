@@ -210,7 +210,7 @@ func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 	}
 }
 
-func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) (err error) {
+func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) (err error) {
 	manager.Lock()
 	defer manager.Unlock()
 

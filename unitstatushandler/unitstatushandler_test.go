@@ -190,7 +190,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 
 	unitConfigUpdater.UpdateVersion = "1.1"
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{UnitConfig: json.RawMessage("{}")})
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{UnitConfig: json.RawMessage("{}")})
 
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 	}
 	expectedUnitStatus.UnitConfig = append(expectedUnitStatus.UnitConfig, unitConfigUpdater.UnitConfigStatus)
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{UnitConfig: json.RawMessage("{}")})
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{UnitConfig: json.RawMessage("{}")})
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
@@ -270,7 +270,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
 			{ID: "comp0", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
 			{ID: "comp2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
@@ -307,7 +307,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
 			{ID: "comp1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
 		},
@@ -375,7 +375,7 @@ func TestUpdateLayers(t *testing.T) {
 		Services: []cloudprotocol.ServiceStatus{},
 	}
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
 			{
 				ID: "layer1", Digest: "digest1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
@@ -444,7 +444,7 @@ func TestUpdateLayers(t *testing.T) {
 		Services: []cloudprotocol.ServiceStatus{},
 	}
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
 			{
 				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
@@ -526,7 +526,7 @@ func TestUpdateServices(t *testing.T) {
 		},
 	}
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
 				ID: "service0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
@@ -597,7 +597,7 @@ func TestUpdateServices(t *testing.T) {
 		},
 	}
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
 				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
@@ -682,7 +682,7 @@ func TestRunInstances(t *testing.T) {
 		{ServiceID: "Serv2", SubjectID: "Subj1", NumInstances: 1},
 	}
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Instances: expexpectedRunInstances,
 	})
 
@@ -733,7 +733,7 @@ func TestRunInstances(t *testing.T) {
 	}
 
 	// send the same run instances
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Instances: expexpectedRunInstances,
 	})
 
@@ -896,7 +896,7 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		},
 	}
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DecodedDesiredStatus{
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
 				ID: "service0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
