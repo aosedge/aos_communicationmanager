@@ -256,7 +256,7 @@ func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.Ins
 }
 
 // ProcessDesiredStatus processes desired status.
-func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) {
+func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) {
 	instance.Lock()
 	defer instance.Unlock()
 
