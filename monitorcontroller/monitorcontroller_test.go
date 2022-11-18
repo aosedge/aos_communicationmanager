@@ -24,11 +24,13 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/monitorcontroller"
-	log "github.com/sirupsen/logrus"
 )
 
 /***********************************************************************************************************************
@@ -37,7 +39,7 @@ import (
 
 type testMonitoringSender struct {
 	consumer       amqphandler.ConnectionEventsConsumer
-	monitoringData chan cloudprotocol.MonitoringData
+	monitoringData chan cloudprotocol.Monitoring
 }
 
 /***********************************************************************************************************************
@@ -83,25 +85,35 @@ func TestSendMonitorData(t *testing.T) {
 
 	sender.consumer.CloudConnected()
 
-	monitoringData := cloudprotocol.MonitoringData{
-		Global: cloudprotocol.GlobalMonitoringData{
-			RAM:        1100,
-			CPU:        35,
-			UsedDisk:   2300,
-			InTraffic:  150,
-			OutTraffic: 150,
+	nodeMonitoring := cloudprotocol.NodeMonitoringData{
+		MonitoringData: cloudprotocol.MonitoringData{
+			RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []cloudprotocol.PartitionUsage{{
+				Name: "p1", UsedSize: 100,
+			}},
+		},
+		NodeID:    "mainNode",
+		Timestamp: time.Now().UTC(),
+		ServiceInstances: []cloudprotocol.InstanceMonitoringData{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+				MonitoringData: cloudprotocol.MonitoringData{RAM: 1024, CPU: 50, Disk: []cloudprotocol.PartitionUsage{{
+					Name: "p1", UsedSize: 100,
+				}}},
+			},
 		},
 	}
 
-	controller.SendMonitoringData(monitoringData)
+	controller.SendMonitoringData(nodeMonitoring)
 
 	receivedMonitoringData, err := sender.waitMonitoringData()
 	if err != nil {
 		t.Fatalf("Error waiting for monitoring data: %v", err)
 	}
 
-	if receivedMonitoringData.Global != monitoringData.Global {
-		t.Errorf("Incorrect system monitoring data: %v", receivedMonitoringData.Global)
+	expectedData := cloudprotocol.Monitoring{Nodes: []cloudprotocol.NodeMonitoringData{nodeMonitoring}}
+
+	if !reflect.DeepEqual(receivedMonitoringData, expectedData) {
+		t.Errorf("Incorrect monitoring data: %v", receivedMonitoringData)
 	}
 }
 
@@ -121,22 +133,30 @@ func TestSendMonitorOffline(t *testing.T) {
 	}
 	defer controller.Close()
 
-	var sentData []cloudprotocol.MonitoringData
+	var sentData []cloudprotocol.NodeMonitoringData
 
 	for i := 0; i < numOfflineMessages+numExtraMessages; i++ {
-		monitoringData := cloudprotocol.MonitoringData{
-			Global: cloudprotocol.GlobalMonitoringData{
-				RAM:        1100,
-				CPU:        35,
-				UsedDisk:   uint64(i),
-				InTraffic:  150,
-				OutTraffic: 150,
+		nodeMonitoring := cloudprotocol.NodeMonitoringData{
+			MonitoringData: cloudprotocol.MonitoringData{
+				RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []cloudprotocol.PartitionUsage{{
+					Name: "p1", UsedSize: 100,
+				}},
+			},
+			NodeID:    "mainNode",
+			Timestamp: time.Now().UTC(),
+			ServiceInstances: []cloudprotocol.InstanceMonitoringData{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+					MonitoringData: cloudprotocol.MonitoringData{RAM: 1024, CPU: 50, Disk: []cloudprotocol.PartitionUsage{{
+						Name: "p1", UsedSize: 100,
+					}}},
+				},
 			},
 		}
 
-		controller.SendMonitoringData(monitoringData)
+		controller.SendMonitoringData(nodeMonitoring)
 
-		sentData = append(sentData, monitoringData)
+		sentData = append(sentData, nodeMonitoring)
 	}
 
 	if _, err := sender.waitMonitoringData(); err == nil {
@@ -145,18 +165,12 @@ func TestSendMonitorOffline(t *testing.T) {
 
 	sender.consumer.CloudConnected()
 
-	var receivedData []cloudprotocol.MonitoringData
-
-	for i := 0; i < numOfflineMessages; i++ {
-		monitoringData, err := sender.waitMonitoringData()
-		if err != nil {
-			t.Fatalf("Error waiting for monitoring data: %v", err)
-		}
-
-		receivedData = append(receivedData, monitoringData)
+	receivedData, err := sender.waitMonitoringData()
+	if err != nil {
+		t.Fatalf("Error waiting for monitoring data: %v", err)
 	}
 
-	if !reflect.DeepEqual(receivedData, sentData[len(sentData)-numOfflineMessages:]) {
+	if !reflect.DeepEqual(receivedData.Nodes, sentData[len(sentData)-numOfflineMessages:]) {
 		t.Errorf("Wrong monitoring data received: %v", receivedData)
 	}
 
@@ -170,7 +184,7 @@ func TestSendMonitorOffline(t *testing.T) {
  **********************************************************************************************************************/
 
 func newTestMonitoringSender() *testMonitoringSender {
-	return &testMonitoringSender{monitoringData: make(chan cloudprotocol.MonitoringData)}
+	return &testMonitoringSender{monitoringData: make(chan cloudprotocol.Monitoring)}
 }
 
 func (sender *testMonitoringSender) SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
@@ -185,18 +199,18 @@ func (sender *testMonitoringSender) UnsubscribeFromConnectionEvents(
 	return nil
 }
 
-func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) error {
+func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.Monitoring) error {
 	sender.monitoringData <- monitoringData
 
 	return nil
 }
 
-func (sender *testMonitoringSender) waitMonitoringData() (cloudprotocol.MonitoringData, error) {
+func (sender *testMonitoringSender) waitMonitoringData() (cloudprotocol.Monitoring, error) {
 	select {
 	case monitoringData := <-sender.monitoringData:
 		return monitoringData, nil
 
 	case <-time.After(1 * time.Second):
-		return cloudprotocol.MonitoringData{}, aoserrors.New("wait monitoring data timeout")
+		return cloudprotocol.Monitoring{}, aoserrors.New("wait monitoring data timeout")
 	}
 }
