@@ -172,7 +172,7 @@ func (manager *firmwareManager) getCurrentUpdateState() (status cmserver.UpdateS
 	return convertState(manager.CurrentState)
 }
 
-func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol.DecodedDesiredStatus) (err error) {
+func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) (err error) {
 	manager.Lock()
 	defer manager.Unlock()
 

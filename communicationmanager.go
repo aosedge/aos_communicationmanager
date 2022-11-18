@@ -304,14 +304,14 @@ func (cm *communicationManager) close() {
 
 func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
 	switch data := message.(type) {
-	case *cloudprotocol.DecodedDesiredStatus:
+	case *cloudprotocol.DesiredStatus:
 		log.Info("Receive desired status message")
 
 		cm.statusHandler.ProcessDesiredStatus(*data)
 
 		return nil
 
-	case *cloudprotocol.DecodedOverrideEnvVars:
+	case *cloudprotocol.OverrideEnvVars:
 		log.Info("Receive override env vars message")
 
 		if err = cm.smController.OverrideEnvVars(*data); err != nil {
@@ -368,10 +368,15 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			return aoserrors.Wrap(err)
 		}
 
-	case *cloudprotocol.RenewCertsNotificationWithPwd:
+	case *cloudprotocol.RenewCertsNotification:
 		log.Info("Receive renew certificates notification message")
 
-		if err = cm.iam.RenewCertificatesNotification(data.Password, data.Certificates); err != nil {
+		if data.UnitSecret.Version != cloudprotocol.UnitSecretVersion {
+			return aoserrors.New("unit secure version mismatch")
+		}
+
+		if err = cm.iam.RenewCertificatesNotification(
+			data.UnitSecret.Data.OwnerPassword, data.Certificates); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
