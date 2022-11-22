@@ -86,9 +86,10 @@ type Downloader struct {
 
 // SMController SM controller configuration.
 type SMController struct {
-	SMServerURL string            `json:"smServerUrl"`
-	NodeIDs     []string          `json:"nodeIds"`
-	UpdateTTL   aostypes.Duration `json:"updateTtl"`
+	FileServerURL string            `json:"fileServerUrl"`
+	SMServerURL   string            `json:"smServerUrl"`
+	NodeIDs       []string          `json:"nodeIds"`
+	UpdateTTL     aostypes.Duration `json:"updateTtl"`
 }
 
 // Config instance.
@@ -98,7 +99,6 @@ type Config struct {
 	ServiceDiscoveryURL   string            `json:"serviceDiscoveryUrl"`
 	IAMServerURL          string            `json:"iamServerUrl"`
 	IAMPublicServerURL    string            `json:"iamPublicServerUrl"`
-	FileServerURL         string            `json:"fileServerUrl"`
 	CMServerURL           string            `json:"cmServerUrl"`
 	Downloader            Downloader        `json:"downloader"`
 	WorkingDir            string            `json:"workingDir"`
