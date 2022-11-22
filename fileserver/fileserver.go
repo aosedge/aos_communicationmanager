@@ -22,14 +22,11 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************
@@ -55,17 +52,13 @@ const (
  **********************************************************************************************************************/
 
 // New creates file server.
-func New(cfg *config.Config) (fileServer *FileServer, err error) {
-	if err = os.MkdirAll(cfg.Downloader.DecryptDir, 0o755); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
+func New(serverURL, dir string) (fileServer *FileServer, err error) {
 	fileServer = &FileServer{}
 
-	if cfg.FileServerURL != "" {
+	if serverURL != "" {
 		fileServer.server = &http.Server{
-			Addr:              cfg.FileServerURL,
-			Handler:           http.FileServer(http.Dir(cfg.Downloader.DecryptDir)),
+			Addr:              serverURL,
+			Handler:           http.FileServer(http.Dir(dir)),
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 
@@ -106,9 +99,12 @@ func (fileServer *FileServer) TranslateURL(isLocal bool, inURL string) (outURL s
 			return "", aoserrors.Wrap(err)
 		}
 
+		if imgURL.Scheme != "" {
+			imgURL.Path = filepath.Base(imgURL.Path)
+		}
+
 		imgURL.Scheme = httpScheme
 		imgURL.Host = fileServer.server.Addr
-		imgURL.Path = filepath.Base(imgURL.Path)
 
 		outURL = imgURL.String()
 	} else {
