@@ -93,6 +93,7 @@ const testConfigContent = `{
 		"smServerUrl": "localhost:8093",
 		"fileServerUrl":"localhost:8092",
 		"nodeIds": [ "sm1", "sm2"],	
+		"nodesConnectionTimeout": "100s",
 		"updateTTL": "30h"
 	},
 	"umController": {
@@ -268,10 +269,11 @@ func TestDownloaderConfig(t *testing.T) {
 
 func TestSMControllerConfig(t *testing.T) {
 	originalConfig := config.SMController{
-		FileServerURL: "localhost:8092",
-		SMServerURL:   "localhost:8093",
-		NodeIDs:       []string{"sm1", "sm2"},
-		UpdateTTL:     aostypes.Duration{Duration: 30 * time.Hour},
+		FileServerURL:          "localhost:8092",
+		SMServerURL:            "localhost:8093",
+		NodeIDs:                []string{"sm1", "sm2"},
+		NodesConnectionTimeout: aostypes.Duration{Duration: 100 * time.Second},
+		UpdateTTL:              aostypes.Duration{Duration: 30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {

@@ -86,10 +86,11 @@ type Downloader struct {
 
 // SMController SM controller configuration.
 type SMController struct {
-	FileServerURL string            `json:"fileServerUrl"`
-	SMServerURL   string            `json:"smServerUrl"`
-	NodeIDs       []string          `json:"nodeIds"`
-	UpdateTTL     aostypes.Duration `json:"updateTtl"`
+	FileServerURL          string            `json:"fileServerUrl"`
+	SMServerURL            string            `json:"smServerUrl"`
+	NodeIDs                []string          `json:"nodeIds"`
+	NodesConnectionTimeout aostypes.Duration `json:"nodesConnectionTimeout"`
+	UpdateTTL              aostypes.Duration `json:"updateTtl"`
 }
 
 // Config instance.
@@ -141,7 +142,10 @@ func New(fileName string) (config *Config, err error) {
 			MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Minute},
 			DownloadPartLimit:      100,
 		},
-		SMController: SMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
+		SMController: SMController{
+			NodesConnectionTimeout: aostypes.Duration{Duration: 60 * time.Second},
+			UpdateTTL:              aostypes.Duration{Duration: 30 * 24 * time.Hour},
+		},
 		UMController: UMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
 	}
 
