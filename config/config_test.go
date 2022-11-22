@@ -47,7 +47,6 @@ const testConfigContent = `{
 	"serviceDiscoveryUrl" : "www.aos.com",
 	"iamServerUrl" : "localhost:8089",
 	"iamPublicServerUrl" : "localhost:8090",
-	"fileServerUrl":"localhost:8092",
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
 	"imageStoreDir": "imagestoreDir",
@@ -92,6 +91,7 @@ const testConfigContent = `{
 	},
 	"smController": {
 		"smServerUrl": "localhost:8093",
+		"fileServerUrl":"localhost:8092",
 		"nodeIds": [ "sm1", "sm2"],	
 		"updateTTL": "30h"
 	},
@@ -268,9 +268,10 @@ func TestDownloaderConfig(t *testing.T) {
 
 func TestSMControllerConfig(t *testing.T) {
 	originalConfig := config.SMController{
-		SMServerURL: "localhost:8093",
-		NodeIDs:     []string{"sm1", "sm2"},
-		UpdateTTL:   aostypes.Duration{Duration: 30 * time.Hour},
+		FileServerURL: "localhost:8092",
+		SMServerURL:   "localhost:8093",
+		NodeIDs:       []string{"sm1", "sm2"},
+		UpdateTTL:     aostypes.Duration{Duration: 30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {
@@ -291,12 +292,6 @@ func TestDatabaseMigration(t *testing.T) {
 func TestCertStorage(t *testing.T) {
 	if testCfg.CertStorage != "/var/aos/crypt/cm/" {
 		t.Errorf("Wrong certificate storage value: %s", testCfg.CertStorage)
-	}
-}
-
-func TestFileServer(t *testing.T) {
-	if testCfg.FileServerURL != "localhost:8092" {
-		t.Errorf("Wrong file server URL value: %s", testCfg.FileServerURL)
 	}
 }
 
