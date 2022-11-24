@@ -964,8 +964,8 @@ func TestRunInstances(t *testing.T) {
 			RunInstances: &pb.RunInstances{
 				Services: []*pb.ServiceInfo{{
 					VersionInfo: &pb.VesionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
-					Url:         "url1", ServiceId: "s1", ProviderId: "p1", Sha256: []byte{0, 0, 0, byte(100)},
-					Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+					Url:         "url1", ServiceId: "s1", ProviderId: "p1", Gid: 600,
+					Sha256: []byte{0, 0, 0, byte(100)}, Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 				}},
 				Layers: []*pb.LayerInfo{
 					{
@@ -977,15 +977,15 @@ func TestRunInstances(t *testing.T) {
 				Instances: []*pb.InstanceInfo{
 					{
 						Instance: &pb.InstanceIdent{ServiceId: "s1", SubjectId: "subj1", Instance: 1},
-						Uid:      500, Gid: 600, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+						Uid:      500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 					},
 				},
 			},
 		}}
 		sendServices = []aostypes.ServiceInfo{{
 			VersionInfo: aostypes.VersionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
-			ID:          "s1", ProviderID: "p1", URL: "url1", Sha256: []byte{0, 0, 0, byte(100)},
-			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+			ID:          "s1", ProviderID: "p1", URL: "url1", GID: 600,
+			Sha256: []byte{0, 0, 0, byte(100)}, Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 		}}
 		sendLayers = []aostypes.LayerInfo{{
 			VersionInfo: aostypes.VersionInfo{AosVersion: 2, VendorVersion: "3", Description: "desc2"},
@@ -994,7 +994,7 @@ func TestRunInstances(t *testing.T) {
 		}}
 		sednInstances = []aostypes.InstanceInfo{{
 			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
-			UID:           500, GID: 600, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+			UID:           500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 		}}
 	)
 
