@@ -175,6 +175,7 @@ func (handler *smHandler) runInstances(
 			Url:        serviceInfo.URL,
 			ServiceId:  serviceInfo.ID,
 			ProviderId: serviceInfo.ProviderID,
+			Gid:        serviceInfo.GID,
 			Sha256:     serviceInfo.Sha256,
 			Sha512:     serviceInfo.Sha512,
 			Size:       serviceInfo.Size,
@@ -201,7 +202,6 @@ func (handler *smHandler) runInstances(
 		pbRunInstances.Instances[i] = &pb.InstanceInfo{
 			Instance:    pbconvert.InstanceIdentToPB(instanceInfo.InstanceIdent),
 			Uid:         instanceInfo.UID,
-			Gid:         instanceInfo.GID,
 			Priority:    instanceInfo.Priority,
 			StoragePath: instanceInfo.StoragePath,
 			StatePath:   instanceInfo.StatePath,
