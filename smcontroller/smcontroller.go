@@ -397,7 +397,7 @@ func (controller *Controller) handleNewConnection(nodeID string, newHandler *smH
 	controller.Lock()
 	defer controller.Unlock()
 
-	if handler, ok := controller.nodes[nodeID]; !ok {
+	if handler, ok := controller.nodes[nodeID]; ok {
 		if handler != nil {
 			return aoserrors.Errorf("сonnection for nodeID %s already exist", nodeID)
 		}
