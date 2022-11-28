@@ -36,7 +36,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
 )
 
@@ -210,55 +209,6 @@ func (handler *smHandler) runInstances(
 
 	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_RunInstances{
 		RunInstances: pbRunInstances,
-	}}); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (handler *smHandler) instanceStateAcceptance(stateAcceptance cloudprotocol.StateAcceptance) error {
-	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
-		"serviceID": stateAcceptance.ServiceID,
-		"subjectID": stateAcceptance.SubjectID,
-		"instance":  stateAcceptance.Instance,
-		"checksum":  stateAcceptance.Checksum,
-		"result":    stateAcceptance.Result,
-		"reason":    stateAcceptance.Reason,
-	}).Debug("SM service state acceptance")
-
-	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceStateAcceptance{
-		InstanceStateAcceptance: &pb.InstanceStateAcceptance{
-			Instance:      pbconvert.InstanceIdentToPB(stateAcceptance.InstanceIdent),
-			StateChecksum: stateAcceptance.Checksum,
-			Result:        stateAcceptance.Result,
-			Reason:        stateAcceptance.Reason,
-		},
-	}}); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (handler *smHandler) setInstanceState(state cloudprotocol.UpdateState) (err error) {
-	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
-		"serviceID": state.ServiceID,
-		"subjectID": state.SubjectID,
-		"instance":  state.Instance,
-		"checksum":  state.Checksum,
-	}).Debug("SM set instance state")
-
-	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetInstanceState{
-		SetInstanceState: &pb.SetInstanceState{
-			State: &pb.InstanceState{
-				Instance:      pbconvert.InstanceIdentToPB(state.InstanceIdent),
-				State:         []byte(state.State),
-				StateChecksum: state.Checksum,
-			},
-		},
 	}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -446,12 +396,6 @@ func (handler *smHandler) processSMMessages() {
 		case *pb.SMOutgoingMessages_UpdateInstancesStatus:
 			handler.processUpdateInstancesStatus(data.UpdateInstancesStatus)
 
-		case *pb.SMOutgoingMessages_NewInstanceState:
-			handler.processNewInstanceState(data.NewInstanceState)
-
-		case *pb.SMOutgoingMessages_InstanceStateRequest:
-			handler.processInstanceStateRequest(data.InstanceStateRequest)
-
 		case *pb.SMOutgoingMessages_Log:
 			handler.proccLogMessage(data.Log)
 
@@ -477,36 +421,6 @@ func (handler *smHandler) processUpdateInstancesStatus(data *pb.UpdateInstancesS
 	log.WithFields(log.Fields{"nodeID": handler.config.NodeID}).Debug("Receive SM update instances status")
 
 	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.Instances)
-}
-
-func (handler *smHandler) processNewInstanceState(data *pb.NewInstanceState) {
-	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
-		"serviceID": data.State.Instance.ServiceId,
-	}).Debug("Receive SM new instance state")
-
-	if err := handler.messageSender.SendInstanceNewState(cloudprotocol.NewState{
-		InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.State.Instance),
-		Checksum:      data.State.StateChecksum,
-		State:         string(data.State.State),
-	}); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
-		log.Errorf("Can't send instance new state: %v", err)
-	}
-}
-
-func (handler *smHandler) processInstanceStateRequest(data *pb.InstanceStateRequest) {
-	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
-		"serviceID": data.Instance.ServiceId,
-		"default":   data.Default,
-	}).Debug("Receive SM instance state request")
-
-	if err := handler.messageSender.SendInstanceStateRequest(cloudprotocol.StateRequest{
-		InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.Instance),
-		Default:       data.Default,
-	}); err != nil {
-		log.Errorf("Can't send instance state request: %v", err)
-	}
 }
 
 func (handler *smHandler) processAlert(alert *pb.Alert) {
@@ -692,7 +606,6 @@ func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus) []cloudprotocol.Inst
 		instancesStaus[i] = cloudprotocol.InstanceStatus{
 			InstanceIdent: pbconvert.NewInstanceIdentFromPB(status.Instance),
 			AosVersion:    status.AosVersion,
-			StateChecksum: status.StateChecksum,
 			RunState:      status.RunState,
 			ErrorInfo:     errorInfoFromPB(status.ErrorInfo),
 		}
