@@ -73,8 +73,6 @@ type MonitoringSender interface {
 
 // MessageSender sends messages to the cloud.
 type MessageSender interface {
-	SendInstanceNewState(newState cloudprotocol.NewState) error
-	SendInstanceStateRequest(request cloudprotocol.StateRequest) error
 	SendOverrideEnvVarsStatus(envs cloudprotocol.OverrideEnvVarsStatus) error
 	SendLog(serviceLog cloudprotocol.PushLog) error
 }
@@ -199,36 +197,6 @@ func (controller *Controller) RunInstances(nodeID string,
 	}
 
 	return handler.runInstances(services, layers, instances)
-}
-
-// InstanceStateAcceptance handles instance state acceptance.
-func (controller *Controller) InstanceStateAcceptance(
-	nodeID string, stateAcceptance cloudprotocol.StateAcceptance,
-) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return err
-	}
-
-	if err := handler.instanceStateAcceptance(stateAcceptance); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// SetServiceState sets instance state.
-func (controller *Controller) SetInstanceState(nodeID string, state cloudprotocol.UpdateState) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return err
-	}
-
-	if err := handler.setInstanceState(state); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // OverrideEnvVars overrides instance env vars.

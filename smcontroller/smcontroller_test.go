@@ -28,7 +28,6 @@ import (
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	pb "github.com/aoscloud/aos_common/api/servicemanager/v3"
-	"github.com/aoscloud/aos_common/utils/pbconvert"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -120,11 +119,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			Instances: []*pb.InstanceStatus{
 				{
 					Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-					AosVersion: 1, StateChecksum: "superCheckSum", RunState: "running",
+					AosVersion: 1, RunState: "running",
 				},
 				{
 					Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-					AosVersion: 1, StateChecksum: "superCheckSum2", RunState: "fail",
+					AosVersion: 1, RunState: "fail",
 					ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
@@ -134,11 +133,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			Instances: []cloudprotocol.InstanceStatus{
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-					AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
+					AosVersion:    1, RunState: "running",
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-					AosVersion:    1, StateChecksum: "superCheckSum2", RunState: "fail",
+					AosVersion:    1, RunState: "fail",
 					ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
@@ -150,11 +149,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 					Instances: []*pb.InstanceStatus{
 						{
 							Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-							AosVersion: 1, StateChecksum: "superCheckSum", RunState: "running",
+							AosVersion: 1, RunState: "running",
 						},
 						{
 							Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-							AosVersion: 1, StateChecksum: "superCheckSum2", RunState: "fail",
+							AosVersion: 1, RunState: "fail",
 							ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 						},
 					},
@@ -164,11 +163,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		expectedUpdateState = []cloudprotocol.InstanceStatus{
 			{
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-				AosVersion:    1, StateChecksum: "superCheckSum", RunState: "running",
+				AosVersion:    1, RunState: "running",
 			},
 			{
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-				AosVersion:    1, StateChecksum: "superCheckSum2", RunState: "fail",
+				AosVersion:    1, RunState: "fail",
 				ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 			},
 		}
@@ -311,106 +310,6 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	if err := smClient.stream.Send(configStatus); err != nil {
 		t.Errorf("Can't send unit config status")
-	}
-}
-
-func TestInstanceStateMessages(t *testing.T) {
-	var (
-		nodeID        = "mainSM"
-		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				SMServerURL: smServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		expectedNewState = cloudprotocol.NewState{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-			Checksum:      "someChecksum", State: "someState",
-		}
-		expectedStateRequest = cloudprotocol.StateRequest{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-			Default:       true,
-		}
-		expectedPBStateAcceptance = &pb.SMIncomingMessages{
-			SMIncomingMessage: &pb.SMIncomingMessages_InstanceStateAcceptance{
-				InstanceStateAcceptance: &pb.InstanceStateAcceptance{
-					Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
-					StateChecksum: "someCheckSum", Result: "OK", Reason: "good",
-				},
-			},
-		}
-		expectedPBNewState = &pb.SMIncomingMessages{
-			SMIncomingMessage: &pb.SMIncomingMessages_SetInstanceState{
-				SetInstanceState: &pb.SetInstanceState{
-					State: &pb.InstanceState{
-						Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
-						StateChecksum: "someCheckSum", State: []byte("someState"),
-					},
-				},
-			},
-		}
-	)
-
-	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
-	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
-	}
-	defer controller.Close()
-
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, nil)
-	if err != nil {
-		t.Fatalf("Can't create test SM: %v", err)
-	}
-
-	defer smClient.close()
-
-	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_NewInstanceState{
-		NewInstanceState: &pb.NewInstanceState{State: &pb.InstanceState{
-			Instance:      pbconvert.InstanceIdentToPB(expectedNewState.InstanceIdent),
-			StateChecksum: expectedNewState.Checksum,
-			State:         []byte(expectedNewState.State),
-		}},
-	}}
-
-	if err := waitMessage(messageSender.messageChannel, expectedNewState, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_InstanceStateRequest{
-		InstanceStateRequest: &pb.InstanceStateRequest{
-			Instance: pbconvert.InstanceIdentToPB(expectedStateRequest.InstanceIdent),
-			Default:  true,
-		},
-	}}
-
-	if err := waitMessage(messageSender.messageChannel, expectedStateRequest, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	if err = controller.InstanceStateAcceptance(nodeID, cloudprotocol.StateAcceptance{
-		InstanceIdent: expectedNewState.InstanceIdent,
-		Checksum:      "someCheckSum", Result: "OK", Reason: "good",
-	}); err != nil {
-		t.Errorf("Error sending instance state acceptance: %v", err)
-	}
-
-	if err := waitClientMessage(smClient.receivedMessagesChannel, expectedPBStateAcceptance, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	if err := controller.SetInstanceState(nodeID, cloudprotocol.UpdateState{
-		InstanceIdent: expectedNewState.InstanceIdent, Checksum: "someCheckSum", State: "someState",
-	}); err != nil {
-		t.Fatalf("Can't send set instance state: %v", err)
-	}
-
-	if err := waitClientMessage(smClient.receivedMessagesChannel, expectedPBNewState, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
 	}
 }
 
@@ -1156,18 +1055,6 @@ func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudproto
 
 func newTestMessageSender() *testMessageSender {
 	return &testMessageSender{messageChannel: make(chan interface{}, 1)}
-}
-
-func (sender *testMessageSender) SendInstanceNewState(newState cloudprotocol.NewState) error {
-	sender.messageChannel <- newState
-
-	return nil
-}
-
-func (sender *testMessageSender) SendInstanceStateRequest(request cloudprotocol.StateRequest) error {
-	sender.messageChannel <- request
-
-	return nil
 }
 
 func (sender *testMessageSender) SendOverrideEnvVarsStatus(envStatus cloudprotocol.OverrideEnvVarsStatus) error {
