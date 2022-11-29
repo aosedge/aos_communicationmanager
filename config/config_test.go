@@ -44,6 +44,8 @@ const testConfigContent = `{
 		"pkcs11Library": "/path/to/pkcs11/library"
 	},
 	"certStorage": "/var/aos/crypt/cm/",
+	"storageDir" : "/var/aos/storage",
+	"stateDir" : "/var/aos/state",
 	"serviceDiscoveryUrl" : "www.aos.com",
 	"iamProtectedServerUrl" : "localhost:8089",
 	"iamPublicServerUrl" : "localhost:8090",
@@ -163,6 +165,18 @@ func TestGetServiceDiscoveryURL(t *testing.T) {
 func TestGetImageStoreDir(t *testing.T) {
 	if testCfg.ImageStoreDir != "imagestoreDir" {
 		t.Errorf("Wrong image store directory value: %s", testCfg.ImageStoreDir)
+	}
+}
+
+func TestGetStorageDir(t *testing.T) {
+	if testCfg.StorageDir != "/var/aos/storage" {
+		t.Errorf("Wrong storageDir value: %s", testCfg.StorageDir)
+	}
+}
+
+func TestGetStateDir(t *testing.T) {
+	if testCfg.StateDir != "/var/aos/state" {
+		t.Errorf("Wrong stateDir value: %s", testCfg.StateDir)
 	}
 }
 
