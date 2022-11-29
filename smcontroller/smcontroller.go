@@ -297,8 +297,8 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 	nodeCfg := launcher.NodeConfiguration{
 		NodeInfo: cloudprotocol.NodeInfo{
-			NodeID: nodeConfig.NodeConfiguration.NodeId, NumCPUs: nodeConfig.NodeConfiguration.NumCpus,
-			TotalRAM:   nodeConfig.NodeConfiguration.TotalRam,
+			NodeID: nodeConfig.NodeConfiguration.NodeId, NodeType: nodeConfig.NodeConfiguration.NodeType,
+			NumCPUs: nodeConfig.NodeConfiguration.NumCpus, TotalRAM: nodeConfig.NodeConfiguration.TotalRam,
 			Partitions: make([]cloudprotocol.PartitionInfo, len(nodeConfig.NodeConfiguration.Partitions)),
 		},
 		RemoteNode:    nodeConfig.NodeConfiguration.RemoteNode,

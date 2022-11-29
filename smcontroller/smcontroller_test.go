@@ -102,12 +102,13 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			},
 		}
 		nodeConfig = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			NodeId: nodeID, NodeType: "superNode", RemoteNode: true,
+			RunnerFeatures: []string{"runc"}, NumCpus: 1, TotalRam: 100,
+			Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
 		}
 		expectedNodeConfiguration = launcher.NodeConfiguration{
 			NodeInfo: cloudprotocol.NodeInfo{
-				NodeID: nodeID, NumCPUs: 1, TotalRAM: 100,
+				NodeID: nodeID, NodeType: "superNode", NumCPUs: 1, TotalRAM: 100,
 				Partitions: []cloudprotocol.PartitionInfo{
 					{Name: "services", Type: []string{"t1"}, TotalSize: 50},
 				},
