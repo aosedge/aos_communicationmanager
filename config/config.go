@@ -43,9 +43,10 @@ type Crypt struct {
 
 // UMController configuration for update controller.
 type UMController struct {
-	ServerURL string            `json:"serverUrl"`
-	UMClients []UMClientConfig  `json:"umClients"`
-	UpdateTTL aostypes.Duration `json:"updateTtl"`
+	FileServerURL string            `json:"fileServerUrl"`
+	ServerURL     string            `json:"serverUrl"`
+	UMClients     []UMClientConfig  `json:"umClients"`
+	UpdateTTL     aostypes.Duration `json:"updateTtl"`
 }
 
 // UMClientConfig update manager config.
@@ -104,6 +105,7 @@ type Config struct {
 	Downloader            Downloader        `json:"downloader"`
 	WorkingDir            string            `json:"workingDir"`
 	ImageStoreDir         string            `json:"imageStoreDir"`
+	ComponentsDir         string            `json:"componentsDir"`
 	UnitConfigFile        string            `json:"unitConfigFile"`
 	ServiceTTLDays        uint64            `json:"serviceTtlDays"`
 	LayerTTLDays          uint64            `json:"layerTtlDays"`
@@ -167,6 +169,10 @@ func New(fileName string) (config *Config, err error) {
 
 	if config.ImageStoreDir == "" {
 		config.ImageStoreDir = path.Join(config.WorkingDir, "imagestore")
+	}
+
+	if config.ComponentsDir == "" {
+		config.ImageStoreDir = path.Join(config.WorkingDir, "components")
 	}
 
 	if config.UnitConfigFile == "" {
