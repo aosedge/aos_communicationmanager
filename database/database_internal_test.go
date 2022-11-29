@@ -36,6 +36,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
+	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -598,5 +599,115 @@ func TestInstance(t *testing.T) {
 
 	if !reflect.DeepEqual(uids, expectedUIDs) {
 		t.Errorf("Incorrect result for get all UIDs")
+	}
+}
+
+func TestStorageState(t *testing.T) {
+	var (
+		testInstanceID  = "test_instance_subjectID_serviceID"
+		newCheckSum     = []byte("newCheckSum")
+		newStorageQuota = uint64(88888)
+		newStateQuota   = uint64(99999)
+	)
+
+	instanceIdent := aostypes.InstanceIdent{
+		Instance:  1,
+		ServiceID: "service1",
+		SubjectID: "subject1",
+	}
+
+	if _, err := db.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be entry does not exist")
+	}
+
+	testStateStorageInfo := storagestate.StorageStateInstanceInfo{
+		InstanceID:   testInstanceID,
+		StorageQuota: 12345, StateQuota: 54321,
+		StateChecksum: []byte("checksum1"),
+		InstanceIdent: instanceIdent,
+	}
+
+	if err := db.AddStorageStateInfo(testStateStorageInfo); err != nil {
+		t.Fatalf("Can't add state storage info: %v", err)
+	}
+
+	stateStorageInfos, err := db.GetAllStorageStateInfo()
+	if err != nil {
+		t.Fatalf("Can't get all state storage infos: %v", err)
+	}
+
+	if len(stateStorageInfos) != 1 {
+		t.Errorf("Unexpected state storage info size")
+	}
+
+	if stateStorageInfos[0].InstanceID != testInstanceID {
+		t.Errorf("Unexpected instance path")
+	}
+
+	if stateStorageInfos[0].InstanceIdent != testStateStorageInfo.InstanceIdent {
+		t.Errorf("Unexpected instance ident")
+	}
+
+	info, err := db.GetStorageStateInfo(instanceIdent)
+	if err != nil {
+		t.Fatalf("Can't get state storage info: %v", err)
+	}
+
+	if !reflect.DeepEqual(info, testStateStorageInfo) {
+		t.Error("State storage info from database doesn't match expected one")
+	}
+
+	notExistInstanceIdent := aostypes.InstanceIdent{
+		ServiceID: "serviceID",
+		SubjectID: "subjectID",
+		Instance:  20,
+	}
+
+	if err := db.SetStateChecksum(notExistInstanceIdent, newCheckSum); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be entry does not exist")
+	}
+
+	if err := db.SetStateChecksum(instanceIdent, newCheckSum); err != nil {
+		t.Fatalf("Can't update checksum: %v", err)
+	}
+
+	testStateStorageInfo.StateChecksum = newCheckSum
+
+	info, err = db.GetStorageStateInfo(instanceIdent)
+	if err != nil {
+		t.Fatalf("Can't get state storage info: %v", err)
+	}
+
+	if !reflect.DeepEqual(info, testStateStorageInfo) {
+		t.Error("Update state storage info from database doesn't match expected one")
+	}
+
+	if err := db.SetStorageStateQuotas(
+		notExistInstanceIdent, newStorageQuota, newStateQuota); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be: entry does not exist")
+	}
+
+	if err := db.SetStorageStateQuotas(instanceIdent, newStorageQuota, newStateQuota); err != nil {
+		t.Fatalf("Can't update state and storage quotas: %v", err)
+	}
+
+	testStateStorageInfo.StateQuota = newStateQuota
+	testStateStorageInfo.StorageQuota = newStorageQuota
+
+	info, err = db.GetStorageStateInfo(instanceIdent)
+	if err != nil {
+		t.Fatalf("Can't get state storage info: %v", err)
+	}
+
+	if !reflect.DeepEqual(info, testStateStorageInfo) {
+		t.Error("Update state storage info from database doesn't match expected one")
+	}
+
+	if err := db.RemoveStorageStateInfo(instanceIdent); err != nil {
+		t.Fatalf("Can't remove state storage info: %v", err)
+	}
+
+	if _, err := db.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be: entry does not exist")
 	}
 }
