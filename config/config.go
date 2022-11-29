@@ -101,6 +101,8 @@ type Config struct {
 	IAMPublicServerURL    string            `json:"iamPublicServerUrl"`
 	CMServerURL           string            `json:"cmServerUrl"`
 	Downloader            Downloader        `json:"downloader"`
+	StorageDir            string            `json:"storageDir"`
+	StateDir              string            `json:"stateDir"`
 	WorkingDir            string            `json:"workingDir"`
 	ImageStoreDir         string            `json:"imageStoreDir"`
 	UnitConfigFile        string            `json:"unitConfigFile"`
@@ -155,6 +157,14 @@ func New(fileName string) (config *Config, err error) {
 
 	if config.CertStorage == "" {
 		config.CertStorage = "/var/aos/crypt/cm/"
+	}
+
+	if config.StorageDir == "" {
+		config.StorageDir = path.Join(config.WorkingDir, "storages")
+	}
+
+	if config.StateDir == "" {
+		config.StateDir = path.Join(config.WorkingDir, "states")
 	}
 
 	if config.Downloader.DownloadDir == "" {
