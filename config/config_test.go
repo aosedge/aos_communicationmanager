@@ -50,6 +50,7 @@ const testConfigContent = `{
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
 	"imageStoreDir": "imagestoreDir",
+	"componentsDir": "componentDir",
 	"serviceTtlDays": 30,
 	"layerTtlDays": 40,
 	"unitConfigFile" : "/var/aos/aos_unit.cfg",
@@ -98,6 +99,7 @@ const testConfigContent = `{
 	},
 	"umController": {
 		"serverUrl": "localhost:8091",
+		"fileServerUrl":"localhost:8094",
 		"umClients": [{
 			"umId": "um",
 			"priority": 0,
@@ -243,9 +245,10 @@ func TestUMControllerConfig(t *testing.T) {
 	umClient := config.UMClientConfig{UMID: "um", Priority: 0, IsLocal: true}
 
 	originalConfig := config.UMController{
-		ServerURL: "localhost:8091",
-		UMClients: []config.UMClientConfig{umClient},
-		UpdateTTL: aostypes.Duration{Duration: 100 * time.Hour},
+		FileServerURL: "localhost:8094",
+		ServerURL:     "localhost:8091",
+		UMClients:     []config.UMClientConfig{umClient},
+		UpdateTTL:     aostypes.Duration{Duration: 100 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {
@@ -312,6 +315,12 @@ func TestGetLayerTTLDays(t *testing.T) {
 func TestGetServiceTTLDays(t *testing.T) {
 	if testCfg.ServiceTTLDays != 30 {
 		t.Errorf("Wrong ServiceTTLDays value: %d", testCfg.ServiceTTLDays)
+	}
+}
+
+func TestComponentStoreDir(t *testing.T) {
+	if testCfg.ComponentsDir != "componentDir" {
+		t.Errorf("Wrong components directory value: %s", testCfg.ComponentsDir)
 	}
 }
 
