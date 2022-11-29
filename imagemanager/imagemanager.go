@@ -342,7 +342,7 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 			return aoserrors.Wrap(err)
 		}
 
-		gid = serviceFromStorage.GID
+		gid = int(serviceFromStorage.GID)
 	} else {
 		if gid, err = imagemanager.gidPool.GetFreeID(); err != nil {
 			return aoserrors.Wrap(err)
@@ -366,7 +366,7 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 			ProviderID:  serviceInfo.ProviderID,
 			URL:         createLocalURL(decryptedFile),
 			Size:        serviceInfo.Size,
-			GID:         gid,
+			GID:         uint32(gid),
 			Sha256:      serviceInfo.Sha256,
 			Sha512:      serviceInfo.Sha512,
 		},
@@ -823,7 +823,7 @@ func (imagemanager *Imagemanager) removeOutdatedService(serviceID string) error 
 	}
 
 	if len(services) > 0 {
-		if err := imagemanager.gidPool.RemoveID(services[0].GID); err != nil {
+		if err := imagemanager.gidPool.RemoveID(int(services[0].GID)); err != nil {
 			log.Errorf("Can't remove service GID from pool: %v", err)
 		}
 	}
@@ -848,7 +848,7 @@ func (imagemanager *Imagemanager) setOutdatedServices() error {
 	}
 
 	for _, service := range services {
-		if err = imagemanager.gidPool.AddID(service.GID); err != nil {
+		if err = imagemanager.gidPool.AddID(int(service.GID)); err != nil {
 			log.Errorf("Can't add service GID to pool: %v", err)
 		}
 
