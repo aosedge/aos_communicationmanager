@@ -410,7 +410,7 @@ func (handler *smHandler) processSMMessages() {
 
 func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus) {
 	runStatus := launcher.NodeRunInstanceStatus{
-		NodeID:    handler.config.NodeID,
+		NodeID: handler.config.NodeID, NodeType: handler.config.NodeType,
 		Instances: instancesStatusFromPB(status.Instances),
 	}
 
