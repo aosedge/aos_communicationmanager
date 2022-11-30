@@ -212,6 +212,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 func TestUnitConfigMessages(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
+		nodeType      = "mainType"
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
@@ -272,7 +273,8 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.CheckUnitConfig(aostypes.NodeConfig{NodeID: nodeID}, newVersion); err != nil {
+		if err := controller.CheckUnitConfig(
+			nodeID, aostypes.NodeUnitConfig{NodeType: nodeType}, newVersion); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
 		testWaitChan <- struct{}{}
@@ -294,7 +296,8 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.SetUnitConfig(aostypes.NodeConfig{NodeID: nodeID}, newVersion); err != nil {
+		if err := controller.SetUnitConfig(
+			nodeID, aostypes.NodeUnitConfig{NodeType: nodeType}, newVersion); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
 		testWaitChan <- struct{}{}
