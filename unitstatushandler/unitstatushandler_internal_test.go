@@ -33,7 +33,6 @@ import (
 
 	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
-	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 )
 
@@ -93,9 +92,14 @@ type TestResult struct {
 	err          error
 }
 
-type testStatusHandler struct {
+type testGroupDownloader struct {
 	downloadTime time.Duration
 	result       map[string]*downloadResult
+	sotaReleased bool
+	fotaReleased bool
+}
+
+type testStatusHandler struct {
 }
 
 type TestStorage struct {
@@ -148,19 +152,13 @@ func TestMain(m *testing.M) {
  * Tests
  **********************************************************************************************************************/
 
-func TestDownload(t *testing.T) {
+func TestGroupDownloader(t *testing.T) {
 	testDownloader := NewTestDownloader()
 
-	statusHandler, err := New(&config.Config{},
-		NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{}), NewTestFirmwareUpdater(nil),
-		NewTestSoftwareUpdater(nil, nil), testDownloader, NewTestStorage(), NewTestSender())
-	if err != nil {
-		t.Fatalf("Can't create unit status handler: %s", err)
-	}
-	defer statusHandler.Close()
+	testGroupDownloader := newGroupDownloader(testDownloader)
 
 	type testData struct {
-		request          map[string]cloudprotocol.DecryptDataStruct
+		request          map[string]downloader.PackageInfo
 		errorURL         string
 		downloadError    error
 		continueOnError  bool
@@ -171,13 +169,13 @@ func TestDownload(t *testing.T) {
 
 	data := []testData{
 		{
-			request:         map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {}, "2": {}},
+			request:         map[string]downloader.PackageInfo{"0": {}, "1": {}, "2": {}},
 			continueOnError: false,
 			check:           map[string]int{"0": downloadSuccess, "1": downloadSuccess, "2": downloadSuccess},
 			downloadTime:    1 * time.Second,
 		},
 		{
-			request:         map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
+			request:         map[string]downloader.PackageInfo{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
 			errorURL:        "1",
 			downloadError:   aoserrors.New("download error"),
 			continueOnError: false,
@@ -185,7 +183,7 @@ func TestDownload(t *testing.T) {
 			downloadTime:    1 * time.Second,
 		},
 		{
-			request:         map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
+			request:         map[string]downloader.PackageInfo{"0": {}, "1": {URLs: []string{"1"}}, "2": {}},
 			errorURL:        "1",
 			downloadError:   aoserrors.New("download error"),
 			continueOnError: true,
@@ -193,14 +191,14 @@ func TestDownload(t *testing.T) {
 			downloadTime:    1 * time.Second,
 		},
 		{
-			request:          map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {}, "2": {}},
+			request:          map[string]downloader.PackageInfo{"0": {}, "1": {}, "2": {}},
 			continueOnError:  false,
 			check:            map[string]int{"0": downloadCanceled, "1": downloadCanceled, "2": downloadCanceled},
 			downloadTime:     5 * time.Second,
 			cancelDownloadIn: 2 * time.Second,
 		},
 		{
-			request:          map[string]cloudprotocol.DecryptDataStruct{"0": {}, "1": {}, "2": {}},
+			request:          map[string]downloader.PackageInfo{"0": {}, "1": {}, "2": {}},
 			continueOnError:  true,
 			check:            map[string]int{"0": downloadCanceled, "1": downloadCanceled, "2": downloadCanceled},
 			downloadTime:     5 * time.Second,
@@ -221,14 +219,14 @@ func TestDownload(t *testing.T) {
 			cancel()
 		}
 
-		result := statusHandler.download(ctx, item.request, item.continueOnError,
+		result := testGroupDownloader.download(ctx, item.request, item.continueOnError,
 			func(id string, status string, componentErr string) {
 				log.WithFields(log.Fields{
 					"id": id, "status": status, "error": componentErr,
 				}).Debug("Component download status")
-			}, nil, nil)
+			})
 
-		if err = checkDownloadResult(result, item.check); err != nil {
+		if err := checkDownloadResult(result, item.check); err != nil {
 			t.Errorf("Check result failed: %s", err)
 		}
 
@@ -687,14 +685,15 @@ func TestFirmwareManager(t *testing.T) {
 
 	firmwareUpdater := NewTestFirmwareUpdater(nil)
 	unitConfigUpdater := NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{})
-	statusHandler := newTestStatusHandler()
+	firmwareDownloader := newTestGroupDownloader()
 	testStorage := NewTestStorage()
 
 	for _, item := range data {
 		t.Logf("Test item: %s", item.testID)
 
-		statusHandler.result = item.downloadResult
-		statusHandler.downloadTime = item.downloadTime
+		firmwareDownloader.fotaReleased = false
+		firmwareDownloader.result = item.downloadResult
+		firmwareDownloader.downloadTime = item.downloadTime
 		firmwareUpdater.InitComponentsInfo = item.initComponentStatuses
 		firmwareUpdater.UpdateComponentsInfo = item.updateComponentStatuses
 		firmwareUpdater.UpdateTime = item.updateTime
@@ -707,8 +706,8 @@ func TestFirmwareManager(t *testing.T) {
 
 		// Create firmware manager
 
-		firmwareManager, err := newFirmwareManager(statusHandler, firmwareUpdater, unitConfigUpdater,
-			testStorage, 30*time.Second)
+		firmwareManager, err := newFirmwareManager(newTestStatusHandler(), firmwareDownloader,
+			firmwareUpdater, unitConfigUpdater, testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create firmware manager: %s", err)
 			continue
@@ -754,6 +753,10 @@ func TestFirmwareManager(t *testing.T) {
 
 		if err = firmwareManager.close(); err != nil {
 			t.Errorf("Error closing firmware manager: %s", err)
+		}
+
+		if !firmwareDownloader.fotaReleased {
+			t.Error("FOTA downloads should be released")
 		}
 	}
 }
@@ -980,14 +983,15 @@ func TestSoftwareManager(t *testing.T) {
 	}
 
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
-	statusHandler := newTestStatusHandler()
+	softwareDownloader := newTestGroupDownloader()
 	testStorage := NewTestStorage()
 
 	for _, item := range data {
 		t.Logf("Test item: %s", item.testID)
 
-		statusHandler.result = item.downloadResult
-		statusHandler.downloadTime = item.downloadTime
+		softwareDownloader.result = item.downloadResult
+		softwareDownloader.sotaReleased = false
+		softwareDownloader.downloadTime = item.downloadTime
 		softwareUpdater.UpdateError = item.updateError
 
 		if err := testStorage.saveSoftwareState(item.initState); err != nil {
@@ -997,7 +1001,8 @@ func TestSoftwareManager(t *testing.T) {
 
 		// Create software manager
 
-		softwareManager, err := newSoftwareManager(statusHandler, softwareUpdater, testStorage, 30*time.Second)
+		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, softwareUpdater,
+			testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create software manager: %s", err)
 			continue
@@ -1049,6 +1054,10 @@ func TestSoftwareManager(t *testing.T) {
 
 		if err = softwareManager.close(); err != nil {
 			t.Errorf("Error closing firmware manager: %s", err)
+		}
+
+		if !softwareDownloader.sotaReleased {
+			t.Error("SOTA downloads should be released")
 		}
 	}
 }
@@ -1451,10 +1460,8 @@ func (testDownloader *TestDownloader) SetError(url string, err error) {
 	testDownloader.downloadErr = err
 }
 
-func (testDownloader *TestDownloader) DownloadAndDecrypt(
-	ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result downloader.Result, err error,
-) {
+func (testDownloader *TestDownloader) Download(
+	ctx context.Context, packageInfo downloader.PackageInfo) (result downloader.Result, err error) {
 	file, err := ioutil.TempFile(tmpDir, "*.dec")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -1479,6 +1486,19 @@ func (testDownloader *TestDownloader) DownloadAndDecrypt(
 		fileName:     file.Name(),
 		err:          downloadErr,
 	}, nil
+
+}
+
+func (testDownloader *TestDownloader) Release(filePath string) error {
+	if err := os.RemoveAll(filePath); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (testDownloader *TestDownloader) ReleaseByType(targetType string) error {
+	return nil
 }
 
 func (result *TestResult) GetFileName() (fileName string) { return result.fileName }
@@ -1493,55 +1513,69 @@ func (result *TestResult) Wait() (err error) {
 	}
 }
 
-func (result *TestResult) Release() {
-	os.RemoveAll(result.fileName)
-}
-
 /***********************************************************************************************************************
- * testFirmwareStatusHandler
+ * testGroupDownloader
  **********************************************************************************************************************/
 
-func newTestStatusHandler() (statusHandler *testStatusHandler) {
-	return &testStatusHandler{}
+func newTestGroupDownloader() *testGroupDownloader {
+	return &testGroupDownloader{}
 }
 
-func (statusHandler *testStatusHandler) download(
-	ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
-	continueOnError bool, updateStatus statusNotifier,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+func (downloader *testGroupDownloader) download(
+	ctx context.Context, request map[string]downloader.PackageInfo, continueOnError bool, updateStatus statusNotifier,
 ) (result map[string]*downloadResult) {
 	for id := range request {
 		updateStatus(id, cloudprotocol.DownloadingStatus, "")
 	}
 
 	select {
-	case <-time.After(statusHandler.downloadTime):
-		if getDownloadError(statusHandler.result) != "" && !continueOnError {
+	case <-time.After(downloader.downloadTime):
+		if getDownloadError(downloader.result) != "" && !continueOnError {
 			for id := range request {
-				if statusHandler.result[id].Error == "" {
-					statusHandler.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
+				if downloader.result[id].Error == "" {
+					downloader.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
 				}
 			}
 		}
 
 		for id := range request {
-			if statusHandler.result[id].Error != "" {
-				updateStatus(id, cloudprotocol.ErrorStatus, statusHandler.result[id].Error)
+			if downloader.result[id].Error != "" {
+				updateStatus(id, cloudprotocol.ErrorStatus, downloader.result[id].Error)
 			} else {
 				updateStatus(id, cloudprotocol.DownloadedStatus, "")
 			}
 		}
 
-		return statusHandler.result
+		return downloader.result
 
 	case <-ctx.Done():
 		for id := range request {
-			statusHandler.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
-			updateStatus(id, cloudprotocol.ErrorStatus, statusHandler.result[id].Error)
+			downloader.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
+			updateStatus(id, cloudprotocol.ErrorStatus, downloader.result[id].Error)
 		}
 
 		return result
 	}
+}
+
+func (downloader *testGroupDownloader) releaseDownloadedFirmware() error {
+	downloader.fotaReleased = true
+
+	return nil
+}
+
+func (downloader *testGroupDownloader) releaseDownloadedSoftware() error {
+	downloader.sotaReleased = true
+
+	return nil
+}
+
+/***********************************************************************************************************************
+ * testStatusHandler
+ **********************************************************************************************************************/
+
+func newTestStatusHandler() *testStatusHandler {
+	return &testStatusHandler{}
 }
 
 func (statusHandler *testStatusHandler) updateComponentStatus(componentInfo cloudprotocol.ComponentStatus) {
