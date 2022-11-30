@@ -168,8 +168,10 @@ func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error)
 }
 
 // CheckUnitConfig checks unit config for the node.
-func (controller *Controller) CheckUnitConfig(nodeCfg aostypes.NodeConfig, vendorVersion string) error {
-	handler, err := controller.getNodeHandlerByID(nodeCfg.NodeID)
+func (controller *Controller) CheckUnitConfig(
+	nodeID string, nodeCfg aostypes.NodeUnitConfig, vendorVersion string,
+) error {
+	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -178,8 +180,10 @@ func (controller *Controller) CheckUnitConfig(nodeCfg aostypes.NodeConfig, vendo
 }
 
 // SetUnitConfig sets usint config for the node.
-func (controller *Controller) SetUnitConfig(nodeCfg aostypes.NodeConfig, vendorVersion string) error {
-	handler, err := controller.getNodeHandlerByID(nodeCfg.NodeID)
+func (controller *Controller) SetUnitConfig(
+	nodeID string, nodeCfg aostypes.NodeUnitConfig, vendorVersion string,
+) error {
+	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
