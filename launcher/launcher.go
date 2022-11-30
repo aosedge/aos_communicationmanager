@@ -26,6 +26,7 @@ import "github.com/aoscloud/aos_common/api/cloudprotocol"
 // NodeRunInstanceStatus instance run status for the node.
 type NodeRunInstanceStatus struct {
 	NodeID    string
+	NodeType  string
 	Instances []cloudprotocol.InstanceStatus
 }
 

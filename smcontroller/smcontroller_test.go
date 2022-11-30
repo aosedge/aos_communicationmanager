@@ -94,21 +94,22 @@ func init() {
 
 func TestSMInstancesStatusNotifications(t *testing.T) {
 	var (
-		nodeID = "mainSM"
-		config = config.Config{
+		nodeID   = "mainSM"
+		nodeType = "mainSMType"
+		config   = config.Config{
 			SMController: config.SMController{
 				SMServerURL: smServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
 		nodeConfig = &pb.NodeConfiguration{
-			NodeId: nodeID, NodeType: "superNode", RemoteNode: true,
+			NodeId: nodeID, NodeType: nodeType, RemoteNode: true,
 			RunnerFeatures: []string{"runc"}, NumCpus: 1, TotalRam: 100,
 			Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
 		}
 		expectedNodeConfiguration = launcher.NodeConfiguration{
 			NodeInfo: cloudprotocol.NodeInfo{
-				NodeID: nodeID, NodeType: "superNode", NumCPUs: 1, TotalRAM: 100,
+				NodeID: nodeID, NodeType: nodeType, NumCPUs: 1, TotalRAM: 100,
 				Partitions: []cloudprotocol.PartitionInfo{
 					{Name: "services", Type: []string{"t1"}, TotalSize: 50},
 				},
@@ -130,7 +131,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			},
 		}
 		expectedRuntimeStatus = launcher.NodeRunInstanceStatus{
-			NodeID: nodeID,
+			NodeID: nodeID, NodeType: nodeType,
 			Instances: []cloudprotocol.InstanceStatus{
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
