@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
-	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -34,6 +33,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
+	"github.com/aoscloud/aos_communicationmanager/downloader"
 )
 
 /***********************************************************************************************************************
@@ -46,10 +46,12 @@ const maxConcurrentActions = 10
  * Types
  **********************************************************************************************************************/
 
+type softwareDownloader interface {
+	download(ctx context.Context, request map[string]downloader.PackageInfo,
+		continueOnError bool, notifier statusNotifier) (result map[string]*downloadResult)
+	releaseDownloadedSoftware() error
+}
 type softwareStatusHandler interface {
-	download(ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
-		continueOnError bool, notifier statusNotifier,
-		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult)
 	updateLayerStatus(layerInfo cloudprotocol.LayerStatus)
 	updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus)
 }
@@ -72,6 +74,7 @@ type softwareManager struct {
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
+	downloader      softwareDownloader
 	statusHandler   softwareStatusHandler
 	softwareUpdater SoftwareUpdater
 	storage         Storage
@@ -95,11 +98,12 @@ type softwareManager struct {
  * Interface
  **********************************************************************************************************************/
 
-func newSoftwareManager(statusHandler softwareStatusHandler,
+func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader,
 	softwareUpdater SoftwareUpdater, storage Storage, defaultTTL time.Duration,
 ) (manager *softwareManager, err error) {
 	manager = &softwareManager{
 		statusChannel:   make(chan cmserver.UpdateSOTAStatus, 1),
+		downloader:      downloader,
 		statusHandler:   statusHandler,
 		softwareUpdater: softwareUpdater,
 		actionHandler:   action.New(maxConcurrentActions),
@@ -184,13 +188,6 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 	return status
 }
 
-func (manager *softwareManager) getCurrentUpdateState() (status cmserver.UpdateState) {
-	manager.Lock()
-	defer manager.Unlock()
-
-	return convertState(manager.CurrentState)
-}
-
 func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 	manager.InstanceStatuses = status.Instances
 
@@ -210,7 +207,7 @@ func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 	}
 }
 
-func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) (err error) {
+func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -467,15 +464,10 @@ func (manager *softwareManager) stateChanged(event, state string, updateErr stri
 }
 
 func (manager *softwareManager) noUpdate() {
-	// Remove downloaded files
-	for _, result := range manager.DownloadResult {
-		if result.FileName != "" {
-			log.WithField("file", result.FileName).Debug("Remove software update file")
+	log.Debug("Release downloaded software")
 
-			if err := os.RemoveAll(result.FileName); err != nil {
-				log.WithField("file", result.FileName).Errorf("Can't remove update file: %s", err)
-			}
-		}
+	if err := manager.downloader.releaseDownloadedSoftware(); err != nil {
+		log.Errorf("Error release downloading software: %v", err)
 	}
 
 	if manager.pendingUpdate != nil {
@@ -522,8 +514,7 @@ func (manager *softwareManager) download(ctx context.Context) {
 		return
 	}
 
-	manager.DownloadResult = manager.statusHandler.download(ctx, request, true, manager.updateStatusByID,
-		manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs)
+	manager.DownloadResult = manager.downloader.download(ctx, request, true, manager.updateStatusByID)
 
 	// Set pending state
 
@@ -580,8 +571,8 @@ func (manager *softwareManager) download(ctx context.Context) {
 	}
 }
 
-func (manager *softwareManager) prepareDownloadRequest() (request map[string]cloudprotocol.DecryptDataStruct) {
-	request = make(map[string]cloudprotocol.DecryptDataStruct)
+func (manager *softwareManager) prepareDownloadRequest() (request map[string]downloader.PackageInfo) {
+	request = make(map[string]downloader.PackageInfo)
 
 	manager.statusMutex.Lock()
 
@@ -594,7 +585,16 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]clo
 			"version": service.AosVersion,
 		}).Debug("Download service")
 
-		request[service.ID] = service.DecryptDataStruct
+		request[service.ID] = downloader.PackageInfo{
+			URLs:                service.URLs,
+			Sha256:              service.Sha256,
+			Sha512:              service.Sha512,
+			Size:                service.Size,
+			TargetType:          cloudprotocol.DownloadTargetService,
+			TargetID:            service.ID,
+			TargetAosVersion:    service.AosVersion,
+			TargetVendorVersion: service.VendorVersion,
+		}
 		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceStatus{
 			ID:         service.ID,
 			AosVersion: service.AosVersion,
@@ -609,7 +609,16 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]clo
 			"version": layer.AosVersion,
 		}).Debug("Download layer")
 
-		request[layer.Digest] = layer.DecryptDataStruct
+		request[layer.Digest] = downloader.PackageInfo{
+			URLs:                layer.URLs,
+			Sha256:              layer.Sha256,
+			Sha512:              layer.Sha512,
+			Size:                layer.Size,
+			TargetType:          cloudprotocol.DownloadTargetLayer,
+			TargetID:            layer.Digest,
+			TargetAosVersion:    layer.AosVersion,
+			TargetVendorVersion: layer.VendorVersion,
+		}
 		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerStatus{
 			ID:         layer.ID,
 			AosVersion: layer.AosVersion,
