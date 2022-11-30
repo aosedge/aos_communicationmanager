@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -35,6 +34,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/cmserver"
+	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/unitconfig"
 )
 
@@ -46,10 +46,13 @@ import (
  * Types
  **********************************************************************************************************************/
 
+type firmwareDownloader interface {
+	download(ctx context.Context, request map[string]downloader.PackageInfo,
+		continueOnError bool, notifier statusNotifier) (result map[string]*downloadResult)
+	releaseDownloadedFirmware() error
+}
+
 type firmwareStatusHandler interface {
-	download(ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
-		continueOnError bool, notifier statusNotifier,
-		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) (result map[string]*downloadResult)
 	updateComponentStatus(componentInfo cloudprotocol.ComponentStatus)
 	updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus)
 }
@@ -67,6 +70,7 @@ type firmwareManager struct {
 
 	statusChannel chan cmserver.UpdateFOTAStatus
 
+	downloader        firmwareDownloader
 	statusHandler     firmwareStatusHandler
 	firmwareUpdater   FirmwareUpdater
 	unitConfigUpdater UnitConfigUpdater
@@ -89,12 +93,13 @@ type firmwareManager struct {
  * Interface
  **********************************************************************************************************************/
 
-func newFirmwareManager(statusHandler firmwareStatusHandler,
+func newFirmwareManager(statusHandler firmwareStatusHandler, downloader firmwareDownloader,
 	firmwareUpdater FirmwareUpdater, unitConfigUpdater UnitConfigUpdater,
 	storage Storage, defaultTTL time.Duration,
 ) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
 		statusChannel:     make(chan cmserver.UpdateFOTAStatus, 1),
+		downloader:        downloader,
 		statusHandler:     statusHandler,
 		firmwareUpdater:   firmwareUpdater,
 		unitConfigUpdater: unitConfigUpdater,
@@ -165,14 +170,7 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 	return status
 }
 
-func (manager *firmwareManager) getCurrentUpdateState() (status cmserver.UpdateState) {
-	manager.Lock()
-	defer manager.Unlock()
-
-	return convertState(manager.CurrentState)
-}
-
-func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) (err error) {
+func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -328,15 +326,10 @@ func (manager *firmwareManager) stateChanged(event, state string, updateErr stri
 }
 
 func (manager *firmwareManager) noUpdate() {
-	// Remove downloaded files
-	for _, result := range manager.DownloadResult {
-		if result.FileName != "" {
-			log.WithField("file", result.FileName).Debug("Remove firmware update file")
+	log.Debug("Release downloaded firmware")
 
-			if err := os.RemoveAll(result.FileName); err != nil {
-				log.WithField("file", result.FileName).Errorf("Can't remove update file: %s", err)
-			}
-		}
+	if err := manager.downloader.releaseDownloadedFirmware(); err != nil {
+		log.Errorf("Error release downloading firmware: %v", err)
 	}
 
 	if manager.pendingUpdate != nil {
@@ -401,7 +394,7 @@ func (manager *firmwareManager) download(ctx context.Context) {
 	manager.statusMutex.Lock()
 
 	manager.ComponentStatuses = make(map[string]*cloudprotocol.ComponentStatus)
-	request := make(map[string]cloudprotocol.DecryptDataStruct)
+	request := make(map[string]downloader.PackageInfo)
 
 	for _, component := range manager.CurrentUpdate.Components {
 		log.WithFields(log.Fields{
@@ -409,7 +402,16 @@ func (manager *firmwareManager) download(ctx context.Context) {
 			"version": component.VendorVersion,
 		}).Debug("Download component")
 
-		request[component.ID] = component.DecryptDataStruct
+		request[component.ID] = downloader.PackageInfo{
+			URLs:                component.URLs,
+			Sha256:              component.Sha256,
+			Sha512:              component.Sha512,
+			Size:                component.Size,
+			TargetType:          cloudprotocol.DownloadTargetComponent,
+			TargetID:            component.ID,
+			TargetAosVersion:    component.AosVersion,
+			TargetVendorVersion: component.VendorVersion,
+		}
 		manager.ComponentStatuses[component.ID] = &cloudprotocol.ComponentStatus{
 			ID:            component.ID,
 			AosVersion:    component.AosVersion,
@@ -425,8 +427,7 @@ func (manager *firmwareManager) download(ctx context.Context) {
 		return
 	}
 
-	manager.DownloadResult = manager.statusHandler.download(ctx, request, false, manager.updateComponentStatusByID,
-		manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs)
+	manager.DownloadResult = manager.downloader.download(ctx, request, false, manager.updateComponentStatusByID)
 
 	downloadErr = getDownloadError(manager.DownloadResult)
 

@@ -25,6 +25,7 @@ import (
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
+	"github.com/aoscloud/aos_communicationmanager/downloader"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -40,14 +41,20 @@ type downloadResult struct {
 
 type statusNotifier func(id string, status string, componentErr string)
 
+type groupDownloader struct {
+	Downloader
+}
+
 /***********************************************************************************************************************
  * Interface
  **********************************************************************************************************************/
 
-func (instance *Instance) download(ctx context.Context, request map[string]cloudprotocol.DecryptDataStruct,
-	continueOnError bool, updateStatus statusNotifier,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
-) (result map[string]*downloadResult) {
+func newGroupDownloader(fileDownloader Downloader) *groupDownloader {
+	return &groupDownloader{Downloader: fileDownloader}
+}
+
+func (downloader *groupDownloader) download(ctx context.Context, request map[string]downloader.PackageInfo,
+	continueOnError bool, updateStatus statusNotifier) (result map[string]*downloadResult) {
 	result = make(map[string]*downloadResult)
 
 	for id := range request {
@@ -73,7 +80,7 @@ func (instance *Instance) download(ctx context.Context, request map[string]cloud
 	}
 
 	for id, item := range request {
-		itemResult, err := instance.downloader.DownloadAndDecrypt(downloadCtx, item, chains, certs)
+		itemResult, err := downloader.Download(downloadCtx, item)
 		if err != nil {
 			handleError(id, err)
 
@@ -123,6 +130,26 @@ func (instance *Instance) download(ctx context.Context, request map[string]cloud
 	}
 
 	return result
+}
+
+func (downloader *groupDownloader) releaseDownloadedFirmware() error {
+	if err := downloader.ReleaseByType(cloudprotocol.DownloadTargetComponent); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (downloader *groupDownloader) releaseDownloadedSoftware() error {
+	if err := downloader.ReleaseByType(cloudprotocol.DownloadTargetService); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err := downloader.ReleaseByType(cloudprotocol.DownloadTargetLayer); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
 }
 
 func getDownloadError(result map[string]*downloadResult) (downloadErr string) {

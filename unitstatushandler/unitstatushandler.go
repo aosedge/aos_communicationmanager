@@ -21,9 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
-	"os"
-	"path"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -45,10 +42,9 @@ import (
 
 // Downloader downloads packages.
 type Downloader interface {
-	DownloadAndDecrypt(
-		ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-		chains []cloudprotocol.CertificateChain,
-		certs []cloudprotocol.Certificate) (result downloader.Result, err error)
+	Download(ctx context.Context, packageInfo downloader.PackageInfo) (result downloader.Result, err error)
+	Release(filePath string) error
+	ReleaseByType(targetType string) error
 }
 
 // StatusSender sends unit status to cloud.
@@ -115,7 +111,6 @@ type RunInstancesStatus struct {
 type Instance struct {
 	sync.Mutex
 
-	downloader   Downloader
 	statusSender StatusSender
 
 	statusMutex sync.Mutex
@@ -133,7 +128,6 @@ type Instance struct {
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
 
-	decryptDir  string
 	initDone    bool
 	isConnected int32
 }
@@ -162,9 +156,7 @@ func New(
 
 	instance = &Instance{
 		statusSender:     statusSender,
-		downloader:       downloader,
 		sendStatusPeriod: cfg.UnitStatusSendTimeout.Duration,
-		decryptDir:       cfg.Downloader.DecryptDir,
 	}
 
 	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
@@ -172,12 +164,14 @@ func New(
 	instance.layerStatuses = make(map[string]*itemStatus)
 	instance.serviceStatuses = make(map[string]*itemStatus)
 
-	if instance.firmwareManager, err = newFirmwareManager(instance, firmwareUpdater, unitConfigUpdater,
+	groupDownloader := newGroupDownloader(downloader)
+
+	if instance.firmwareManager, err = newFirmwareManager(instance, groupDownloader, firmwareUpdater, unitConfigUpdater,
 		storage, cfg.UMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, softwareUpdater,
+	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, softwareUpdater,
 		storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -259,14 +253,6 @@ func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.Ins
 func (instance *Instance) ProcessDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) {
 	instance.Lock()
 	defer instance.Unlock()
-
-	if instance.firmwareManager.getCurrentUpdateState() == cmserver.NoUpdate &&
-		instance.softwareManager.getCurrentUpdateState() == cmserver.NoUpdate &&
-		instance.decryptDir != "" {
-		if err := instance.clearDecryptDir(); err != nil {
-			log.Errorf("Error clearing decrypt dir: %s", err)
-		}
-	}
 
 	if err := instance.firmwareManager.processDesiredStatus(desiredStatus); err != nil {
 		log.Errorf("Error processing firmware desired status: %s", err)
@@ -701,23 +687,4 @@ func (instance *Instance) sendCurrentStatus() {
 		unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 		log.Errorf("Can't send unit status: %s", err)
 	}
-}
-
-func (instance *Instance) clearDecryptDir() (err error) {
-	files, err := ioutil.ReadDir(instance.decryptDir)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, file := range files {
-		fileName := path.Join(instance.decryptDir, file.Name())
-
-		log.WithFields(log.Fields{"file": fileName}).Debug("Remove outdated decrypt file")
-
-		if err = os.RemoveAll(fileName); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	return nil
 }
