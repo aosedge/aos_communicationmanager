@@ -480,6 +480,17 @@ func (manager *firmwareManager) update(ctx context.Context) {
 	}
 }
 
+func (manager *firmwareManager) updateTimeout() {
+	manager.Lock()
+	defer manager.Unlock()
+
+	if manager.stateMachine.canTransit(eventCancel) {
+		if err := manager.stateMachine.sendEvent(eventCancel, aoserrors.New("update timeout").Error()); err != nil {
+			log.Errorf("Can't cancel update: %s", err)
+		}
+	}
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/

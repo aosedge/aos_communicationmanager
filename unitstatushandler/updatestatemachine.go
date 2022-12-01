@@ -73,7 +73,8 @@ type updateManager interface {
 	readyToUpdate()
 	update(ctx context.Context)
 	noUpdate()
-	startUpdate() (err error)
+	startUpdate() error
+	updateTimeout()
 }
 
 type syncExecutor struct {
@@ -235,11 +236,7 @@ func convertState(state string) (updateState cmserver.UpdateState) {
 
 func (stateMachine *updateStateMachine) setTTLTimer(ttlTime time.Duration) {
 	stateMachine.ttlTimer = time.AfterFunc(ttlTime, func() {
-		if stateMachine.canTransit(eventCancel) {
-			if err := stateMachine.sendEvent(eventCancel, aoserrors.New("update timeout").Error()); err != nil {
-				log.Errorf("Can't cancel update: %s", err)
-			}
-		}
+		stateMachine.manager.updateTimeout()
 	})
 }
 
