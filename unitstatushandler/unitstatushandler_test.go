@@ -107,10 +107,11 @@ func TestSendInitialStatus(t *testing.T) {
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(expectedUnitStatus.UnitConfig[0])
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(expectedUnitStatus.Components)
 	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(initialServices, initialLayers)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(),
+		cfg, unitConfigUpdater, fotaUpdater, sotaUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -154,10 +155,11 @@ func TestUpdateUnitConfig(t *testing.T) {
 		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, fotaUpdater, sotaUpdater, unitstatushandler.NewTestDownloader(),
+		cfg, unitConfigUpdater, fotaUpdater, sotaUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -233,10 +235,11 @@ func TestUpdateComponents(t *testing.T) {
 		{ID: "comp2", VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
 	})
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(cfg,
-		unitConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -338,10 +341,11 @@ func TestUpdateLayers(t *testing.T) {
 		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, layerStatuses)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -401,7 +405,7 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
@@ -469,7 +473,7 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 }
@@ -490,10 +494,11 @@ func TestUpdateServices(t *testing.T) {
 		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
@@ -552,7 +557,7 @@ func TestUpdateServices(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
@@ -622,7 +627,7 @@ func TestUpdateServices(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 }
@@ -632,10 +637,11 @@ func TestRunInstances(t *testing.T) {
 		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %v", err)
@@ -676,22 +682,22 @@ func TestRunInstances(t *testing.T) {
 
 	// success run
 
-	expexpectedRunInstances := []cloudprotocol.InstanceInfo{
+	expectedRunInstances := []cloudprotocol.InstanceInfo{
 		{ServiceID: "Serv1", SubjectID: "Subj1", NumInstances: 3},
 		{ServiceID: "Serv1", SubjectID: "Subj2", NumInstances: 1},
 		{ServiceID: "Serv2", SubjectID: "Subj1", NumInstances: 1},
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
-		Instances: expexpectedRunInstances,
+		Instances: expectedRunInstances,
 	})
 
-	receivedRunInstances, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout)
+	receivedRunInstances, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive run instances: %v", err)
 	}
 
-	if !reflect.DeepEqual(receivedRunInstances, expexpectedRunInstances) {
+	if !reflect.DeepEqual(receivedRunInstances, expectedRunInstances) {
 		t.Error("Incorrect run instances")
 	}
 
@@ -734,10 +740,10 @@ func TestRunInstances(t *testing.T) {
 
 	// send the same run instances
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
-		Instances: expexpectedRunInstances,
+		Instances: expectedRunInstances,
 	})
 
-	if _, err := softwareUpdater.WaitForRunInstance(waitRunInstanceTimeout); err == nil {
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err == nil {
 		t.Error("Should be no run instances request")
 	}
 }
@@ -747,10 +753,11 @@ func TestUpdateInstancesStatus(t *testing.T) {
 		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, unitstatushandler.NewTestDownloader(),
+		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %v", err)
@@ -854,11 +861,12 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, layerStatuses)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 	downloader := unitstatushandler.NewTestDownloader()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, downloader,
+		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, downloader,
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)

@@ -77,6 +77,7 @@ type softwareManager struct {
 	downloader      softwareDownloader
 	statusHandler   softwareStatusHandler
 	softwareUpdater SoftwareUpdater
+	instanceRunner  InstanceRunner
 	storage         Storage
 
 	stateMachine  *updateStateMachine
@@ -99,13 +100,14 @@ type softwareManager struct {
  **********************************************************************************************************************/
 
 func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader,
-	softwareUpdater SoftwareUpdater, storage Storage, defaultTTL time.Duration,
+	softwareUpdater SoftwareUpdater, instanceRunner InstanceRunner, storage Storage, defaultTTL time.Duration,
 ) (manager *softwareManager, err error) {
 	manager = &softwareManager{
 		statusChannel:   make(chan cmserver.UpdateSOTAStatus, 1),
 		downloader:      downloader,
 		statusHandler:   statusHandler,
 		softwareUpdater: softwareUpdater,
+		instanceRunner:  instanceRunner,
 		actionHandler:   action.New(maxConcurrentActions),
 		storage:         storage,
 		CurrentState:    stateNoUpdate,
@@ -656,46 +658,33 @@ func (manager *softwareManager) update(ctx context.Context) {
 		}()
 	}()
 
-	if errorStr := manager.removeServices(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	if errorStr := manager.removeServices(); errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 
-	if errorStr := manager.installLayers(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	if errorStr := manager.installLayers(); errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 
-	if errorStr := manager.restoreServices(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	if errorStr := manager.restoreServices(); errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 
-	if errorStr := manager.installServices(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	newServices, errorStr := manager.installServices()
+	if errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 
-	if errorStr := manager.removeLayers(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	if errorStr := manager.removeLayers(); errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 
-	if errorStr := manager.restoreLayers(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	if errorStr := manager.restoreLayers(); errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 
-	if errorStr := manager.runInstances(); errorStr != "" {
-		if updateErr == "" {
-			updateErr = errorStr
-		}
+	if errorStr := manager.runInstances(newServices); errorStr != "" && updateErr == "" {
+		updateErr = errorStr
 	}
 }
 
@@ -928,7 +917,8 @@ func (manager *softwareManager) installLayers() (installErr string) {
 		layerInfo := layer
 
 		manager.actionHandler.Execute(layerInfo.Digest, func(digest string) error {
-			if err := manager.softwareUpdater.InstallLayer(layerInfo); err != nil {
+			if err := manager.softwareUpdater.InstallLayer(layerInfo,
+				manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs); err != nil {
 				handleError(layerInfo, aoserrors.Wrap(err).Error())
 				return aoserrors.Wrap(err)
 			}
@@ -1027,7 +1017,7 @@ func (manager *softwareManager) processRemoveRestorLayers(
 	return ""
 }
 
-func (manager *softwareManager) installServices() (installErr string) {
+func (manager *softwareManager) installServices() (newServices []string, installErr string) {
 	var mutex sync.Mutex
 
 	handleError := func(service cloudprotocol.ServiceInfo, serviceErr string) {
@@ -1091,7 +1081,8 @@ func (manager *softwareManager) installServices() (installErr string) {
 		serviceInfo := service
 
 		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) error {
-			err := manager.softwareUpdater.InstallService(serviceInfo)
+			err := manager.softwareUpdater.InstallService(serviceInfo,
+				manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs)
 			if err != nil {
 				handleError(serviceInfo, aoserrors.Wrap(err).Error())
 				return aoserrors.Wrap(err)
@@ -1102,6 +1093,8 @@ func (manager *softwareManager) installServices() (installErr string) {
 				"aosVersion": serviceInfo.AosVersion,
 			}).Info("Service successfully installed")
 
+			newServices = append(newServices, serviceInfo.ID)
+
 			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "")
 
 			return nil
@@ -1110,7 +1103,7 @@ func (manager *softwareManager) installServices() (installErr string) {
 
 	manager.actionHandler.Wait()
 
-	return installErr
+	return newServices, installErr
 }
 
 func (manager *softwareManager) restoreServices() (restoreErr string) {
@@ -1239,8 +1232,8 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 	return removeErr
 }
 
-func (manager *softwareManager) runInstances() (runErr string) {
-	if err := manager.softwareUpdater.RunInstances(manager.CurrentUpdate.RunInstances); err != nil {
+func (manager *softwareManager) runInstances(newServices []string) (runErr string) {
+	if err := manager.instanceRunner.RunInstances(manager.CurrentUpdate.RunInstances, newServices); err != nil {
 		return err.Error()
 	}
 
