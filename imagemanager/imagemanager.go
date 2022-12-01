@@ -75,10 +75,9 @@ type Storage interface {
 	RemoveLayer(digest string) error
 }
 
-// CryptoContext interface to access crypto functions.
-type CryptoContext interface {
-	ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (fcrypt.SymmetricContextInterface, error)
-	CreateSignContext() (fcrypt.SignContextInterface, error)
+// Decrypter interface to decrypt and validate image.
+type Decrypter interface {
+	DecryptAndValidate(encryptedFile, decryptedFile string, params fcrypt.DecryptParams) error
 }
 
 // StateStorageRemove provides API to remove state storage.
@@ -92,7 +91,7 @@ type Imagemanager struct {
 	servicesDir            string
 	tmpDir                 string
 	storage                Storage
-	cryptoContext          CryptoContext
+	decrypter              Decrypter
 	stateStorageRemove     StateStorageRemover
 	serviceAllocator       spaceallocator.Allocator
 	layerAllocator         spaceallocator.Allocator
@@ -145,14 +144,14 @@ var (
  **********************************************************************************************************************/
 // New creates new image manager object.
 func New(
-	cfg *config.Config, storage Storage, stateStorageRemove StateStorageRemover, cryptoContext CryptoContext,
+	cfg *config.Config, storage Storage, stateStorageRemove StateStorageRemover, decrypter Decrypter,
 ) (imagemanager *Imagemanager, err error) {
 	imagemanager = &Imagemanager{
 		layersDir:              path.Join(cfg.ImageStoreDir, "layers"),
 		servicesDir:            path.Join(cfg.ImageStoreDir, "services"),
 		tmpDir:                 path.Join(cfg.ImageStoreDir, "tmp"),
 		storage:                storage,
-		cryptoContext:          cryptoContext,
+		decrypter:              decrypter,
 		stateStorageRemove:     stateStorageRemove,
 		serviceTTLDays:         cfg.ServiceTTLDays,
 		layerTTLDays:           cfg.LayerTTLDays,
@@ -334,7 +333,7 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 		return err
 	}
 
-	if err = fcrypt.DecryptAndValidate(imagemanager.cryptoContext, encryptedFile, decryptedFile,
+	if err = imagemanager.decrypter.DecryptAndValidate(encryptedFile, decryptedFile,
 		fcrypt.DecryptParams{
 			Chains:         chains,
 			Certs:          certs,
@@ -499,7 +498,7 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 		return err
 	}
 
-	if err := fcrypt.DecryptAndValidate(imagemanager.cryptoContext, encryptedFile, decryptedFile,
+	if err := imagemanager.decrypter.DecryptAndValidate(encryptedFile, decryptedFile,
 		fcrypt.DecryptParams{
 			Chains:         chains,
 			Certs:          certs,
