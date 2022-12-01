@@ -130,6 +130,14 @@ type certificateChainInfo struct {
 	fingerprints []string
 }
 
+// DecryptParams contains necessary parameters for decryption.
+type DecryptParams struct {
+	Chains         []cloudprotocol.CertificateChain
+	Certs          []cloudprotocol.Certificate
+	DecryptionInfo *cloudprotocol.DecryptionInfo
+	Signs          *cloudprotocol.Signs
+}
+
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
@@ -218,6 +226,27 @@ func (handler *CryptoHandler) GetTLSConfig() (cfg *tls.Config, err error) {
 	}
 
 	return cfg, nil
+}
+
+// DecryptAndValidate decrypts and validates encrypted image.
+func (handler *CryptoHandler) DecryptAndValidate(
+	encryptedFile, decryptedFile string, params DecryptParams,
+) (err error) {
+	defer func() {
+		if err != nil {
+			os.RemoveAll(decryptedFile)
+		}
+	}()
+
+	if err = handler.decrypt(encryptedFile, decryptedFile, &params); err != nil {
+		return err
+	}
+
+	if err = handler.validateSigns(decryptedFile, &params); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // DecryptMetadata decrypt envelope.
@@ -510,6 +539,71 @@ func (symmetricContext *SymmetricCipherContext) DecryptFile(
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (handler *CryptoHandler) decrypt(encryptedFile, decryptedFile string, params *DecryptParams) (err error) {
+	symmetricCtx, err := handler.ImportSessionKey(CryptoSessionKeyInfo{
+		SymmetricAlgName:  params.DecryptionInfo.BlockAlg,
+		SessionKey:        params.DecryptionInfo.BlockKey,
+		SessionIV:         params.DecryptionInfo.BlockIv,
+		AsymmetricAlgName: params.DecryptionInfo.AsymAlg,
+		ReceiverInfo: ReceiverInfo{
+			Issuer: params.DecryptionInfo.ReceiverInfo.Issuer,
+			Serial: params.DecryptionInfo.ReceiverInfo.Serial,
+		},
+	})
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	srcFile, err := os.Open(encryptedFile)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(decryptedFile, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer dstFile.Close()
+
+	if err = symmetricCtx.DecryptFile(context.Background(), srcFile, dstFile); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return aoserrors.Wrap(err)
+}
+
+func (handler *CryptoHandler) validateSigns(decryptedFile string, params *DecryptParams) (err error) {
+	signCtx, err := handler.CreateSignContext()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, cert := range params.Certs {
+		if err = signCtx.AddCertificate(cert.Fingerprint, cert.Certificate); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	for _, chain := range params.Chains {
+		if err = signCtx.AddCertificateChain(chain.Name, chain.Fingerprints); err != nil {
+			return aoserrors.Wrap(err)
+		}
+	}
+
+	file, err := os.Open(decryptedFile)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer file.Close()
+
+	if err = signCtx.VerifySign(context.Background(), file, params.Signs); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
 
 func getRawCertificate(certs []*x509.Certificate) (rawCerts [][]byte) {
 	rawCerts = make([][]byte, 0, len(certs))
