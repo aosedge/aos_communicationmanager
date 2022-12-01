@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -71,10 +73,14 @@ type TestFirmwareUpdater struct {
 }
 
 type TestSoftwareUpdater struct {
-	AllServices     []ServiceStatus
-	AllLayers       []LayerStatus
-	UpdateError     error
+	AllServices []ServiceStatus
+	AllLayers   []LayerStatus
+	UpdateError error
+}
+
+type TestInstanceRunner struct {
 	runInstanceChan chan []cloudprotocol.InstanceInfo
+	newServices     []string
 }
 
 type TestDownloader struct {
@@ -766,12 +772,15 @@ func TestSoftwareManager(t *testing.T) {
 		testID             string
 		initState          *softwareManager
 		initStatus         *cmserver.UpdateStatus
+		initServices       []ServiceStatus
+		initLayers         []LayerStatus
 		desiredStatus      *cloudprotocol.DesiredStatus
 		downloadTime       time.Duration
 		downloadResult     map[string]*downloadResult
 		triggerUpdate      bool
 		updateError        error
 		updateWaitStatuses []cmserver.UpdateStatus
+		newServices        []string
 	}
 
 	updateLayers := []cloudprotocol.LayerInfo{
@@ -830,6 +839,65 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.Updating},
 				{State: cmserver.NoUpdate},
 			},
+			newServices: []string{"service1", "service2"},
+		},
+		{
+			testID:     "new services",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initServices: []ServiceStatus{
+				{
+					ServiceStatus: cloudprotocol.ServiceStatus{
+						ID:         updateServices[0].ID,
+						AosVersion: updateServices[0].AosVersion,
+						Status:     cloudprotocol.InstalledStatus,
+					},
+				},
+				{
+					ServiceStatus: cloudprotocol.ServiceStatus{
+						ID:         updateServices[1].ID,
+						AosVersion: updateServices[1].AosVersion,
+						Status:     cloudprotocol.InstalledStatus,
+					},
+				},
+			},
+			initLayers: []LayerStatus{
+				{
+					LayerStatus: cloudprotocol.LayerStatus{
+						ID:         updateLayers[0].ID,
+						AosVersion: updateLayers[0].AosVersion,
+						Digest:     updateLayers[0].Digest,
+						Status:     cloudprotocol.InstalledStatus,
+					},
+				},
+				{
+					LayerStatus: cloudprotocol.LayerStatus{
+						ID:         updateLayers[1].ID,
+						AosVersion: updateLayers[1].AosVersion,
+						Digest:     updateLayers[1].Digest,
+						Status:     cloudprotocol.InstalledStatus,
+					},
+				},
+			},
+			desiredStatus: &cloudprotocol.DesiredStatus{
+				Layers: updateLayers,
+				Services: append(updateServices, cloudprotocol.ServiceInfo{
+					ID:          "service3",
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1},
+				}, cloudprotocol.ServiceInfo{
+					ID:          "service4",
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1},
+				}),
+			},
+			downloadResult: map[string]*downloadResult{
+				"service3": {}, "service4": {},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+			newServices: []string{"service3", "service4"},
 		},
 		{
 			testID:     "one item download error",
@@ -983,6 +1051,7 @@ func TestSoftwareManager(t *testing.T) {
 	}
 
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := NewTestInstanceRunner()
 	softwareDownloader := newTestGroupDownloader()
 	testStorage := NewTestStorage()
 
@@ -992,6 +1061,8 @@ func TestSoftwareManager(t *testing.T) {
 		softwareDownloader.result = item.downloadResult
 		softwareDownloader.sotaReleased = false
 		softwareDownloader.downloadTime = item.downloadTime
+		softwareUpdater.AllServices = item.initServices
+		softwareUpdater.AllLayers = item.initLayers
 		softwareUpdater.UpdateError = item.updateError
 
 		if err := testStorage.saveSoftwareState(item.initState); err != nil {
@@ -1002,7 +1073,7 @@ func TestSoftwareManager(t *testing.T) {
 		// Create software manager
 
 		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, softwareUpdater,
-			testStorage, 30*time.Second)
+			instanceRunner, testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create software manager: %s", err)
 			continue
@@ -1035,8 +1106,18 @@ func TestSoftwareManager(t *testing.T) {
 
 		for _, expectedStatus := range item.updateWaitStatuses {
 			if expectedStatus.State == cmserver.Updating {
-				if _, err := softwareUpdater.WaitForRunInstance(time.Second); err != nil {
+				if _, err := instanceRunner.WaitForRunInstance(time.Second); err != nil {
 					t.Errorf("Wait run instances error: %v", err)
+				}
+
+				if item.newServices != nil {
+					sort.Slice(instanceRunner.newServices, func(i, j int) bool {
+						return instanceRunner.newServices[j] > instanceRunner.newServices[i]
+					})
+
+					if !reflect.DeepEqual(instanceRunner.newServices, item.newServices) {
+						t.Errorf("Wrong new services: %v", instanceRunner.newServices)
+					}
 				}
 			}
 
@@ -1394,9 +1475,7 @@ func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.
  **********************************************************************************************************************/
 
 func NewTestSoftwareUpdater(services []ServiceStatus, layers []LayerStatus) *TestSoftwareUpdater {
-	return &TestSoftwareUpdater{
-		AllServices: services, AllLayers: layers, runInstanceChan: make(chan []cloudprotocol.InstanceInfo, 1),
-	}
+	return &TestSoftwareUpdater{AllServices: services, AllLayers: layers}
 }
 
 func (updater *TestSoftwareUpdater) GetServicesStatus() ([]ServiceStatus, error) {
@@ -1407,7 +1486,8 @@ func (updater *TestSoftwareUpdater) GetLayersStatus() ([]LayerStatus, error) {
 	return updater.AllLayers, nil
 }
 
-func (updater *TestSoftwareUpdater) InstallService(serviceInfo cloudprotocol.ServiceInfo) error {
+func (updater *TestSoftwareUpdater) InstallService(serviceInfo cloudprotocol.ServiceInfo,
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error {
 	return updater.UpdateError
 }
 
@@ -1419,7 +1499,8 @@ func (updater *TestSoftwareUpdater) RemoveService(serviceID string) error {
 	return updater.UpdateError
 }
 
-func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo) error {
+func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo,
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error {
 	return updater.UpdateError
 }
 
@@ -1431,15 +1512,24 @@ func (updater *TestSoftwareUpdater) RestoreLayer(digest string) error {
 	return nil
 }
 
-func (updater *TestSoftwareUpdater) RunInstances(instances []cloudprotocol.InstanceInfo) error {
-	updater.runInstanceChan <- instances
+/***********************************************************************************************************************
+ * TestInstanceRunner
+ **********************************************************************************************************************/
+
+func NewTestInstanceRunner() *TestInstanceRunner {
+	return &TestInstanceRunner{runInstanceChan: make(chan []cloudprotocol.InstanceInfo, 1)}
+}
+
+func (runner *TestInstanceRunner) RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error {
+	runner.newServices = newServices
+	runner.runInstanceChan <- instances
 
 	return nil
 }
 
-func (updater *TestSoftwareUpdater) WaitForRunInstance(timeout time.Duration) ([]cloudprotocol.InstanceInfo, error) {
+func (runner *TestInstanceRunner) WaitForRunInstance(timeout time.Duration) ([]cloudprotocol.InstanceInfo, error) {
 	select {
-	case receivedRunInstances := <-updater.runInstanceChan:
+	case receivedRunInstances := <-runner.runInstanceChan:
 		return receivedRunInstances, nil
 
 	case <-time.After(timeout):
@@ -1539,6 +1629,10 @@ func (downloader *testGroupDownloader) download(
 		}
 
 		for id := range request {
+			if _, ok := downloader.result[id]; !ok {
+				log.Fatalf("Download result for id: %s not found", id)
+			}
+
 			if downloader.result[id].Error != "" {
 				updateStatus(id, cloudprotocol.ErrorStatus, downloader.result[id].Error)
 			} else {

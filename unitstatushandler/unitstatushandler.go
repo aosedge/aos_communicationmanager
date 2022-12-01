@@ -67,17 +67,23 @@ type FirmwareUpdater interface {
 	UpdateComponents(components []cloudprotocol.ComponentInfo) (status []cloudprotocol.ComponentStatus, err error)
 }
 
-// SoftwareUpdater updates services, layers, instances runner.
+// InstanceRunner instances runner.
+type InstanceRunner interface {
+	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
+}
+
+// SoftwareUpdater updates services, layers.
 type SoftwareUpdater interface {
 	GetServicesStatus() ([]ServiceStatus, error)
 	GetLayersStatus() ([]LayerStatus, error)
-	InstallService(serviceInfo cloudprotocol.ServiceInfo) error
+	InstallService(serviceInfo cloudprotocol.ServiceInfo,
+		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error
 	RestoreService(serviceID string) error
 	RemoveService(serviceID string) error
-	InstallLayer(layerInfo cloudprotocol.LayerInfo) error
+	InstallLayer(layerInfo cloudprotocol.LayerInfo,
+		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error
 	RemoveLayer(digest string) error
 	RestoreLayer(digest string) error
-	RunInstances(instances []cloudprotocol.InstanceInfo) error
 }
 
 // Storage used to store unit status handler states.
@@ -148,6 +154,7 @@ func New(
 	unitConfigUpdater UnitConfigUpdater,
 	firmwareUpdater FirmwareUpdater,
 	softwareUpdater SoftwareUpdater,
+	instanceRunner InstanceRunner,
 	downloader Downloader,
 	storage Storage,
 	statusSender StatusSender,
@@ -171,7 +178,7 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, softwareUpdater,
+	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, softwareUpdater, instanceRunner,
 		storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
