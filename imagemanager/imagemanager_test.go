@@ -72,10 +72,6 @@ const (
 
 type testCryptoContext struct{}
 
-type testSymmetricContext struct{}
-
-type testSignContext struct{}
-
 type testState struct{}
 
 type testStorageProvider struct {
@@ -1099,33 +1095,25 @@ func (state *testState) Remove(serviceID string) error {
 	return nil
 }
 
-func (context *testCryptoContext) ImportSessionKey(
-	keyInfo fcrypt.CryptoSessionKeyInfo,
-) (fcrypt.SymmetricContextInterface, error) {
-	return &testSymmetricContext{}, nil
-}
+func (context *testCryptoContext) DecryptAndValidate(
+	encryptedFile, decryptedFile string, params fcrypt.DecryptParams,
+) error {
+	srcFile, err := os.Open(encryptedFile)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer srcFile.Close()
 
-func (context *testCryptoContext) CreateSignContext() (fcrypt.SignContextInterface, error) {
-	return &testSignContext{}, nil
-}
+	dstFile, err := os.OpenFile(decryptedFile, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer dstFile.Close()
 
-func (context *testSymmetricContext) DecryptFile(ctx context.Context, encryptedFile, decryptedFile *os.File) error {
-	if _, err := io.Copy(decryptedFile, encryptedFile); err != nil {
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	return nil
-}
-
-func (context *testSignContext) AddCertificate(fingerprint string, asn1Bytes []byte) (err error) {
-	return nil
-}
-
-func (context *testSignContext) AddCertificateChain(name string, fingerprints []string) (err error) {
-	return nil
-}
-
-func (context *testSignContext) VerifySign(ctx context.Context, f *os.File, sign *cloudprotocol.Signs) (err error) {
 	return nil
 }
 
