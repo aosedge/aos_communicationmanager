@@ -31,7 +31,7 @@ type NodeRunInstanceStatus struct {
 }
 
 // NodeConfiguration node static configuration.
-type NodeConfiguration struct {
+type NodeInfo struct {
 	cloudprotocol.NodeInfo
 	RemoteNode    bool
 	RunnerFeature []string
