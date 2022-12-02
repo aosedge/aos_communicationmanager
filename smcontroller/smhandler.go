@@ -55,7 +55,7 @@ type smHandler struct {
 	alertSender            AlertSender
 	monitoringSender       MonitoringSender
 	syncstream             *syncstream.SyncStream
-	config                 launcher.NodeConfiguration
+	config                 launcher.NodeInfo
 	runStatusCh            chan<- launcher.NodeRunInstanceStatus
 	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus
 }
@@ -66,7 +66,7 @@ type smHandler struct {
 
 func newSMHandler(
 	stream pb.SMService_RegisterSMServer, messageSender MessageSender, alertSender AlertSender,
-	monitoringSender MonitoringSender, config launcher.NodeConfiguration,
+	monitoringSender MonitoringSender, config launcher.NodeInfo,
 	runStatusCh chan<- launcher.NodeRunInstanceStatus, updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus,
 ) (*smHandler, error) {
 	handler := smHandler{

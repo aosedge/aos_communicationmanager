@@ -148,7 +148,7 @@ func (controller *Controller) Close() error {
 }
 
 // GetNodeConfiguration gets node static configuration.
-func (controller *Controller) GetNodeConfiguration(nodeID string) (cfg launcher.NodeConfiguration, err error) {
+func (controller *Controller) GetNodeConfiguration(nodeID string) (cfg launcher.NodeInfo, err error) {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
 		return cfg, aoserrors.Wrap(err)
@@ -299,7 +299,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 	log.WithFields(log.Fields{"nodeID": nodeConfig.NodeConfiguration.NodeId}).Debug("Register SM")
 
-	nodeCfg := launcher.NodeConfiguration{
+	nodeCfg := launcher.NodeInfo{
 		NodeInfo: cloudprotocol.NodeInfo{
 			NodeID: nodeConfig.NodeConfiguration.NodeId, NodeType: nodeConfig.NodeConfiguration.NodeType,
 			NumCPUs: nodeConfig.NodeConfiguration.NumCpus, TotalRAM: nodeConfig.NodeConfiguration.TotalRam,
