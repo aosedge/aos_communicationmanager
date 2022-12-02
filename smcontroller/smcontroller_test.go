@@ -107,7 +107,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			RunnerFeatures: []string{"runc"}, NumCpus: 1, TotalRam: 100,
 			Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
 		}
-		expectedNodeConfiguration = launcher.NodeConfiguration{
+		expectedNodeConfiguration = launcher.NodeInfo{
 			NodeInfo: cloudprotocol.NodeInfo{
 				NodeID: nodeID, NodeType: nodeType, NumCPUs: 1, TotalRAM: 100,
 				Partitions: []cloudprotocol.PartitionInfo{
