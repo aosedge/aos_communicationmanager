@@ -29,12 +29,13 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
+	"github.com/aoscloud/aos_communicationmanager/launcher"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -532,5 +533,56 @@ func TestDownloadInfo(t *testing.T) {
 		if _, err := db.GetDownloadInfo(tCase.path); err == nil {
 			t.Error("Download info should be removed")
 		}
+	}
+}
+
+func TestInstance(t *testing.T) {
+	var expectedUIDs []int
+
+	uids, err := db.GetAllUIDs()
+	if err != nil {
+		t.Errorf("Can't get all uids: %v", err)
+	}
+
+	if len(uids) != 0 {
+		t.Error("Incorrect empty uids")
+	}
+
+	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: "notexist", SubjectID: "notexist", Instance: 0,
+	}); !errors.Is(err, launcher.ErrNotExist) {
+		t.Errorf("Incorrect error: %v, souldbe %v", err, launcher.ErrNotExist)
+	}
+
+	for i := 100; i < 105; i++ {
+		if err := db.AddInstance(aostypes.InstanceIdent{
+			ServiceID: "serv" + strconv.Itoa(i), SubjectID: "subj" + strconv.Itoa(i), Instance: 0,
+		}, i); err != nil {
+			t.Errorf("Can't add instance: %v", err)
+		}
+
+		expectedUIDs = append(expectedUIDs, i)
+	}
+
+	expectedUID := 103
+
+	uid, err := db.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	})
+	if err != nil {
+		t.Errorf("Can't get instance uid: %v", err)
+	}
+
+	if uid != expectedUID {
+		t.Error("Incorrect uid for instance")
+	}
+
+	uids, err = db.GetAllUIDs()
+	if err != nil {
+		t.Errorf("Can't get all uids: %v", err)
+	}
+
+	if !reflect.DeepEqual(uids, expectedUIDs) {
+		t.Errorf("Incorrect result for get all UIDs")
 	}
 }
