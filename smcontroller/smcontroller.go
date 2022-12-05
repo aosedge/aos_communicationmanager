@@ -201,14 +201,14 @@ func (controller *Controller) SetUnitConfig(
 
 // RunInstances runs desired services instances.
 func (controller *Controller) RunInstances(nodeID string,
-	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo,
+	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo, forceRestart bool,
 ) error {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
 		return err
 	}
 
-	return handler.runInstances(services, layers, instances)
+	return handler.runInstances(services, layers, instances, forceRestart)
 }
 
 // OverrideEnvVars overrides instance env vars.

@@ -152,16 +152,17 @@ func (handler *smHandler) setUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersi
 }
 
 func (handler *smHandler) runInstances(
-	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo,
+	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo, forceRestart bool,
 ) error {
 	log.WithFields(log.Fields{
 		"nodeID": handler.config.NodeID,
 	}).Debug("SM run instances")
 
 	pbRunInstances := &pb.RunInstances{
-		Services:  make([]*pb.ServiceInfo, len(services)),
-		Layers:    make([]*pb.LayerInfo, len(layers)),
-		Instances: make([]*pb.InstanceInfo, len(instances)),
+		Services:     make([]*pb.ServiceInfo, len(services)),
+		Layers:       make([]*pb.LayerInfo, len(layers)),
+		Instances:    make([]*pb.InstanceInfo, len(instances)),
+		ForceRestart: forceRestart,
 	}
 
 	for i, serviceInfo := range services {
