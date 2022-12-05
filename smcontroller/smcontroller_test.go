@@ -905,7 +905,7 @@ func TestRunInstances(t *testing.T) {
 	_ = waitRunInstancesStatus(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
-	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sednInstances); err != nil {
+	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sednInstances, false); err != nil {
 		t.Fatalf("Can't send run instances: %v", err)
 	}
 
