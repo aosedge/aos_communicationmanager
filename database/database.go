@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/migration"
 	_ "github.com/mattn/go-sqlite3" // ignore lint
 	log "github.com/sirupsen/logrus"
@@ -34,6 +35,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
+	"github.com/aoscloud/aos_communicationmanager/launcher"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -129,6 +131,10 @@ func New(config *config.Config) (db *Database, err error) {
 
 	if err := db.createLayersTable(); err != nil {
 		return db, aoserrors.Wrap(err)
+	}
+
+	if err := db.createInstancesTable(); err != nil {
+		return db, err
 	}
 
 	return db, nil
@@ -457,6 +463,53 @@ func (db *Database) RemoveLayer(digest string) (err error) {
 	return err
 }
 
+// AddInstance adds instanace with uid.
+func (db *Database) AddInstance(instance aostypes.InstanceIdent, uid int) error {
+	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?)",
+		instance.ServiceID, instance.SubjectID, instance.Instance, uid)
+}
+
+// GetInstanceUID gets uid by instanace ident.
+func (db *Database) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
+	var uid int
+
+	if err := db.getDataFromQuery("SELECT uid FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
+		[]any{instance.ServiceID, instance.SubjectID, instance.Instance}, &uid); err != nil {
+		if errors.Is(err, errNotExist) {
+			return uid, launcher.ErrNotExist
+		}
+
+		return uid, err
+	}
+
+	return uid, nil
+}
+
+// GetAllUIDs gets all used uids.
+func (db *Database) GetAllUIDs() (uids []int, err error) {
+	rows, err := db.sql.Query("SELECT uid FROM instances")
+	if err != nil {
+		return uids, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
+	for rows.Next() {
+		var uid int
+
+		if err = rows.Scan(&uid); err != nil {
+			return uids, aoserrors.Wrap(err)
+		}
+
+		uids = append(uids, uid)
+	}
+
+	return uids, nil
+}
+
 // Close closes database.
 func (db *Database) Close() {
 	db.sql.Close()
@@ -559,6 +612,18 @@ func (db *Database) createLayersTable() (err error) {
                                                              sha256 BLOB,
                                                              sha512 BLOB,
                                                              cached INTEGER)`)
+
+	return aoserrors.Wrap(err)
+}
+
+func (db *Database) createInstancesTable() (err error) {
+	log.Info("Create instances table")
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS instances (serviceId TEXT,
+                                                                subjectId TEXT,
+                                                                instance INTEGER,
+                                                                uid integer,
+                                                                PRIMARY KEY(serviceId, subjectId, instance))`)
 
 	return aoserrors.Wrap(err)
 }
