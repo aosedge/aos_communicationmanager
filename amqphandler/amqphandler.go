@@ -105,14 +105,8 @@ var messageMap = map[string]func() interface{}{ // nolint:gochecknoglobals
 	cloudprotocol.DesiredStatusType: func() interface{} {
 		return &cloudprotocol.DesiredStatus{}
 	},
-	cloudprotocol.RequestServiceCrashLogType: func() interface{} {
-		return &cloudprotocol.RequestServiceCrashLog{}
-	},
-	cloudprotocol.RequestServiceLogType: func() interface{} {
-		return &cloudprotocol.RequestServiceLog{}
-	},
-	cloudprotocol.RequestSystemLogType: func() interface{} {
-		return &cloudprotocol.RequestSystemLog{}
+	cloudprotocol.RequestLogType: func() interface{} {
+		return &cloudprotocol.RequestLog{}
 	},
 	cloudprotocol.StateAcceptanceType: func() interface{} {
 		return &cloudprotocol.StateAcceptance{}
