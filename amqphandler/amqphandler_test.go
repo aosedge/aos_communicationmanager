@@ -408,8 +408,11 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	nodeConfiguration := []cloudprotocol.NodeInfo{
-		{NodeID: "main", NodeType: "mainType", NumCPUs: 2, TotalRAM: 200, Partitions: []cloudprotocol.PartitionInfo{
-			{Name: "p1", Type: []string{"t1"}, TotalSize: 200},
+		{NodeID: "main", NodeType: "mainType", SystemInfo: cloudprotocol.SystemInfo{
+			NumCPUs: 2, TotalRAM: 200,
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "p1", Type: []string{"t1"}, TotalSize: 200},
+			},
 		}},
 	}
 
