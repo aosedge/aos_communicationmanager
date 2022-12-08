@@ -249,23 +249,35 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestServiceLogType,
-			expectedData: &cloudprotocol.RequestServiceLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("service2", "", -1),
-				LogID:          "someID", From: nil, Till: nil,
+			messageType: cloudprotocol.RequestLogType,
+			expectedData: &cloudprotocol.RequestLog{
+				LogID:   "someID",
+				LogType: cloudprotocol.ServiceLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("service2", "", -1),
+					From:           nil, Till: nil,
+				},
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestServiceCrashLogType,
-			expectedData: &cloudprotocol.RequestServiceCrashLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("service3", "", -1),
-				LogID:          "someID", From: nil, Till: nil,
+			messageType: cloudprotocol.RequestLogType,
+			expectedData: &cloudprotocol.RequestLog{
+				LogID:   "someID",
+				LogType: cloudprotocol.CrashLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("service3", "", -1),
+					From:           nil, Till: nil,
+				},
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestSystemLogType,
-			expectedData: &cloudprotocol.RequestSystemLog{
-				LogID: "someID", From: nil, Till: nil,
+			messageType: cloudprotocol.RequestLogType,
+			expectedData: &cloudprotocol.RequestLog{
+				LogID:   "someID",
+				LogType: cloudprotocol.SystemLog,
+				Filter: cloudprotocol.LogFilter{
+					From: nil, Till: nil,
+				},
 			},
 		},
 		{
