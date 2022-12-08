@@ -216,22 +216,22 @@ func (handler *smHandler) runInstances(
 	return nil
 }
 
-func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestSystemLog) (err error) {
+func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
 		"nodeID": handler.config.NodeID,
 		"logID":  logRequest.LogID,
-		"from":   logRequest.From,
-		"till":   logRequest.Till,
+		"from":   logRequest.Filter.From,
+		"till":   logRequest.Filter.Till,
 	}).Debug("Get SM system log")
 
 	request := &pb.SystemLogRequest{LogId: logRequest.LogID}
 
-	if logRequest.From != nil {
-		request.From = timestamppb.New(*logRequest.From)
+	if logRequest.Filter.From != nil {
+		request.From = timestamppb.New(*logRequest.Filter.From)
 	}
 
-	if logRequest.Till != nil {
-		request.Till = timestamppb.New(*logRequest.Till)
+	if logRequest.Filter.Till != nil {
+		request.Till = timestamppb.New(*logRequest.Filter.Till)
 	}
 
 	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
@@ -244,25 +244,25 @@ func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestSystemLog
 }
 
 // nolint:dupl
-func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestServiceLog) (err error) {
+func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
 		"nodeID":    handler.config.NodeID,
 		"logID":     logRequest.LogID,
-		"serviceID": logRequest.ServiceID,
-		"from":      logRequest.From,
-		"till":      logRequest.Till,
+		"serviceID": logRequest.Filter.ServiceID,
+		"from":      logRequest.Filter.From,
+		"till":      logRequest.Filter.Till,
 	}).Debug("Get instance log")
 
 	request := &pb.InstanceLogRequest{
-		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.InstanceFilter),
+		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
 	}
 
-	if logRequest.From != nil {
-		request.From = timestamppb.New(*logRequest.From)
+	if logRequest.Filter.From != nil {
+		request.From = timestamppb.New(*logRequest.Filter.From)
 	}
 
-	if logRequest.Till != nil {
-		request.Till = timestamppb.New(*logRequest.Till)
+	if logRequest.Filter.Till != nil {
+		request.Till = timestamppb.New(*logRequest.Filter.Till)
 	}
 
 	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
@@ -275,25 +275,25 @@ func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestService
 }
 
 // nolint:dupl
-func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestServiceCrashLog) (err error) {
+func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
 		"nodeID":    handler.config.NodeID,
 		"logID":     logRequest.LogID,
-		"serviceID": logRequest.ServiceID,
-		"from":      logRequest.From,
-		"till":      logRequest.Till,
+		"serviceID": logRequest.Filter.ServiceID,
+		"from":      logRequest.Filter.From,
+		"till":      logRequest.Filter.Till,
 	}).Debug("Get instance crash log")
 
 	request := &pb.InstanceCrashLogRequest{
-		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.InstanceFilter),
+		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
 	}
 
-	if logRequest.From != nil {
-		request.From = timestamppb.New(*logRequest.From)
+	if logRequest.Filter.From != nil {
+		request.From = timestamppb.New(*logRequest.Filter.From)
 	}
 
-	if logRequest.Till != nil {
-		request.Till = timestamppb.New(*logRequest.Till)
+	if logRequest.Filter.Till != nil {
+		request.Till = timestamppb.New(*logRequest.Filter.Till)
 	}
 
 	if err := handler.stream.Send(&pb.SMIncomingMessages{
@@ -397,7 +397,7 @@ func (handler *smHandler) processSMMessages() {
 			handler.processUpdateInstancesStatus(data.UpdateInstancesStatus)
 
 		case *pb.SMOutgoingMessages_Log:
-			handler.proccLogMessage(data.Log)
+			handler.processLogMessage(data.Log)
 
 		case *pb.SMOutgoingMessages_OverrideEnvVarStatus:
 			handler.processOverrideEnvVarsStatus(data.OverrideEnvVarStatus)
@@ -499,7 +499,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 	handler.alertSender.SendAlert(alertItem)
 }
 
-func (handler *smHandler) proccLogMessage(data *pb.LogData) {
+func (handler *smHandler) processLogMessage(data *pb.LogData) {
 	log.WithFields(log.Fields{
 		"nodeID":    handler.config.NodeID,
 		"logID":     data.LogId,
@@ -508,6 +508,7 @@ func (handler *smHandler) proccLogMessage(data *pb.LogData) {
 	}).Debug("Receive SM push log")
 
 	if err := handler.messageSender.SendLog(cloudprotocol.PushLog{
+		NodeID:    handler.config.NodeID,
 		LogID:     data.LogId,
 		PartCount: data.PartCount,
 		Part:      data.Part,
