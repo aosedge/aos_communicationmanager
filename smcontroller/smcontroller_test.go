@@ -632,29 +632,104 @@ func TestLogMessages(t *testing.T) {
 	_ = waitRunInstancesStatus(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
-	// Test get system log
-	type testSystemLogRequest struct {
-		sendLogRequest     cloudprotocol.RequestSystemLog
+	type testLogRequest struct {
+		sendLogRequest     cloudprotocol.RequestLog
 		expectedLogRequest *pb.SMIncomingMessages
 	}
 
-	testRequests := []testSystemLogRequest{
+	testRequests := []testLogRequest{
 		{
-			sendLogRequest: cloudprotocol.RequestSystemLog{LogID: "sysLogID1", From: &currentTime},
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogType: cloudprotocol.SystemLog,
+				LogID:   "sysLogID1",
+				Filter: cloudprotocol.LogFilter{
+					From: &currentTime,
+				},
+			},
 			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
 				SystemLogRequest: &pb.SystemLogRequest{LogId: "sysLogID1", From: timestamppb.New(currentTime)},
 			}},
 		},
 		{
-			sendLogRequest: cloudprotocol.RequestSystemLog{LogID: "sysLogID2", Till: &currentTime},
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogType: cloudprotocol.SystemLog,
+				LogID:   "sysLogID2",
+				Filter: cloudprotocol.LogFilter{
+					Till: &currentTime,
+				},
+			},
 			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
 				SystemLogRequest: &pb.SystemLogRequest{LogId: "sysLogID2", Till: timestamppb.New(currentTime)},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogID:   "serviceLogID1",
+				LogType: cloudprotocol.ServiceLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
+					From:           &currentTime,
+				},
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
+				InstanceLogRequest: &pb.InstanceLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
+					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogID:   "serviceLogID1",
+				LogType: cloudprotocol.ServiceLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
+					Till:           &currentTime,
+				},
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
+				InstanceLogRequest: &pb.InstanceLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
+					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogID:   "serviceLogID1",
+				LogType: cloudprotocol.CrashLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
+					From:           &currentTime,
+				},
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
+				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
+					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogID:   "serviceLogID1",
+				LogType: cloudprotocol.CrashLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
+					Till:           &currentTime,
+				},
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
+				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
+					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+				},
 			}},
 		},
 	}
 
 	for _, request := range testRequests {
-		if err := controller.GetSystemLog(nodeID, request.sendLogRequest); err != nil {
+		if err := controller.GetLog(request.sendLogRequest); err != nil {
 			t.Fatalf("Can't send get system log request: %v", err)
 		}
 
@@ -664,96 +739,8 @@ func TestLogMessages(t *testing.T) {
 		}
 	}
 
-	// Test get service log
-	type testServiceLogRequest struct {
-		sendLogRequest     cloudprotocol.RequestServiceLog
-		expectedLogRequest *pb.SMIncomingMessages
-	}
-
-	instanceLogRequests := []testServiceLogRequest{
-		{
-			sendLogRequest: cloudprotocol.RequestServiceLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
-				LogID:          "serviceLogID1", From: &currentTime,
-			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
-				InstanceLogRequest: &pb.InstanceLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
-					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
-				},
-			}},
-		},
-		{
-			sendLogRequest: cloudprotocol.RequestServiceLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
-				LogID:          "serviceLogID1", Till: &currentTime,
-			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
-				InstanceLogRequest: &pb.InstanceLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
-					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
-				},
-			}},
-		},
-	}
-
-	for _, request := range instanceLogRequests {
-		if err := controller.GetInstanceLog(nodeID, request.sendLogRequest); err != nil {
-			t.Fatalf("Can't send get service log request: %v", err)
-		}
-
-		if err := waitClientMessage(
-			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
-			t.Fatalf("Wait message error: %v", err)
-		}
-	}
-
-	// Test get service crash log
-	type testCrashLogRequest struct {
-		sendLogRequest     cloudprotocol.RequestServiceCrashLog
-		expectedLogRequest *pb.SMIncomingMessages
-	}
-
-	crashLogRequests := []testCrashLogRequest{
-		{
-			sendLogRequest: cloudprotocol.RequestServiceCrashLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser1", "s1", -1),
-				LogID:          "serviceLogID1", From: &currentTime,
-			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
-				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
-					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
-				},
-			}},
-		},
-		{
-			sendLogRequest: cloudprotocol.RequestServiceCrashLog{
-				InstanceFilter: cloudprotocol.NewInstanceFilter("ser2", "", -1),
-				LogID:          "serviceLogID1", Till: &currentTime,
-			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
-				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
-					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
-				},
-			}},
-		},
-	}
-
-	for _, request := range crashLogRequests {
-		if err := controller.GetInstanceCrashLog(nodeID, request.sendLogRequest); err != nil {
-			t.Fatalf("Can't send get service log request: %v", err)
-		}
-
-		if err := waitClientMessage(
-			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
-			t.Fatalf("Wait message error: %v", err)
-		}
-	}
-
 	expectedLog := cloudprotocol.PushLog{
-		LogID: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error",
+		NodeID: "mainSM", LogID: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error",
 	}
 
 	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{

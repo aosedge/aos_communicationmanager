@@ -50,6 +50,8 @@ type Controller struct {
 
 	nodes map[string]*smHandler
 
+	logHandler map[string]func(logRequest cloudprotocol.RequestLog) error
+
 	messageSender             MessageSender
 	alertSender               AlertSender
 	monitoringSender          MonitoringSender
@@ -101,6 +103,12 @@ func New(
 		runInstancesStatusChan:    make(chan launcher.NodeRunInstanceStatus, statusChanSize),
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
+	}
+
+	controller.logHandler = map[string]func(cloudprotocol.RequestLog) error{
+		cloudprotocol.SystemLog:  controller.getSystemLog,
+		cloudprotocol.ServiceLog: controller.getServiceLog,
+		cloudprotocol.CrashLog:   controller.getCrashLog,
 	}
 
 	for _, nodeID := range cfg.SMController.NodeIDs {
@@ -217,51 +225,17 @@ func (controller *Controller) OverrideEnvVars(nodeID string, envVars cloudprotoc
 	return nil
 }
 
-// GetSystemLog requests system log from SM.
-func (controller *Controller) GetSystemLog(nodeID string, logRequest cloudprotocol.RequestSystemLog) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return err
+// GetLog requests log from SM.
+func (controller *Controller) GetLog(logRequest cloudprotocol.RequestLog) error {
+	handler, ok := controller.logHandler[logRequest.LogType]
+	if !ok {
+		return aoserrors.Errorf("Unexpected log type: %s", logRequest.LogType)
 	}
 
-	if err := handler.getSystemLog(logRequest); err != nil {
-		return err
-	}
-
-	return nil
+	return handler(logRequest)
 }
 
-// GetInstanceLog requests service instance log from SM.
-func (controller *Controller) GetInstanceLog(nodeID string, logRequest cloudprotocol.RequestServiceLog) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return err
-	}
-
-	if err := handler.getInstanceLog(logRequest); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetInstanceCrashLog requests service instance crash log from SM.
-func (controller *Controller) GetInstanceCrashLog(
-	nodeID string, logRequest cloudprotocol.RequestServiceCrashLog,
-) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return err
-	}
-
-	if err := handler.getInstanceCrashLog(logRequest); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetInstanceCrashLog requests service instance crash log from SM.
+// GetNodeMonitoringData requests requests node monitoring data from SM.
 func (controller *Controller) GetNodeMonitoringData(nodeID string) (data cloudprotocol.NodeMonitoringData, err error) {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
@@ -339,6 +313,80 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (controller *Controller) getSystemLog(logRequest cloudprotocol.RequestLog) error {
+	handlers, err := controller.getNodeHandlersByIDs(logRequest.Filter.NodeIDs)
+	if err != nil {
+		return err
+	}
+
+	for _, handler := range handlers {
+		if err := handler.getSystemLog(logRequest); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (controller *Controller) getServiceLog(logRequest cloudprotocol.RequestLog) error {
+	if logRequest.Filter.ServiceID == nil {
+		return aoserrors.New("serviceId required field for service log")
+	}
+
+	handlers, err := controller.getNodeHandlersByIDs(logRequest.Filter.NodeIDs)
+	if err != nil {
+		return err
+	}
+
+	for _, handler := range handlers {
+		if err := handler.getInstanceLog(logRequest); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (controller *Controller) getCrashLog(logRequest cloudprotocol.RequestLog) error {
+	if logRequest.Filter.ServiceID == nil {
+		return aoserrors.New("serviceId required field for service log")
+	}
+
+	handlers, err := controller.getNodeHandlersByIDs(logRequest.Filter.NodeIDs)
+	if err != nil {
+		return err
+	}
+
+	for _, handler := range handlers {
+		if err := handler.getInstanceCrashLog(logRequest); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (controller *Controller) getNodeHandlersByIDs(nodeIDs []string) (handlers []*smHandler, err error) {
+	if len(nodeIDs) > 0 {
+		for _, nodeID := range nodeIDs {
+			handler, err := controller.getNodeHandlerByID(nodeID)
+			if err != nil {
+				return nil, err
+			}
+
+			handlers = append(handlers, handler)
+		}
+
+		return handlers, nil
+	}
+
+	for _, handler := range controller.nodes {
+		handlers = append(handlers, handler)
+	}
+
+	return handlers, nil
+}
 
 func (controller *Controller) startServer(serverURL string) (err error) {
 	controller.listener, err = net.Listen("tcp", serverURL)
