@@ -418,7 +418,7 @@ func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus
 		Instances: instancesStatusFromPB(status.Instances, handler.config.NodeID),
 	}
 
-	handler.runStatusCh <- runStatus
+	nonBlockingPushToChannel(handler.runStatusCh, runStatus)
 }
 
 func (handler *smHandler) processUpdateInstancesStatus(data *pb.UpdateInstancesStatus) {
@@ -484,7 +484,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		}
 
 		if alertPayload.Parameter == "cpu" || alertPayload.Parameter == "ram" {
-			handler.systemLimitAlertCh <- alertPayload
+			nonBlockingPushToChannel(handler.systemLimitAlertCh, alertPayload)
 		}
 
 		alertItem.Payload = alertPayload
@@ -669,4 +669,11 @@ func monitoringDataFromPb(pbMonitoring *pb.MonitoringData) cloudprotocol.Monitor
 	}
 
 	return monitoringData
+}
+
+func nonBlockingPushToChannel[T any](sendChannel chan<- T, message T) {
+	select {
+	case sendChannel <- message:
+	default:
+	}
 }
