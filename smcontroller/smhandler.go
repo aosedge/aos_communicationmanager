@@ -58,6 +58,7 @@ type smHandler struct {
 	config                 launcher.NodeInfo
 	runStatusCh            chan<- launcher.NodeRunInstanceStatus
 	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus
+	systemLimitAlertCh     chan<- cloudprotocol.SystemQuotaAlert
 }
 
 /***********************************************************************************************************************
@@ -68,6 +69,7 @@ func newSMHandler(
 	stream pb.SMService_RegisterSMServer, messageSender MessageSender, alertSender AlertSender,
 	monitoringSender MonitoringSender, config launcher.NodeInfo,
 	runStatusCh chan<- launcher.NodeRunInstanceStatus, updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus,
+	systemLimitAlertCh chan<- cloudprotocol.SystemQuotaAlert,
 ) (*smHandler, error) {
 	handler := smHandler{
 		stream:                 stream,
@@ -78,6 +80,7 @@ func newSMHandler(
 		config:                 config,
 		runStatusCh:            runStatusCh,
 		updateInstanceStatusCh: updateInstanceStatusCh,
+		systemLimitAlertCh:     systemLimitAlertCh,
 	}
 
 	return &handler, nil
@@ -474,11 +477,17 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		}
 
 	case *pb.Alert_SystemQuotaAlert:
-		alertItem.Payload = cloudprotocol.SystemQuotaAlert{
+		alertPayload := cloudprotocol.SystemQuotaAlert{
 			Parameter: data.SystemQuotaAlert.Parameter,
 			Value:     data.SystemQuotaAlert.Value,
 			NodeID:    handler.config.NodeID,
 		}
+
+		if alertPayload.Parameter == "cpu" || alertPayload.Parameter == "ram" {
+			handler.systemLimitAlertCh <- alertPayload
+		}
+
+		alertItem.Payload = alertPayload
 
 	case *pb.Alert_InstanceQuotaAlert:
 		alertItem.Payload = cloudprotocol.InstanceQuotaAlert{
