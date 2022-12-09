@@ -191,7 +191,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := waitRunInstancesStatus(
+	if err := waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
 		t.Errorf("Incorrect runtime status notification: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitRunInstancesStatus(
+	_ = waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
 	go func() {
@@ -423,12 +423,24 @@ func TestSMAlertNotifications(t *testing.T) {
 		{
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag:     cloudprotocol.AlertTagSystemQuota,
-				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "param1", Value: 42, NodeID: nodeID},
+				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "cpu", Value: 42, NodeID: nodeID},
 			},
 			sendAlert: &pb.Alert{
 				Tag: cloudprotocol.AlertTagSystemQuota,
 				Payload: &pb.Alert_SystemQuotaAlert{
-					SystemQuotaAlert: &pb.SystemQuotaAlert{Parameter: "param1", Value: 42},
+					SystemQuotaAlert: &pb.SystemQuotaAlert{Parameter: "cpu", Value: 42},
+				},
+			},
+		},
+		{
+			expectedAlert: cloudprotocol.AlertItem{
+				Tag:     cloudprotocol.AlertTagSystemQuota,
+				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "ram", Value: 99, NodeID: nodeID},
+			},
+			sendAlert: &pb.Alert{
+				Tag: cloudprotocol.AlertTagSystemQuota,
+				Payload: &pb.Alert_SystemQuotaAlert{
+					SystemQuotaAlert: &pb.SystemQuotaAlert{Parameter: "ram", Value: 99},
 				},
 			},
 		},
@@ -481,6 +493,18 @@ func TestSMAlertNotifications(t *testing.T) {
 
 		if err := waitMessage(alertSender.messageChannel, testAlert.expectedAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect alert notification: %v", err)
+		}
+	}
+
+	expectedSystemLimitAlert := []cloudprotocol.SystemQuotaAlert{
+		{Parameter: "cpu", Value: 42, NodeID: nodeID},
+		{Parameter: "ram", Value: 99, NodeID: nodeID},
+	}
+
+	for _, limitAlert := range expectedSystemLimitAlert {
+		if err := waitAndCompareMessage(
+			controller.GetSystemLimitAlertChannel(), limitAlert, messageTimeout); err != nil {
+			t.Errorf("Incorrect system limit alert: %v", err)
 		}
 	}
 }
@@ -632,7 +656,7 @@ func TestLogMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitRunInstancesStatus(
+	_ = waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
 	type testLogRequest struct {
@@ -821,7 +845,7 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitRunInstancesStatus(
+	_ = waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
 	if err = controller.OverrideEnvVars(nodeID, envVars); err != nil {
@@ -905,7 +929,7 @@ func TestRunInstances(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitRunInstancesStatus(
+	_ = waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
 	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sednInstances, false); err != nil {
@@ -998,7 +1022,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitRunInstancesStatus(
+	_ = waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
 	go func() {
@@ -1098,10 +1122,7 @@ func waitClientMessage(
 	return nil
 }
 
-func waitRunInstancesStatus(
-	messageChannel <-chan launcher.NodeRunInstanceStatus, expectedMsg launcher.NodeRunInstanceStatus,
-	timeout time.Duration,
-) error {
+func waitAndCompareMessage[T any](messageChannel <-chan T, expectedMsg T, timeout time.Duration) error {
 	select {
 	case <-time.After(timeout):
 		return aoserrors.New("wait message timeout")

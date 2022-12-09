@@ -57,6 +57,7 @@ type Controller struct {
 	monitoringSender          MonitoringSender
 	updateInstancesStatusChan chan []cloudprotocol.InstanceStatus
 	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
+	systemLimitAlertChan      chan cloudprotocol.SystemQuotaAlert
 
 	grpcServer *grpc.Server
 	listener   net.Listener
@@ -102,6 +103,7 @@ func New(
 		monitoringSender:          monitoringSender,
 		runInstancesStatusChan:    make(chan launcher.NodeRunInstanceStatus, statusChanSize),
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
+		systemLimitAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
 	}
 
@@ -255,6 +257,11 @@ func (controller *Controller) GetRunInstancesStatusChannel() <-chan launcher.Nod
 	return controller.runInstancesStatusChan
 }
 
+// GetSystemLimitAlertChannel returns channel with alerts about RAM CLU system limits.
+func (controller *Controller) GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
+	return controller.systemLimitAlertChan
+}
+
 // RegisterSM registers new SM client connection.
 func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) error {
 	message, err := stream.Recv()
@@ -294,7 +301,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 	handler, err := newSMHandler(
 		stream, controller.messageSender, controller.alertSender, controller.monitoringSender, nodeCfg,
-		controller.runInstancesStatusChan, controller.updateInstancesStatusChan)
+		controller.runInstancesStatusChan, controller.updateInstancesStatusChan, controller.systemLimitAlertChan)
 	if err != nil {
 		return err
 	}
