@@ -55,6 +55,7 @@ type runRequest struct {
 
 type testNodeManager struct {
 	runStatusChan   chan launcher.NodeRunInstanceStatus
+	alertsChannel   chan cloudprotocol.SystemQuotaAlert
 	nodeInformation map[string]launcher.NodeInfo
 	runRequest      map[string]runRequest
 }
@@ -366,18 +367,8 @@ func TestBalancing(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	for nodeID, runRequest := range nodeManager.runRequest {
-		if err := deepSlicesCompare(expectedRunRequests[nodeID].services, runRequest.services); err != nil {
-			t.Errorf("Incorrect services for node %s: %v", nodeID, err)
-		}
-
-		if err := deepSlicesCompare(expectedRunRequests[nodeID].layers, runRequest.layers); err != nil {
-			t.Errorf("Incorrect layers for node %s: %v", nodeID, err)
-		}
-
-		if err := deepSlicesCompare(expectedRunRequests[nodeID].instances, runRequest.instances); err != nil {
-			t.Errorf("Incorrect instances for node %s: %v", nodeID, err)
-		}
+	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrectRun request: %v", err)
 	}
 
 	if !reflect.DeepEqual(expectedRevertedServices, imageManager.revertedServices) {
@@ -601,22 +592,8 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	for nodeID, runRequest := range nodeManager.runRequest {
-		if err := deepSlicesCompare(expectedRunRequests[nodeID].services, runRequest.services); err != nil {
-			t.Errorf("Incorrect services for node %s: %v", nodeID, err)
-		}
-
-		if err := deepSlicesCompare(expectedRunRequests[nodeID].layers, runRequest.layers); err != nil {
-			t.Errorf("Incorrect layers for node %s: %v", nodeID, err)
-		}
-
-		if err := deepSlicesCompare(expectedRunRequests[nodeID].instances, runRequest.instances); err != nil {
-			t.Errorf("Incorrect instances for node %s: %v", nodeID, err)
-		}
-
-		if expectedRunRequests[nodeID].forceRestart {
-			t.Error("Incorrect force restart flag")
-		}
+	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrectRun request: %v", err)
 	}
 
 	resourceManager.nodeResources["remoteSMType"] = aostypes.NodeUnitConfig{
@@ -676,6 +653,340 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 	}
 }
 
+func TestRebalancing(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{"localSM1", "localSM2", "remoteSM1", "remoteSM2"},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+		}
+		nodeManager     = createTestNodeManager()
+		resourceManager = createTestResourceManager()
+		imageManager    = &testImageProvider{}
+	)
+
+	resourceManager.nodeResources["localSMType"] = aostypes.NodeUnitConfig{
+		Priority: 100,
+		NodeType: "localSMType", Devices: []aostypes.DeviceInfo{
+			{Name: "commonDevice", SharedCount: 1},
+		},
+	}
+	resourceManager.nodeResources["remoteSMType"] = aostypes.NodeUnitConfig{
+		Priority: 50,
+		NodeType: "remoteSMType",
+		Devices: []aostypes.DeviceInfo{
+			{Name: "commonDevice", SharedCount: 2},
+		},
+		Resources: []aostypes.ResourceInfo{{Name: "res1"}},
+	}
+
+	nodeManager.nodeInformation["localSM1"] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: "localSM1", NodeType: "localSMType"},
+		RemoteNode: false, RunnerFeature: []string{"runc", "crun"},
+	}
+	nodeManager.nodeInformation["localSM2"] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: "remoteSM2", NodeType: "localSMType"},
+		RemoteNode: false, RunnerFeature: []string{"runc", "crun"},
+	}
+
+	nodeManager.nodeInformation["remoteSM1"] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: "remoteSM1", NodeType: "remoteSMType"},
+		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
+	}
+	nodeManager.nodeInformation["remoteSM2"] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: "remoteSM2", NodeType: "remoteSMType"},
+		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
+	}
+
+	launcherInstance, err := launcher.New(
+		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{})
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+	defer launcherInstance.Close()
+
+	for nodeID, nodeInfo := range nodeManager.nodeInformation {
+		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+			NodeID: nodeID, NodeType: nodeInfo.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+		}
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	desiredInstances := []cloudprotocol.InstanceInfo{
+		{ServiceID: "servRes1", SubjectID: "subj1", Priority: 100, NumInstances: 1},
+		{ServiceID: "servNoDev", SubjectID: "subj1", Priority: 90, NumInstances: 1},
+		{ServiceID: "servCommonDev", SubjectID: "subj1", Priority: 50, NumInstances: 3},
+	}
+
+	imageManager.services = []imagemanager.ServiceInfo{
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servRes1", URL: "servRes1LocalUrl", GID: 5000,
+			},
+			RemoteURL: "servRes1RemoteUrl",
+			Config: aostypes.ServiceConfig{
+				Runner:    "runc",
+				Resources: []string{"res1"},
+			},
+		},
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servNoDev", URL: "servNoDevLocalUrl", GID: 5001,
+			},
+			RemoteURL: "servNoDevRemoteUrl",
+			Config: aostypes.ServiceConfig{
+				Runner: "runc",
+			},
+		},
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev", URL: "servCommonDevLocalUrl", GID: 5002,
+			},
+			RemoteURL: "servCommonDevRemoteUrl",
+			Config: aostypes.ServiceConfig{
+				Runner: "runc",
+				Devices: []aostypes.ServiceDevice{
+					{Name: "commonDevice"},
+				},
+			},
+		},
+	}
+
+	expectedRunRequests := map[string]runRequest{
+		"localSM1": {
+			services: []aostypes.ServiceInfo{
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servNoDev",
+					URL: "servNoDevLocalUrl", GID: 5001,
+				},
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev",
+					URL: "servCommonDevLocalUrl", GID: 5002,
+				},
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
+					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
+					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
+				},
+			},
+		},
+		"localSM2": {
+			services: []aostypes.ServiceInfo{
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev",
+					URL: "servCommonDevLocalUrl", GID: 5002,
+				},
+			},
+			instances: []aostypes.InstanceInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
+					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
+				},
+			},
+		},
+		"remoteSM1": {
+			services: []aostypes.ServiceInfo{
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servRes1",
+					URL: "servRes1RemoteUrl", GID: 5000,
+				},
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev",
+					URL: "servCommonDevRemoteUrl", GID: 5002,
+				},
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
+					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
+					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
+				},
+			},
+		},
+		"remoteSM2": {
+			services:  []aostypes.ServiceInfo{},
+			layers:    []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{},
+		},
+	}
+
+	var expectedRunStatus unitstatushandler.RunInstancesStatus
+
+	expectedRunStatus.Instances = []cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "remoteSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "remoteSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "localSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "localSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "localSM2", StateChecksum: magicSum,
+		},
+	}
+
+	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
+		t.Fatalf("Can't run instances %v", err)
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrectRun request: %v", err)
+	}
+
+	// cpu alert
+	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: "localSM1", Parameter: "cpu"}
+
+	expectedRunRequests = map[string]runRequest{
+		"localSM1": {
+			services: []aostypes.ServiceInfo{
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servNoDev",
+					URL: "servNoDevLocalUrl", GID: 5001,
+				},
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev",
+					URL: "servCommonDevLocalUrl", GID: 5002,
+				},
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
+					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
+				},
+			},
+		},
+		"localSM2": {
+			services: []aostypes.ServiceInfo{
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev",
+					URL: "servCommonDevLocalUrl", GID: 5002,
+				},
+			},
+			instances: []aostypes.InstanceInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
+					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
+				},
+			},
+		},
+		"remoteSM1": {
+			services: []aostypes.ServiceInfo{
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servRes1",
+					URL: "servRes1RemoteUrl", GID: 5000,
+				},
+				{
+					VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "servCommonDev",
+					URL: "servCommonDevRemoteUrl", GID: 5002,
+				},
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
+					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
+					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
+					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
+				},
+			},
+		},
+		"remoteSM2": {
+			services:  []aostypes.ServiceInfo{},
+			layers:    []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{},
+		},
+	}
+
+	expectedRunStatus.Instances = []cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "remoteSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "remoteSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "remoteSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "localSM1", StateChecksum: magicSum,
+		},
+		{
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
+			AosVersion:    1,
+			RunState:      cloudprotocol.InstanceStateActive,
+			NodeID:        "localSM2", StateChecksum: magicSum,
+		},
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrectRun request: %v", err)
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
@@ -685,6 +996,7 @@ func createTestNodeManager() *testNodeManager {
 		runStatusChan:   make(chan launcher.NodeRunInstanceStatus, 10),
 		nodeInformation: make(map[string]launcher.NodeInfo),
 		runRequest:      make(map[string]runRequest),
+		alertsChannel:   make(chan cloudprotocol.SystemQuotaAlert, 10),
 	}
 
 	return nodeManager
@@ -732,6 +1044,36 @@ func (nodeManager *testNodeManager) GetRunInstancesStatusChannel() <-chan launch
 }
 
 func (nodeManager *testNodeManager) GetUpdateInstancesStatusChannel() <-chan []cloudprotocol.InstanceStatus {
+	return nil
+}
+
+func (nodeManager *testNodeManager) GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
+	return nodeManager.alertsChannel
+}
+
+func (nodeManager *testNodeManager) GetNodeMonitoringData(nodeID string) (cloudprotocol.NodeMonitoringData, error) {
+	return cloudprotocol.NodeMonitoringData{}, nil
+}
+
+func (nodeManager *testNodeManager) compreRunRequests(expectedRunRequests map[string]runRequest) error {
+	for nodeID, runRequest := range nodeManager.runRequest {
+		if err := deepSlicesCompare(expectedRunRequests[nodeID].services, runRequest.services); err != nil {
+			return aoserrors.Errorf("Incorrect services for node %s: %v", nodeID, err)
+		}
+
+		if err := deepSlicesCompare(expectedRunRequests[nodeID].layers, runRequest.layers); err != nil {
+			return aoserrors.Errorf("Incorrect layers for node %s: %v", nodeID, err)
+		}
+
+		if err := deepSlicesCompare(expectedRunRequests[nodeID].instances, runRequest.instances); err != nil {
+			return aoserrors.Errorf("Incorrect instances for node %s: %v", nodeID, err)
+		}
+
+		if expectedRunRequests[nodeID].forceRestart {
+			return aoserrors.Errorf("Incorrect force restart flag")
+		}
+	}
+
 	return nil
 }
 
@@ -857,6 +1199,8 @@ func waitRunInstancesStatus(
 
 				if receivedEl.ErrorInfo != nil && expectedEl.ErrorInfo != nil {
 					if !reflect.DeepEqual(*receivedEl.ErrorInfo, *expectedEl.ErrorInfo) {
+						log.Debug("ERREXP: ", *expectedEl.ErrorInfo)
+						log.Debug("ERRREC: ", *receivedEl.ErrorInfo)
 						continue
 					}
 				}
