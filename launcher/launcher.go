@@ -112,6 +112,8 @@ type NodeManager interface {
 		forceRestart bool,
 	) error
 	GetRunInstancesStatusChannel() <-chan NodeRunInstanceStatus
+	GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert
+	GetNodeMonitoringData(nodeID string) (data cloudprotocol.NodeMonitoringData, err error)
 }
 
 // ResourceManager provides node resources.
@@ -279,6 +281,9 @@ func (launcher *Launcher) processChannels(ctx context.Context) {
 		case instances := <-launcher.nodeManager.GetRunInstancesStatusChannel():
 			launcher.processRunInstanceStatus(instances)
 
+		case alert := <-launcher.nodeManager.GetSystemLimitAlertChannel():
+			launcher.performRebalancing(alert)
+
 		case <-ctx.Done():
 			return
 		}
@@ -359,6 +364,82 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 	launcher.connectionTimer.Stop()
 
 	launcher.sendCurrentStatus()
+}
+
+func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAlert) {
+	launcher.Lock()
+	defer launcher.Unlock()
+
+	log.Debug("Perform rebalaincing")
+
+	nodes := launcher.getNodesForRebalancingByNodePriority(alert.NodeID)
+	if len(nodes) == 0 {
+		log.Error("No nodes with less priority for rebalancing")
+
+		return
+	}
+
+	// init interna resource allocations perform initila balancing
+	launcher.resetDeviceAllocation()
+	launcher.currentErrorStatus = launcher.performNodeBalancing(launcher.currentDesiredInstances)
+
+	nodeWithIssue := launcher.getNode(alert.NodeID)
+
+	for i := len(nodeWithIssue.currentRunRequest.instances) - 1; i >= 0; i++ {
+		currentServideID := nodeWithIssue.currentRunRequest.instances[i].ServiceID
+
+		serviceInfo, err := launcher.imageProvider.GetServiceInfo(currentServideID)
+		if err != nil {
+			log.Errorf("Can't get service: %v", err)
+			continue
+		}
+
+		labels, err := launcher.getLabeslForInstance(nodeWithIssue.currentRunRequest.instances[i].InstanceIdent)
+		if err != nil {
+			log.Errorf("Can't get labesl for instacne %v", err)
+		}
+
+		nodesToRebalance, _ := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, cloudprotocol.InstanceInfo{
+			ServiceID: currentServideID,
+			SubjectID: nodeWithIssue.currentRunRequest.instances[i].SubjectID, Labels: labels,
+		}, true)
+		if len(nodesToRebalance) == 0 {
+			continue
+		}
+
+		nodesToRebalance = launcher.getNodesByDevices(nodesToRebalance, serviceInfo.Config.Devices)
+		if len(nodesToRebalance) == 0 {
+			continue
+		}
+
+		nodesToRebalance = launcher.getNodeByMonitoringData(nodesToRebalance, alert.Parameter)
+
+		layersForService, err := launcher.getLayersForService(serviceInfo.Layers)
+		if err != nil {
+			log.Errorf("Can't get layer: %v", err)
+			launcher.dealocateResources(nodesToRebalance, serviceInfo)
+
+			continue
+		}
+
+		launcher.addRunRequest(
+			serviceInfo, layersForService, nodeWithIssue.currentRunRequest.instances[i], nodesToRebalance[0])
+
+		launcher.dealocateResources(append(nodesToRebalance[1:], nodeWithIssue), serviceInfo)
+
+		nodeWithIssue.currentRunRequest.instances = append(nodeWithIssue.currentRunRequest.instances[:i],
+			nodeWithIssue.currentRunRequest.instances[i+1:]...)
+
+		launcher.connectionTimer.Reset(launcher.config.SMController.NodesConnectionTimeout.Duration)
+
+		if err := launcher.sendRunInstances(false); err != nil {
+			log.Errorf("Can't send run instance while rebalancing: %v", err)
+		}
+
+		return
+	}
+
+	log.Error("Can't perform rebalancing")
 }
 
 func (launcher *Launcher) initNodeStatus(nodeID, nodeType string) (*nodeStatus, error) {
@@ -526,33 +607,27 @@ instancesLoop:
 	for _, instance := range instances {
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 		if err != nil {
-			log.Errorf("Can't get service info: %v", err)
+			log.WithField("serviceID", instance.ServiceID).Errorf("Can't get service info: %v", err)
 			errStatus = append(errStatus, createInstanceStatusFromInfo(instance, 0, 0,
 				cloudprotocol.InstanceStateFailed, err.Error()))
 
 			continue
 		}
 
-		layers := make([]imagemanager.LayerInfo, len(serviceInfo.Layers))
+		layers, err := launcher.getLayersForService(serviceInfo.Layers)
+		if err != nil {
+			log.Errorf("Can't get layer: %v", err)
+			errStatus = append(errStatus, createInstanceStatusFromInfo(instance, 0, serviceInfo.AosVersion,
+				cloudprotocol.InstanceStateFailed, err.Error()))
 
-		for i, digest := range serviceInfo.Layers {
-			layer, err := launcher.imageProvider.GetLayerInfo(digest)
-			if err != nil {
-				log.Errorf("Can't get layer: %v", err)
-				errStatus = append(errStatus, createInstanceStatusFromInfo(instance, 0, serviceInfo.AosVersion,
-					cloudprotocol.InstanceStateFailed, err.Error()))
-
-				continue instancesLoop
-			}
-
-			layers[i] = layer
+			continue instancesLoop
 		}
 
 		if serviceInfo.Config.Runner == "" {
 			serviceInfo.Config.Runner = defaultRunner
 		}
 
-		nodes, status := launcher.getNodesByStaticResources(serviceInfo, instance)
+		nodes, status := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, instance, false)
 		if len(nodes) == 0 {
 			errStatus = append(errStatus, status)
 			continue
@@ -639,11 +714,15 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 	return instanceInfo, nil
 }
 
-func (launcher *Launcher) getNodesByStaticResources(
-	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo,
+func (launcher *Launcher) getNodesByStaticResources(allNodes []*nodeStatus,
+	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo, rebalancing bool,
 ) (nodes []*nodeStatus, errStatus cloudprotocol.InstanceStatus) {
-	nodes = launcher.getNodeByRunner(serviceInfo.Config.Runner)
+	nodes = launcher.getNodeByRunner(allNodes, serviceInfo.Config.Runner)
 	if len(nodes) == 0 {
+		if rebalancing {
+			return nodes, errStatus
+		}
+
 		log.Errorf("No appropriate node with runner: %s", serviceInfo.Config.Runner)
 
 		return nodes, createInstanceStatusFromInfo(instanceInfo, 0, serviceInfo.AosVersion,
@@ -653,6 +732,10 @@ func (launcher *Launcher) getNodesByStaticResources(
 
 	nodes = launcher.getNodesByResources(nodes, serviceInfo.Config.Resources)
 	if len(nodes) == 0 {
+		if rebalancing {
+			return nodes, errStatus
+		}
+
 		log.Errorf("No appropriate node with resources: %v", serviceInfo.Config.Resources)
 
 		return nodes, createInstanceStatusFromInfo(instanceInfo, 0, serviceInfo.AosVersion,
@@ -662,6 +745,10 @@ func (launcher *Launcher) getNodesByStaticResources(
 
 	nodes = launcher.getNodesByLabels(nodes, instanceInfo.Labels)
 	if len(nodes) == 0 {
+		if rebalancing {
+			return nodes, errStatus
+		}
+
 		log.Errorf("No appropriate node with labels %v", instanceInfo.Labels)
 
 		return nodes, createInstanceStatusFromInfo(instanceInfo, 0, serviceInfo.AosVersion,
@@ -704,6 +791,49 @@ func (launcher *Launcher) getNodesByDevices(
 				node.availableDevices[i].preallocateCount = node.availableDevices[i].allocatedCount
 			}
 		}
+	}
+
+	return newNodes
+}
+
+func (launcher *Launcher) getNodeByMonitoringData(nodes []*nodeStatus, alertType string) (newNodes []*nodeStatus) {
+	if len(nodes) == 1 {
+		return nodes
+	}
+
+	type freeNodeResources struct {
+		node    *nodeStatus
+		freeRAM uint64
+		freeCPU uint64
+	}
+
+	nodesResources := []freeNodeResources{}
+
+	for _, node := range nodes {
+		monitoringData, err := launcher.nodeManager.GetNodeMonitoringData(node.NodeID)
+		if err != nil {
+			log.Errorf("Can't get node monitoringdata: %v", err)
+		}
+
+		nodesResources = append(nodesResources, freeNodeResources{
+			node:    node,
+			freeRAM: node.TotalRAM - monitoringData.RAM,
+			freeCPU: node.NumCPUs*100 - monitoringData.CPU,
+		})
+	}
+
+	if alertType == "cpu" {
+		slices.SortFunc(nodesResources, func(a, b freeNodeResources) bool {
+			return a.freeCPU > b.freeCPU
+		})
+	} else {
+		slices.SortFunc(nodesResources, func(a, b freeNodeResources) bool {
+			return a.freeRAM > b.freeRAM
+		})
+	}
+
+	for _, sortedResources := range nodesResources {
+		newNodes = append(newNodes, sortedResources.node)
 	}
 
 	return newNodes
@@ -779,8 +909,8 @@ nodeLoop:
 	return newNodes
 }
 
-func (launcher *Launcher) getNodeByRunner(runner string) (nodes []*nodeStatus) {
-	for _, node := range launcher.nodes {
+func (launcher *Launcher) getNodeByRunner(allNodes []*nodeStatus, runner string) (nodes []*nodeStatus) {
+	for _, node := range allNodes {
 		if slices.Contains(node.RunnerFeature, runner) {
 			nodes = append(nodes, node)
 		}
@@ -903,6 +1033,58 @@ func (launcher *Launcher) getNode(nodeID string) *nodeStatus {
 	}
 
 	return nil
+}
+
+func (launcher *Launcher) getNodesForRebalancingByNodePriority(nodeID string) (nodes []*nodeStatus) {
+	nodeWithIssue := launcher.getNode(nodeID)
+	if nodeWithIssue == nil {
+		return nodes
+	}
+
+	for _, node := range launcher.nodes {
+		if nodeWithIssue.priority < node.priority {
+			continue
+		}
+
+		if node.NodeID != nodeWithIssue.NodeID {
+			nodes = append(nodes, node)
+		}
+	}
+
+	slices.SortFunc(launcher.nodes, func(a, b *nodeStatus) bool {
+		if a.priority == b.priority {
+			return a.NodeID < b.NodeID
+		}
+
+		return a.priority < b.priority
+	})
+
+	return nodes
+}
+
+func (launcher *Launcher) getLabeslForInstance(ident aostypes.InstanceIdent) ([]string, error) {
+	for _, instance := range launcher.currentDesiredInstances {
+		if instance.ServiceID == ident.ServiceID && instance.SubjectID == ident.SubjectID {
+			return instance.Labels, nil
+		}
+	}
+
+	return nil, aoserrors.New("no labels for instance")
+}
+
+func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.LayerInfo, error) {
+	layers := make([]imagemanager.LayerInfo, len(digests))
+
+	for i, digest := range digests {
+		layer, err := launcher.imageProvider.GetLayerInfo(digest)
+		if err != nil {
+			return layers, err // nolint
+		}
+
+		layers[i] = layer
+	}
+
+	return layers, nil
 }
 
 func instanceIdentLogFields(instance aostypes.InstanceIdent, extraFields log.Fields) log.Fields {
