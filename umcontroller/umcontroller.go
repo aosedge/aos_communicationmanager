@@ -685,7 +685,6 @@ func (umCtrl *Controller) cleanupUpdateData() {
 		if err := os.RemoveAll(filepath.Join(umCtrl.componentDir, entry.Name())); err != nil {
 			log.Errorf("Can't remove decrypted file: %v", err)
 		}
-
 	}
 
 	updatecomponents, err := umCtrl.storage.GetComponentsUpdateInfo()

@@ -49,7 +49,6 @@ const (
 	decryptedFileExt = ".dec"
 
 	fileScheme = "file"
-	httpScheme = "http"
 
 	blobsFolder = "blobs"
 
@@ -357,6 +356,16 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 		}
 	}
 
+	if err = imagemanager.addService(decryptedFile, serviceInfo, gid); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (imagemanager *Imagemanager) addService(
+	decryptedFile string, serviceInfo cloudprotocol.ServiceInfo, gid int,
+) error {
 	layers, serviceConfig, err := imagemanager.getLayersAndServiceConfigFromManifest(decryptedFile)
 	if err != nil {
 		return err
