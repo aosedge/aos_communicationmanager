@@ -46,10 +46,12 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/database"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/fcrypt"
-	"github.com/aoscloud/aos_communicationmanager/fileserver"
 	"github.com/aoscloud/aos_communicationmanager/iamclient"
+	"github.com/aoscloud/aos_communicationmanager/imagemanager"
+	"github.com/aoscloud/aos_communicationmanager/launcher"
 	"github.com/aoscloud/aos_communicationmanager/monitorcontroller"
 	"github.com/aoscloud/aos_communicationmanager/smcontroller"
+	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 	"github.com/aoscloud/aos_communicationmanager/unitconfig"
 	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
@@ -79,11 +81,13 @@ type communicationManager struct {
 	monitorcontroller *monitorcontroller.MonitorController
 	resourcemonitor   *resourcemonitor.ResourceMonitor
 	downloader        *downloader.Downloader
-	fileServer        *fileserver.FileServer
 	smController      *smcontroller.Controller
 	umController      *umcontroller.Controller
 	unitConfig        *unitconfig.Instance
 	statusHandler     *unitstatushandler.Instance
+	launcher          *launcher.Launcher
+	imagemanager      *imagemanager.Imagemanager
+	storageState      *storagestate.StorageState
 	cmServer          *cmserver.CMServer
 }
 
@@ -173,26 +177,22 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	if cfg.Monitoring.MonitorConfig != nil {
-		if cm.resourcemonitor, err = resourcemonitor.New(
-			*cfg.Monitoring.MonitorConfig, cm.alerts, cm.monitorcontroller, nil); err != nil {
+		if cm.resourcemonitor, err = resourcemonitor.New(cm.iam.GetNodeID(), *cfg.Monitoring.MonitorConfig,
+			cm.alerts, cm.monitorcontroller, nil); err != nil {
 			return cm, aoserrors.Wrap(err)
 		}
 	}
 
-	if cm.downloader, err = downloader.New("CM", cfg, cm.crypt, cm.alerts); err != nil {
+	if cm.downloader, err = downloader.New("CM", cfg, cm.alerts, cm.db); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.fileServer, err = fileserver.New(cfg); err != nil {
+	if cm.smController, err = smcontroller.New(
+		cfg, cm.amqp, cm.alerts, cm.monitorcontroller, cm.iam, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.smController, err = smcontroller.New(cfg, cm.amqp, cm.alerts, cm.monitorcontroller,
-		cm.fileServer, cm.iam, cm.cryptoContext, false); err != nil {
-		return cm, aoserrors.Wrap(err)
-	}
-
-	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.fileServer, cm.iam, cm.cryptoContext, false); err != nil {
+	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.iam, cm.cryptoContext, cm.crypt, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -200,7 +200,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.unitConfig, cm.umController, cm.smController,
+	if cm.storageState, err = storagestate.New(cfg, cm.amqp, cm.db); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	if cm.imagemanager, err = imagemanager.New(cfg, cm.db, cm.storageState, cm.crypt); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	if cm.launcher, err = launcher.New(
+		cfg, cm.db, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.unitConfig, cm.umController, cm.imagemanager, cm.launcher,
 		cm.downloader, cm.db, cm.amqp); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
@@ -236,6 +249,21 @@ func (cm *communicationManager) close() {
 		cm.statusHandler.Close()
 	}
 
+	// Close CM launcher
+	if cm.launcher != nil {
+		cm.launcher.Close()
+	}
+
+	// Close CM image manager
+	if cm.imagemanager != nil {
+		cm.imagemanager.Close()
+	}
+
+	// Close CM storage state
+	if cm.storageState != nil {
+		cm.storageState.Close()
+	}
+
 	// Close UM controller
 	if cm.umController != nil {
 		cm.umController.Close()
@@ -244,11 +272,6 @@ func (cm *communicationManager) close() {
 	// Close SM controller
 	if cm.smController != nil {
 		cm.smController.Close()
-	}
-
-	// Close file server
-	if cm.fileServer != nil {
-		cm.fileServer.Close()
 	}
 
 	// Close resourcemonitor
@@ -314,7 +337,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.OverrideEnvVars:
 		log.Info("Receive override env vars message")
 
-		if err = cm.smController.OverrideEnvVars(*data); err != nil {
+		if err = cm.smController.OverrideEnvVars(cm.iam.GetNodeID(), *data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -324,7 +347,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"result":    data.Result,
 		}).Info("Receive state acceptance message")
 
-		if err = cm.smController.InstanceStateAcceptance(*data); err != nil {
+		if err = cm.storageState.StateAcceptance(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -334,37 +357,19 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			"checksum":  data.Checksum,
 		}).Info("Receive update state message")
 
-		if err = cm.smController.SetInstanceState(*data); err != nil {
+		if err = cm.storageState.UpdateState(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
-	case *cloudprotocol.RequestServiceLog:
+	case *cloudprotocol.RequestLog:
 		log.WithFields(log.Fields{
-			"serviceID": data.ServiceID,
-			"from":      data.From,
-			"till":      data.Till,
+			"LogID":   data.LogID,
+			"LogType": data.LogType,
+			"from":    data.Filter.From,
+			"till":    data.Filter.Till,
 		}).Info("Receive request service log message")
 
-		if err = cm.smController.GetInstanceLog(*data); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-	case *cloudprotocol.RequestServiceCrashLog:
-		log.WithFields(log.Fields{
-			"serviceID": data.ServiceID,
-		}).Info("Receive request service crash log message")
-
-		if err = cm.smController.GetInstanceCrashLog(*data); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-	case *cloudprotocol.RequestSystemLog:
-		log.WithFields(log.Fields{
-			"from": data.From,
-			"till": data.Till,
-		}).Info("Receive request system log message")
-
-		if err = cm.smController.GetSystemLog(*data); err != nil {
+		if err = cm.smController.GetLog(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -452,7 +457,7 @@ func (cm *communicationManager) handleConnection(ctx context.Context, serviceDis
 func (cm *communicationManager) handleStatusChannels(ctx context.Context) {
 	for {
 		select {
-		case runStatus := <-cm.smController.GetRunInstancesStatusChannel():
+		case runStatus := <-cm.launcher.GetRunStatusesChannel():
 			if err := cm.statusHandler.ProcessRunStatus(runStatus); err != nil {
 				log.Errorf("Can't process run statusL %v", err)
 			}
