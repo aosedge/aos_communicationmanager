@@ -982,7 +982,7 @@ func TestFileServer(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	resp, err := http.Get(layer.RemoteURL) // nolint // just for tests
+	resp, err := http.Get(layer.RemoteURL)
 	if err != nil {
 		t.Fatalf("Can't download file: %s", err)
 	}
