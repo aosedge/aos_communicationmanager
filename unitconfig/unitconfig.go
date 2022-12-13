@@ -114,6 +114,16 @@ func (instance *Instance) CheckUnitConfig(configJSON json.RawMessage) (vendorVer
 	return vendorVersion, nil
 }
 
+func (instance *Instance) GetUnitConfiguration(nodeType string) aostypes.NodeUnitConfig {
+	for _, node := range instance.unitConfig.Nodes {
+		if node.NodeType == nodeType {
+			return node
+		}
+	}
+
+	return aostypes.NodeUnitConfig{}
+}
+
 // UpdateUnitConfig updates unit config.
 func (instance *Instance) UpdateUnitConfig(configJSON json.RawMessage) (err error) {
 	instance.Lock()

@@ -39,7 +39,12 @@ import (
 const validTestUnitConfig = `
  {
 	 "formatVersion": 1,
-	 "vendorVersion": "1.0.0"
+	 "vendorVersion": "1.0.0",
+	 "nodes": [
+		{
+			"nodeType" : "type1"
+		}
+	 ]
  }`
 
 /***********************************************************************************************************************
@@ -93,7 +98,7 @@ func TestMain(m *testing.M) {
  **********************************************************************************************************************/
 
 func TestValidGetStatus(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
@@ -114,6 +119,12 @@ func TestValidGetStatus(t *testing.T) {
 	if info.VendorVersion != "1.0.0" {
 		t.Errorf("Wrong unit config version: %s", info.VendorVersion)
 	}
+
+	nodeUnitConfig := unitConfig.GetUnitConfiguration("type1")
+
+	if nodeUnitConfig.NodeType != "type1" {
+		t.Error("Unexpected node type")
+	}
 }
 
 func TestInvalidGetStatus(t *testing.T) {
@@ -124,11 +135,11 @@ func TestInvalidGetStatus(t *testing.T) {
 	something not valid
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(testUnitConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(testUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, " aos_unit .cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -144,11 +155,11 @@ func TestInvalidGetStatus(t *testing.T) {
 }
 
 func TestCheckUnitConfig(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, " aos_unit .cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -184,11 +195,11 @@ func TestCheckUnitConfig(t *testing.T) {
 }
 
 func TestUpdateUnitConfig(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, " aos_unit .cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, " aos_unit .cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -212,7 +223,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Errorf("Wrong unit config version: %s", vendorVersion)
 	}
 
-	readUnitConfig, err := ioutil.ReadFile(path.Join(tmpDir, " aos_unit .cfg"))
+	readUnitConfig, err := ioutil.ReadFile(path.Join(tmpDir, "aos_unit.cfg"))
 	if err != nil {
 		t.Fatalf("Can't read unit config file: %s", err)
 	}
