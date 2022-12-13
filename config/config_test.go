@@ -45,7 +45,7 @@ const testConfigContent = `{
 	},
 	"certStorage": "/var/aos/crypt/cm/",
 	"serviceDiscoveryUrl" : "www.aos.com",
-	"iamServerUrl" : "localhost:8089",
+	"iamProtectedServerUrl" : "localhost:8089",
 	"iamPublicServerUrl" : "localhost:8090",
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
@@ -91,15 +91,15 @@ const testConfigContent = `{
 		"mergedMigrationPath" : "/var/aos/communicationmanager/migration"
 	},
 	"smController": {
-		"smServerUrl": "localhost:8093",
-		"fileServerUrl":"localhost:8092",
+		"fileServerUrl":"localhost:8094",
+		"cmServerUrl": "localhost:8093",
 		"nodeIds": [ "sm1", "sm2"],	
 		"nodesConnectionTimeout": "100s",
 		"updateTTL": "30h"
 	},
 	"umController": {
-		"serverUrl": "localhost:8091",
-		"fileServerUrl":"localhost:8094",
+		"fileServerUrl":"localhost:8092",
+		"cmServerUrl": "localhost:8091",
 		"umClients": [{
 			"umId": "um",
 			"priority": 0,
@@ -178,9 +178,9 @@ func TestGetUnitConfigFile(t *testing.T) {
 	}
 }
 
-func TestGetIAMServerURL(t *testing.T) {
-	if testCfg.IAMServerURL != "localhost:8089" {
-		t.Errorf("Wrong IAM server value: %s", testCfg.IAMServerURL)
+func TestGetIAMProtectedServerURL(t *testing.T) {
+	if testCfg.IAMProtectedServerURL != "localhost:8089" {
+		t.Errorf("Wrong IAM server value: %s", testCfg.IAMProtectedServerURL)
 	}
 }
 
@@ -245,8 +245,8 @@ func TestUMControllerConfig(t *testing.T) {
 	umClient := config.UMClientConfig{UMID: "um", Priority: 0, IsLocal: true}
 
 	originalConfig := config.UMController{
-		FileServerURL: "localhost:8094",
-		ServerURL:     "localhost:8091",
+		FileServerURL: "localhost:8092",
+		CMServerURL:   "localhost:8091",
 		UMClients:     []config.UMClientConfig{umClient},
 		UpdateTTL:     aostypes.Duration{Duration: 100 * time.Hour},
 	}
@@ -272,8 +272,8 @@ func TestDownloaderConfig(t *testing.T) {
 
 func TestSMControllerConfig(t *testing.T) {
 	originalConfig := config.SMController{
-		FileServerURL:          "localhost:8092",
-		SMServerURL:            "localhost:8093",
+		FileServerURL:          "localhost:8094",
+		CMServerURL:            "localhost:8093",
 		NodeIDs:                []string{"sm1", "sm2"},
 		NodesConnectionTimeout: aostypes.Duration{Duration: 100 * time.Second},
 		UpdateTTL:              aostypes.Duration{Duration: 30 * time.Hour},
