@@ -77,12 +77,6 @@ func (instance *Instance) GetStatus() (unitConfigInfo cloudprotocol.UnitConfigSt
 	unitConfigInfo.VendorVersion = instance.unitConfig.VendorVersion
 	unitConfigInfo.Status = cloudprotocol.InstalledStatus
 
-	if instance.unitConfigError == nil {
-		if err = instance.client.SetUnitConfig(instance.unitConfig); err != nil {
-			instance.unitConfigError = err
-		}
-	}
-
 	if instance.unitConfigError != nil {
 		unitConfigInfo.Status = cloudprotocol.ErrorStatus
 		unitConfigInfo.ErrorInfo = &cloudprotocol.ErrorInfo{Message: instance.unitConfigError.Error()}
