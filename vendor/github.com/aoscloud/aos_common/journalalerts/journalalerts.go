@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/coreos/go-systemd/v22/sdjournal"
 	log "github.com/sirupsen/logrus"
@@ -59,7 +60,7 @@ type AlertSender interface {
 
 // InstanceInfoProvider provides instance info.
 type InstanceInfoProvider interface {
-	GetInstanceInfoByID(instanceID string) (ident cloudprotocol.InstanceIdent, aosVersion uint64, err error)
+	GetInstanceInfoByID(instanceID string) (ident aostypes.InstanceIdent, aosVersion uint64, err error)
 }
 
 // CursorStorage provides API to set and get journal cursor.
