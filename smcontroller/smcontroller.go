@@ -178,27 +178,35 @@ func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error)
 }
 
 // CheckUnitConfig checks unit config for the node.
-func (controller *Controller) CheckUnitConfig(
-	nodeID string, nodeCfg aostypes.NodeUnitConfig, vendorVersion string,
-) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return aoserrors.Wrap(err)
+func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) error {
+	for _, nodeConfig := range unitConfig.Nodes {
+		for _, node := range controller.nodes {
+			if node.config.NodeType == nodeConfig.NodeType {
+				err := node.checkUnitConfigState(nodeConfig, unitConfig.VendorVersion)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
-	return handler.checkUnitConfigState(nodeCfg, vendorVersion)
+	return nil
 }
 
 // SetUnitConfig sets usint config for the node.
-func (controller *Controller) SetUnitConfig(
-	nodeID string, nodeCfg aostypes.NodeUnitConfig, vendorVersion string,
-) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return aoserrors.Wrap(err)
+func (controller *Controller) SetUnitConfig(unitConfig aostypes.UnitConfig) error {
+	for _, nodeConfig := range unitConfig.Nodes {
+		for _, node := range controller.nodes {
+			if node.config.NodeType == nodeConfig.NodeType {
+				err := node.setUnitConfig(nodeConfig, unitConfig.VendorVersion)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
-	return handler.setUnitConfig(nodeCfg, vendorVersion)
+	return nil
 }
 
 // RunInstances runs desired services instances.
