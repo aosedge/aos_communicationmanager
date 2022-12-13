@@ -141,7 +141,7 @@ func cleanup() (err error) {
 
 func TestConnection(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8092",
 		UMClients: []config.UMClientConfig{
 			{UMID: "umID1", Priority: 10},
@@ -244,7 +244,7 @@ func createClientConnection(
 
 func TestFullUpdate(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM1", Priority: 1},
@@ -404,7 +404,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	}
 
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM3", Priority: 1},
@@ -581,7 +581,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 func TestFullUpdateWithReboot(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM5", Priority: 1},
@@ -783,7 +783,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 func TestRevertOnPrepare(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM7", Priority: 1},
@@ -916,7 +916,7 @@ func TestRevertOnPrepare(t *testing.T) {
 
 func TestRevertOnUpdate(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM9", Priority: 1},
@@ -1073,7 +1073,7 @@ func TestRevertOnUpdate(t *testing.T) {
 
 func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM11", Priority: 1},
@@ -1235,7 +1235,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 func TestRevertOnUpdateWithReboot(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL:     "localhost:8091",
+		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM13", Priority: 1, IsLocal: true},

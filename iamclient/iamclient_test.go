@@ -138,8 +138,8 @@ func TestGetSystemID(t *testing.T) {
 	publicServer.systemID = "testID"
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -165,8 +165,8 @@ func TestRenewCertificatesNotification(t *testing.T) {
 	protectedServer.csr = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, sender, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -263,8 +263,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	}
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, sender, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -305,8 +305,8 @@ func TestGetCertificates(t *testing.T) {
 	publicServer.keyURL = map[string]string{"online": "onlineKeyURL", "offline": "offlineKeyURL"}
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
