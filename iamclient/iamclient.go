@@ -52,6 +52,8 @@ type Client struct {
 
 	sender Sender
 
+	nodeID string
+
 	systemID string
 
 	publicConnection    *grpc.ClientConn
@@ -116,11 +118,20 @@ func New(
 
 	log.Debug("Connected to IAM")
 
+	if localClient.nodeID, _, err = localClient.getNodeInfo(); err != nil {
+		return client, aoserrors.Wrap(err)
+	}
+
 	if localClient.systemID, err = localClient.getSystemID(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	return localClient, nil
+}
+
+// GetNodeID returns node ID.
+func (client *Client) GetNodeID() string {
+	return client.nodeID
 }
 
 // GetSystemID returns system ID.
@@ -275,6 +286,23 @@ func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoCo
 	}
 
 	return connection, nil
+}
+
+func (client *Client) getNodeInfo() (nodeID, nodeType string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.publicService.GetNodeInfo(ctx, &empty.Empty{})
+	if err != nil {
+		return "", "", aoserrors.Wrap(err)
+	}
+
+	log.WithFields(log.Fields{
+		"nodeID":   response.NodeId,
+		"nodeType": response.NodeType,
+	}).Debug("Get node Info")
+
+	return response.NodeId, response.NodeType, nil
 }
 
 func (client *Client) createProtectedConnection(
