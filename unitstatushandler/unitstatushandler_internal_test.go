@@ -105,8 +105,7 @@ type testGroupDownloader struct {
 	fotaReleased bool
 }
 
-type testStatusHandler struct {
-}
+type testStatusHandler struct{}
 
 type TestStorage struct {
 	sotaState json.RawMessage
@@ -1463,9 +1462,10 @@ func (updater *TestFirmwareUpdater) GetStatus() (info []cloudprotocol.ComponentS
 	return updater.InitComponentsInfo, nil
 }
 
-func (updater *TestFirmwareUpdater) UpdateComponents(components []cloudprotocol.ComponentInfo) (
-	componentsInfo []cloudprotocol.ComponentStatus, err error,
-) {
+func (updater *TestFirmwareUpdater) UpdateComponents(
+	components []cloudprotocol.ComponentInfo, chains []cloudprotocol.CertificateChain,
+	certs []cloudprotocol.Certificate,
+) (componentsInfo []cloudprotocol.ComponentStatus, err error) {
 	time.Sleep(updater.UpdateTime)
 	return updater.UpdateComponentsInfo, updater.UpdateError
 }
@@ -1487,7 +1487,8 @@ func (updater *TestSoftwareUpdater) GetLayersStatus() ([]LayerStatus, error) {
 }
 
 func (updater *TestSoftwareUpdater) InstallService(serviceInfo cloudprotocol.ServiceInfo,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error {
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+) error {
 	return updater.UpdateError
 }
 
@@ -1500,7 +1501,8 @@ func (updater *TestSoftwareUpdater) RemoveService(serviceID string) error {
 }
 
 func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error {
+	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+) error {
 	return updater.UpdateError
 }
 
@@ -1551,7 +1553,8 @@ func (testDownloader *TestDownloader) SetError(url string, err error) {
 }
 
 func (testDownloader *TestDownloader) Download(
-	ctx context.Context, packageInfo downloader.PackageInfo) (result downloader.Result, err error) {
+	ctx context.Context, packageInfo downloader.PackageInfo,
+) (result downloader.Result, err error) {
 	file, err := ioutil.TempFile(tmpDir, "*.dec")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -1576,7 +1579,6 @@ func (testDownloader *TestDownloader) Download(
 		fileName:     file.Name(),
 		err:          downloadErr,
 	}, nil
-
 }
 
 func (testDownloader *TestDownloader) Release(filePath string) error {

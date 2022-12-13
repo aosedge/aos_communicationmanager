@@ -64,7 +64,8 @@ type UnitConfigUpdater interface {
 // FirmwareUpdater updates system components.
 type FirmwareUpdater interface {
 	GetStatus() (componentsInfo []cloudprotocol.ComponentStatus, err error)
-	UpdateComponents(components []cloudprotocol.ComponentInfo) (status []cloudprotocol.ComponentStatus, err error)
+	UpdateComponents(components []cloudprotocol.ComponentInfo, chains []cloudprotocol.CertificateChain,
+		certs []cloudprotocol.Certificate) (status []cloudprotocol.ComponentStatus, err error)
 }
 
 // InstanceRunner instances runner.

@@ -153,10 +153,6 @@ func New(fileName string) (config *Config, err error) {
 		UMController: UMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
 	}
 
-	if config.Monitoring.MonitorConfig != nil && config.Monitoring.MonitorConfig.WorkingDir == "" {
-		config.Monitoring.MonitorConfig.WorkingDir = config.WorkingDir
-	}
-
 	if err = json.Unmarshal(raw, &config); err != nil {
 		return config, aoserrors.Wrap(err)
 	}

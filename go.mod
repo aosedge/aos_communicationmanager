@@ -6,16 +6,21 @@ replace github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.0.3-
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
-	github.com/aoscloud/aos_common v0.0.0-20220926114048-c73feb449869
+	github.com/aoscloud/aos_common v0.0.0-20221208142009-526fe4f13945
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
+	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-tpm v0.3.3
 	github.com/google/uuid v1.3.0
 	github.com/looplab/fsm v0.3.0
 	github.com/mattn/go-sqlite3 v1.14.13
+	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.0.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/streadway/amqp v1.0.0
+	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
+	golang.org/x/exp v0.0.0-20221211140036-ad323defaf05
 	google.golang.org/grpc v1.46.2
 	google.golang.org/protobuf v1.28.0
 )
@@ -40,9 +45,8 @@ require (
 	github.com/tklauser/numcpus v0.4.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
-	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f // indirect
-	golang.org/x/sys v0.0.0-20220317061510-51cd9980dadf // indirect
+	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20220314164441-57ef72a4c106 // indirect
 )

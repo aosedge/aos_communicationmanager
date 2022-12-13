@@ -186,7 +186,7 @@ func (launcher *Launcher) Close() {
 }
 
 // RunInstances performs run service instances.
-func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error {
+func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) (err error) {
 	launcher.Lock()
 	defer launcher.Unlock()
 

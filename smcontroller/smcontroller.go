@@ -176,27 +176,35 @@ func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error)
 }
 
 // CheckUnitConfig checks unit config for the node.
-func (controller *Controller) CheckUnitConfig(
-	nodeID string, nodeCfg aostypes.NodeUnitConfig, vendorVersion string,
-) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return aoserrors.Wrap(err)
+func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) error {
+	for _, nodeConfig := range unitConfig.Nodes {
+		for _, node := range controller.nodes {
+			if node.config.NodeType == nodeConfig.NodeType {
+				err := node.checkUnitConfigState(nodeConfig, unitConfig.VendorVersion)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
-	return handler.checkUnitConfigState(nodeCfg, vendorVersion)
+	return nil
 }
 
 // SetUnitConfig sets usint config for the node.
-func (controller *Controller) SetUnitConfig(
-	nodeID string, nodeCfg aostypes.NodeUnitConfig, vendorVersion string,
-) error {
-	handler, err := controller.getNodeHandlerByID(nodeID)
-	if err != nil {
-		return aoserrors.Wrap(err)
+func (controller *Controller) SetUnitConfig(unitConfig aostypes.UnitConfig) error {
+	for _, nodeConfig := range unitConfig.Nodes {
+		for _, node := range controller.nodes {
+			if node.config.NodeType == nodeConfig.NodeType {
+				err := node.setUnitConfig(nodeConfig, unitConfig.VendorVersion)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
-	return handler.setUnitConfig(nodeCfg, vendorVersion)
+	return nil
 }
 
 // RunInstances runs desired services instances.
@@ -368,6 +376,17 @@ func (controller *Controller) getCrashLog(logRequest cloudprotocol.RequestLog) e
 
 	return nil
 }
+
+// func (controller *Controller) getNodeHandlersByType(nodeType string) (handlers []*smHandler) {
+// 	// controller.nodes
+// 	for _, node := range controller.nodes {
+// 		if node.config.NodeType == nodeType {
+// 			handlers = append(handlers, node)
+// 		}
+// 	}
+
+// 	return handlers
+// }
 
 func (controller *Controller) getNodeHandlersByIDs(nodeIDs []string) (handlers []*smHandler, err error) {
 	if len(nodeIDs) > 0 {
