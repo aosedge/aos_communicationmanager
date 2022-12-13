@@ -20,7 +20,6 @@ package storagestate_test
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -111,7 +110,7 @@ func TestSetupClean(t *testing.T) {
 		expectedStorageQuotaLimit uint64
 		expectedStateQuotaLimit   uint64
 		instancePath              string
-		err                       error
+		expectedEmptyCheckSum     bool
 		expectReceiveStateChanged bool
 		errorSaveStorage          bool
 		errorGet                  bool
@@ -169,7 +168,7 @@ func TestSetupClean(t *testing.T) {
 			expectedStorageQuotaLimit: 0,
 			expectedStateQuotaLimit:   0,
 			expectReceiveStateChanged: false,
-			err:                       storagestate.ErrNotFound,
+			expectedEmptyCheckSum:     true,
 		},
 		{
 			SetupParams: storagestate.SetupParams{
@@ -250,9 +249,9 @@ func TestSetupClean(t *testing.T) {
 				t.Fatalf("Can't send update state: %v", err)
 			}
 
-			expectedCheckSum, err := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
-			if !errors.Is(err, testData.err) {
-				t.Errorf("Unexpected error to get checksum: %v", err)
+			expectedCheckSum := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
+			if testData.expectedEmptyCheckSum && expectedCheckSum != "" {
+				t.Errorf("Expected empty checksum")
 			}
 
 			if !bytes.Equal([]byte(expectedCheckSum), calcSum[:]) {
@@ -474,9 +473,9 @@ func TestUpdateState(t *testing.T) {
 				t.Fatalf("Can't send update state: %v", err)
 			}
 
-			expectedCheckSum, err := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
-			if err != nil {
-				t.Errorf("Unexpected error to get checksum: %v", err)
+			expectedCheckSum := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
+			if expectedCheckSum == "" {
+				t.Error("Unexpected checksum")
 			}
 
 			if !bytes.Equal([]byte(expectedCheckSum), calcSum[:]) {
@@ -754,9 +753,9 @@ func TestStateAcceptanceFailed(t *testing.T) {
 		}
 
 		if testData.errorSaveCheckSum {
-			checksum, err := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
-			if err != nil {
-				t.Errorf("Unexpected error to get checksum: %v", err)
+			checksum := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
+			if checksum != "" {
+				t.Error("Expected empty checksum")
 			}
 
 			testData.stateAcceptance.Checksum = hex.EncodeToString([]byte(checksum))
@@ -988,9 +987,9 @@ func TestStateAcceptance(t *testing.T) {
 					t.Fatalf("Can't send update state: %v", err)
 				}
 
-				expectedCheckSum, err := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
-				if err != nil {
-					t.Errorf("Unexpected error to get checksum: %v", err)
+				expectedCheckSum := instance.GetInstanceCheckSum(testData.SetupParams.InstanceIdent)
+				if expectedCheckSum == "" {
+					t.Error("Unexpected checksum")
 				}
 
 				if !bytes.Equal([]byte(expectedCheckSum), calcSum[:]) {

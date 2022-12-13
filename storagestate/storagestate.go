@@ -383,13 +383,10 @@ func (storageState *StorageState) StateAcceptance(updateState cloudprotocol.Stat
 	return nil
 }
 
-func (storageState *StorageState) GetInstanceCheckSum(instanceIdent aostypes.InstanceIdent) (string, error) {
-	state, ok := storageState.statesMap[instanceIdent]
-	if !ok {
-		return "", ErrNotFound
-	}
+func (storageState *StorageState) GetInstanceCheckSum(instanceIdent aostypes.InstanceIdent) string {
+	state := storageState.statesMap[instanceIdent]
 
-	return string(state.checksum), nil
+	return string(state.checksum)
 }
 
 /***********************************************************************************************************************
