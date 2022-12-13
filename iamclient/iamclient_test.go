@@ -470,6 +470,10 @@ func (server *testPublicServer) GetSystemInfo(
 	return rsp, nil
 }
 
+func (server *testPublicServer) GetNodeInfo(context context.Context, req *empty.Empty) (*pb.NodeInfo, error) {
+	return &pb.NodeInfo{}, nil
+}
+
 func (sender *testSender) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {
 	sender.csr = make(map[string]string)
 
