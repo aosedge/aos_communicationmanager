@@ -729,7 +729,8 @@ func (manager *firmwareManager) asyncUpdate(
 	go func() (errorStr string) {
 		defer func() { finishChannel <- errorStr }()
 
-		updateResult, err := manager.firmwareUpdater.UpdateComponents(updateComponents)
+		updateResult, err := manager.firmwareUpdater.UpdateComponents(
+			updateComponents, manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs)
 		if err != nil {
 			errorStr = aoserrors.Wrap(err).Error()
 		}
