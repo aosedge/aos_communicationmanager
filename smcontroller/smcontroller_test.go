@@ -219,7 +219,7 @@ func TestUnitConfigMessages(t *testing.T) {
 		nodeType      = "mainType"
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			NodeId: nodeID, NodeType: nodeType, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
 			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
@@ -277,10 +277,17 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.CheckUnitConfig(
-			nodeID, aostypes.NodeUnitConfig{NodeType: nodeType}, newVersion); err != nil {
+		if err := controller.CheckUnitConfig(aostypes.UnitConfig{
+			VendorVersion: newVersion,
+			Nodes: []aostypes.NodeUnitConfig{
+				{
+					NodeType: nodeType,
+				},
+			},
+		}); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
+
 		testWaitChan <- struct{}{}
 	}()
 
@@ -300,10 +307,17 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.SetUnitConfig(
-			nodeID, aostypes.NodeUnitConfig{NodeType: nodeType}, newVersion); err != nil {
+		if err := controller.SetUnitConfig(aostypes.UnitConfig{
+			VendorVersion: newVersion,
+			Nodes: []aostypes.NodeUnitConfig{
+				{
+					NodeType: nodeType,
+				},
+			},
+		}); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
+
 		testWaitChan <- struct{}{}
 	}()
 
