@@ -54,7 +54,8 @@ func newGroupDownloader(fileDownloader Downloader) *groupDownloader {
 }
 
 func (downloader *groupDownloader) download(ctx context.Context, request map[string]downloader.PackageInfo,
-	continueOnError bool, updateStatus statusNotifier) (result map[string]*downloadResult) {
+	continueOnError bool, updateStatus statusNotifier,
+) (result map[string]*downloadResult) {
 	result = make(map[string]*downloadResult)
 
 	for id := range request {
