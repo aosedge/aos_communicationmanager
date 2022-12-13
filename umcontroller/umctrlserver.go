@@ -56,7 +56,7 @@ type umCtrlServer struct {
 func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, certProvider CertificateProvider,
 	cryptcoxontext *cryptutils.CryptoContext, insecure bool,
 ) (server *umCtrlServer, err error) {
-	log.WithField("host", cfg.UMController.ServerURL).Debug("Start UM server")
+	log.WithField("host", cfg.UMController.CMServerURL).Debug("Start UM server")
 
 	server = &umCtrlServer{controllerCh: ch}
 
@@ -78,7 +78,7 @@ func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, certProvider Certi
 		log.Info("GRPC server starts in insecure mode")
 	}
 
-	server.url = cfg.UMController.ServerURL
+	server.url = cfg.UMController.CMServerURL
 
 	server.grpcServer = grpc.NewServer(opts...)
 

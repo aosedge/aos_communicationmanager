@@ -45,7 +45,7 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const smServerURL = "localhost:8093"
+const cmServerURL = "localhost:8093"
 
 const messageTimeout = 5 * time.Second
 
@@ -98,7 +98,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		nodeType = "mainSMType"
 		config   = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -181,7 +181,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, sendRuntimeStatus)
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, sendRuntimeStatus)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestUnitConfigMessages(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -239,7 +239,7 @@ func TestUnitConfigMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestSMAlertNotifications(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -341,7 +341,7 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, nil)
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -505,7 +505,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, nil)
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestLogMessages(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -622,7 +622,7 @@ func TestLogMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -764,7 +764,7 @@ func TestOverrideEnvVars(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -811,7 +811,7 @@ func TestOverrideEnvVars(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -847,7 +847,7 @@ func TestRunInstances(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -895,7 +895,7 @@ func TestRunInstances(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
 		}
 		config = config.Config{
 			SMController: config.SMController{
-				SMServerURL: smServerURL,
+				CMServerURL: cmServerURL,
 				NodeIDs:     []string{nodeID},
 			},
 		}
@@ -988,7 +988,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(smServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}

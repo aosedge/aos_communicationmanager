@@ -44,7 +44,7 @@ type Crypt struct {
 // UMController configuration for update controller.
 type UMController struct {
 	FileServerURL string            `json:"fileServerUrl"`
-	ServerURL     string            `json:"serverUrl"`
+	CMServerURL   string            `json:"cmServerUrl"`
 	UMClients     []UMClientConfig  `json:"umClients"`
 	UpdateTTL     aostypes.Duration `json:"updateTtl"`
 }
@@ -88,7 +88,7 @@ type Downloader struct {
 // SMController SM controller configuration.
 type SMController struct {
 	FileServerURL          string            `json:"fileServerUrl"`
-	SMServerURL            string            `json:"smServerUrl"`
+	CMServerURL            string            `json:"cmServerUrl"`
 	NodeIDs                []string          `json:"nodeIds"`
 	NodesConnectionTimeout aostypes.Duration `json:"nodesConnectionTimeout"`
 	UpdateTTL              aostypes.Duration `json:"updateTtl"`
@@ -99,7 +99,7 @@ type Config struct {
 	Crypt                 Crypt             `json:"fcrypt"`
 	CertStorage           string            `json:"certStorage"`
 	ServiceDiscoveryURL   string            `json:"serviceDiscoveryUrl"`
-	IAMServerURL          string            `json:"iamServerUrl"`
+	IAMProtectedServerURL string            `json:"iamProtectedServerUrl"`
 	IAMPublicServerURL    string            `json:"iamPublicServerUrl"`
 	CMServerURL           string            `json:"cmServerUrl"`
 	Downloader            Downloader        `json:"downloader"`

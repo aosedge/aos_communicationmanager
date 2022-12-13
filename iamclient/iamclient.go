@@ -302,7 +302,7 @@ func (client *Client) createProtectedConnection(
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	if connection, err = grpc.DialContext(ctx, config.IAMServerURL, secureOpt, grpc.WithBlock()); err != nil {
+	if connection, err = grpc.DialContext(ctx, config.IAMProtectedServerURL, secureOpt, grpc.WithBlock()); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 

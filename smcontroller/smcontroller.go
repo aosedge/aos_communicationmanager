@@ -138,7 +138,7 @@ func New(
 	pb.RegisterSMServiceServer(controller.grpcServer, controller)
 
 	go func() {
-		if err := controller.startServer(cfg.SMController.SMServerURL); err != nil {
+		if err := controller.startServer(cfg.SMController.CMServerURL); err != nil {
 			log.Errorf("Can't start SM controller server: %v", err)
 		}
 	}()
