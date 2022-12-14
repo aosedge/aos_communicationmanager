@@ -178,7 +178,7 @@ func New(fileName string) (config *Config, err error) {
 	}
 
 	if config.ComponentsDir == "" {
-		config.ImageStoreDir = path.Join(config.WorkingDir, "components")
+		config.ComponentsDir = path.Join(config.WorkingDir, "components")
 	}
 
 	if config.UnitConfigFile == "" {
