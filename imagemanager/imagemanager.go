@@ -18,6 +18,7 @@
 package imagemanager
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -376,16 +377,21 @@ func (imagemanager *Imagemanager) addService(
 		return err
 	}
 
+	fileInfo, err := image.CreateFileInfo(context.Background(), decryptedFile)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
 	if err = imagemanager.storage.AddService(ServiceInfo{
 		ServiceInfo: aostypes.ServiceInfo{
 			VersionInfo: serviceInfo.VersionInfo,
 			ID:          serviceInfo.ID,
 			ProviderID:  serviceInfo.ProviderID,
 			URL:         createLocalURL(decryptedFile),
-			Size:        serviceInfo.Size,
+			Size:        fileInfo.Size,
 			GID:         uint32(gid),
-			Sha256:      serviceInfo.Sha256,
-			Sha512:      serviceInfo.Sha512,
+			Sha256:      fileInfo.Sha256,
+			Sha512:      fileInfo.Sha512,
 		},
 		RemoteURL: remoteURL,
 		Path:      decryptedFile,
@@ -522,15 +528,20 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 		return err
 	}
 
+	fileInfo, err := image.CreateFileInfo(context.Background(), decryptedFile)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
 	if err := imagemanager.storage.AddLayer(LayerInfo{
 		LayerInfo: aostypes.LayerInfo{
 			VersionInfo: layerInfo.VersionInfo,
 			ID:          layerInfo.ID,
 			Digest:      layerInfo.Digest,
 			URL:         createLocalURL(decryptedFile),
-			Sha256:      layerInfo.Sha256,
-			Sha512:      layerInfo.Sha512,
-			Size:        layerInfo.Size,
+			Sha256:      fileInfo.Sha256,
+			Sha512:      fileInfo.Sha512,
+			Size:        fileInfo.Size,
 		},
 		Path:      decryptedFile,
 		RemoteURL: remoteURL,
