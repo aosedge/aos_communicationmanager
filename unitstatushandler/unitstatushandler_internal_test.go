@@ -1537,6 +1537,10 @@ func (runner *TestInstanceRunner) WaitForRunInstance(timeout time.Duration) ([]c
 	}
 }
 
+func (runner *TestInstanceRunner) GetNodesConfiguration() (nodes []cloudprotocol.NodeInfo) {
+	return nodes
+}
+
 /***********************************************************************************************************************
  * TestDownloader
  **********************************************************************************************************************/
