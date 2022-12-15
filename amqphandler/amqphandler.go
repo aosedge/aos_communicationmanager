@@ -580,10 +580,7 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 				return
 			}
 
-			var (
-				rawData     json.RawMessage
-				incomingMsg = cloudprotocol.Message{Data: &rawData}
-			)
+			var incomingMsg cloudprotocol.ReceivedMessage
 
 			if err := json.Unmarshal(delivery.Body, &incomingMsg); err != nil {
 				log.Errorf("Can't parse message header: %s", err)
@@ -605,7 +602,7 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 
 			log.Infof("AMQP receive message: %s", incomingMsg.Header.MessageType)
 
-			if err := handler.decodeData(rawData, decodedData); err != nil {
+			if err := handler.decodeData(incomingMsg.Data, decodedData); err != nil {
 				log.Errorf("Can't decode incoming message %s", err)
 				continue
 			}

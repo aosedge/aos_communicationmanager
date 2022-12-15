@@ -167,9 +167,14 @@ func cleanup() {
 }
 
 func sendCloudMessage(msgType string, message interface{}) error {
-	dataToSend := cloudprotocol.Message{
+	rawJSON, err := json.Marshal(message)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	dataToSend := cloudprotocol.ReceivedMessage{
 		Header: cloudprotocol.MessageHeader{MessageType: msgType, Version: cloudprotocol.ProtocolVersion},
-		Data:   message,
+		Data:   rawJSON,
 	}
 
 	dataJSON, err := json.Marshal(dataToSend)
