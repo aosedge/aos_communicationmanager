@@ -24,7 +24,6 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_common/image"
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	log "github.com/sirupsen/logrus"
 )
@@ -34,9 +33,8 @@ import (
  **********************************************************************************************************************/
 
 type downloadResult struct {
-	FileName string         `json:"fileName"`
-	FileInfo image.FileInfo `json:"fileInfo"`
-	Error    string         `json:"error"`
+	FileName string `json:"fileName"`
+	Error    string `json:"error"`
 }
 
 type statusNotifier func(id string, status string, componentErr string)
@@ -103,14 +101,6 @@ func (downloader *groupDownloader) download(ctx context.Context, request map[str
 				handleError(id, err)
 				return
 			}
-
-			fileInfo, err := image.CreateFileInfo(downloadCtx, itemResult.GetFileName())
-			if err != nil {
-				handleError(id, err)
-				return
-			}
-
-			result[id].FileInfo = fileInfo
 
 			updateStatus(id, cloudprotocol.DownloadedStatus, "")
 		}(id)
