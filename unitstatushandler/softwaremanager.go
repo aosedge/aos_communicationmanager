@@ -894,12 +894,7 @@ func (manager *softwareManager) installLayers() (installErr string) {
 			Path:   downloadInfo.FileName,
 		}
 
-		layer.DecryptDataStruct = cloudprotocol.DecryptDataStruct{
-			URLs:   []string{url.String()},
-			Size:   downloadInfo.FileInfo.Size,
-			Sha256: downloadInfo.FileInfo.Sha256,
-			Sha512: downloadInfo.FileInfo.Sha512,
-		}
+		layer.DecryptDataStruct.URLs = []string{url.String()}
 
 		installLayers = append(installLayers, layer)
 	}
@@ -1059,12 +1054,7 @@ func (manager *softwareManager) installServices() (newServices []string, install
 			Path:   downloadInfo.FileName,
 		}
 
-		service.DecryptDataStruct = cloudprotocol.DecryptDataStruct{
-			URLs:   []string{url.String()},
-			Size:   downloadInfo.FileInfo.Size,
-			Sha256: downloadInfo.FileInfo.Sha256,
-			Sha512: downloadInfo.FileInfo.Sha512,
-		}
+		service.DecryptDataStruct.URLs = []string{url.String()}
 
 		installServices = append(installServices, service)
 	}
