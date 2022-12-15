@@ -384,7 +384,10 @@ func (storageState *StorageState) StateAcceptance(updateState cloudprotocol.Stat
 }
 
 func (storageState *StorageState) GetInstanceCheckSum(instanceIdent aostypes.InstanceIdent) string {
-	state := storageState.statesMap[instanceIdent]
+	state, ok := storageState.statesMap[instanceIdent]
+	if !ok {
+		return ""
+	}
 
 	return string(state.checksum)
 }
