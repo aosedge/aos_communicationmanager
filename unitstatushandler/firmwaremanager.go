@@ -614,9 +614,6 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 		}
 
 		component.URLs = []string{url.String()}
-		component.Size = downloadInfo.FileInfo.Size
-		component.Sha256 = downloadInfo.FileInfo.Sha256
-		component.Sha512 = downloadInfo.FileInfo.Sha512
 
 		updateComponents = append(updateComponents, component)
 	}
