@@ -70,6 +70,7 @@ type FirmwareUpdater interface {
 // InstanceRunner instances runner.
 type InstanceRunner interface {
 	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
+	GetNodesConfiguration() []cloudprotocol.NodeInfo
 }
 
 // SoftwareUpdater updates services, layers.
@@ -642,6 +643,7 @@ func (instance *Instance) sendCurrentStatus() {
 		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.layerStatuses)),
 		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.serviceStatuses)),
 		Instances:    instance.instanceStatuses,
+		Nodes:        instance.softwareManager.instanceRunner.GetNodesConfiguration(),
 	}
 
 	for _, status := range instance.unitConfigStatus {
