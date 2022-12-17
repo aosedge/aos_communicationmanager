@@ -181,6 +181,10 @@ func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error)
 func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) error {
 	for _, nodeConfig := range unitConfig.Nodes {
 		for _, node := range controller.nodes {
+			if node == nil {
+				continue
+			}
+
 			if node.config.NodeType == nodeConfig.NodeType {
 				err := node.checkUnitConfigState(nodeConfig, unitConfig.VendorVersion)
 				if err != nil {
@@ -197,6 +201,10 @@ func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) er
 func (controller *Controller) SetUnitConfig(unitConfig aostypes.UnitConfig) error {
 	for _, nodeConfig := range unitConfig.Nodes {
 		for _, node := range controller.nodes {
+			if node == nil {
+				continue
+			}
+
 			if node.config.NodeType == nodeConfig.NodeType {
 				err := node.setUnitConfig(nodeConfig, unitConfig.VendorVersion)
 				if err != nil {
@@ -399,7 +407,9 @@ func (controller *Controller) getNodeHandlersByIDs(nodeIDs []string) (handlers [
 	}
 
 	for _, handler := range controller.nodes {
-		handlers = append(handlers, handler)
+		if handler != nil {
+			handlers = append(handlers, handler)
+		}
 	}
 
 	return handlers, nil
