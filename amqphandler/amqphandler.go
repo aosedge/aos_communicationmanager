@@ -626,7 +626,65 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 		return aoserrors.Wrap(err)
 	}
 
-	log.WithField("data", string(decryptData)).Debug("Decrypted data")
+	desiredStatus, ok := result.(*cloudprotocol.DesiredStatus)
+	if !ok {
+		log.WithField("data", string(decryptData)).Debug("Decrypted data")
+
+		return nil
+	}
+
+	log.Debug("Decrypted data:")
+
+	if len(desiredStatus.UnitConfig) != 0 {
+		log.Debugf("UnitConfig: %s", desiredStatus.UnitConfig)
+	}
+
+	for _, service := range desiredStatus.Services {
+		log.WithFields(log.Fields{
+			"id":            service.ID,
+			"aosVersion":    service.AosVersion,
+			"vendorVersion": service.VendorVersion,
+			"description":   service.Description,
+		}).Debug("Service")
+	}
+
+	for _, layer := range desiredStatus.Layers {
+		log.WithFields(log.Fields{
+			"id":            layer.ID,
+			"digest":        layer.Digest,
+			"aosVersion":    layer.AosVersion,
+			"vendorVersion": layer.VendorVersion,
+			"description":   layer.Description,
+		}).Debug("Layer")
+	}
+
+	for _, component := range desiredStatus.Components {
+		log.WithFields(log.Fields{
+			"id":            component.ID,
+			"annotations":   string(component.Annotations),
+			"aosVersion":    component.AosVersion,
+			"vendorVersion": component.VendorVersion,
+			"description":   component.Description,
+		}).Debug("Component")
+	}
+
+	for _, instance := range desiredStatus.Instances {
+		log.WithFields(log.Fields{
+			"serviceID":    instance.ServiceID,
+			"subjectID":    instance.SubjectID,
+			"priority":     instance.Priority,
+			"numInstances": instance.NumInstances,
+			"labels":       instance.Labels,
+		}).Debug("Instance")
+	}
+
+	if schedule, err := json.Marshal(desiredStatus.FOTASchedule); err == nil {
+		log.Debugf("Fota schedule: %s", schedule)
+	}
+
+	if schedule, err := json.Marshal(desiredStatus.SOTASchedule); err == nil {
+		log.Debugf("Sota schedule: %s", schedule)
+	}
 
 	return nil
 }
