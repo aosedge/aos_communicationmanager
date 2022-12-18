@@ -134,7 +134,7 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 
 	for _, cert := range certInfo {
 		log.WithFields(log.Fields{
-			"type": cert.Type, "serial": cert.Serial, "validTill": cert.ValidTill,
+			"type": cert.Type, "serial": cert.Serial, "nodeID": cert.NodeID, "validTill": cert.ValidTill,
 		}).Debug("Renew certificate")
 
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -147,7 +147,9 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 			return aoserrors.Wrap(err)
 		}
 
-		newCerts = append(newCerts, cloudprotocol.IssueCertData{Type: response.Type, Csr: response.Csr})
+		newCerts = append(newCerts, cloudprotocol.IssueCertData{
+			Type: response.Type, Csr: response.Csr, NodeID: cert.NodeID,
+		})
 	}
 
 	if len(newCerts) == 0 {
@@ -173,8 +175,8 @@ func (client *Client) InstallCertificates(
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
 
-		request := &pb.ApplyCertRequest{Type: cert.Type, Cert: cert.CertificateChain}
-		certConfirmation := cloudprotocol.InstallCertData{Type: cert.Type}
+		request := &pb.ApplyCertRequest{Type: cert.Type, Cert: cert.CertificateChain, NodeId: cert.NodeID}
+		certConfirmation := cloudprotocol.InstallCertData{Type: cert.Type, NodeID: cert.NodeID}
 
 		response, err := client.certificateService.ApplyCert(ctx, request)
 		if err == nil {
