@@ -138,11 +138,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			Instances: []cloudprotocol.InstanceStatus{
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-					AosVersion:    1, RunState: "running",
+					AosVersion:    1, RunState: "running", NodeID: nodeID,
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-					AosVersion:    1, RunState: "fail",
+					AosVersion:    1, RunState: "fail", NodeID: nodeID,
 					ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
@@ -168,11 +168,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		expectedUpdateState = []cloudprotocol.InstanceStatus{
 			{
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-				AosVersion:    1, RunState: "running",
+				AosVersion:    1, RunState: "running", NodeID: nodeID,
 			},
 			{
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-				AosVersion:    1, RunState: "fail",
+				AosVersion:    1, RunState: "fail", NodeID: nodeID,
 				ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 			},
 		}
