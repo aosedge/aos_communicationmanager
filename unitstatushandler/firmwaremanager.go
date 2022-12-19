@@ -75,6 +75,7 @@ type firmwareManager struct {
 	firmwareUpdater   FirmwareUpdater
 	unitConfigUpdater UnitConfigUpdater
 	storage           Storage
+	runner            InstanceRunner
 
 	stateMachine  *updateStateMachine
 	statusMutex   sync.RWMutex
@@ -95,7 +96,7 @@ type firmwareManager struct {
 
 func newFirmwareManager(statusHandler firmwareStatusHandler, downloader firmwareDownloader,
 	firmwareUpdater FirmwareUpdater, unitConfigUpdater UnitConfigUpdater,
-	storage Storage, defaultTTL time.Duration,
+	storage Storage, runner InstanceRunner, defaultTTL time.Duration,
 ) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
 		statusChannel:     make(chan cmserver.UpdateFOTAStatus, 1),
@@ -104,6 +105,7 @@ func newFirmwareManager(statusHandler firmwareStatusHandler, downloader firmware
 		firmwareUpdater:   firmwareUpdater,
 		unitConfigUpdater: unitConfigUpdater,
 		storage:           storage,
+		runner:            runner,
 		CurrentState:      stateNoUpdate,
 	}
 
@@ -476,6 +478,11 @@ func (manager *firmwareManager) update(ctx context.Context) {
 	if len(manager.CurrentUpdate.UnitConfig) != 0 {
 		if err := manager.updateUnitConfig(ctx); err != "" {
 			updateErr = err
+			return
+		}
+
+		if err := manager.runner.RestartInstances(); err != nil {
+			updateErr = err.Error()
 			return
 		}
 	}
