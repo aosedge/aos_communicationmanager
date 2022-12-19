@@ -416,7 +416,7 @@ func TestSendMessages(t *testing.T) {
 		{NodeID: "main", NodeType: "mainType", SystemInfo: cloudprotocol.SystemInfo{
 			NumCPUs: 2, TotalRAM: 200,
 			Partitions: []cloudprotocol.PartitionInfo{
-				{Name: "p1", Type: []string{"t1"}, TotalSize: 200},
+				{Name: "p1", Types: []string{"t1"}, TotalSize: 200},
 			},
 		}},
 	}
