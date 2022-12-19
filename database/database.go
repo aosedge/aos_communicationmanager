@@ -253,6 +253,28 @@ func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) 
 	return state, nil
 }
 
+// SetDesiredInstances sets desired instances status.
+func (db *Database) SetDesiredInstances(instances json.RawMessage) (err error) {
+	if err = db.executeQuery(`UPDATE config SET desiredInstances = ?`, instances); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetDesiredInstances returns desired instances.
+func (db *Database) GetDesiredInstances() (instances json.RawMessage, err error) {
+	if err = db.getDataFromQuery(
+		"SELECT desiredInstances FROM config",
+		[]any{}, &instances); err != nil {
+		if errors.Is(err, errNotExist) {
+			return instances, launcher.ErrNotExist
+		}
+	}
+
+	return instances, err
+}
+
 func (db *Database) GetDownloadInfo(filePath string) (downloadInfo downloader.DownloadInfo, err error) {
 	if err = db.getDataFromQuery(
 		"SELECT * FROM download WHERE path = ?",
@@ -648,7 +670,8 @@ func (db *Database) createConfigTable() (err error) {
 			cursor TEXT,
 			componentsUpdateInfo BLOB,
 			fotaUpdateState BLOB,
-			sotaUpdateState BLOB)`); err != nil {
+			sotaUpdateState BLOB,
+			desiredInstances BLOB)`); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -657,7 +680,9 @@ func (db *Database) createConfigTable() (err error) {
 			cursor,
 			componentsUpdateInfo,
 			fotaUpdateState,
-			sotaUpdateState) values(?, ?, ?, ?)`, "", "", json.RawMessage{}, json.RawMessage{}); err != nil {
+			sotaUpdateState,
+			desiredInstances) values(?, ?, ?, ?, ?)`,
+		"", "", json.RawMessage{}, json.RawMessage{}, json.RawMessage{}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
