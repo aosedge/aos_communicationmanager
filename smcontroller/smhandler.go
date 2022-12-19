@@ -412,7 +412,7 @@ func (handler *smHandler) processSMMessages() {
 func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus) {
 	runStatus := launcher.NodeRunInstanceStatus{
 		NodeID: handler.config.NodeID, NodeType: handler.config.NodeType,
-		Instances: instancesStatusFromPB(status.Instances),
+		Instances: instancesStatusFromPB(status.Instances, handler.config.NodeID),
 	}
 
 	handler.runStatusCh <- runStatus
@@ -421,7 +421,8 @@ func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus
 func (handler *smHandler) processUpdateInstancesStatus(data *pb.UpdateInstancesStatus) {
 	log.WithFields(log.Fields{"nodeID": handler.config.NodeID}).Debug("Receive SM update instances status")
 
-	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.Instances)
+	nonBlockingPushToChannel(handler.updateInstanceStatusCh,
+		instancesStatusFromPB(data.Instances, handler.config.NodeID))
 }
 
 func (handler *smHandler) processAlert(alert *pb.Alert) {
@@ -601,12 +602,13 @@ func (handler *smHandler) sendGetNodeMonitoring() error {
 	return nil
 }
 
-func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus) []cloudprotocol.InstanceStatus {
+func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus, nodeID string) []cloudprotocol.InstanceStatus {
 	instancesStaus := make([]cloudprotocol.InstanceStatus, len(pbStatuses))
 
 	for i, status := range pbStatuses {
 		instancesStaus[i] = cloudprotocol.InstanceStatus{
 			InstanceIdent: pbconvert.NewInstanceIdentFromPB(status.Instance),
+			NodeID:        nodeID,
 			AosVersion:    status.AosVersion,
 			RunState:      status.RunState,
 			ErrorInfo:     errorInfoFromPB(status.ErrorInfo),
