@@ -781,7 +781,7 @@ func TestLogMessages(t *testing.T) {
 	}
 
 	expectedLog := cloudprotocol.PushLog{
-		NodeID: "mainSM", LogID: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error",
+		NodeID: "mainSM", LogID: "log0", PartCount: 2, Part: 1, Content: []byte("this is log"), Error: "this is error",
 	}
 
 	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
