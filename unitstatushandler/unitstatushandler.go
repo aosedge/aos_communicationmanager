@@ -70,6 +70,7 @@ type FirmwareUpdater interface {
 // InstanceRunner instances runner.
 type InstanceRunner interface {
 	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
+	RestartInstances() error
 	GetNodesConfiguration() []cloudprotocol.NodeInfo
 }
 
@@ -175,7 +176,7 @@ func New(
 	groupDownloader := newGroupDownloader(downloader)
 
 	if instance.firmwareManager, err = newFirmwareManager(instance, groupDownloader, firmwareUpdater, unitConfigUpdater,
-		storage, cfg.UMController.UpdateTTL.Duration); err != nil {
+		storage, instanceRunner, cfg.UMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 

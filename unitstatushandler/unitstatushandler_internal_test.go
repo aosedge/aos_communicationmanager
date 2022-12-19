@@ -713,7 +713,7 @@ func TestFirmwareManager(t *testing.T) {
 		// Create firmware manager
 
 		firmwareManager, err := newFirmwareManager(newTestStatusHandler(), firmwareDownloader,
-			firmwareUpdater, unitConfigUpdater, testStorage, 30*time.Second)
+			firmwareUpdater, unitConfigUpdater, testStorage, &TestInstanceRunner{}, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create firmware manager: %s", err)
 			continue
@@ -1524,6 +1524,10 @@ func (runner *TestInstanceRunner) RunInstances(instances []cloudprotocol.Instanc
 	runner.newServices = newServices
 	runner.runInstanceChan <- instances
 
+	return nil
+}
+
+func (runner *TestInstanceRunner) RestartInstances() error {
 	return nil
 }
 
