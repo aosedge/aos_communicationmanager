@@ -465,7 +465,7 @@ func TestSendMessages(t *testing.T) {
 		LogID:     "log0",
 		PartCount: 2,
 		Part:      1,
-		Data:      []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		Content:   []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		Error:     "Error",
 	}
 
@@ -629,7 +629,7 @@ func TestSendMessages(t *testing.T) {
 					LogID:     pushServiceLogData.LogID,
 					PartCount: pushServiceLogData.PartCount,
 					Part:      pushServiceLogData.Part,
-					Data:      pushServiceLogData.Data,
+					Content:   pushServiceLogData.Content,
 					Error:     pushServiceLogData.Error,
 				},
 			},

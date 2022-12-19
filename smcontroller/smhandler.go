@@ -523,7 +523,7 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 		LogID:     data.LogId,
 		PartCount: data.PartCount,
 		Part:      data.Part,
-		Data:      data.Data,
+		Content:   data.Data,
 		Error:     data.Error,
 	}); err != nil {
 		log.Errorf("Can't send log: %v", err)
