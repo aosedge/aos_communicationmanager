@@ -159,7 +159,7 @@ func (db *Database) GetJournalCursor() (cursor string, err error) {
 		}
 	}
 
-	return cursor, nil
+	return cursor, err
 }
 
 // SetComponentsUpdateInfo store update data for update managers.
@@ -228,7 +228,7 @@ func (db *Database) GetFirmwareUpdateState() (state json.RawMessage, err error) 
 		}
 	}
 
-	return state, nil
+	return state, err
 }
 
 // SetSoftwareUpdateState sets SOTA update state.
@@ -250,7 +250,7 @@ func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) 
 		}
 	}
 
-	return state, nil
+	return state, err
 }
 
 // SetDesiredInstances sets desired instances status.
