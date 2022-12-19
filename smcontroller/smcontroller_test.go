@@ -105,7 +105,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		nodeConfig = &pb.NodeConfiguration{
 			NodeId: nodeID, NodeType: nodeType, RemoteNode: true,
 			RunnerFeatures: []string{"runc"}, NumCpus: 1, TotalRam: 100,
-			Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		expectedNodeConfiguration = launcher.NodeInfo{
 			NodeInfo: cloudprotocol.NodeInfo{
@@ -220,7 +220,7 @@ func TestUnitConfigMessages(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
@@ -327,7 +327,7 @@ func TestSMAlertNotifications(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
@@ -491,7 +491,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
@@ -608,7 +608,7 @@ func TestLogMessages(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
@@ -763,7 +763,7 @@ func TestOverrideEnvVars(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
@@ -846,7 +846,7 @@ func TestRunInstances(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
@@ -924,7 +924,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
 		messageSender = newTestMessageSender()
 		nodeConfig    = &pb.NodeConfiguration{
 			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Type: []string{"t1"}, TotalSize: 50}},
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
 		}
 		config = config.Config{
 			SMController: config.SMController{
