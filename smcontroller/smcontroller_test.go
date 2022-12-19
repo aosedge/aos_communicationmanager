@@ -113,7 +113,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 				SystemInfo: cloudprotocol.SystemInfo{
 					NumCPUs: 1, TotalRAM: 100,
 					Partitions: []cloudprotocol.PartitionInfo{
-						{Name: "services", Type: []string{"t1"}, TotalSize: 50},
+						{Name: "services", Types: []string{"t1"}, TotalSize: 50},
 					},
 				},
 			},
