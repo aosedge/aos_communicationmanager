@@ -155,34 +155,48 @@ func TestComponentsUpdateInfo(t *testing.T) {
 	}
 }
 
-func TestSotaFotaState(t *testing.T) {
+func TestSotaFotaInstancesFields(t *testing.T) {
 	fotaState := json.RawMessage("fotaState")
 	sotaState := json.RawMessage("sotaState")
+	desiredInstances := json.RawMessage("desiredInstances")
 
 	if err := db.SetFirmwareUpdateState(fotaState); err != nil {
-		t.Fatal("Can't set FOTA state ", err)
+		t.Fatalf("Can't set FOTA state: %v", err)
 	}
 
 	if err := db.SetSoftwareUpdateState(sotaState); err != nil {
-		t.Fatal("Can't set SOTA state ", err)
+		t.Fatalf("Can't set SOTA state: %v", err)
+	}
+
+	if err := db.SetDesiredInstances(desiredInstances); err != nil {
+		t.Fatalf("Can't set desired instances: %v", err)
 	}
 
 	retFota, err := db.GetFirmwareUpdateState()
 	if err != nil {
-		t.Fatal("Can't get FOTA state ", err)
+		t.Fatalf("Can't get FOTA state: %v", err)
 	}
 
 	if string(retFota) != string(fotaState) {
-		t.Errorf("Incorrect FOTA state %s", string(retFota))
+		t.Errorf("Incorrect FOTA state: %s", string(retFota))
 	}
 
 	retSota, err := db.GetSoftwareUpdateState()
 	if err != nil {
-		t.Fatal("Can't get SOTA state ", err)
+		t.Fatalf("Can't get SOTA state: %v", err)
 	}
 
 	if string(retSota) != string(sotaState) {
-		t.Errorf("Incorrect FOTA state %s", string(retSota))
+		t.Errorf("Incorrect SOTA state: %s", string(retSota))
+	}
+
+	retInstances, err := db.GetDesiredInstances()
+	if err != nil {
+		t.Fatalf("Can't get desired instances state %v", err)
+	}
+
+	if string(retInstances) != string(desiredInstances) {
+		t.Errorf("Incorrect desired instances: %s", string(retInstances))
 	}
 }
 
