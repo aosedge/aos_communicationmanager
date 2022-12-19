@@ -287,8 +287,8 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 	for i, pbPartition := range nodeConfig.NodeConfiguration.Partitions {
 		nodeCfg.Partitions[i] = cloudprotocol.PartitionInfo{
-			Name: pbPartition.Name,
-			Type: pbPartition.Type, TotalSize: pbPartition.TotalSize,
+			Name:  pbPartition.Name,
+			Types: pbPartition.Types, TotalSize: pbPartition.TotalSize,
 		}
 	}
 
