@@ -140,7 +140,7 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
 
-		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd}
+		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd, NodeId: cert.NodeID}
 
 		response, err := client.certificateService.CreateKey(ctx, request)
 		if err != nil {
