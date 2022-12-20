@@ -519,12 +519,14 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 	}).Debug("Receive SM push log")
 
 	if err := handler.messageSender.SendLog(cloudprotocol.PushLog{
-		NodeID:    handler.config.NodeID,
-		LogID:     data.LogId,
-		PartCount: data.PartCount,
-		Part:      data.Part,
-		Content:   data.Data,
-		Error:     data.Error,
+		NodeID:     handler.config.NodeID,
+		LogID:      data.LogId,
+		PartsCount: data.PartCount,
+		Part:       data.Part,
+		Content:    data.Data,
+		ErrorInfo: cloudprotocol.ErrorInfo{
+			Message: data.Error,
+		},
 	}); err != nil {
 		log.Errorf("Can't send log: %v", err)
 	}
