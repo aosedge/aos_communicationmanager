@@ -462,11 +462,13 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	pushServiceLogData := cloudprotocol.PushLog{
-		LogID:     "log0",
-		PartCount: 2,
-		Part:      1,
-		Content:   []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-		Error:     "Error",
+		LogID:      "log0",
+		PartsCount: 2,
+		Part:       1,
+		Content:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		ErrorInfo: cloudprotocol.ErrorInfo{
+			Message: "Error",
+		},
 	}
 
 	alertsData := cloudprotocol.Alerts{
@@ -626,11 +628,11 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.PushLog{
-					LogID:     pushServiceLogData.LogID,
-					PartCount: pushServiceLogData.PartCount,
-					Part:      pushServiceLogData.Part,
-					Content:   pushServiceLogData.Content,
-					Error:     pushServiceLogData.Error,
+					LogID:      pushServiceLogData.LogID,
+					PartsCount: pushServiceLogData.PartsCount,
+					Part:       pushServiceLogData.Part,
+					Content:    pushServiceLogData.Content,
+					ErrorInfo:  pushServiceLogData.ErrorInfo,
 				},
 			},
 			getDataType: func() interface{} {
