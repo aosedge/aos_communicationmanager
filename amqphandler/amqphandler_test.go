@@ -466,7 +466,7 @@ func TestSendMessages(t *testing.T) {
 		PartsCount: 2,
 		Part:       1,
 		Content:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-		ErrorInfo: cloudprotocol.ErrorInfo{
+		ErrorInfo: &cloudprotocol.ErrorInfo{
 			Message: "Error",
 		},
 	}
