@@ -180,10 +180,6 @@ func (client *Client) InstallCertificates(
 
 		response, err := client.certificateService.ApplyCert(ctx, request)
 		if err == nil {
-			certConfirmation.Serial, err = certProvider.GetCertSerial(response.CertUrl)
-		}
-
-		if err == nil {
 			certConfirmation.Status = "installed"
 		} else if err != nil {
 			certConfirmation.Status = "not installed"
@@ -191,6 +187,8 @@ func (client *Client) InstallCertificates(
 
 			log.WithFields(log.Fields{"type": cert.Type}).Errorf("Can't install certificate: %s", err)
 		}
+
+		certConfirmation.Serial = response.Serial
 
 		confirmations[i] = certConfirmation
 	}
