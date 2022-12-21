@@ -524,7 +524,7 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 		PartsCount: data.PartCount,
 		Part:       data.Part,
 		Content:    data.Data,
-		ErrorInfo: cloudprotocol.ErrorInfo{
+		ErrorInfo: &cloudprotocol.ErrorInfo{
 			Message: data.Error,
 		},
 	}); err != nil {
