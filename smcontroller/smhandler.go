@@ -424,8 +424,7 @@ func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus
 func (handler *smHandler) processUpdateInstancesStatus(data *pb.UpdateInstancesStatus) {
 	log.WithFields(log.Fields{"nodeID": handler.config.NodeID}).Debug("Receive SM update instances status")
 
-	nonBlockingPushToChannel(handler.updateInstanceStatusCh,
-		instancesStatusFromPB(data.Instances, handler.config.NodeID))
+	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.Instances, handler.config.NodeID)
 }
 
 func (handler *smHandler) processAlert(alert *pb.Alert) {
