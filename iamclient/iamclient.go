@@ -199,7 +199,9 @@ func (client *Client) InstallCertificates(
 			log.WithFields(log.Fields{"type": cert.Type}).Errorf("Can't install certificate: %s", err)
 		}
 
-		certConfirmation.Serial = response.Serial
+		if response != nil {
+			certConfirmation.Serial = response.Serial
+		}
 
 		confirmations[i] = certConfirmation
 	}

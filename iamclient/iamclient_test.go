@@ -272,8 +272,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	defer client.Close()
 
 	expectedConfimation := []cloudprotocol.InstallCertData{
-		{Type: "online", Serial: "1", Status: "installed"},
-		{Type: "offline", Serial: "2", Status: "installed"},
+		{Type: "online", Serial: "", Status: "installed"},
+		{Type: "offline", Serial: "", Status: "installed"},
 		{Type: "invalid", Serial: "", Status: "not installed", Description: "error"},
 	}
 
@@ -288,6 +288,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	}
 
 	if !reflect.DeepEqual(expectedConfimation, sender.currentConfirmations) {
+		log.Debug(expectedConfimation)
+		log.Debug(sender.currentConfirmations)
 		t.Error("Wrong install confirmation")
 	}
 }
