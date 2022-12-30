@@ -18,6 +18,7 @@
 package umcontroller
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/image"
 	"github.com/aoscloud/aos_common/spaceallocator"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/looplab/fsm"
@@ -203,7 +205,7 @@ func New(config *config.Config, storage storage, certProvider CertificateProvide
 		storage:           storage,
 		eventChannel:      make(chan umCtrlInternalMsg),
 		stopChannel:       make(chan bool),
-		componentDir:      path.Join(config.ComponentsDir, "components"),
+		componentDir:      config.ComponentsDir,
 		connectionMonitor: allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
 		operable:          true,
 		updateFinishCond:  sync.NewCond(&sync.Mutex{}),
@@ -286,9 +288,7 @@ func (umCtrl *Controller) UpdateComponents(
 ) ([]cloudprotocol.ComponentStatus, error) {
 	log.Debug("Update components")
 
-	currentState := umCtrl.fsm.Current()
-
-	if currentState == stateIdle {
+	if umCtrl.fsm.Current() == stateIdle {
 		umCtrl.updateError = nil
 
 		if len(components) == 0 {
@@ -301,12 +301,6 @@ func (umCtrl *Controller) UpdateComponents(
 			componentStatus := systemComponentStatus{
 				id: component.ID, vendorVersion: component.VendorVersion,
 				aosVersion: component.AosVersion, status: cloudprotocol.DownloadedStatus,
-			}
-
-			componentInfo := SystemComponent{
-				ID: component.ID, VendorVersion: component.VendorVersion,
-				AosVersion: component.AosVersion, Annotations: string(component.Annotations),
-				Sha256: component.Sha256, Sha512: component.Sha512, Size: component.Size,
 			}
 
 			encryptedFile, err := getFilePath(component.URLs[0])
@@ -343,12 +337,22 @@ func (umCtrl *Controller) UpdateComponents(
 				return umCtrl.currentComponents, aoserrors.Wrap(err)
 			}
 
+			fileInfo, err := image.CreateFileInfo(context.Background(), decryptedFile)
+			if err != nil {
+				return umCtrl.currentComponents, aoserrors.Wrap(err)
+			}
+
 			url := url.URL{
 				Scheme: fileScheme,
 				Path:   decryptedFile,
 			}
 
-			componentInfo.URL = url.String()
+			componentInfo := SystemComponent{
+				ID: component.ID, VendorVersion: component.VendorVersion,
+				AosVersion: component.AosVersion, Annotations: string(component.Annotations),
+				Sha256: fileInfo.Sha256, Sha512: fileInfo.Sha512, Size: fileInfo.Size,
+				URL: url.String(),
+			}
 
 			if err = umCtrl.addComponentForUpdateToUm(componentInfo); err != nil {
 				return umCtrl.currentComponents, aoserrors.Wrap(err)
