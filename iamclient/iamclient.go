@@ -25,7 +25,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
+	pb "github.com/aoscloud/aos_common/api/iamanager/v4"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
@@ -52,12 +52,15 @@ type Client struct {
 
 	sender Sender
 
+	nodeID string
+
 	systemID string
 
 	publicConnection    *grpc.ClientConn
 	protectedConnection *grpc.ClientConn
-	pbProtected         pb.IAMProtectedServiceClient
-	pbPublic            pb.IAMPublicServiceClient
+	publicService       pb.IAMPublicServiceClient
+	identService        pb.IAMPublicIdentityServiceClient
+	certificateService  pb.IAMCertificateServiceClient
 
 	closeChannel chan struct{}
 }
@@ -103,22 +106,32 @@ func New(
 		return nil, err
 	}
 
-	localClient.pbPublic = pb.NewIAMPublicServiceClient(localClient.publicConnection)
+	localClient.publicService = pb.NewIAMPublicServiceClient(localClient.publicConnection)
+	localClient.identService = pb.NewIAMPublicIdentityServiceClient(localClient.publicConnection)
 
 	if localClient.protectedConnection, err = localClient.createProtectedConnection(
 		config, cryptocontext, insecure); err != nil {
 		return nil, err
 	}
 
-	localClient.pbProtected = pb.NewIAMProtectedServiceClient(localClient.protectedConnection)
+	localClient.certificateService = pb.NewIAMCertificateServiceClient(localClient.protectedConnection)
 
 	log.Debug("Connected to IAM")
+
+	if localClient.nodeID, _, err = localClient.getNodeInfo(); err != nil {
+		return client, aoserrors.Wrap(err)
+	}
 
 	if localClient.systemID, err = localClient.getSystemID(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	return localClient, nil
+}
+
+// GetNodeID returns node ID.
+func (client *Client) GetNodeID() string {
+	return client.nodeID
 }
 
 // GetSystemID returns system ID.
@@ -132,20 +145,22 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 
 	for _, cert := range certInfo {
 		log.WithFields(log.Fields{
-			"type": cert.Type, "serial": cert.Serial, "validTill": cert.ValidTill,
+			"type": cert.Type, "serial": cert.Serial, "nodeID": cert.NodeID, "validTill": cert.ValidTill,
 		}).Debug("Renew certificate")
 
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
 
-		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd}
+		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd, NodeId: cert.NodeID}
 
-		response, err := client.pbProtected.CreateKey(ctx, request)
+		response, err := client.certificateService.CreateKey(ctx, request)
 		if err != nil {
 			return aoserrors.Wrap(err)
 		}
 
-		newCerts = append(newCerts, cloudprotocol.IssueCertData{Type: response.Type, Csr: response.Csr})
+		newCerts = append(newCerts, cloudprotocol.IssueCertData{
+			Type: response.Type, Csr: response.Csr, NodeID: cert.NodeID,
+		})
 	}
 
 	if len(newCerts) == 0 {
@@ -171,14 +186,10 @@ func (client *Client) InstallCertificates(
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
 
-		request := &pb.ApplyCertRequest{Type: cert.Type, Cert: cert.CertificateChain}
-		certConfirmation := cloudprotocol.InstallCertData{Type: cert.Type}
+		request := &pb.ApplyCertRequest{Type: cert.Type, Cert: cert.CertificateChain, NodeId: cert.NodeID}
+		certConfirmation := cloudprotocol.InstallCertData{Type: cert.Type, NodeID: cert.NodeID}
 
-		response, err := client.pbProtected.ApplyCert(ctx, request)
-		if err == nil {
-			certConfirmation.Serial, err = certProvider.GetCertSerial(response.CertUrl)
-		}
-
+		response, err := client.certificateService.ApplyCert(ctx, request)
 		if err == nil {
 			certConfirmation.Status = "installed"
 		} else if err != nil {
@@ -186,6 +197,10 @@ func (client *Client) InstallCertificates(
 			certConfirmation.Description = err.Error()
 
 			log.WithFields(log.Fields{"type": cert.Type}).Errorf("Can't install certificate: %s", err)
+		}
+
+		if response != nil {
+			certConfirmation.Serial = response.Serial
 		}
 
 		confirmations[i] = certConfirmation
@@ -215,7 +230,8 @@ func (client *Client) GetCertificate(
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	response, err := client.pbPublic.GetCert(ctx, &pb.GetCertRequest{Type: certType, Issuer: issuer, Serial: serial})
+	response, err := client.publicService.GetCert(
+		ctx, &pb.GetCertRequest{Type: certType, Issuer: issuer, Serial: serial})
 	if err != nil {
 		return "", "", aoserrors.Wrap(err)
 	}
@@ -274,6 +290,23 @@ func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoCo
 	return connection, nil
 }
 
+func (client *Client) getNodeInfo() (nodeID, nodeType string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.publicService.GetNodeInfo(ctx, &empty.Empty{})
+	if err != nil {
+		return "", "", aoserrors.Wrap(err)
+	}
+
+	log.WithFields(log.Fields{
+		"nodeID":   response.NodeId,
+		"nodeType": response.NodeType,
+	}).Debug("Get node Info")
+
+	return response.NodeId, response.NodeType, nil
+}
+
 func (client *Client) createProtectedConnection(
 	config *config.Config, cryptocontext *cryptutils.CryptoContext, insecureConn bool) (
 	connection *grpc.ClientConn, err error,
@@ -299,7 +332,7 @@ func (client *Client) createProtectedConnection(
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	if connection, err = grpc.DialContext(ctx, config.IAMServerURL, secureOpt, grpc.WithBlock()); err != nil {
+	if connection, err = grpc.DialContext(ctx, config.IAMProtectedServerURL, secureOpt, grpc.WithBlock()); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -312,7 +345,7 @@ func (client *Client) getSystemID() (systemID string, err error) {
 
 	request := &empty.Empty{}
 
-	response, err := client.pbPublic.GetSystemInfo(ctx, request)
+	response, err := client.identService.GetSystemInfo(ctx, request)
 	if err != nil {
 		return "", aoserrors.Wrap(err)
 	}

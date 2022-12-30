@@ -20,16 +20,14 @@ package fileserver
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/aoscloud/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************
@@ -38,6 +36,7 @@ import (
 
 // FileServer file server instance.
 type FileServer struct {
+	host   string
 	server *http.Server
 }
 
@@ -55,17 +54,20 @@ const (
  **********************************************************************************************************************/
 
 // New creates file server.
-func New(cfg *config.Config) (fileServer *FileServer, err error) {
-	if err = os.MkdirAll(cfg.Downloader.DecryptDir, 0o755); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
+func New(serverURL, dir string) (fileServer *FileServer, err error) {
 	fileServer = &FileServer{}
 
-	if cfg.FileServerURL != "" {
+	if serverURL != "" {
+		host, port, err := net.SplitHostPort(serverURL)
+		if err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		fileServer.host = host
+
 		fileServer.server = &http.Server{
-			Addr:              cfg.FileServerURL,
-			Handler:           http.FileServer(http.Dir(cfg.Downloader.DecryptDir)),
+			Addr:              ":" + port,
+			Handler:           http.FileServer(http.Dir(dir)),
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 
@@ -106,9 +108,12 @@ func (fileServer *FileServer) TranslateURL(isLocal bool, inURL string) (outURL s
 			return "", aoserrors.Wrap(err)
 		}
 
+		if imgURL.Scheme != "" {
+			imgURL.Path = filepath.Base(imgURL.Path)
+		}
+
 		imgURL.Scheme = httpScheme
-		imgURL.Host = fileServer.server.Addr
-		imgURL.Path = filepath.Base(imgURL.Path)
+		imgURL.Host = fileServer.host + fileServer.server.Addr
 
 		outURL = imgURL.String()
 	} else {
@@ -128,7 +133,7 @@ func (fileServer *FileServer) startFileStorage() {
 		return
 	}
 
-	log.WithField("host", fileServer.server.Addr).Debug("Start file server")
+	log.WithField("addr", fileServer.server.Addr).Debug("Start file server")
 
 	if err := fileServer.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Errorf("Can't start local file server: %s", err)

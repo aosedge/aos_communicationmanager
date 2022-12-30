@@ -31,14 +31,14 @@ type alertProcessor struct {
 	name              string
 	source            *uint64
 	callback          alertCallback
-	rule              aostypes.AlertRule
+	rule              aostypes.AlertRuleParam
 	thresholdTime     time.Time
 	thresholdDetected bool
 }
 
 // createAlertProcessor creates alert processor based on configuration.
 func createAlertProcessor(name string, source *uint64,
-	callback alertCallback, rule aostypes.AlertRule,
+	callback alertCallback, rule aostypes.AlertRuleParam,
 ) (alert *alertProcessor) {
 	return &alertProcessor{name: name, source: source, callback: callback, rule: rule}
 }

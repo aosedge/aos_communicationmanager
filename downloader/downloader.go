@@ -42,7 +42,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/fcrypt"
 )
 
 /***********************************************************************************************************************
@@ -51,34 +50,51 @@ import (
 
 const updateDownloadsTime = 30 * time.Second
 
-const (
-	encryptedFileExt = ".enc"
-	decryptedFileExt = ".dec"
-	interruptFileExt = ".int"
-)
+const encryptedFileExt = ".enc"
 
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
-// CryptoContext interface to access crypto functions.
-type CryptoContext interface {
-	ImportSessionKey(keyInfo fcrypt.CryptoSessionKeyInfo) (symmetricContext fcrypt.SymmetricContextInterface, err error)
-	CreateSignContext() (signContext fcrypt.SignContextInterface, err error)
-}
-
 // Downloader instance.
 type Downloader struct {
 	sync.Mutex
 
-	moduleID          string
-	cryptoContext     CryptoContext
-	config            config.Downloader
-	sender            AlertSender
-	currentDownloads  map[string]*downloadResult
-	waitQueue         *list.List
-	downloadAllocator spaceallocator.Allocator
-	decryptAllocator  spaceallocator.Allocator
+	moduleID         string
+	config           config.Downloader
+	sender           AlertSender
+	currentDownloads map[string]*downloadResult
+	waitQueue        *list.List
+	allocator        spaceallocator.Allocator
+	storage          Storage
+}
+
+// PackageInfo struct contains download info data.
+type DownloadInfo struct {
+	Path            string
+	TargetType      string
+	InterruptReason string
+	Downloaded      bool
+}
+
+// PackageInfo struct contains package info data.
+type PackageInfo struct {
+	URLs                []string
+	Sha256              []byte
+	Sha512              []byte
+	Size                uint64
+	TargetType          string
+	TargetID            string
+	TargetAosVersion    uint64
+	TargetVendorVersion string
+}
+
+// Storage provides API to add, remove, update or access download info data.
+type Storage interface {
+	GetDownloadInfo(filePath string) (DownloadInfo, error)
+	GetDownloadInfos() ([]DownloadInfo, error)
+	RemoveDownloadInfo(filePath string) error
+	SetDownloadInfo(downloadInfo DownloadInfo) error
 }
 
 // AlertSender provides alert sender interface.
@@ -86,16 +102,22 @@ type AlertSender interface {
 	SendAlert(alert cloudprotocol.AlertItem)
 }
 
-// NewSpaceAllocator space allocator constructor.
-// nolint:gochecknoglobals // used for unit test mock
-var NewSpaceAllocator = spaceallocator.New
+var (
+	// NewSpaceAllocator space allocator constructor.
+	// nolint:gochecknoglobals // used for unit test mock
+	NewSpaceAllocator = spaceallocator.New
+
+	// ErrNotExist not exist download info error.
+	ErrNotExist         = errors.New("download info not exist")
+	ErrPartlyDownloaded = errors.New("file not fully downloaded")
+)
 
 /***********************************************************************************************************************
 * Public
 ***********************************************************************************************************************/
 
 // New creates new downloader object.
-func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sender AlertSender) (
+func New(moduleID string, cfg *config.Config, sender AlertSender, storage Storage) (
 	downloader *Downloader, err error,
 ) {
 	log.Debug("Create downloader instance")
@@ -104,26 +126,17 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 		moduleID:         moduleID,
 		config:           cfg.Downloader,
 		sender:           sender,
-		cryptoContext:    cryptoContext,
 		currentDownloads: make(map[string]*downloadResult),
 		waitQueue:        list.New(),
+		storage:          storage,
 	}
 
 	if err = os.MkdirAll(downloader.config.DownloadDir, 0o755); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if err = os.MkdirAll(downloader.config.DecryptDir, 0o755); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	downloader.downloadAllocator, err = NewSpaceAllocator(
+	downloader.allocator, err = NewSpaceAllocator(
 		downloader.config.DownloadDir, uint(downloader.config.DownloadPartLimit), downloader.removeOutdatedItem)
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	downloader.decryptAllocator, err = NewSpaceAllocator(downloader.config.DecryptDir, 0, nil)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -137,20 +150,16 @@ func New(moduleID string, cfg *config.Config, cryptoContext CryptoContext, sende
 
 // Close closes downloader.
 func (downloader *Downloader) Close() (err error) {
-	if downloadAllocatorErr := downloader.downloadAllocator.Close(); downloadAllocatorErr != nil && err == nil {
+	if downloadAllocatorErr := downloader.allocator.Close(); downloadAllocatorErr != nil && err == nil {
 		err = aoserrors.Wrap(downloadAllocatorErr)
-	}
-
-	if decryptAllocatorErr := downloader.decryptAllocator.Close(); decryptAllocatorErr != nil && err == nil {
-		err = aoserrors.Wrap(decryptAllocatorErr)
 	}
 
 	return err
 }
 
-// DownloadAndDecrypt downloads, decrypts and verifies package.
-func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInfo cloudprotocol.DecryptDataStruct,
-	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
+// Download downloads, decrypts and verifies package.
+func (downloader *Downloader) Download(
+	ctx context.Context, packageInfo PackageInfo,
 ) (result Result, err error) {
 	downloader.Lock()
 	defer downloader.Unlock()
@@ -158,18 +167,14 @@ func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInf
 	id := base64.URLEncoding.EncodeToString(packageInfo.Sha256)
 
 	downloadResult := &downloadResult{
-		id:                id,
-		ctx:               ctx,
-		packageInfo:       packageInfo,
-		chains:            chains,
-		certs:             certs,
-		statusChannel:     make(chan error, 1),
-		decryptedFileName: path.Join(downloader.config.DecryptDir, id+decryptedFileExt),
-		downloadFileName:  path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
-		interruptFileName: path.Join(downloader.config.DownloadDir, id+interruptFileExt),
+		id:               id,
+		ctx:              ctx,
+		packageInfo:      packageInfo,
+		statusChannel:    make(chan error, 1),
+		downloadFileName: path.Join(downloader.config.DownloadDir, id+encryptedFileExt),
 	}
 
-	log.WithField("id", id).Debug("Download and decrypt")
+	log.WithField("id", id).Debug("Download")
 
 	if err = downloader.addToQueue(downloadResult); err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -178,21 +183,65 @@ func (downloader *Downloader) DownloadAndDecrypt(ctx context.Context, packageInf
 	return downloadResult, nil
 }
 
+func (downloader *Downloader) Release(filePath string) error {
+	downloadInfo, err := downloader.storage.GetDownloadInfo(filePath)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if !downloadInfo.Downloaded {
+		return ErrPartlyDownloaded
+	}
+
+	if err := downloader.releaseDownload(downloadInfo.Path); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (downloader *Downloader) ReleaseByType(targetType string) error {
+	downloadInfos, err := downloader.storage.GetDownloadInfos()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, downloadInfo := range downloadInfos {
+		if downloadInfo.TargetType != targetType {
+			continue
+		}
+
+		if !downloadInfo.Downloaded && err == nil {
+			err = ErrPartlyDownloaded
+		}
+
+		if errDB := downloader.releaseDownload(downloadInfo.Path); errDB != nil && err == nil {
+			err = errDB
+		}
+	}
+
+	return nil
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
+func (downloader *Downloader) releaseDownload(filePath string) error {
+	if err := downloader.setItemOutdated(filePath); err != nil {
+		return err
+	}
+
+	if err := downloader.storage.RemoveDownloadInfo(filePath); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 func (downloader *Downloader) addToQueue(result *downloadResult) error {
 	if len(result.packageInfo.URLs) == 0 {
 		return aoserrors.New("download URLs is empty")
-	}
-
-	if result.packageInfo.DecryptionInfo == nil {
-		return aoserrors.New("no decrypt image info")
-	}
-
-	if result.packageInfo.Signs == nil {
-		return aoserrors.New("no signs info")
 	}
 
 	if downloader.isResultInQueue(result) {
@@ -208,7 +257,7 @@ func (downloader *Downloader) addToQueue(result *downloadResult) error {
 		return nil
 	}
 
-	// try to allocate space for download and decrypt. If there is no current downloads and allocation fails then
+	// try to allocate space for download. If there is no current downloads and allocation fails then
 	// there is no space left. Otherwise, wait till other downloads finished and we will have more room to download.
 	if err := downloader.tryAllocateSpace(result); err != nil {
 		if len(downloader.currentDownloads) == 0 {
@@ -229,10 +278,6 @@ func (downloader *Downloader) addToQueue(result *downloadResult) error {
 
 		if err := downloader.acceptSpace(result); err != nil {
 			log.Errorf("Error accepting space: %v", err)
-		}
-
-		if err := downloader.setDownloadResultOutdated(result); err != nil {
-			log.Errorf("Error setting download outdated: %v", err)
 		}
 
 		downloader.Lock()
@@ -277,30 +322,17 @@ func (downloader *Downloader) tryAllocateSpace(result *downloadResult) (err erro
 					log.Errorf("Can't release download space: %v", err)
 				}
 			}
-
-			if result.decryptSpace != nil {
-				if err := result.decryptSpace.Release(); err != nil {
-					log.Errorf("Can't release decrypt space: %v", err)
-				}
-			}
 		}
 	}()
+
+	downloader.allocator.RestoreOutdatedItem(result.downloadFileName)
 
 	requiredDownloadSize, err := downloader.getRequiredSize(result.downloadFileName, result.packageInfo.Size)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if result.downloadSpace, err = downloader.downloadAllocator.AllocateSpace(requiredDownloadSize); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	requiredDecryptSize, err := downloader.getRequiredSize(result.decryptedFileName, result.packageInfo.Size)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if result.decryptSpace, err = downloader.decryptAllocator.AllocateSpace(requiredDecryptSize); err != nil {
+	if result.downloadSpace, err = downloader.allocator.AllocateSpace(requiredDownloadSize); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -319,52 +351,39 @@ func (downloader *Downloader) acceptSpace(result *downloadResult) (err error) {
 
 	// free space if file is not fully downloaded
 	if downloadSize < result.packageInfo.Size {
-		downloader.downloadAllocator.FreeSpace(result.packageInfo.Size - downloadSize)
-	}
-
-	if decryptErr := result.decryptSpace.Accept(); decryptErr != nil && err == nil {
-		err = decryptErr
-	}
-
-	decryptSize, decryptErr := getFileSize(result.decryptedFileName)
-	if decryptErr != nil && err == nil {
-		err = downloadErr
-	}
-
-	// free space if file is not fully decrypted
-	if decryptSize < result.packageInfo.Size {
-		downloader.decryptAllocator.FreeSpace(result.packageInfo.Size - decryptSize)
+		downloader.allocator.FreeSpace(result.packageInfo.Size - downloadSize)
 	}
 
 	return err
 }
 
-func (downloader *Downloader) setDownloadResultOutdated(result *downloadResult) (err error) {
-	if setOutdatedErr := downloader.setItemOutdated(result.downloadFileName); setOutdatedErr != nil && err == nil {
-		err = setOutdatedErr
+func (downloader *Downloader) setDownloadDirOutdated() error {
+	downloadInfos, err := downloader.storage.GetDownloadInfos()
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	if setOutdatedErr := downloader.setItemOutdated(result.interruptFileName); setOutdatedErr != nil && err == nil {
-		err = setOutdatedErr
-	}
-
-	return err
-}
-
-func (downloader *Downloader) setDownloadDirOutdated() (err error) {
 	entries, err := os.ReadDir(downloader.config.DownloadDir)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
+nextEntry:
 	for _, entry := range entries {
-		if setOutdatedErr := downloader.setItemOutdated(
-			filepath.Join(downloader.config.DownloadDir, entry.Name())); setOutdatedErr != nil && err == nil {
-			err = setOutdatedErr
+		downloadFilePath := filepath.Join(downloader.config.DownloadDir, entry.Name())
+
+		for _, downloadInfo := range downloadInfos {
+			if downloadFilePath == downloadInfo.Path && downloadInfo.Downloaded {
+				continue nextEntry
+			}
+		}
+
+		if err := downloader.setItemOutdated(downloadFilePath); err != nil {
+			return aoserrors.Wrap(err)
 		}
 	}
 
-	return err
+	return nil
 }
 
 func (downloader *Downloader) setItemOutdated(itemPath string) error {
@@ -390,7 +409,7 @@ func (downloader *Downloader) setItemOutdated(itemPath string) error {
 		}
 	}
 
-	if err := downloader.downloadAllocator.AddOutdatedItem(itemPath, size, timestamp); err != nil {
+	if err := downloader.allocator.AddOutdatedItem(itemPath, size, timestamp); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -401,6 +420,10 @@ func (downloader *Downloader) removeOutdatedItem(itemPath string) error {
 	log.WithField("itemPath", itemPath).Debug("Remove outdated item")
 
 	if err := os.RemoveAll(itemPath); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err := downloader.storage.RemoveDownloadInfo(itemPath); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -430,14 +453,6 @@ func (downloader *Downloader) process(result *downloadResult) error {
 	log.WithFields(log.Fields{"id": result.id}).Debug("Process download")
 
 	if err := downloader.downloadPackage(result); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := downloader.decryptPackage(result); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := downloader.validateSigns(result); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -560,21 +575,38 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 	if !resp.DidResume {
 		log.WithFields(log.Fields{"url": url, "id": result.id}).Debug("Download started")
 
-		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download started"))
+		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download started"))
 	} else {
-		reason := result.retrieveInterruptReason()
+		downloadInfo, err := downloader.storage.GetDownloadInfo(result.downloadFileName)
+		if err != nil && !errors.Is(err, ErrNotExist) {
+			return aoserrors.Wrap(err)
+		}
 
-		log.WithFields(log.Fields{"url": url, "id": result.id, "reason": reason}).Debug("Download resumed")
+		if !errors.Is(err, ErrNotExist) {
+			log.WithFields(log.Fields{
+				"url": url, "id": result.id, "reason": downloadInfo.InterruptReason,
+			}).Debug("Download resumed")
 
-		downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download resumed reason: "+reason))
-
-		result.removeInterruptReason()
+			downloader.sender.SendAlert(downloader.prepareDownloadAlert(
+				resp, result, "Download resumed reason: "+downloadInfo.InterruptReason))
+		}
 	}
+
+	downloadInfo := DownloadInfo{
+		Path:       result.downloadFileName,
+		TargetType: result.packageInfo.TargetType,
+	}
+
+	defer func() {
+		if errDB := downloader.storage.SetDownloadInfo(downloadInfo); errDB != nil && err == nil {
+			err = errDB
+		}
+	}()
 
 	for {
 		select {
 		case <-timer.C:
-			downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download status"))
+			downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download status"))
 
 			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size}).Debug("Download progress")
 
@@ -586,9 +618,10 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 					"downloaded": resp.BytesComplete(), "reason": err,
 				}).Warn("Download interrupted")
 
-				result.storeInterruptReason(err.Error())
+				downloadInfo.InterruptReason = err.Error()
 
-				downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, "Download interrupted reason: "+err.Error()))
+				downloader.sender.SendAlert(downloader.prepareDownloadAlert(
+					resp, result, "Download interrupted reason: "+err.Error()))
 
 				return aoserrors.Wrap(err)
 			}
@@ -599,92 +632,32 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 				"downloaded": resp.BytesComplete(),
 			}).Debug("Download completed")
 
+			downloadInfo.Downloaded = true
+
 			downloader.sender.SendAlert(
-				downloader.prepareDownloadAlert(resp, "Download finished code: "+strconv.Itoa(resp.HTTPResponse.StatusCode)))
+				downloader.prepareDownloadAlert(
+					resp, result, "Download finished code: "+strconv.Itoa(resp.HTTPResponse.StatusCode)))
 
 			return nil
 		}
 	}
 }
 
-func (downloader *Downloader) decryptPackage(result *downloadResult) (err error) {
-	symmetricCtx, err := downloader.cryptoContext.ImportSessionKey(fcrypt.CryptoSessionKeyInfo{
-		SymmetricAlgName:  result.packageInfo.DecryptionInfo.BlockAlg,
-		SessionKey:        result.packageInfo.DecryptionInfo.BlockKey,
-		SessionIV:         result.packageInfo.DecryptionInfo.BlockIv,
-		AsymmetricAlgName: result.packageInfo.DecryptionInfo.AsymAlg,
-		ReceiverInfo: fcrypt.ReceiverInfo{
-			Issuer: result.packageInfo.DecryptionInfo.ReceiverInfo.Issuer,
-			Serial: result.packageInfo.DecryptionInfo.ReceiverInfo.Serial,
-		},
-	})
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	srcFile, err := os.Open(result.downloadFileName)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(result.decryptedFileName, os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-	defer dstFile.Close()
-
-	log.WithFields(log.Fields{"srcFile": srcFile.Name(), "dstFile": dstFile.Name()}).Debug("Decrypt image")
-
-	if err = symmetricCtx.DecryptFile(result.ctx, srcFile, dstFile); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return aoserrors.Wrap(err)
-}
-
-func (downloader *Downloader) validateSigns(result *downloadResult) (err error) {
-	signCtx, err := downloader.cryptoContext.CreateSignContext()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, cert := range result.certs {
-		if err = signCtx.AddCertificate(cert.Fingerprint, cert.Certificate); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	for _, chain := range result.chains {
-		if err = signCtx.AddCertificateChain(chain.Name, chain.Fingerprints); err != nil {
-			return aoserrors.Wrap(err)
-		}
-	}
-
-	file, err := os.Open(result.decryptedFileName)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-	defer file.Close()
-
-	log.WithField("file", file.Name()).Debug("Check signature")
-
-	if err = signCtx.VerifySign(result.ctx, file, result.packageInfo.Signs); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (downloader *Downloader) prepareDownloadAlert(resp *grab.Response, msg string) cloudprotocol.AlertItem {
+func (downloader *Downloader) prepareDownloadAlert(
+	resp *grab.Response, result *downloadResult, msg string,
+) cloudprotocol.AlertItem {
 	return cloudprotocol.AlertItem{
 		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
 		Payload: cloudprotocol.DownloadAlert{
-			Progress:        fmt.Sprintf("%.2f%%", resp.Progress()*100),
-			URL:             resp.Request.HTTPRequest.URL.String(),
-			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
-			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
-			Message:         msg,
+			TargetType:          result.packageInfo.TargetType,
+			TargetID:            result.packageInfo.TargetID,
+			TargetAosVersion:    result.packageInfo.TargetAosVersion,
+			TargetVendorVersion: result.packageInfo.TargetVendorVersion,
+			Progress:            fmt.Sprintf("%.2f%%", resp.Progress()*100),
+			URL:                 resp.Request.HTTPRequest.URL.String(),
+			DownloadedBytes:     bytefmt.ByteSize(uint64(resp.BytesComplete())),
+			TotalBytes:          bytefmt.ByteSize(uint64(resp.Size())),
+			Message:             msg,
 		},
 	}
 }

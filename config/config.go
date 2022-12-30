@@ -43,9 +43,10 @@ type Crypt struct {
 
 // UMController configuration for update controller.
 type UMController struct {
-	ServerURL string            `json:"serverUrl"`
-	UMClients []UMClientConfig  `json:"umClients"`
-	UpdateTTL aostypes.Duration `json:"updateTtl"`
+	FileServerURL string            `json:"fileServerUrl"`
+	CMServerURL   string            `json:"cmServerUrl"`
+	UMClients     []UMClientConfig  `json:"umClients"`
+	UpdateTTL     aostypes.Duration `json:"updateTtl"`
 }
 
 // UMClientConfig update manager config.
@@ -78,24 +79,19 @@ type Migration struct {
 // Downloader downloader configuration.
 type Downloader struct {
 	DownloadDir            string            `json:"downloadDir"`
-	DecryptDir             string            `json:"decryptDir"`
 	MaxConcurrentDownloads int               `json:"maxConcurrentDownloads"`
 	RetryDelay             aostypes.Duration `json:"retryDelay"`
 	MaxRetryDelay          aostypes.Duration `json:"maxRetryDelay"`
 	DownloadPartLimit      int               `json:"downloadPartLimit"`
 }
 
-// SMConfig SM configuration.
-type SMConfig struct {
-	SMID      string `json:"smId"`
-	ServerURL string `json:"serverUrl"`
-	IsLocal   bool   `json:"isLocal,omitempty"`
-}
-
 // SMController SM controller configuration.
 type SMController struct {
-	SMList    []SMConfig        `json:"smList"`
-	UpdateTTL aostypes.Duration `json:"updateTtl"`
+	FileServerURL          string            `json:"fileServerUrl"`
+	CMServerURL            string            `json:"cmServerUrl"`
+	NodeIDs                []string          `json:"nodeIds"`
+	NodesConnectionTimeout aostypes.Duration `json:"nodesConnectionTimeout"`
+	UpdateTTL              aostypes.Duration `json:"updateTtl"`
 }
 
 // Config instance.
@@ -103,13 +99,18 @@ type Config struct {
 	Crypt                 Crypt             `json:"fcrypt"`
 	CertStorage           string            `json:"certStorage"`
 	ServiceDiscoveryURL   string            `json:"serviceDiscoveryUrl"`
-	IAMServerURL          string            `json:"iamServerUrl"`
+	IAMProtectedServerURL string            `json:"iamProtectedServerUrl"`
 	IAMPublicServerURL    string            `json:"iamPublicServerUrl"`
-	FileServerURL         string            `json:"fileServerUrl"`
 	CMServerURL           string            `json:"cmServerUrl"`
 	Downloader            Downloader        `json:"downloader"`
+	StorageDir            string            `json:"storageDir"`
+	StateDir              string            `json:"stateDir"`
 	WorkingDir            string            `json:"workingDir"`
-	BoardConfigFile       string            `json:"boardConfigFile"`
+	ImageStoreDir         string            `json:"imageStoreDir"`
+	ComponentsDir         string            `json:"componentsDir"`
+	UnitConfigFile        string            `json:"unitConfigFile"`
+	ServiceTTLDays        uint64            `json:"serviceTtlDays"`
+	LayerTTLDays          uint64            `json:"layerTtlDays"`
 	UnitStatusSendTimeout aostypes.Duration `json:"unitStatusSendTimeout"`
 	Monitoring            Monitoring        `json:"monitoring"`
 	Alerts                Alerts            `json:"alerts"`
@@ -145,12 +146,11 @@ func New(fileName string) (config *Config, err error) {
 			MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Minute},
 			DownloadPartLimit:      100,
 		},
-		SMController: SMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
+		SMController: SMController{
+			NodesConnectionTimeout: aostypes.Duration{Duration: 60 * time.Second},
+			UpdateTTL:              aostypes.Duration{Duration: 30 * 24 * time.Hour},
+		},
 		UMController: UMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
-	}
-
-	if config.Monitoring.MonitorConfig != nil && config.Monitoring.MonitorConfig.WorkingDir == "" {
-		config.Monitoring.MonitorConfig.WorkingDir = config.WorkingDir
 	}
 
 	if err = json.Unmarshal(raw, &config); err != nil {
@@ -161,16 +161,28 @@ func New(fileName string) (config *Config, err error) {
 		config.CertStorage = "/var/aos/crypt/cm/"
 	}
 
+	if config.StorageDir == "" {
+		config.StorageDir = path.Join(config.WorkingDir, "storages")
+	}
+
+	if config.StateDir == "" {
+		config.StateDir = path.Join(config.WorkingDir, "states")
+	}
+
 	if config.Downloader.DownloadDir == "" {
 		config.Downloader.DownloadDir = path.Join(config.WorkingDir, "download")
 	}
 
-	if config.Downloader.DecryptDir == "" {
-		config.Downloader.DecryptDir = path.Join(config.WorkingDir, "decrypt")
+	if config.ImageStoreDir == "" {
+		config.ImageStoreDir = path.Join(config.WorkingDir, "imagestore")
 	}
 
-	if config.BoardConfigFile == "" {
-		config.BoardConfigFile = path.Join(config.WorkingDir, "aos_board.cfg")
+	if config.ComponentsDir == "" {
+		config.ComponentsDir = path.Join(config.WorkingDir, "components")
+	}
+
+	if config.UnitConfigFile == "" {
+		config.UnitConfigFile = path.Join(config.WorkingDir, "aos_unit.cfg")
 	}
 
 	if config.Migration.MigrationPath == "" {

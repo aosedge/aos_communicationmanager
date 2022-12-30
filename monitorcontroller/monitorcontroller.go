@@ -39,13 +39,13 @@ import (
 type MonitoringSender interface {
 	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
 	UnsubscribeFromConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
-	SendMonitoringData(monitoringData cloudprotocol.MonitoringData) error
+	SendMonitoringData(monitoringData cloudprotocol.Monitoring) error
 }
 
 // MonitorController instance.
 type MonitorController struct {
 	sync.Mutex
-	monitoringQueue     []cloudprotocol.MonitoringData
+	monitoringQueue     []cloudprotocol.NodeMonitoringData
 	monitoringQueueSize int
 	monitoringSender    MonitoringSender
 	cancelFunction      context.CancelFunc
@@ -70,7 +70,7 @@ func New(
 ) (monitor *MonitorController, err error) {
 	monitor = &MonitorController{
 		monitoringSender:    monitoringSender,
-		monitoringQueue:     make([]cloudprotocol.MonitoringData, 0, config.Monitoring.MaxOfflineMessages),
+		monitoringQueue:     make([]cloudprotocol.NodeMonitoringData, 0, config.Monitoring.MaxOfflineMessages),
 		monitoringQueueSize: config.Monitoring.MaxOfflineMessages,
 	}
 
@@ -98,7 +98,7 @@ func (monitor *MonitorController) Close() {
 }
 
 // SendMonitoringData sends monitoring data.
-func (monitor *MonitorController) SendMonitoringData(monitoringData cloudprotocol.MonitoringData) {
+func (monitor *MonitorController) SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData) {
 	monitor.Lock()
 	defer monitor.Unlock()
 
@@ -142,13 +142,12 @@ func (monitor *MonitorController) processQueue(ctx context.Context) {
 			monitor.Lock()
 
 			if len(monitor.monitoringQueue) > 0 && monitor.isConnected {
-				var monitoringData cloudprotocol.MonitoringData
-
-				monitoringData, monitor.monitoringQueue = monitor.monitoringQueue[0], monitor.monitoringQueue[1:]
-
 				if err := monitor.monitoringSender.SendMonitoringData(
-					monitoringData); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+					cloudprotocol.Monitoring{Nodes: monitor.monitoringQueue}); err != nil &&
+					!errors.Is(err, amqphandler.ErrNotConnected) {
 					log.Errorf("Can't send monitoring data: %v", err)
+				} else {
+					monitor.monitoringQueue = make([]cloudprotocol.NodeMonitoringData, 0, monitor.monitoringQueueSize)
 				}
 			}
 

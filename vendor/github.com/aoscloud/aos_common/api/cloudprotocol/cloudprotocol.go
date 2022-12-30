@@ -30,7 +30,7 @@ import (
  **********************************************************************************************************************/
 
 // ProtocolVersion specifies supported protocol version.
-const ProtocolVersion = 4
+const ProtocolVersion = 5
 
 // UnitSecretVersion specifies supported version of UnitSecret message.
 const UnitSecretVersion = 2
@@ -38,9 +38,7 @@ const UnitSecretVersion = 2
 // Cloud message types.
 const (
 	DesiredStatusType          = "desiredStatus"
-	RequestServiceCrashLogType = "requestServiceCrashLog"
-	RequestServiceLogType      = "requestServiceLog"
-	RequestSystemLogType       = "requestSystemLog"
+	RequestLogType             = "requestLog"
 	ServiceDiscoveryType       = "serviceDiscovery"
 	StateAcceptanceType        = "stateAcceptance"
 	UpdateStateType            = "updateState"
@@ -108,9 +106,31 @@ const (
 	DownloadTargetService   = "service"
 )
 
+// Partition types.
+const (
+	GenericPartition  = "generic"
+	StoragesPartition = "storages"
+	StatesPartition   = "states"
+	ServicesPartition = "services"
+	LayersPartition   = "layers"
+)
+
+// Log types.
+const (
+	SystemLog  = "systemLog"
+	ServiceLog = "serviceLog"
+	CrashLog   = "crashLog"
+)
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
+
+// ReceivedMessage structure for Aos incoming messages.
+type ReceivedMessage struct {
+	Header MessageHeader `json:"header"`
+	Data   []byte        `json:"data"`
+}
 
 // Message structure for AOS messages.
 type Message struct {
@@ -181,54 +201,26 @@ type QueueInfo struct {
 	NoWait           bool   `json:"noWait"`
 }
 
-// DesiredStatus desired status message.
-type DesiredStatus struct {
-	BoardConfig       []byte             `json:"boardConfig"`
-	Services          []byte             `json:"services"`
-	Layers            []byte             `json:"layers"`
-	Instances         []byte             `json:"instances"`
-	Components        []byte             `json:"components"`
-	FOTASchedule      []byte             `json:"fotaSchedule"`
-	SOTASchedule      []byte             `json:"sotaSchedule"`
-	CertificateChains []CertificateChain `json:"certificateChains,omitempty"`
-	Certificates      []Certificate      `json:"certificates,omitempty"`
-}
-
 // InstanceFilter instance filter structure.
 type InstanceFilter struct {
-	ServiceID string  `json:"serviceId"`
+	ServiceID *string `json:"serviceId,omitempty"`
 	SubjectID *string `json:"subjectId,omitempty"`
 	Instance  *uint64 `json:"instance,omitempty"`
 }
 
-// InstanceIdent instance identification information.
-type InstanceIdent struct {
-	ServiceID string `json:"serviceId"`
-	SubjectID string `json:"subjectId"`
-	Instance  uint64 `json:"instance"`
-}
-
-// RequestServiceCrashLog request service crash log message.
-type RequestServiceCrashLog struct {
+// LogFilter request log message.
+type LogFilter struct {
+	From    *time.Time `json:"from"`
+	Till    *time.Time `json:"till"`
+	NodeIDs []string   `json:"nodeIds,omitempty"`
 	InstanceFilter
-	LogID string     `json:"logId"`
-	From  *time.Time `json:"from"`
-	Till  *time.Time `json:"till"`
 }
 
-// RequestServiceLog request service log message.
-type RequestServiceLog struct {
-	InstanceFilter
-	LogID string     `json:"logId"`
-	From  *time.Time `json:"from"`
-	Till  *time.Time `json:"till"`
-}
-
-// RequestSystemLog request system log message.
-type RequestSystemLog struct {
-	LogID string     `json:"logId"`
-	From  *time.Time `json:"from"`
-	Till  *time.Time `json:"till"`
+// RequestLog request log message.
+type RequestLog struct {
+	LogID   string    `json:"logId"`
+	LogType string    `json:"logType"`
+	Filter  LogFilter `json:"filter"`
 }
 
 // DecryptionInfo update decryption info.
@@ -276,7 +268,7 @@ type DecryptDataStruct struct {
 
 // StateAcceptance state acceptance message.
 type StateAcceptance struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	Checksum string `json:"checksum"`
 	Result   string `json:"result"`
 	Reason   string `json:"reason"`
@@ -284,31 +276,33 @@ type StateAcceptance struct {
 
 // UpdateState state update message.
 type UpdateState struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	Checksum string `json:"stateChecksum"`
 	State    string `json:"state"`
 }
 
 // NewState new state structure.
 type NewState struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	Checksum string `json:"stateChecksum"`
 	State    string `json:"state"`
 }
 
 // StateRequest state request structure.
 type StateRequest struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	Default bool `json:"default"`
 }
 
 // SystemAlert system alert structure.
 type SystemAlert struct {
+	NodeID  string `json:"nodeId"`
 	Message string `json:"message"`
 }
 
 // CoreAlert system alert structure.
 type CoreAlert struct {
+	NodeID        string `json:"nodeId"`
 	CoreComponent string `json:"coreComponent"`
 	Message       string `json:"message"`
 }
@@ -328,20 +322,22 @@ type DownloadAlert struct {
 
 // SystemQuotaAlert system quota alert structure.
 type SystemQuotaAlert struct {
+	NodeID    string `json:"nodeId"`
 	Parameter string `json:"parameter"`
 	Value     uint64 `json:"value"`
 }
 
 // InstanceQuotaAlert instance quota alert structure.
 type InstanceQuotaAlert struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	Parameter string `json:"parameter"`
 	Value     uint64 `json:"value"`
 }
 
 // DeviceAllocateAlert device allocate alert structure.
 type DeviceAllocateAlert struct {
-	InstanceIdent
+	aostypes.InstanceIdent
+	NodeID  string `json:"nodeId"`
 	Device  string `json:"device"`
 	Message string `json:"message"`
 }
@@ -354,12 +350,13 @@ type ResourceValidateError struct {
 
 // ResourceValidateAlert resource validate alert structure.
 type ResourceValidateAlert struct {
+	NodeID          string                  `json:"nodeId"`
 	ResourcesErrors []ResourceValidateError `json:"resourcesErrors"`
 }
 
 // ServiceInstanceAlert system alert structure.
 type ServiceInstanceAlert struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	AosVersion uint64 `json:"aosVersion"`
 	Message    string `json:"message"`
 }
@@ -374,49 +371,80 @@ type AlertItem struct {
 // Alerts alerts message structure.
 type Alerts []AlertItem
 
-// GlobalMonitoringData global monitoring data for service.
-type GlobalMonitoringData struct {
-	RAM        uint64 `json:"ram"`
-	CPU        uint64 `json:"cpu"`
-	UsedDisk   uint64 `json:"usedDisk"`
-	InTraffic  uint64 `json:"inTraffic"`
-	OutTraffic uint64 `json:"outTraffic"`
+// Monitoring monitoring message structure.
+type Monitoring struct {
+	Nodes []NodeMonitoringData `json:"nodes"`
+}
+
+// NodeMonitoringData node monitoring data.
+type NodeMonitoringData struct {
+	MonitoringData
+	NodeID           string                   `json:"nodeId"`
+	Timestamp        time.Time                `json:"timestamp"`
+	ServiceInstances []InstanceMonitoringData `json:"serviceInstances"`
+}
+
+// MonitoringData monitoring data.
+type MonitoringData struct {
+	RAM        uint64           `json:"ram"`
+	CPU        uint64           `json:"cpu"`
+	InTraffic  uint64           `json:"inTraffic"`
+	OutTraffic uint64           `json:"outTraffic"`
+	Disk       []PartitionUsage `json:"disk"`
+}
+
+// PartitionUsage partition usage information.
+type PartitionUsage struct {
+	Name     string `json:"name"`
+	UsedSize uint64 `json:"usedSize"`
 }
 
 // InstanceMonitoringData monitoring data for service.
 type InstanceMonitoringData struct {
-	InstanceIdent
-	RAM        uint64 `json:"ram"`
-	CPU        uint64 `json:"cpu"`
-	UsedDisk   uint64 `json:"usedDisk"`
-	InTraffic  uint64 `json:"inTraffic"`
-	OutTraffic uint64 `json:"outTraffic"`
-}
-
-// MonitoringData monitoring data structure.
-type MonitoringData struct {
-	Timestamp        time.Time                `json:"timestamp"`
-	Global           GlobalMonitoringData     `json:"global"`
-	ServiceInstances []InstanceMonitoringData `json:"serviceInstances"`
+	aostypes.InstanceIdent
+	MonitoringData
 }
 
 // PushLog push service log structure.
 type PushLog struct {
-	LogID     string `json:"logId"`
-	PartCount uint64 `json:"partCount,omitempty"`
-	Part      uint64 `json:"part,omitempty"`
-	Data      []byte `json:"data,omitempty"`
-	Error     string `json:"error,omitempty"`
+	NodeID     string     `json:"nodeId"`
+	LogID      string     `json:"logId"`
+	PartsCount uint64     `json:"partsCount,omitempty"`
+	Part       uint64     `json:"part,omitempty"`
+	Content    []byte     `json:"content,omitempty"`
+	ErrorInfo  *ErrorInfo `json:"errorInfo,omitempty"`
 }
 
 // UnitStatus unit status structure.
 type UnitStatus struct {
-	BoardConfig  []BoardConfigStatus `json:"boardConfig"`
-	Services     []ServiceStatus     `json:"services"`
-	Layers       []LayerStatus       `json:"layers,omitempty"`
-	Components   []ComponentStatus   `json:"components"`
-	Instances    []InstanceStatus    `json:"instances"`
-	UnitSubjects []string            `json:"unitSubjects"`
+	UnitConfig   []UnitConfigStatus `json:"unitConfig"`
+	Services     []ServiceStatus    `json:"services"`
+	Layers       []LayerStatus      `json:"layers,omitempty"`
+	Components   []ComponentStatus  `json:"components"`
+	Instances    []InstanceStatus   `json:"instances"`
+	UnitSubjects []string           `json:"unitSubjects"`
+	Nodes        []NodeInfo         `json:"nodes"`
+}
+
+// PartitionInfo partition information.
+type PartitionInfo struct {
+	Name      string   `json:"name"`
+	Types     []string `json:"types"`
+	TotalSize uint64   `json:"totalSize"`
+}
+
+// SystemInfo system information.
+type SystemInfo struct {
+	NumCPUs    uint64          `json:"numCpus"`
+	TotalRAM   uint64          `json:"totalRam"`
+	Partitions []PartitionInfo `json:"partitions"`
+}
+
+// NodeInfo node information.
+type NodeInfo struct {
+	NodeID   string `json:"nodeId"`
+	NodeType string `json:"nodeType"`
+	SystemInfo
 }
 
 // ErrorInfo error information.
@@ -428,15 +456,16 @@ type ErrorInfo struct {
 
 // InstanceStatus service instance runtime status.
 type InstanceStatus struct {
-	InstanceIdent
+	aostypes.InstanceIdent
 	AosVersion    uint64     `json:"aosVersion"`
 	StateChecksum string     `json:"stateChecksum,omitempty"`
 	RunState      string     `json:"runState"`
+	NodeID        string     `json:"nodeId"`
 	ErrorInfo     *ErrorInfo `json:"errorInfo,omitempty"`
 }
 
-// BoardConfigStatus board config status.
-type BoardConfigStatus struct {
+// UnitConfigStatus unit config status.
+type UnitConfigStatus struct {
 	VendorVersion string     `json:"vendorVersion"`
 	Status        string     `json:"status"`
 	ErrorInfo     *ErrorInfo `json:"errorInfo,omitempty"`
@@ -468,16 +497,9 @@ type ComponentStatus struct {
 	ErrorInfo     *ErrorInfo `json:"errorInfo,omitempty"`
 }
 
-// VersionInfo common version structure.
-type VersionInfo struct {
-	AosVersion    uint64 `json:"aosVersion"`
-	VendorVersion string `json:"vendorVersion"`
-	Description   string `json:"description"`
-}
-
 // ServiceInfo decrypted service info.
 type ServiceInfo struct {
-	VersionInfo
+	aostypes.VersionInfo
 	ID         string `json:"id"`
 	ProviderID string `json:"providerId"`
 	DecryptDataStruct
@@ -485,7 +507,7 @@ type ServiceInfo struct {
 
 // LayerInfo decrypted layer info.
 type LayerInfo struct {
-	VersionInfo
+	aostypes.VersionInfo
 	ID     string `json:"id"`
 	Digest string `json:"digest"`
 	DecryptDataStruct
@@ -493,7 +515,7 @@ type LayerInfo struct {
 
 // ComponentInfo decrypted component info.
 type ComponentInfo struct {
-	VersionInfo
+	aostypes.VersionInfo
 	ID          string          `json:"id"`
 	Annotations json.RawMessage `json:"annotations,omitempty"`
 	DecryptDataStruct
@@ -501,9 +523,11 @@ type ComponentInfo struct {
 
 // InstanceInfo decrypted desired instance runtime info.
 type InstanceInfo struct {
-	ServiceID    string `json:"serviceId"`
-	SubjectID    string `json:"subjectId"`
-	NumInstances uint64 `json:"numInstances"`
+	ServiceID    string   `json:"serviceId"`
+	SubjectID    string   `json:"subjectId"`
+	Priority     uint64   `json:"priority"`
+	NumInstances uint64   `json:"numInstances"`
+	Labels       []string `json:"labels"`
 }
 
 // TimeSlot time slot with start and finish time.
@@ -525,42 +549,38 @@ type ScheduleRule struct {
 	Timetable []TimetableEntry `json:"timetable"`
 }
 
-// DecodedDesiredStatus decoded desired status.
-type DecodedDesiredStatus struct {
-	BoardConfig       json.RawMessage
-	Components        []ComponentInfo
-	Layers            []LayerInfo
-	Services          []ServiceInfo
-	Instances         []InstanceInfo
-	FOTASchedule      ScheduleRule
-	SOTASchedule      ScheduleRule
-	CertificateChains []CertificateChain
-	Certificates      []Certificate
+// DesiredStatus desired status.
+type DesiredStatus struct {
+	UnitConfig        json.RawMessage    `json:"unitConfig"`
+	Components        []ComponentInfo    `json:"components"`
+	Layers            []LayerInfo        `json:"layers"`
+	Services          []ServiceInfo      `json:"services"`
+	Instances         []InstanceInfo     `json:"instances"`
+	FOTASchedule      ScheduleRule       `json:"fotaSchedule"`
+	SOTASchedule      ScheduleRule       `json:"sotaSchedule"`
+	CertificateChains []CertificateChain `json:"certificateChains,omitempty"`
+	Certificates      []Certificate      `json:"certificates,omitempty"`
 }
 
 // RenewCertData renew certificate data.
 type RenewCertData struct {
 	Type      string    `json:"type"`
+	NodeID    string    `json:"nodeId,omitempty"`
 	Serial    string    `json:"serial"`
 	ValidTill time.Time `json:"validTill"`
 }
 
-// RenewCertsNotification renew certificate notification from cloud.
+// RenewCertsNotification renew certificate notification from cloud with pwd.
 type RenewCertsNotification struct {
-	Certificates   []RenewCertData `json:"certificates"`
-	UnitSecureData []byte          `json:"unitSecureData"`
-}
-
-// RenewCertsNotificationWithPwd renew certificate notification from cloud with extracted pwd.
-type RenewCertsNotificationWithPwd struct {
 	Certificates []RenewCertData `json:"certificates"`
-	Password     string          `json:"password"`
+	UnitSecret   UnitSecret      `json:"unitSecret"`
 }
 
 // IssueCertData issue certificate data.
 type IssueCertData struct {
-	Type string `json:"type"`
-	Csr  string `json:"csr"`
+	Type   string `json:"type"`
+	NodeID string `json:"nodeId,omitempty"`
+	Csr    string `json:"csr"`
 }
 
 // IssueUnitCerts issue unit certificates request.
@@ -571,6 +591,7 @@ type IssueUnitCerts struct {
 // IssuedCertData issued unit certificate data.
 type IssuedCertData struct {
 	Type             string `json:"type"`
+	NodeID           string `json:"nodeId,omitempty"`
 	CertificateChain string `json:"certificateChain"`
 }
 
@@ -582,6 +603,7 @@ type IssuedUnitCerts struct {
 // InstallCertData install certificate data.
 type InstallCertData struct {
 	Type        string `json:"type"`
+	NodeID      string `json:"nodeId,omitempty"`
 	Serial      string `json:"serial"`
 	Status      string `json:"status"`
 	Description string `json:"description,omitempty"`
@@ -594,11 +616,6 @@ type InstallUnitCertsConfirmation struct {
 
 // OverrideEnvVars request to override service environment variables.
 type OverrideEnvVars struct {
-	OverrideEnvVars []byte `json:"overrideEnvVars"`
-}
-
-// DecodedOverrideEnvVars decoded service environment variables.
-type DecodedOverrideEnvVars struct {
 	OverrideEnvVars []EnvVarsInstanceInfo `json:"overrideEnvVars"`
 }
 
@@ -660,7 +677,7 @@ func (component ComponentInfo) String() string {
 }
 
 func NewInstanceFilter(serviceID, subjectID string, instance int64) (filter InstanceFilter) {
-	filter.ServiceID = serviceID
+	filter.ServiceID = &serviceID
 
 	if subjectID != "" {
 		filter.SubjectID = &subjectID

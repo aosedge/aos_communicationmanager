@@ -21,6 +21,7 @@ package fileserver_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -31,7 +32,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/fileserver"
 )
 
@@ -64,46 +64,45 @@ func init() {
  **********************************************************************************************************************/
 
 func TestOnlyLocalFileServer(t *testing.T) {
-	fileServer, err := fileserver.New(&config.Config{Downloader: config.Downloader{DecryptDir: serverDir}})
+	fileServer, err := fileserver.New("", serverDir)
 	if err != nil {
 		t.Fatalf("Can't create fileServer: %s", err)
 	}
 	defer fileServer.Close()
 
-	defer os.RemoveAll(serverDir)
-
 	if _, err = fileServer.TranslateURL(false, "/var/1.txt"); err == nil {
-		log.Error("Should be error: file server not available")
+		t.Errorf("Should be error: file server not available")
 	}
 
 	outURL, err := fileServer.TranslateURL(true, "/var/1.txt")
 	if err != nil {
-		log.Errorf("Can't translate local url: %s", err)
+		t.Errorf("Can't translate local url: %s", err)
 	}
 
-	if outURL != "file:///var/1.txt" {
-		log.Errorf("Incorrect translated url: %s", outURL)
+	if outURL != "/var/1.txt" {
+		t.Errorf("Incorrect translated url: %s", outURL)
 	}
 }
 
 func TestFileServer(t *testing.T) {
-	config := config.Config{Downloader: config.Downloader{DecryptDir: serverDir}, FileServerURL: "localhost:8092"}
+	if err := os.MkdirAll(serverDir, 0o755); err != nil {
+		t.Fatalf("Can't create server dir: %v", err)
+	}
+	defer os.RemoveAll(serverDir)
 
-	fileServer, err := fileserver.New(&config)
+	fileServer, err := fileserver.New("localhost:8092", serverDir)
 	if err != nil {
 		t.Fatalf("Can't create fileServer: %s", err)
 	}
 	defer fileServer.Close()
 
-	defer os.RemoveAll(serverDir)
-
 	outURL, err := fileServer.TranslateURL(true, "/var/1.txt")
 	if err != nil {
-		log.Errorf("Can't translate local url: %s", err)
+		t.Errorf("Can't translate local url: %s", err)
 	}
 
-	if outURL != "file:///var/1.txt" {
-		log.Errorf("Incorrect translated url: %s", outURL)
+	if outURL != "/var/1.txt" {
+		t.Errorf("Incorrect translated url: %s", outURL)
 	}
 
 	filename := "testFile.txt"
@@ -112,13 +111,13 @@ func TestFileServer(t *testing.T) {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 
-	outURL, err = fileServer.TranslateURL(false, filepath.Join(serverDir, filename))
+	outURL, err = fileServer.TranslateURL(false, fmt.Sprintf("file://%s", filepath.Join(serverDir, filename)))
 	if err != nil {
-		log.Errorf("Can't translate remote url: %s", err)
+		t.Errorf("Can't translate remote url: %s", err)
 	}
 
-	if outURL != "http://"+config.FileServerURL+"/"+filename {
-		log.Errorf("Incorrect remote translated url: %s", outURL)
+	if outURL != "http://localhost:8092/"+filename {
+		t.Errorf("Incorrect remote translated url: %s", outURL)
 	}
 
 	time.Sleep(1 * time.Second)

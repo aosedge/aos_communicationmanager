@@ -44,16 +44,20 @@ const testConfigContent = `{
 		"pkcs11Library": "/path/to/pkcs11/library"
 	},
 	"certStorage": "/var/aos/crypt/cm/",
+	"storageDir" : "/var/aos/storage",
+	"stateDir" : "/var/aos/state",
 	"serviceDiscoveryUrl" : "www.aos.com",
-	"iamServerUrl" : "localhost:8089",
+	"iamProtectedServerUrl" : "localhost:8089",
 	"iamPublicServerUrl" : "localhost:8090",
-	"fileServerUrl":"localhost:8092",
 	"cmServerUrl":"localhost:8094",
 	"workingDir" : "workingDir",
-	"boardConfigFile" : "/var/aos/aos_board.cfg",
+	"imageStoreDir": "imagestoreDir",
+	"componentsDir": "componentDir",
+	"serviceTtlDays": 30,
+	"layerTtlDays": 40,
+	"unitConfigFile" : "/var/aos/aos_unit.cfg",
 	"downloader": {
 		"downloadDir": "/path/to/download",
-		"decryptDir": "/path/to/decrypt",
 		"maxConcurrentDownloads": 10,
 		"retryDelay": "10s",
 		"maxRetryDelay": "30s",
@@ -89,21 +93,15 @@ const testConfigContent = `{
 		"mergedMigrationPath" : "/var/aos/communicationmanager/migration"
 	},
 	"smController": {
-		"smList": [
-			{
-				"smId": "sm0",
-				"serverUrl": "localhost:8888",
-				"isLocal": true
-			},
-			{
-				"smId": "sm1",
-				"serverUrl": "remotehost:8888"
-			}
-		],
+		"fileServerUrl":"localhost:8094",
+		"cmServerUrl": "localhost:8093",
+		"nodeIds": [ "sm1", "sm2"],	
+		"nodesConnectionTimeout": "100s",
 		"updateTTL": "30h"
 	},
 	"umController": {
-		"serverUrl": "localhost:8091",
+		"fileServerUrl":"localhost:8092",
+		"cmServerUrl": "localhost:8091",
 		"umClients": [{
 			"umId": "um",
 			"priority": 0,
@@ -164,21 +162,39 @@ func TestGetServiceDiscoveryURL(t *testing.T) {
 	}
 }
 
+func TestGetImageStoreDir(t *testing.T) {
+	if testCfg.ImageStoreDir != "imagestoreDir" {
+		t.Errorf("Wrong image store directory value: %s", testCfg.ImageStoreDir)
+	}
+}
+
+func TestGetStorageDir(t *testing.T) {
+	if testCfg.StorageDir != "/var/aos/storage" {
+		t.Errorf("Wrong storageDir value: %s", testCfg.StorageDir)
+	}
+}
+
+func TestGetStateDir(t *testing.T) {
+	if testCfg.StateDir != "/var/aos/state" {
+		t.Errorf("Wrong stateDir value: %s", testCfg.StateDir)
+	}
+}
+
 func TestGetWorkingDir(t *testing.T) {
 	if testCfg.WorkingDir != "workingDir" {
 		t.Errorf("Wrong working directory value: %s", testCfg.WorkingDir)
 	}
 }
 
-func TestGetBoardConfigFile(t *testing.T) {
-	if testCfg.BoardConfigFile != "/var/aos/aos_board.cfg" {
-		t.Errorf("Wrong board config file value: %s", testCfg.BoardConfigFile)
+func TestGetUnitConfigFile(t *testing.T) {
+	if testCfg.UnitConfigFile != "/var/aos/aos_unit.cfg" {
+		t.Errorf("Wrong unit config file value: %s", testCfg.UnitConfigFile)
 	}
 }
 
-func TestGetIAMServerURL(t *testing.T) {
-	if testCfg.IAMServerURL != "localhost:8089" {
-		t.Errorf("Wrong IAM server value: %s", testCfg.IAMServerURL)
+func TestGetIAMProtectedServerURL(t *testing.T) {
+	if testCfg.IAMProtectedServerURL != "localhost:8089" {
+		t.Errorf("Wrong IAM server value: %s", testCfg.IAMProtectedServerURL)
 	}
 }
 
@@ -243,9 +259,10 @@ func TestUMControllerConfig(t *testing.T) {
 	umClient := config.UMClientConfig{UMID: "um", Priority: 0, IsLocal: true}
 
 	originalConfig := config.UMController{
-		ServerURL: "localhost:8091",
-		UMClients: []config.UMClientConfig{umClient},
-		UpdateTTL: aostypes.Duration{Duration: 100 * time.Hour},
+		FileServerURL: "localhost:8092",
+		CMServerURL:   "localhost:8091",
+		UMClients:     []config.UMClientConfig{umClient},
+		UpdateTTL:     aostypes.Duration{Duration: 100 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.UMController) {
@@ -256,7 +273,6 @@ func TestUMControllerConfig(t *testing.T) {
 func TestDownloaderConfig(t *testing.T) {
 	originalConfig := config.Downloader{
 		DownloadDir:            "/path/to/download",
-		DecryptDir:             "/path/to/decrypt",
 		MaxConcurrentDownloads: 10,
 		RetryDelay:             aostypes.Duration{Duration: 10 * time.Second},
 		MaxRetryDelay:          aostypes.Duration{Duration: 30 * time.Second},
@@ -270,11 +286,11 @@ func TestDownloaderConfig(t *testing.T) {
 
 func TestSMControllerConfig(t *testing.T) {
 	originalConfig := config.SMController{
-		SMList: []config.SMConfig{
-			{SMID: "sm0", ServerURL: "localhost:8888", IsLocal: true},
-			{SMID: "sm1", ServerURL: "remotehost:8888"},
-		},
-		UpdateTTL: aostypes.Duration{Duration: 30 * time.Hour},
+		FileServerURL:          "localhost:8094",
+		CMServerURL:            "localhost:8093",
+		NodeIDs:                []string{"sm1", "sm2"},
+		NodesConnectionTimeout: aostypes.Duration{Duration: 100 * time.Second},
+		UpdateTTL:              aostypes.Duration{Duration: 30 * time.Hour},
 	}
 
 	if !reflect.DeepEqual(originalConfig, testCfg.SMController) {
@@ -298,15 +314,27 @@ func TestCertStorage(t *testing.T) {
 	}
 }
 
-func TestFileServer(t *testing.T) {
-	if testCfg.FileServerURL != "localhost:8092" {
-		t.Errorf("Wrong file server URL value: %s", testCfg.FileServerURL)
-	}
-}
-
 func TestCMServer(t *testing.T) {
 	if testCfg.CMServerURL != "localhost:8094" {
 		t.Errorf("Wrong cm server URL value: %s", testCfg.CMServerURL)
+	}
+}
+
+func TestGetLayerTTLDays(t *testing.T) {
+	if testCfg.LayerTTLDays != 40 {
+		t.Errorf("Wrong LayerTTLDays value: %d", testCfg.LayerTTLDays)
+	}
+}
+
+func TestGetServiceTTLDays(t *testing.T) {
+	if testCfg.ServiceTTLDays != 30 {
+		t.Errorf("Wrong ServiceTTLDays value: %d", testCfg.ServiceTTLDays)
+	}
+}
+
+func TestComponentStoreDir(t *testing.T) {
+	if testCfg.ComponentsDir != "componentDir" {
+		t.Errorf("Wrong components directory value: %s", testCfg.ComponentsDir)
 	}
 }
 

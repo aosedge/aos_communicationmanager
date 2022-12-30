@@ -33,7 +33,7 @@ import (
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/iamanager/v2"
+	pb "github.com/aoscloud/aos_common/api/iamanager/v4"
 	"github.com/aoscloud/aos_common/utils/cryptutils"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
@@ -58,6 +58,7 @@ const (
 
 type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
+	pb.UnimplementedIAMPublicIdentityServiceServer
 
 	grpcServer *grpc.Server
 	systemID   string
@@ -66,7 +67,7 @@ type testPublicServer struct {
 }
 
 type testProtectedServer struct {
-	pb.UnimplementedIAMProtectedServiceServer
+	pb.UnimplementedIAMCertificateServiceServer
 
 	grpcServer *grpc.Server
 	csr        map[string]string
@@ -137,8 +138,8 @@ func TestGetSystemID(t *testing.T) {
 	publicServer.systemID = "testID"
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -164,8 +165,8 @@ func TestRenewCertificatesNotification(t *testing.T) {
 	protectedServer.csr = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, sender, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -262,8 +263,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	}
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, sender, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -271,8 +272,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	defer client.Close()
 
 	expectedConfimation := []cloudprotocol.InstallCertData{
-		{Type: "online", Serial: "1", Status: "installed"},
-		{Type: "offline", Serial: "2", Status: "installed"},
+		{Type: "online", Serial: "", Status: "installed"},
+		{Type: "offline", Serial: "", Status: "installed"},
 		{Type: "invalid", Serial: "", Status: "not installed", Description: "error"},
 	}
 
@@ -287,6 +288,8 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 	}
 
 	if !reflect.DeepEqual(expectedConfimation, sender.currentConfirmations) {
+		log.Debug(expectedConfimation)
+		log.Debug(sender.currentConfirmations)
 		t.Error("Wrong install confirmation")
 	}
 }
@@ -304,8 +307,8 @@ func TestGetCertificates(t *testing.T) {
 	publicServer.keyURL = map[string]string{"online": "onlineKeyURL", "offline": "offlineKeyURL"}
 
 	client, err := iamclient.New(&config.Config{
-		IAMServerURL:       protectedServerURL,
-		IAMPublicServerURL: publicServerURL,
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
 	}, &testSender{}, nil, true)
 	if err != nil {
 		t.Fatalf("Can't create IAM client: %s", err)
@@ -346,6 +349,7 @@ func newTestServer(
 	publicServer.grpcServer = grpc.NewServer()
 
 	pb.RegisterIAMPublicServiceServer(publicServer.grpcServer, publicServer)
+	pb.RegisterIAMPublicIdentityServiceServer(publicServer.grpcServer, publicServer)
 
 	go func() {
 		if err := publicServer.grpcServer.Serve(publicListener); err != nil {
@@ -362,7 +366,7 @@ func newTestServer(
 
 	protectedServer.grpcServer = grpc.NewServer()
 
-	pb.RegisterIAMProtectedServiceServer(protectedServer.grpcServer, protectedServer)
+	pb.RegisterIAMCertificateServiceServer(protectedServer.grpcServer, protectedServer)
 
 	go func() {
 		if err := protectedServer.grpcServer.Serve(protectedListener); err != nil {
@@ -466,6 +470,10 @@ func (server *testPublicServer) GetSystemInfo(
 	rsp = &pb.SystemInfo{SystemId: server.systemID}
 
 	return rsp, nil
+}
+
+func (server *testPublicServer) GetNodeInfo(context context.Context, req *empty.Empty) (*pb.NodeInfo, error) {
+	return &pb.NodeInfo{}, nil
 }
 
 func (sender *testSender) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {

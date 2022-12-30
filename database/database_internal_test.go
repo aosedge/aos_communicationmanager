@@ -19,16 +19,24 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/downloader"
+	"github.com/aoscloud/aos_communicationmanager/imagemanager"
+	"github.com/aoscloud/aos_communicationmanager/launcher"
+	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -148,34 +156,48 @@ func TestComponentsUpdateInfo(t *testing.T) {
 	}
 }
 
-func TestSotaFotaState(t *testing.T) {
+func TestSotaFotaInstancesFields(t *testing.T) {
 	fotaState := json.RawMessage("fotaState")
 	sotaState := json.RawMessage("sotaState")
+	desiredInstances := json.RawMessage("desiredInstances")
 
 	if err := db.SetFirmwareUpdateState(fotaState); err != nil {
-		t.Fatal("Can't set FOTA state ", err)
+		t.Fatalf("Can't set FOTA state: %v", err)
 	}
 
 	if err := db.SetSoftwareUpdateState(sotaState); err != nil {
-		t.Fatal("Can't set SOTA state ", err)
+		t.Fatalf("Can't set SOTA state: %v", err)
+	}
+
+	if err := db.SetDesiredInstances(desiredInstances); err != nil {
+		t.Fatalf("Can't set desired instances: %v", err)
 	}
 
 	retFota, err := db.GetFirmwareUpdateState()
 	if err != nil {
-		t.Fatal("Can't get FOTA state ", err)
+		t.Fatalf("Can't get FOTA state: %v", err)
 	}
 
 	if string(retFota) != string(fotaState) {
-		t.Errorf("Incorrect FOTA state %s", string(retFota))
+		t.Errorf("Incorrect FOTA state: %s", string(retFota))
 	}
 
 	retSota, err := db.GetSoftwareUpdateState()
 	if err != nil {
-		t.Fatal("Can't get SOTA state ", err)
+		t.Fatalf("Can't get SOTA state: %v", err)
 	}
 
 	if string(retSota) != string(sotaState) {
-		t.Errorf("Incorrect FOTA state %s", string(retSota))
+		t.Errorf("Incorrect SOTA state: %s", string(retSota))
+	}
+
+	retInstances, err := db.GetDesiredInstances()
+	if err != nil {
+		t.Fatalf("Can't get desired instances state %v", err)
+	}
+
+	if string(retInstances) != string(desiredInstances) {
+		t.Errorf("Incorrect desired instances: %s", string(retInstances))
 	}
 }
 
@@ -227,4 +249,465 @@ func TestMultiThread(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestServiceStore(t *testing.T) {
+	cases := []struct {
+		service                      imagemanager.ServiceInfo
+		expectedServiceVersionsCount int
+		expectedServiceCount         int
+		serviceErrorAfterRemove      error
+	}{
+		{
+			service: imagemanager.ServiceInfo{
+				ServiceInfo: aostypes.ServiceInfo{
+					ID: "service1",
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion:    1,
+						VendorVersion: "1",
+					},
+					URL:  "file:///path/service1",
+					Size: 30,
+					GID:  1000,
+				},
+				RemoteURL: "http://path/service1",
+				Path:      "/path/service1", Timestamp: time.Now().UTC(), Cached: false, Config: aostypes.ServiceConfig{
+					Hostname: allocateString("service1"),
+					Author:   "test",
+					Quotas: aostypes.ServiceQuotas{
+						UploadSpeed:   allocateUint64(1000),
+						DownloadSpeed: allocateUint64(1000),
+					},
+				},
+			},
+			expectedServiceVersionsCount: 1,
+			expectedServiceCount:         1,
+			serviceErrorAfterRemove:      imagemanager.ErrNotExist,
+		},
+		{
+			service: imagemanager.ServiceInfo{
+				ServiceInfo: aostypes.ServiceInfo{
+					ID: "service2",
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion:    1,
+						VendorVersion: "1",
+					},
+					URL:  "file:///path/service2",
+					Size: 60,
+					GID:  2000,
+				},
+				RemoteURL: "http://path/service2",
+				Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true, Config: aostypes.ServiceConfig{
+					Hostname: allocateString("service2"),
+					Author:   "test1",
+					Quotas: aostypes.ServiceQuotas{
+						UploadSpeed:   allocateUint64(500),
+						DownloadSpeed: allocateUint64(500),
+					},
+					Resources: []string{"resource1", "resource2"},
+				},
+			},
+			expectedServiceVersionsCount: 1,
+			expectedServiceCount:         2,
+			serviceErrorAfterRemove:      nil,
+		},
+		{
+			service: imagemanager.ServiceInfo{
+				ServiceInfo: aostypes.ServiceInfo{
+					ID: "service2",
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion:    2,
+						VendorVersion: "1",
+					},
+					URL:  "file:///path/service2/new",
+					Size: 20,
+					GID:  1000,
+				},
+				RemoteURL: "http://path/service2/new",
+				Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
+			},
+			expectedServiceVersionsCount: 2,
+			expectedServiceCount:         2,
+			serviceErrorAfterRemove:      imagemanager.ErrNotExist,
+		},
+	}
+
+	for _, tCase := range cases {
+		if err := db.AddService(tCase.service); err != nil {
+			t.Errorf("Can't add service: %v", err)
+		}
+
+		service, err := db.GetServiceInfo(tCase.service.ID)
+		if err != nil {
+			t.Errorf("Can't get service: %v", err)
+		}
+
+		if !reflect.DeepEqual(service, tCase.service) {
+			t.Errorf("service %s doesn't match stored one", tCase.service.ID)
+		}
+
+		serviceVersions, err := db.GetServiceVersions(tCase.service.ID)
+		if err != nil {
+			t.Errorf("Can't get service versions: %v", err)
+		}
+
+		if len(serviceVersions) != tCase.expectedServiceVersionsCount {
+			t.Errorf("Incorrect count of service versions: %v", len(serviceVersions))
+		}
+
+		services, err := db.GetServicesInfo()
+		if err != nil {
+			t.Errorf("Can't get services: %v", err)
+		}
+
+		if len(services) != tCase.expectedServiceCount {
+			t.Errorf("Incorrect count of services: %v", len(services))
+		}
+
+		if err := db.SetServiceCached(tCase.service.ID, !tCase.service.Cached); err != nil {
+			t.Errorf("Can't set service cached: %v", err)
+		}
+
+		if service, err = db.GetServiceInfo(tCase.service.ID); err != nil {
+			t.Errorf("Can't get service: %v", err)
+		}
+
+		if service.Cached != !tCase.service.Cached {
+			t.Error("Unexpected service cached status")
+		}
+	}
+
+	for _, tCase := range cases {
+		if err := db.RemoveService(tCase.service.ID, tCase.service.AosVersion); err != nil {
+			t.Errorf("Can't remove service: %v", err)
+		}
+
+		if _, err := db.GetServiceInfo(tCase.service.ID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
+func TestLayerStore(t *testing.T) {
+	cases := []struct {
+		layer              imagemanager.LayerInfo
+		expectedLayerCount int
+	}{
+		{
+			layer: imagemanager.LayerInfo{
+				LayerInfo: aostypes.LayerInfo{
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion: 1,
+					},
+					ID:     "layer1",
+					Digest: "digest1",
+					URL:    "file:///path/layer1",
+					Size:   30,
+				},
+				RemoteURL: "http://path/layer1", Path: "/path/layer1",
+				Timestamp: time.Now().UTC(), Cached: false,
+			},
+			expectedLayerCount: 1,
+		},
+		{
+			layer: imagemanager.LayerInfo{
+				LayerInfo: aostypes.LayerInfo{
+					VersionInfo: aostypes.VersionInfo{
+						AosVersion: 1,
+					},
+					ID:     "layer2",
+					Digest: "digest2",
+					URL:    "file:///path/layer2",
+					Size:   60,
+				},
+				RemoteURL: "http://path/layer2",
+				Path:      "/path/layer2", Timestamp: time.Now().UTC(), Cached: true,
+			},
+			expectedLayerCount: 2,
+		},
+	}
+
+	for _, tCase := range cases {
+		if err := db.AddLayer(tCase.layer); err != nil {
+			t.Errorf("Can't add layer: %v", err)
+		}
+
+		layer, err := db.GetLayerInfo(tCase.layer.Digest)
+		if err != nil {
+			t.Errorf("Can't get layer: %v", err)
+		}
+
+		if !reflect.DeepEqual(layer, tCase.layer) {
+			t.Errorf("layer %s doesn't match stored one", tCase.layer.ID)
+		}
+
+		layers, err := db.GetLayersInfo()
+		if err != nil {
+			t.Errorf("Can't get layers: %v", err)
+		}
+
+		if len(layers) != tCase.expectedLayerCount {
+			t.Errorf("Incorrect count of layers: %v", len(layers))
+		}
+
+		if err := db.SetLayerCached(tCase.layer.Digest, !tCase.layer.Cached); err != nil {
+			t.Errorf("Can't set layer cached: %v", err)
+		}
+
+		if layer, err = db.GetLayerInfo(tCase.layer.Digest); err != nil {
+			t.Errorf("Can't get layer: %v", err)
+		}
+
+		if layer.Cached != !tCase.layer.Cached {
+			t.Error("Unexpected layer cached status")
+		}
+	}
+
+	for _, tCase := range cases {
+		if err := db.RemoveLayer(tCase.layer.Digest); err != nil {
+			t.Errorf("Can't remove service: %v", err)
+		}
+
+		if _, err := db.GetServiceInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
+func allocateString(value string) *string {
+	return &value
+}
+
+func allocateUint64(value uint64) *uint64 {
+	return &value
+}
+
+func TestDownloadInfo(t *testing.T) {
+	cases := []struct {
+		downloadInfo      downloader.DownloadInfo
+		downloadInfoCount int
+	}{
+		{
+			downloadInfo: downloader.DownloadInfo{
+				Path:       "home",
+				TargetType: cloudprotocol.DownloadTargetComponent,
+			},
+			downloadInfoCount: 1,
+		},
+		{
+			downloadInfo: downloader.DownloadInfo{
+				Path:            "/path/file",
+				TargetType:      cloudprotocol.DownloadTargetLayer,
+				InterruptReason: "error",
+				Downloaded:      true,
+			},
+			downloadInfoCount: 2,
+		},
+	}
+
+	for _, tCase := range cases {
+		if err := db.SetDownloadInfo(tCase.downloadInfo); err != nil {
+			t.Errorf("Can't set download info: %v", err)
+		}
+
+		downloadInfo, err := db.GetDownloadInfo(tCase.downloadInfo.Path)
+		if err != nil {
+			t.Errorf("Can't get download info: %v", err)
+		}
+
+		if !reflect.DeepEqual(downloadInfo, tCase.downloadInfo) {
+			t.Error("Unexpected download info")
+		}
+
+		downloadInfos, err := db.GetDownloadInfos()
+		if err != nil {
+			t.Errorf("Can't get download info list: %v", err)
+		}
+
+		if len(downloadInfos) != tCase.downloadInfoCount {
+			t.Error("Unexpected download info count")
+		}
+	}
+
+	casesRemove := []struct {
+		path string
+	}{
+		{
+			path: "home",
+		},
+		{
+			path: "/path/file",
+		},
+	}
+
+	for _, tCase := range casesRemove {
+		if err := db.RemoveDownloadInfo(tCase.path); err != nil {
+			t.Errorf("Can't remove download info: %v", err)
+		}
+
+		if _, err := db.GetDownloadInfo(tCase.path); err == nil {
+			t.Error("Download info should be removed")
+		}
+	}
+}
+
+func TestInstance(t *testing.T) {
+	var expectedUIDs []int
+
+	uids, err := db.GetAllUIDs()
+	if err != nil {
+		t.Errorf("Can't get all uids: %v", err)
+	}
+
+	if len(uids) != 0 {
+		t.Error("Incorrect empty uids")
+	}
+
+	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: "notexist", SubjectID: "notexist", Instance: 0,
+	}); !errors.Is(err, launcher.ErrNotExist) {
+		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
+	}
+
+	for i := 100; i < 105; i++ {
+		if err := db.AddInstance(aostypes.InstanceIdent{
+			ServiceID: "serv" + strconv.Itoa(i), SubjectID: "subj" + strconv.Itoa(i), Instance: 0,
+		}, i); err != nil {
+			t.Errorf("Can't add instance: %v", err)
+		}
+
+		expectedUIDs = append(expectedUIDs, i)
+	}
+
+	expectedUID := 103
+
+	uid, err := db.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	})
+	if err != nil {
+		t.Errorf("Can't get instance uid: %v", err)
+	}
+
+	if uid != expectedUID {
+		t.Error("Incorrect uid for instance")
+	}
+
+	uids, err = db.GetAllUIDs()
+	if err != nil {
+		t.Errorf("Can't get all uids: %v", err)
+	}
+
+	if !reflect.DeepEqual(uids, expectedUIDs) {
+		t.Errorf("Incorrect result for get all UIDs")
+	}
+}
+
+func TestStorageState(t *testing.T) {
+	var (
+		testInstanceID  = "test_instance_subjectID_serviceID"
+		newCheckSum     = []byte("newCheckSum")
+		newStorageQuota = uint64(88888)
+		newStateQuota   = uint64(99999)
+	)
+
+	instanceIdent := aostypes.InstanceIdent{
+		Instance:  1,
+		ServiceID: "service1",
+		SubjectID: "subject1",
+	}
+
+	if _, err := db.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be entry does not exist")
+	}
+
+	testStateStorageInfo := storagestate.StorageStateInstanceInfo{
+		InstanceID:   testInstanceID,
+		StorageQuota: 12345, StateQuota: 54321,
+		StateChecksum: []byte("checksum1"),
+		InstanceIdent: instanceIdent,
+	}
+
+	if err := db.AddStorageStateInfo(testStateStorageInfo); err != nil {
+		t.Fatalf("Can't add state storage info: %v", err)
+	}
+
+	stateStorageInfos, err := db.GetAllStorageStateInfo()
+	if err != nil {
+		t.Fatalf("Can't get all state storage infos: %v", err)
+	}
+
+	if len(stateStorageInfos) != 1 {
+		t.Errorf("Unexpected state storage info size")
+	}
+
+	if stateStorageInfos[0].InstanceID != testInstanceID {
+		t.Errorf("Unexpected instance path")
+	}
+
+	if stateStorageInfos[0].InstanceIdent != testStateStorageInfo.InstanceIdent {
+		t.Errorf("Unexpected instance ident")
+	}
+
+	info, err := db.GetStorageStateInfo(instanceIdent)
+	if err != nil {
+		t.Fatalf("Can't get state storage info: %v", err)
+	}
+
+	if !reflect.DeepEqual(info, testStateStorageInfo) {
+		t.Error("State storage info from database doesn't match expected one")
+	}
+
+	notExistInstanceIdent := aostypes.InstanceIdent{
+		ServiceID: "serviceID",
+		SubjectID: "subjectID",
+		Instance:  20,
+	}
+
+	if err := db.SetStateChecksum(notExistInstanceIdent, newCheckSum); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be entry does not exist")
+	}
+
+	if err := db.SetStateChecksum(instanceIdent, newCheckSum); err != nil {
+		t.Fatalf("Can't update checksum: %v", err)
+	}
+
+	testStateStorageInfo.StateChecksum = newCheckSum
+
+	info, err = db.GetStorageStateInfo(instanceIdent)
+	if err != nil {
+		t.Fatalf("Can't get state storage info: %v", err)
+	}
+
+	if !reflect.DeepEqual(info, testStateStorageInfo) {
+		t.Error("Update state storage info from database doesn't match expected one")
+	}
+
+	if err := db.SetStorageStateQuotas(
+		notExistInstanceIdent, newStorageQuota, newStateQuota); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be: entry does not exist")
+	}
+
+	if err := db.SetStorageStateQuotas(instanceIdent, newStorageQuota, newStateQuota); err != nil {
+		t.Fatalf("Can't update state and storage quotas: %v", err)
+	}
+
+	testStateStorageInfo.StateQuota = newStateQuota
+	testStateStorageInfo.StorageQuota = newStorageQuota
+
+	info, err = db.GetStorageStateInfo(instanceIdent)
+	if err != nil {
+		t.Fatalf("Can't get state storage info: %v", err)
+	}
+
+	if !reflect.DeepEqual(info, testStateStorageInfo) {
+		t.Error("Update state storage info from database doesn't match expected one")
+	}
+
+	if err := db.RemoveStorageStateInfo(instanceIdent); err != nil {
+		t.Fatalf("Can't remove state storage info: %v", err)
+	}
+
+	if _, err := db.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
+		t.Errorf("Should be: entry does not exist")
+	}
 }

@@ -377,7 +377,7 @@ func (allocator *allocatorInstance) removeOutdatedItems(requiredSize uint64) (fr
 	i := 0
 
 	for _, item := range allocator.part.outdatedItems {
-		if item.allocator != allocator {
+		if item.allocator != allocator || freedSize >= requiredSize {
 			allocator.part.outdatedItems[i] = item
 			i++
 
@@ -395,10 +395,6 @@ func (allocator *allocatorInstance) removeOutdatedItems(requiredSize uint64) (fr
 		item.allocator.part.freeSpace(item.size)
 
 		freedSize += item.size
-
-		if freedSize >= requiredSize {
-			break
-		}
 	}
 
 	allocator.part.outdatedItems = allocator.part.outdatedItems[:i]

@@ -21,8 +21,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/ioutil"
+	"net/url"
 	"os"
+	"os/exec"
+	"path"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,10 +36,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aoscloud/aos_common/aostypes"
 	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
+	"github.com/aoscloud/aos_common/image"
 
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aoscloud/aos_communicationmanager/fcrypt"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
 
@@ -44,6 +52,8 @@ import (
 
 const (
 	serverURL = "localhost:8091"
+
+	kilobyte = uint64(1 << 10)
 )
 
 const (
@@ -59,8 +69,6 @@ type testStorage struct {
 	updateInfo []umcontroller.SystemComponent
 }
 
-type testURLTranslator struct{}
-
 type testUmConnection struct {
 	stream         pb.UMService_RegisterUMClient
 	notifyTestChan chan bool
@@ -71,6 +79,14 @@ type testUmConnection struct {
 	components     []*pb.SystemComponent
 	conn           *grpc.ClientConn
 }
+
+type testCryptoContext struct{}
+
+/***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+var tmpDir string
 
 /***********************************************************************************************************************
  * Init
@@ -90,17 +106,52 @@ func init() {
  * Tests
  **********************************************************************************************************************/
 
+func TestMain(m *testing.M) {
+	var err error
+
+	if err = setup(); err != nil {
+		log.Fatalf("Error setting up: %s", err)
+	}
+
+	ret := m.Run()
+
+	if err = cleanup(); err != nil {
+		log.Errorf("Error cleaning up: %s", err)
+	}
+
+	os.Exit(ret)
+}
+
+func setup() (err error) {
+	tmpDir, err = ioutil.TempDir("", "cm_")
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func cleanup() (err error) {
+	if err = os.RemoveAll(tmpDir); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 func TestConnection(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8092",
 		UMClients: []config.UMClientConfig{
 			{UMID: "umID1", Priority: 10},
 			{UMID: "umID2", Priority: 0},
 		},
 	}
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
-	umCtrl, err := umcontroller.New(&smConfig, &testStorage{}, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &testStorage{}, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
@@ -193,18 +244,20 @@ func createClientConnection(
 
 func TestFullUpdate(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM1", Priority: 1},
 			{UMID: "testUM2", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -225,25 +278,32 @@ func TestFullUpdate(t *testing.T) {
 	um2 := newTestUM(t, "testUM2", pb.UmState_IDLE, "init", um2Components)
 	go um2.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um1C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um1C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um2C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um2C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um2C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um2C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func(finChan chan bool) {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
 		finChan <- true
@@ -344,18 +404,20 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	}
 
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM3", Priority: 1},
 			{UMID: "testUM4", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -376,25 +438,32 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um4 := newTestUM(t, "testUM4", pb.UmState_IDLE, "init", um4Components)
 	go um4.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um3C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um3C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um4C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um4C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um4C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um4C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
 
@@ -512,18 +581,20 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 func TestFullUpdateWithReboot(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM5", Priority: 1},
 			{UMID: "testUM6", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -544,25 +615,32 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6 := newTestUM(t, "testUM6", pb.UmState_IDLE, "init", um6Components)
 	go um6.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um5C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um5C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um6C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um6C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um6C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um6C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
 
@@ -607,7 +685,8 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um6.notifyTestChan
 	<-finishChannel
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err = umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -642,7 +721,8 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um5.notifyTestChan
 	<-um6.notifyTestChan
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err = umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -703,18 +783,20 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 func TestRevertOnPrepare(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM7", Priority: 1},
 			{UMID: "testUM8", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -735,25 +817,32 @@ func TestRevertOnPrepare(t *testing.T) {
 	um8 := newTestUM(t, "testUM8", pb.UmState_IDLE, "init", um8Components)
 	go um8.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um7C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um7C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um8C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um8C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um8C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um8C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err == nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err == nil {
 			t.Errorf("Should fail")
 		}
 
@@ -827,18 +916,20 @@ func TestRevertOnPrepare(t *testing.T) {
 
 func TestRevertOnUpdate(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM9", Priority: 1},
 			{UMID: "testUM10", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -859,25 +950,32 @@ func TestRevertOnUpdate(t *testing.T) {
 	um10 := newTestUM(t, "testUM10", pb.UmState_IDLE, "init", um10Components)
 	go um10.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um9C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um9C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um10C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um10C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um10C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um10C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err == nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err == nil {
 			t.Errorf("Should fail")
 		}
 
@@ -975,18 +1073,20 @@ func TestRevertOnUpdate(t *testing.T) {
 
 func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM11", Priority: 1},
 			{UMID: "testUM12", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1007,25 +1107,32 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um12 := newTestUM(t, "testUM12", pb.UmState_IDLE, "init", um12Components)
 	go um12.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um11C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um11C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um12C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um12C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um12C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um12C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
 
@@ -1128,18 +1235,20 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 func TestRevertOnUpdateWithReboot(t *testing.T) {
 	umCtrlConfig := config.UMController{
-		ServerURL: "localhost:8091",
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8093",
 		UMClients: []config.UMClientConfig{
 			{UMID: "testUM13", Priority: 1, IsLocal: true},
 			{UMID: "testUM14", Priority: 10},
 		},
 	}
 
-	smConfig := config.Config{UMController: umCtrlConfig}
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
-	umCtrl, err := umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err := umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1160,25 +1269,32 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um14 := newTestUM(t, "testUM14", pb.UmState_IDLE, "init", um14Components)
 	go um14.processMessages()
 
+	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	if err != nil {
+		t.Fatalf("Can't create component dir: %v", componentDir)
+	}
+
+	defer os.RemoveAll(componentDir)
+
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um13C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um13C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
 		},
 		{
-			ID: "um14C1", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um14C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
 		},
 		{
-			ID: "um14C2", VersionInfo: cloudprotocol.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"someFile"}},
+			ID: "um14C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
+			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
 		},
 	}
 
 	finishChannel := make(chan bool)
 
 	go func() {
-		if _, err := umCtrl.UpdateComponents(updateComponents); err != nil {
+		if _, err := umCtrl.UpdateComponents(updateComponents, nil, nil); err != nil {
 			t.Errorf("Can't update components: %s", err)
 		}
 
@@ -1234,7 +1350,8 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	<-finishChannel
 	// um14  reboot
 
-	umCtrl, err = umcontroller.New(&smConfig, &updateStorage, &testURLTranslator{}, nil, nil, true)
+	umCtrl, err = umcontroller.New(
+		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1362,6 +1479,28 @@ func (um *testUmConnection) processMessages() {
 	}
 }
 
+func (context *testCryptoContext) DecryptAndValidate(
+	encryptedFile, decryptedFile string, params fcrypt.DecryptParams,
+) error {
+	srcFile, err := os.Open(encryptedFile)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(decryptedFile, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
@@ -1409,6 +1548,50 @@ func (um *testUmConnection) closeConnection() {
 	_ = um.stream.CloseSend()
 }
 
-func (translator *testURLTranslator) TranslateURL(isLocal bool, inURL string) (outURL string, err error) {
-	return "file://" + inURL, nil
+func prepareDecryptDataStruct(filePath string, size uint64) cloudprotocol.DecryptDataStruct {
+	if err := generateFile(filePath, size); err != nil {
+		return cloudprotocol.DecryptDataStruct{}
+	}
+
+	imageFileInfo, err := image.CreateFileInfo(context.Background(), filePath)
+	if err != nil {
+		return cloudprotocol.DecryptDataStruct{}
+	}
+
+	url := url.URL{
+		Scheme: "file",
+		Path:   filePath,
+	}
+
+	recInfo := struct {
+		Serial string `json:"serial"`
+		Issuer []byte `json:"issuer"`
+	}{
+		Serial: "string",
+		Issuer: []byte("issuer"),
+	}
+
+	return cloudprotocol.DecryptDataStruct{
+		URLs:   []string{url.String()},
+		Sha256: imageFileInfo.Sha256,
+		Sha512: imageFileInfo.Sha512,
+		Size:   imageFileInfo.Size,
+		DecryptionInfo: &cloudprotocol.DecryptionInfo{
+			BlockAlg:     "AES256/CBC/pkcs7",
+			BlockIv:      []byte{},
+			BlockKey:     []byte{},
+			AsymAlg:      "RSA/PKCS1v1_5",
+			ReceiverInfo: &recInfo,
+		},
+		Signs: &cloudprotocol.Signs{},
+	}
+}
+
+func generateFile(fileName string, size uint64) (err error) {
+	if output, err := exec.Command("dd", "if=/dev/urandom", "of="+fileName, "bs=1",
+		"count="+strconv.FormatUint(size, 10)).CombinedOutput(); err != nil {
+		return aoserrors.Errorf("%s (%s)", err, (string(output)))
+	}
+
+	return nil
 }
