@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -428,7 +429,9 @@ func (storageState *StorageState) prepareState(
 		return "", aoserrors.Wrap(err)
 	}
 
-	return stateFilePath, nil
+	rel, err := filepath.Rel(storageState.stateDir, stateFilePath)
+
+	return rel, aoserrors.Wrap(err)
 }
 
 func (storageState *StorageState) remove(instanceIdent aostypes.InstanceIdent, instanceID string) error {
@@ -632,8 +635,8 @@ func (storageState *StorageState) stateChanged(
 
 func (storageState *StorageState) prepareStorage(
 	instanceID string, params SetupParams,
-) (storagePath string, err error) {
-	storagePath = storageState.getStoragePath(instanceID)
+) (string, error) {
+	storagePath := storageState.getStoragePath(instanceID)
 
 	if params.StorageQuota == 0 {
 		if err := os.RemoveAll(storagePath); err != nil {
@@ -647,11 +650,13 @@ func (storageState *StorageState) prepareStorage(
 		return "", aoserrors.Wrap(err)
 	}
 
-	if err = os.Chown(storagePath, params.UID, params.GID); err != nil {
+	if err := os.Chown(storagePath, params.UID, params.GID); err != nil {
 		return "", aoserrors.Wrap(err)
 	}
 
-	return storagePath, nil
+	rel, err := filepath.Rel(storageState.storageDir, storagePath)
+
+	return rel, aoserrors.Wrap(err)
 }
 
 func (storageState *StorageState) setQuotasFS(params SetupParams) error {
