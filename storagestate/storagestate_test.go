@@ -213,11 +213,11 @@ func TestSetupClean(t *testing.T) {
 			t.Fatalf("Can't setup instance: %v", err)
 		}
 
-		if storagePath != "" && !isPathExist(storagePath) {
+		if storagePath != "" && !isPathExist(path.Join(storageDir, storagePath)) {
 			t.Error("Storage dir doesn't exist")
 		}
 
-		if statePath != "" && !isPathExist(statePath) {
+		if statePath != "" && !isPathExist(path.Join(stateDir, statePath)) {
 			t.Error("State dir doesn't exist")
 		}
 
