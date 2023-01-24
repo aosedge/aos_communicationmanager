@@ -208,7 +208,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	smClient.sendMessageChannel <- sendUpdateStatus
 
-	if err := waitUpdateInstancesStatus(
+	if err := waitAndCompareMessage(
 		controller.GetUpdateInstancesStatusChannel(), expectedUpdateState, messageTimeout); err != nil {
 		t.Error("Incorrect instance update status")
 	}
@@ -1151,23 +1151,6 @@ func waitAndCompareMessage[T any](messageChannel <-chan T, expectedMsg T, timeou
 	case message := <-messageChannel:
 		if !reflect.DeepEqual(message, expectedMsg) {
 			return aoserrors.New("incorrect received message")
-		}
-	}
-
-	return nil
-}
-
-func waitUpdateInstancesStatus(
-	messageChannel <-chan []cloudprotocol.InstanceStatus, expectedMsg []cloudprotocol.InstanceStatus,
-	timeout time.Duration,
-) error {
-	select {
-	case <-time.After(timeout):
-		return aoserrors.New("wait message timeout")
-
-	case message := <-messageChannel:
-		if !reflect.DeepEqual(message, expectedMsg) {
-			return aoserrors.New("Incorrect received message")
 		}
 	}
 
