@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
 )
@@ -59,8 +60,9 @@ type Controller struct {
 	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
 	systemLimitAlertChan      chan cloudprotocol.SystemQuotaAlert
 
-	grpcServer *grpc.Server
-	listener   net.Listener
+	isCloudConnected bool
+	grpcServer       *grpc.Server
+	listener         net.Listener
 	pb.UnimplementedSMServiceServer
 }
 
@@ -76,6 +78,8 @@ type MonitoringSender interface {
 
 // MessageSender sends messages to the cloud.
 type MessageSender interface {
+	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
+	UnsubscribeFromConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
 	SendOverrideEnvVarsStatus(envs cloudprotocol.OverrideEnvVarsStatus) error
 	SendLog(serviceLog cloudprotocol.PushLog) error
 }
@@ -105,6 +109,12 @@ func New(
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
 		systemLimitAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
+	}
+
+	if controller.messageSender != nil {
+		if err = controller.messageSender.SubscribeForConnectionEvents(controller); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
 	}
 
 	controller.logHandler = map[string]func(cloudprotocol.RequestLog) error{
@@ -153,6 +163,12 @@ func (controller *Controller) Close() error {
 	log.Debug("Close SM controller")
 
 	controller.stopServer()
+
+	if controller.messageSender != nil {
+		if err := controller.messageSender.UnsubscribeFromConnectionEvents(controller); err != nil {
+			log.Errorf("Can't unsubscribe from connection events: %v", err)
+		}
+	}
 
 	return nil
 }
@@ -336,6 +352,30 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 }
 
 /***********************************************************************************************************************
+ * Interface
+ **********************************************************************************************************************/
+
+// CloudConnected indicates unit connected to cloud.
+func (controller *Controller) CloudConnected() {
+	controller.Lock()
+	defer controller.Unlock()
+
+	controller.isCloudConnected = true
+
+	controller.sendConnectionStatus()
+}
+
+// CloudDisconnected indicates unit disconnected from cloud.
+func (controller *Controller) CloudDisconnected() {
+	controller.Lock()
+	defer controller.Unlock()
+
+	controller.isCloudConnected = false
+
+	controller.sendConnectionStatus()
+}
+
+/***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
@@ -406,6 +446,9 @@ func (controller *Controller) getNodeHandlersByIDs(nodeIDs []string) (handlers [
 		return handlers, nil
 	}
 
+	controller.Lock()
+	defer controller.Unlock()
+
 	for _, handler := range controller.nodes {
 		if handler != nil {
 			handlers = append(handlers, handler)
@@ -446,13 +489,17 @@ func (controller *Controller) handleNewConnection(nodeID string, newHandler *smH
 
 	if handler, ok := controller.nodes[nodeID]; ok {
 		if handler != nil {
-			return aoserrors.Errorf("сonnection for nodeID %s already exist", nodeID)
+			return aoserrors.Errorf("connection for nodeID %s already exist", nodeID)
 		}
 	} else {
 		return aoserrors.Errorf("unknown nodeID connection with nodeID %s", nodeID)
 	}
 
 	controller.nodes[nodeID] = newHandler
+
+	if err := newHandler.sendConnectionStatus(controller.isCloudConnected); err != nil {
+		log.Errorf("Can't send connection status: %v", err)
+	}
 
 	for _, node := range controller.nodes {
 		if node == nil {
@@ -492,4 +539,16 @@ func (controller *Controller) getNodeHandlerByID(nodeID string) (*smHandler, err
 	}
 
 	return handler, nil
+}
+
+func (controller *Controller) sendConnectionStatus() {
+	for _, handler := range controller.nodes {
+		if handler == nil {
+			continue
+		}
+
+		if err := handler.sendConnectionStatus(controller.isCloudConnected); err != nil {
+			log.Errorf("Can't send connection status: %v", err)
+		}
+	}
 }
