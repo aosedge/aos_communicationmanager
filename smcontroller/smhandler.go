@@ -170,7 +170,7 @@ func (handler *smHandler) runInstances(
 
 	for i, serviceInfo := range services {
 		pbRunInstances.Services[i] = &pb.ServiceInfo{
-			VersionInfo: &pb.VesionInfo{
+			VersionInfo: &pb.VersionInfo{
 				AosVersion:    serviceInfo.AosVersion,
 				VendorVersion: serviceInfo.VendorVersion,
 				Description:   serviceInfo.Description,
@@ -187,7 +187,7 @@ func (handler *smHandler) runInstances(
 
 	for i, layerInfo := range layers {
 		pbRunInstances.Layers[i] = &pb.LayerInfo{
-			VersionInfo: &pb.VesionInfo{
+			VersionInfo: &pb.VersionInfo{
 				AosVersion:    layerInfo.AosVersion,
 				VendorVersion: layerInfo.VendorVersion,
 				Description:   layerInfo.Description,
@@ -606,6 +606,23 @@ func (handler *smHandler) sendSetUnitConfig(cfg aostypes.NodeUnitConfig, vendorV
 func (handler *smHandler) sendGetNodeMonitoring() error {
 	if err := handler.stream.Send(
 		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{}}); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (handler *smHandler) sendConnectionStatus(cloudConnected bool) error {
+	cloudStatus := pb.ConnectionEnum_DISCONNECTED
+
+	if cloudConnected {
+		cloudStatus = pb.ConnectionEnum_CONNECTED
+	}
+
+	if err := handler.stream.Send(
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pb.ConnectionStatus{CloudStatus: cloudStatus},
+		}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
