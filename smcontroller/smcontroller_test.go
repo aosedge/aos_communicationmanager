@@ -333,6 +333,8 @@ func TestUnitConfigMessages(t *testing.T) {
 	if err := smClient.stream.Send(configStatus); err != nil {
 		t.Errorf("Can't send unit config status")
 	}
+
+	<-testWaitChan
 }
 
 func TestSMAlertNotifications(t *testing.T) {
