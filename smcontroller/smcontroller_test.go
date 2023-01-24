@@ -19,6 +19,7 @@ package smcontroller_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -234,6 +235,7 @@ func TestUnitConfigMessages(t *testing.T) {
 			UnitConfigStatus: &pb.UnitConfigStatus{VendorVersion: originalVersion},
 		}}
 		newVersion = "version_2"
+		unitConfig = fmt.Sprintf(`{"nodeType":"%s"}`, nodeType)
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
@@ -293,7 +295,7 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	if err := waitClientMessage(smClient.receivedMessagesChannel,
 		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-			CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: "", VendorVersion: newVersion},
+			CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
 		}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -323,7 +325,7 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	if err := waitClientMessage(smClient.receivedMessagesChannel,
 		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-			SetUnitConfig: &pb.SetUnitConfig{UnitConfig: "", VendorVersion: newVersion},
+			SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
 		}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -906,7 +908,7 @@ func TestRunInstances(t *testing.T) {
 				}},
 				Layers: []*pb.LayerInfo{
 					{
-						VersionInfo: &pb.VesionInfo{AosVersion: 2, VendorVersion: "2", Description: "desc2"},
+						VersionInfo: &pb.VesionInfo{AosVersion: 2, VendorVersion: "3", Description: "desc2"},
 						Url:         "url2", LayerId: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
 						Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 					},
@@ -1134,7 +1136,7 @@ func waitClientMessage(
 
 	case message := <-messageChannel:
 		if !proto.Equal(message, expectedMsg) {
-			log.Error("Incorrect received client message")
+			return aoserrors.New("incorrect received client message")
 		}
 	}
 
@@ -1148,7 +1150,7 @@ func waitAndCompareMessage[T any](messageChannel <-chan T, expectedMsg T, timeou
 
 	case message := <-messageChannel:
 		if !reflect.DeepEqual(message, expectedMsg) {
-			return aoserrors.New("Incorrect received message")
+			return aoserrors.New("incorrect received message")
 		}
 	}
 
