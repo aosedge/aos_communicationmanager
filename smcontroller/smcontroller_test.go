@@ -267,8 +267,9 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}},
+		messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -293,10 +294,9 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-			CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
-		}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
+		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
+	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -323,10 +323,9 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-			SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
-		}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
+		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
+	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -778,8 +777,7 @@ func TestLogMessages(t *testing.T) {
 			t.Fatalf("Can't send get system log request: %v", err)
 		}
 
-		if err := waitClientMessage(
-			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
+		if err := smClient.waitMessage(request.expectedLogRequest, messageTimeout); err != nil {
 			t.Fatalf("Wait message error: %v", err)
 		}
 	}
@@ -873,8 +871,7 @@ func TestOverrideEnvVars(t *testing.T) {
 		t.Fatalf("Error sending override env vars: %v", err)
 	}
 
-	if err := waitClientMessage(
-		smClient.receivedMessagesChannel, expectedPbEnvVarRequest, messageTimeout); err != nil {
+	if err := smClient.waitMessage(expectedPbEnvVarRequest, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -957,8 +954,7 @@ func TestRunInstances(t *testing.T) {
 		t.Fatalf("Can't send run instances: %v", err)
 	}
 
-	if err := waitClientMessage(
-		smClient.receivedMessagesChannel, expectedRunInstances, messageTimeout); err != nil {
+	if err := smClient.waitMessage(expectedRunInstances, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 }
@@ -1061,8 +1057,9 @@ func TestGetNodeMonitoringData(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{
+		SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{},
+	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -1121,22 +1118,6 @@ func waitMessage(messageChannel <-chan interface{}, expectedMsg interface{}, tim
 	case message := <-messageChannel:
 		if !reflect.DeepEqual(message, expectedMsg) {
 			return aoserrors.New("Incorrect received message")
-		}
-	}
-
-	return nil
-}
-
-func waitClientMessage(
-	messageChannel <-chan *pb.SMIncomingMessages, expectedMsg *pb.SMIncomingMessages, timeout time.Duration,
-) error {
-	select {
-	case <-time.After(timeout):
-		return aoserrors.New("wait message timeout")
-
-	case message := <-messageChannel:
-		if !proto.Equal(message, expectedMsg) {
-			return aoserrors.New("incorrect received client message")
 		}
 	}
 
@@ -1242,4 +1223,18 @@ func (client *testSMClient) processSendMessages(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (client *testSMClient) waitMessage(expectedMsg *pb.SMIncomingMessages, timeout time.Duration) error {
+	select {
+	case <-time.After(timeout):
+		return aoserrors.New("wait message timeout")
+
+	case message := <-client.receivedMessagesChannel:
+		if !proto.Equal(message, expectedMsg) {
+			return aoserrors.New("incorrect received client message")
+		}
+	}
+
+	return nil
 }
