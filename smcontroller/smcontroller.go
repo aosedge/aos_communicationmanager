@@ -197,7 +197,7 @@ func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) er
 	return nil
 }
 
-// SetUnitConfig sets usint config for the node.
+// SetUnitConfig sets unit config for the node.
 func (controller *Controller) SetUnitConfig(unitConfig aostypes.UnitConfig) error {
 	for _, nodeConfig := range unitConfig.Nodes {
 		for _, node := range controller.nodes {
@@ -253,7 +253,7 @@ func (controller *Controller) GetLog(logRequest cloudprotocol.RequestLog) error 
 	return handler(logRequest)
 }
 
-// GetNodeMonitoringData requests requests node monitoring data from SM.
+// GetNodeMonitoringData requests node monitoring data from SM.
 func (controller *Controller) GetNodeMonitoringData(nodeID string) (data cloudprotocol.NodeMonitoringData, err error) {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
@@ -289,9 +289,9 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 	nodeConfig, ok := message.SMOutgoingMessage.(*pb.SMOutgoingMessages_NodeConfiguration)
 	if !ok {
-		log.Error("Unexpected first messager from stream")
+		log.Error("Unexpected first message from stream")
 
-		return aoserrors.New("unexpected first messager from stream")
+		return aoserrors.New("unexpected first message from stream")
 	}
 
 	log.WithFields(log.Fields{"nodeID": nodeConfig.NodeConfiguration.NodeId}).Debug("Register SM")

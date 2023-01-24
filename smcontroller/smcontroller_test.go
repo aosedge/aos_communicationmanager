@@ -180,7 +180,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, nil, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -238,7 +238,7 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -259,7 +259,7 @@ func TestUnitConfigMessages(t *testing.T) {
 		}
 
 		if version != originalVersion {
-			t.Error("incorrect unit config version")
+			t.Error("Incorrect unit config version")
 		}
 
 		testWaitChan <- struct{}{}
@@ -354,7 +354,7 @@ func TestSMAlertNotifications(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, alertSender, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -542,7 +542,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, monitoringSender, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -659,7 +659,7 @@ func TestLogMessages(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -839,7 +839,7 @@ func TestOverrideEnvVars(t *testing.T) {
 				}, VarsStatus: []*pb.EnvVarStatus{{VarId: "id0", Error: "someError"}}},
 			}},
 		}}
-		exepctedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
+		expectedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
 			OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
 				{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
@@ -851,7 +851,7 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -876,7 +876,7 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	smClient.sendMessageChannel <- pbEnvVarStatus
 
-	if err := waitMessage(messageSender.messageChannel, exepctedEnvVarStatus, messageTimeout); err != nil {
+	if err := waitMessage(messageSender.messageChannel, expectedEnvVarStatus, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 }
@@ -927,7 +927,7 @@ func TestRunInstances(t *testing.T) {
 			URL:         "url2", ID: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
 			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 		}}
-		sednInstances = []aostypes.InstanceInfo{{
+		sendInstances = []aostypes.InstanceInfo{{
 			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
 			UID:           500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 		}}
@@ -935,7 +935,7 @@ func TestRunInstances(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -949,7 +949,7 @@ func TestRunInstances(t *testing.T) {
 	_ = waitAndCompareMessage(
 		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
 
-	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sednInstances, false); err != nil {
+	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sendInstances, false); err != nil {
 		t.Fatalf("Can't send run instances: %v", err)
 	}
 
@@ -1028,7 +1028,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
