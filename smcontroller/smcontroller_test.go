@@ -68,11 +68,11 @@ type testMessageSender struct {
 }
 
 type testAlertSender struct {
-	messageChannel chan interface{}
+	messageChannel chan cloudprotocol.AlertItem
 }
 
 type testMonitoringSender struct {
-	messageChannel chan interface{}
+	messageChannel chan cloudprotocol.NodeMonitoringData
 }
 
 /***********************************************************************************************************************
@@ -192,7 +192,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := waitAndCompareMessage(
+	if err := waitMessage(
 		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
 		t.Errorf("Incorrect runtime status notification: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	smClient.sendMessageChannel <- sendUpdateStatus
 
-	if err := waitAndCompareMessage(
+	if err := waitMessage(
 		controller.GetUpdateInstancesStatusChannel(), expectedUpdateState, messageTimeout); err != nil {
 		t.Error("Incorrect instance update status")
 	}
@@ -251,8 +251,11 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, NodeType: nodeType, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	go func() {
 		version, err := controller.GetUnitConfigStatus(nodeID)
@@ -519,8 +522,7 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 
 	for _, limitAlert := range expectedSystemLimitAlert {
-		if err := waitAndCompareMessage(
-			controller.GetSystemLimitAlertChannel(), limitAlert, messageTimeout); err != nil {
+		if err := waitMessage(controller.GetSystemLimitAlertChannel(), limitAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect system limit alert: %v", err)
 		}
 	}
@@ -673,8 +675,11 @@ func TestLogMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	type testLogRequest struct {
 		sendLogRequest     cloudprotocol.RequestLog
@@ -864,8 +869,11 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	if err = controller.OverrideEnvVars(nodeID, envVars); err != nil {
 		t.Fatalf("Error sending override env vars: %v", err)
@@ -947,8 +955,11 @@ func TestRunInstances(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sendInstances, false); err != nil {
 		t.Fatalf("Can't send run instances: %v", err)
@@ -1039,8 +1050,11 @@ func TestGetNodeMonitoringData(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	go func() {
 		data, err := controller.GetNodeMonitoringData(nodeID)
@@ -1075,7 +1089,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
  **********************************************************************************************************************/
 
 func newTestAlertSender() *testAlertSender {
-	return &testAlertSender{messageChannel: make(chan interface{}, 1)}
+	return &testAlertSender{messageChannel: make(chan cloudprotocol.AlertItem, 1)}
 }
 
 func (sender *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
@@ -1083,7 +1097,7 @@ func (sender *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
 }
 
 func newTestMonitoringSender() *testMonitoringSender {
-	return &testMonitoringSender{messageChannel: make(chan interface{}, 1)}
+	return &testMonitoringSender{messageChannel: make(chan cloudprotocol.NodeMonitoringData, 1)}
 }
 
 func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData) {
@@ -1110,21 +1124,7 @@ func (sender *testMessageSender) SendLog(serviceLog cloudprotocol.PushLog) error
  * Private
  **********************************************************************************************************************/
 
-func waitMessage(messageChannel <-chan interface{}, expectedMsg interface{}, timeout time.Duration) error {
-	select {
-	case <-time.After(timeout):
-		return aoserrors.New("wait message timeout")
-
-	case message := <-messageChannel:
-		if !reflect.DeepEqual(message, expectedMsg) {
-			return aoserrors.New("Incorrect received message")
-		}
-	}
-
-	return nil
-}
-
-func waitAndCompareMessage[T any](messageChannel <-chan T, expectedMsg T, timeout time.Duration) error {
+func waitMessage[T any](messageChannel <-chan T, expectedMsg interface{}, timeout time.Duration) error {
 	select {
 	case <-time.After(timeout):
 		return aoserrors.New("wait message timeout")
