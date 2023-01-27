@@ -30,6 +30,7 @@ import (
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/utils/fs"
+	"github.com/aoscloud/aos_common/utils/xentop"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/mem"
@@ -57,6 +58,11 @@ const capacityAlertProcessorElements = 5
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
+
+type SystemUsageProvider interface {
+	CacheSystemInfos()
+	FillSystemInfo(instanceID string, instance *instanceMonitoring) error
+}
 
 // AlertSender interface to send resource alerts.
 type AlertSender interface {
@@ -87,6 +93,7 @@ type Config struct {
 	SendPeriod aostypes.Duration `json:"sendPeriod"`
 	PollPeriod aostypes.Duration `json:"pollPeriod"`
 	Partitions []PartitionConfig `json:"partitions"`
+	Source     string            `json:"source"`
 }
 
 // ResourceMonitor instance.
@@ -109,6 +116,7 @@ type ResourceMonitor struct {
 
 	instanceMonitoringMap map[string]*instanceMonitoring
 	trafficMonitoring     TrafficMonitoring
+	sourceSystemUsage     SystemUsageProvider
 
 	cancelFunction context.CancelFunc
 }
@@ -135,6 +143,12 @@ type instanceMonitoring struct {
 	monitoringData         cloudprotocol.InstanceMonitoringData
 	alertProcessorElements []*list.Element
 }
+
+type xenSystemUsage struct {
+	systemInfos map[string]xentop.SystemInfo
+}
+
+type hostSystemUsage struct{}
 
 type processInterface interface {
 	Uids() ([]int32, error)
@@ -176,6 +190,7 @@ func New(
 		trafficMonitoring: trafficMonitoring,
 		config:            config,
 		nodeID:            nodeID,
+		sourceSystemUsage: getSourceSystemUsage(config.Source),
 	}
 
 	monitor.alertProcessors = list.New()
@@ -344,6 +359,7 @@ func (monitor *ResourceMonitor) run(ctx context.Context) {
 
 		case <-monitor.pollTimer.C:
 			monitor.Lock()
+			monitor.sourceSystemUsage.CacheSystemInfos()
 			monitor.getCurrentSystemData()
 			monitor.getCurrentInstanceData()
 			monitor.processAlerts()
@@ -547,16 +563,9 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 
 func (monitor *ResourceMonitor) getCurrentInstanceData() {
 	for instanceID, value := range monitor.instanceMonitoringMap {
-		cpuUsage, err := getInstanceCPUUsage(int32(value.uid))
+		err := monitor.sourceSystemUsage.FillSystemInfo(instanceID, value)
 		if err != nil {
-			log.Errorf("Can't get service CPU: %s", err)
-		}
-
-		value.monitoringData.CPU = uint64(math.Round(cpuUsage / float64(numCPU)))
-
-		value.monitoringData.RAM, err = getInstanceRAMUsage(int32(value.uid))
-		if err != nil {
-			log.Errorf("Can't get service RAM: %s", err)
+			log.Errorf("Can't fill system usage info: %v", err)
 		}
 
 		for i, partitionParam := range value.partitions {
@@ -600,6 +609,46 @@ func (monitor *ResourceMonitor) processAlerts() {
 
 		alertProcessor.checkAlertDetection(currentTime)
 	}
+}
+
+func (xen *xenSystemUsage) CacheSystemInfos() {
+	instanceInfos, err := xentop.GetSystemInfos()
+	if err != nil {
+		log.Errorf("Can't get system infos: %v", err)
+
+		return
+	}
+
+	xen.systemInfos = instanceInfos
+}
+
+func (xen *xenSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
+	systemInfo, ok := xen.systemInfos[instanceID]
+	if ok {
+		instance.monitoringData.CPU = uint64(systemInfo.CPUFraction)
+		instance.monitoringData.RAM = uint64(systemInfo.Memory) * 1024 // nolint:gomnd
+	}
+
+	return nil
+}
+
+func (host *hostSystemUsage) CacheSystemInfos() {
+}
+
+func (host *hostSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
+	cpuUsage, err := getInstanceCPUUsage(int32(instance.uid))
+	if err != nil {
+		return err
+	}
+
+	instance.monitoringData.CPU = uint64(math.Round(cpuUsage / float64(numCPU)))
+
+	instance.monitoringData.RAM, err = getInstanceRAMUsage(int32(instance.uid))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // getSystemCPUUsage returns CPU usage in parcent.
@@ -741,4 +790,12 @@ func prepareInstanceAlertItem(
 			Value:         value,
 		},
 	}
+}
+
+func getSourceSystemUsage(source string) SystemUsageProvider {
+	if source == "xentop" {
+		return &xenSystemUsage{}
+	}
+
+	return &hostSystemUsage{}
 }
