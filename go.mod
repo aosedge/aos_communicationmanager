@@ -16,7 +16,7 @@ require (
 	github.com/looplab/fsm v0.3.0
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.1
+	github.com/opencontainers/image-spec v1.0.2
 	github.com/sirupsen/logrus v1.8.1
 	github.com/streadway/amqp v1.0.0
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
