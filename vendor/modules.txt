@@ -7,7 +7,7 @@ github.com/ThalesIgnite/crypto11
 # github.com/anexia-it/fsquota v0.1.3
 ## explicit
 github.com/anexia-it/fsquota
-# github.com/aoscloud/aos_common v0.0.0-20221229074100-a59f80d2f2c0
+# github.com/aoscloud/aos_common v0.0.0-20230127084043-ebcc151487e0
 ## explicit; go 1.18
 github.com/aoscloud/aos_common/aoserrors
 github.com/aoscloud/aos_common/aostypes
@@ -30,6 +30,7 @@ github.com/aoscloud/aos_common/utils/pbconvert
 github.com/aoscloud/aos_common/utils/retryhelper
 github.com/aoscloud/aos_common/utils/syncstream
 github.com/aoscloud/aos_common/utils/testtools
+github.com/aoscloud/aos_common/utils/xentop
 # github.com/cavaliergopher/grab/v3 v3.0.1
 ## explicit; go 1.14
 github.com/cavaliergopher/grab/v3

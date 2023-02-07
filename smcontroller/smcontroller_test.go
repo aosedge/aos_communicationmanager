@@ -19,6 +19,7 @@ package smcontroller_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/aoscloud/aos_communicationmanager/amqphandler"
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
 	"github.com/aoscloud/aos_communicationmanager/smcontroller"
@@ -67,11 +69,11 @@ type testMessageSender struct {
 }
 
 type testAlertSender struct {
-	messageChannel chan interface{}
+	messageChannel chan cloudprotocol.AlertItem
 }
 
 type testMonitoringSender struct {
-	messageChannel chan interface{}
+	messageChannel chan cloudprotocol.NodeMonitoringData
 }
 
 /***********************************************************************************************************************
@@ -180,7 +182,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, nil, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -191,7 +193,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := waitAndCompareMessage(
+	if err := waitMessage(
 		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
 		t.Errorf("Incorrect runtime status notification: %v", err)
 	}
@@ -207,7 +209,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	smClient.sendMessageChannel <- sendUpdateStatus
 
-	if err := waitUpdateInstancesStatus(
+	if err := waitMessage(
 		controller.GetUpdateInstancesStatusChannel(), expectedUpdateState, messageTimeout); err != nil {
 		t.Error("Incorrect instance update status")
 	}
@@ -234,11 +236,12 @@ func TestUnitConfigMessages(t *testing.T) {
 			UnitConfigStatus: &pb.UnitConfigStatus{VendorVersion: originalVersion},
 		}}
 		newVersion = "version_2"
+		unitConfig = fmt.Sprintf(`{"nodeType":"%s"}`, nodeType)
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -249,8 +252,17 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, NodeType: nodeType, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	go func() {
 		version, err := controller.GetUnitConfigStatus(nodeID)
@@ -259,14 +271,15 @@ func TestUnitConfigMessages(t *testing.T) {
 		}
 
 		if version != originalVersion {
-			t.Error("incorrect unit config version")
+			t.Error("Incorrect unit config version")
 		}
 
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}},
+		messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -291,10 +304,9 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-			CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: "", VendorVersion: newVersion},
-		}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
+		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
+	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -321,10 +333,9 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-			SetUnitConfig: &pb.SetUnitConfig{UnitConfig: "", VendorVersion: newVersion},
-		}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
+		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
+	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -333,6 +344,8 @@ func TestUnitConfigMessages(t *testing.T) {
 	if err := smClient.stream.Send(configStatus); err != nil {
 		t.Errorf("Can't send unit config status")
 	}
+
+	<-testWaitChan
 }
 
 func TestSMAlertNotifications(t *testing.T) {
@@ -354,7 +367,7 @@ func TestSMAlertNotifications(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, alertSender, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -516,8 +529,7 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 
 	for _, limitAlert := range expectedSystemLimitAlert {
-		if err := waitAndCompareMessage(
-			controller.GetSystemLimitAlertChannel(), limitAlert, messageTimeout); err != nil {
+		if err := waitMessage(controller.GetSystemLimitAlertChannel(), limitAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect system limit alert: %v", err)
 		}
 	}
@@ -542,7 +554,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, monitoringSender, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -659,7 +671,7 @@ func TestLogMessages(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -670,8 +682,17 @@ func TestLogMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	type testLogRequest struct {
 		sendLogRequest     cloudprotocol.RequestLog
@@ -774,8 +795,7 @@ func TestLogMessages(t *testing.T) {
 			t.Fatalf("Can't send get system log request: %v", err)
 		}
 
-		if err := waitClientMessage(
-			smClient.receivedMessagesChannel, request.expectedLogRequest, messageTimeout); err != nil {
+		if err := smClient.waitMessage(request.expectedLogRequest, messageTimeout); err != nil {
 			t.Fatalf("Wait message error: %v", err)
 		}
 	}
@@ -839,7 +859,7 @@ func TestOverrideEnvVars(t *testing.T) {
 				}, VarsStatus: []*pb.EnvVarStatus{{VarId: "id0", Error: "someError"}}},
 			}},
 		}}
-		exepctedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
+		expectedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
 			OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
 				{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
@@ -851,7 +871,7 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -862,21 +882,29 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	if err = controller.OverrideEnvVars(nodeID, envVars); err != nil {
 		t.Fatalf("Error sending override env vars: %v", err)
 	}
 
-	if err := waitClientMessage(
-		smClient.receivedMessagesChannel, expectedPbEnvVarRequest, messageTimeout); err != nil {
+	if err := smClient.waitMessage(expectedPbEnvVarRequest, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
 	smClient.sendMessageChannel <- pbEnvVarStatus
 
-	if err := waitMessage(messageSender.messageChannel, exepctedEnvVarStatus, messageTimeout); err != nil {
+	if err := waitMessage(messageSender.messageChannel, expectedEnvVarStatus, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 }
@@ -898,13 +926,13 @@ func TestRunInstances(t *testing.T) {
 		expectedRunInstances = &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_RunInstances{
 			RunInstances: &pb.RunInstances{
 				Services: []*pb.ServiceInfo{{
-					VersionInfo: &pb.VesionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
+					VersionInfo: &pb.VersionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
 					Url:         "url1", ServiceId: "s1", ProviderId: "p1", Gid: 600,
 					Sha256: []byte{0, 0, 0, byte(100)}, Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 				}},
 				Layers: []*pb.LayerInfo{
 					{
-						VersionInfo: &pb.VesionInfo{AosVersion: 2, VendorVersion: "2", Description: "desc2"},
+						VersionInfo: &pb.VersionInfo{AosVersion: 2, VendorVersion: "3", Description: "desc2"},
 						Url:         "url2", LayerId: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
 						Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 					},
@@ -927,7 +955,7 @@ func TestRunInstances(t *testing.T) {
 			URL:         "url2", ID: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
 			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 		}}
-		sednInstances = []aostypes.InstanceInfo{{
+		sendInstances = []aostypes.InstanceInfo{{
 			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
 			UID:           500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 		}}
@@ -935,7 +963,7 @@ func TestRunInstances(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -946,15 +974,23 @@ func TestRunInstances(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
-	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sednInstances, false); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := controller.RunInstances(nodeID, sendServices, sendLayers, sendInstances, false); err != nil {
 		t.Fatalf("Can't send run instances: %v", err)
 	}
 
-	if err := waitClientMessage(
-		smClient.receivedMessagesChannel, expectedRunInstances, messageTimeout); err != nil {
+	if err := smClient.waitMessage(expectedRunInstances, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 }
@@ -1028,7 +1064,7 @@ func TestGetNodeMonitoringData(t *testing.T) {
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
-		t.Fatalf("Can't create SM constoller: %v", err)
+		t.Fatalf("Can't create SM controller: %v", err)
 	}
 	defer controller.Close()
 
@@ -1039,8 +1075,17 @@ func TestGetNodeMonitoringData(t *testing.T) {
 
 	defer smClient.close()
 
-	_ = waitAndCompareMessage(
-		controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{NodeID: nodeID}, messageTimeout)
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	go func() {
 		data, err := controller.GetNodeMonitoringData(nodeID)
@@ -1057,8 +1102,9 @@ func TestGetNodeMonitoringData(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := waitClientMessage(smClient.receivedMessagesChannel,
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{
+		SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{},
+	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -1069,12 +1115,67 @@ func TestGetNodeMonitoringData(t *testing.T) {
 	<-testWaitChan
 }
 
+func TestConnectionStatus(t *testing.T) {
+	nodeID := "mainSM"
+	messageSender := newTestMessageSender()
+	nodeConfig := &pb.NodeConfiguration{NodeId: nodeID}
+	config := config.Config{
+		SMController: config.SMController{
+			CMServerURL: cmServerURL,
+			NodeIDs:     []string{nodeID},
+		},
+	}
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create SM controller: %v", err)
+	}
+	defer controller.Close()
+
+	controller.CloudConnected()
+
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, nil)
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
+
+	// check receive correct connection status on registration
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{CloudStatus: pb.ConnectionEnum_CONNECTED},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	// check receive correct connection status when cloud disconnected
+
+	controller.CloudDisconnected()
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{CloudStatus: pb.ConnectionEnum_DISCONNECTED},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	// check receive correct connection status when cloud connected
+
+	controller.CloudConnected()
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{CloudStatus: pb.ConnectionEnum_CONNECTED},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
 
 func newTestAlertSender() *testAlertSender {
-	return &testAlertSender{messageChannel: make(chan interface{}, 1)}
+	return &testAlertSender{messageChannel: make(chan cloudprotocol.AlertItem, 1)}
 }
 
 func (sender *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
@@ -1082,7 +1183,7 @@ func (sender *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
 }
 
 func newTestMonitoringSender() *testMonitoringSender {
-	return &testMonitoringSender{messageChannel: make(chan interface{}, 1)}
+	return &testMonitoringSender{messageChannel: make(chan cloudprotocol.NodeMonitoringData, 1)}
 }
 
 func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData) {
@@ -1105,65 +1206,26 @@ func (sender *testMessageSender) SendLog(serviceLog cloudprotocol.PushLog) error
 	return nil
 }
 
+func (sender *testMessageSender) SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
+	return nil
+}
+
+func (sender *testMessageSender) UnsubscribeFromConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error {
+	return nil
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
-func waitMessage(messageChannel <-chan interface{}, expectedMsg interface{}, timeout time.Duration) error {
+func waitMessage[T any](messageChannel <-chan T, expectedMsg interface{}, timeout time.Duration) error {
 	select {
 	case <-time.After(timeout):
 		return aoserrors.New("wait message timeout")
 
 	case message := <-messageChannel:
 		if !reflect.DeepEqual(message, expectedMsg) {
-			return aoserrors.New("Incorrect received message")
-		}
-	}
-
-	return nil
-}
-
-func waitClientMessage(
-	messageChannel <-chan *pb.SMIncomingMessages, expectedMsg *pb.SMIncomingMessages, timeout time.Duration,
-) error {
-	select {
-	case <-time.After(timeout):
-		return aoserrors.New("wait message timeout")
-
-	case message := <-messageChannel:
-		if !proto.Equal(message, expectedMsg) {
-			log.Error("Incorrect received client message")
-		}
-	}
-
-	return nil
-}
-
-func waitAndCompareMessage[T any](messageChannel <-chan T, expectedMsg T, timeout time.Duration) error {
-	select {
-	case <-time.After(timeout):
-		return aoserrors.New("wait message timeout")
-
-	case message := <-messageChannel:
-		if !reflect.DeepEqual(message, expectedMsg) {
-			return aoserrors.New("Incorrect received message")
-		}
-	}
-
-	return nil
-}
-
-func waitUpdateInstancesStatus(
-	messageChannel <-chan []cloudprotocol.InstanceStatus, expectedMsg []cloudprotocol.InstanceStatus,
-	timeout time.Duration,
-) error {
-	select {
-	case <-time.After(timeout):
-		return aoserrors.New("wait message timeout")
-
-	case message := <-messageChannel:
-		if !reflect.DeepEqual(message, expectedMsg) {
-			return aoserrors.New("Incorrect received message")
+			return aoserrors.New("incorrect received message")
 		}
 	}
 
@@ -1255,4 +1317,18 @@ func (client *testSMClient) processSendMessages(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (client *testSMClient) waitMessage(expectedMsg *pb.SMIncomingMessages, timeout time.Duration) error {
+	select {
+	case <-time.After(timeout):
+		return aoserrors.New("wait message timeout")
+
+	case message := <-client.receivedMessagesChannel:
+		if !proto.Equal(message, expectedMsg) {
+			return aoserrors.New("incorrect received client message")
+		}
+	}
+
+	return nil
 }

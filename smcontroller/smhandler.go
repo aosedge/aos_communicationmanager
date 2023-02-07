@@ -170,7 +170,7 @@ func (handler *smHandler) runInstances(
 
 	for i, serviceInfo := range services {
 		pbRunInstances.Services[i] = &pb.ServiceInfo{
-			VersionInfo: &pb.VesionInfo{
+			VersionInfo: &pb.VersionInfo{
 				AosVersion:    serviceInfo.AosVersion,
 				VendorVersion: serviceInfo.VendorVersion,
 				Description:   serviceInfo.Description,
@@ -187,7 +187,7 @@ func (handler *smHandler) runInstances(
 
 	for i, layerInfo := range layers {
 		pbRunInstances.Layers[i] = &pb.LayerInfo{
-			VersionInfo: &pb.VesionInfo{
+			VersionInfo: &pb.VersionInfo{
 				AosVersion:    layerInfo.AosVersion,
 				VendorVersion: layerInfo.VendorVersion,
 				Description:   layerInfo.Description,
@@ -247,7 +247,7 @@ func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestLog) (err
 	return nil
 }
 
-// nolint:dupl
+//nolint:dupl
 func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
 		"nodeID":    handler.config.NodeID,
@@ -278,7 +278,7 @@ func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (e
 	return nil
 }
 
-// nolint:dupl
+//nolint:dupl
 func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
 		"nodeID":    handler.config.NodeID,
@@ -612,11 +612,28 @@ func (handler *smHandler) sendGetNodeMonitoring() error {
 	return nil
 }
 
+func (handler *smHandler) sendConnectionStatus(cloudConnected bool) error {
+	cloudStatus := pb.ConnectionEnum_DISCONNECTED
+
+	if cloudConnected {
+		cloudStatus = pb.ConnectionEnum_CONNECTED
+	}
+
+	if err := handler.stream.Send(
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pb.ConnectionStatus{CloudStatus: cloudStatus},
+		}}); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus, nodeID string) []cloudprotocol.InstanceStatus {
-	instancesStaus := make([]cloudprotocol.InstanceStatus, len(pbStatuses))
+	instancesStatus := make([]cloudprotocol.InstanceStatus, len(pbStatuses))
 
 	for i, status := range pbStatuses {
-		instancesStaus[i] = cloudprotocol.InstanceStatus{
+		instancesStatus[i] = cloudprotocol.InstanceStatus{
 			InstanceIdent: pbconvert.NewInstanceIdentFromPB(status.Instance),
 			NodeID:        nodeID,
 			AosVersion:    status.AosVersion,
@@ -625,7 +642,7 @@ func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus, nodeID string) []clo
 		}
 	}
 
-	return instancesStaus
+	return instancesStatus
 }
 
 func errorInfoFromPB(pbError *pb.ErrorInfo) *cloudprotocol.ErrorInfo {
