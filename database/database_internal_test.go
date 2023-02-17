@@ -36,6 +36,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
+	"github.com/aoscloud/aos_communicationmanager/networkmanager"
 	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
@@ -470,6 +471,150 @@ func TestLayerStore(t *testing.T) {
 
 		if _, err := db.GetServiceInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
 			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
+func TestNetworkConfiguration(t *testing.T) {
+	casesAdd := []struct {
+		networkInfo networkmanager.NetworkInfo
+	}{
+		{
+			networkInfo: networkmanager.NetworkInfo{
+				InstanceIdent: aostypes.InstanceIdent{
+					ServiceID: "service1",
+					SubjectID: "subject1",
+					Instance:  1,
+				},
+				NetworkID: "network1",
+				NetworkParameters: aostypes.NetworkParameters{
+					Subnet: "172.17.0.0/16",
+					IP:     "172.17.0.1",
+					VlanID: 1,
+				},
+			},
+		},
+		{
+			networkInfo: networkmanager.NetworkInfo{
+				InstanceIdent: aostypes.InstanceIdent{
+					ServiceID: "service1",
+					SubjectID: "subject2",
+					Instance:  1,
+				},
+				NetworkID: "network2",
+				NetworkParameters: aostypes.NetworkParameters{
+					Subnet: "172.18.0.0/16",
+					IP:     "172.18.0.1",
+					VlanID: 1,
+				},
+			},
+		},
+		{
+			networkInfo: networkmanager.NetworkInfo{
+				InstanceIdent: aostypes.InstanceIdent{
+					ServiceID: "service1",
+					SubjectID: "subject2",
+					Instance:  2,
+				},
+				NetworkID: "network2",
+				NetworkParameters: aostypes.NetworkParameters{
+					Subnet: "172.18.0.0/16",
+					IP:     "172.18.0.2",
+					VlanID: 1,
+				},
+			},
+		},
+	}
+
+	for _, tCase := range casesAdd {
+		if err := db.AddNetworkInstanceInfo(tCase.networkInfo); err != nil {
+			t.Errorf("Can't add network info: %v", err)
+		}
+	}
+
+	casesRemove := []struct {
+		expectedNetworkInfo []networkmanager.NetworkInfo
+		removeInstance      aostypes.InstanceIdent
+	}{
+		{
+			removeInstance: aostypes.InstanceIdent{
+				ServiceID: "service1",
+				SubjectID: "subject1",
+				Instance:  1,
+			},
+			expectedNetworkInfo: []networkmanager.NetworkInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{
+						ServiceID: "service1",
+						SubjectID: "subject2",
+						Instance:  1,
+					},
+					NetworkID: "network2",
+					NetworkParameters: aostypes.NetworkParameters{
+						Subnet: "172.18.0.0/16",
+						IP:     "172.18.0.1",
+						VlanID: 1,
+					},
+				},
+				{
+					InstanceIdent: aostypes.InstanceIdent{
+						ServiceID: "service1",
+						SubjectID: "subject2",
+						Instance:  2,
+					},
+					NetworkID: "network2",
+					NetworkParameters: aostypes.NetworkParameters{
+						Subnet: "172.18.0.0/16",
+						IP:     "172.18.0.2",
+						VlanID: 1,
+					},
+				},
+			},
+		},
+		{
+			removeInstance: aostypes.InstanceIdent{
+				ServiceID: "service1",
+				SubjectID: "subject2",
+				Instance:  1,
+			},
+			expectedNetworkInfo: []networkmanager.NetworkInfo{
+				{
+					InstanceIdent: aostypes.InstanceIdent{
+						ServiceID: "service1",
+						SubjectID: "subject2",
+						Instance:  2,
+					},
+					NetworkID: "network2",
+					NetworkParameters: aostypes.NetworkParameters{
+						Subnet: "172.18.0.0/16",
+						IP:     "172.18.0.2",
+						VlanID: 1,
+					},
+				},
+			},
+		},
+		{
+			removeInstance: aostypes.InstanceIdent{
+				ServiceID: "service1",
+				SubjectID: "subject2",
+				Instance:  2,
+			},
+			expectedNetworkInfo: nil,
+		},
+	}
+
+	for _, tCase := range casesRemove {
+		if err := db.RemoveNetworkInstanceInfo(tCase.removeInstance); err != nil {
+			t.Errorf("Can't remove network info: %v", err)
+		}
+
+		networkInfo, err := db.GetNetworkInstancesInfo()
+		if err != nil {
+			t.Errorf("Can't get network info: %v", err)
+		}
+
+		if !reflect.DeepEqual(networkInfo, tCase.expectedNetworkInfo) {
+			t.Error("Unexpected network info")
 		}
 	}
 }
