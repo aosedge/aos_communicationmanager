@@ -36,6 +36,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/downloader"
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
+	"github.com/aoscloud/aos_communicationmanager/networkmanager"
 	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
 )
@@ -127,6 +128,10 @@ func New(config *config.Config) (db *Database, err error) {
 	}
 
 	if err := db.createStorageStateTable(); err != nil {
+		return db, err
+	}
+
+	if err := db.createNetworkTable(); err != nil {
 		return db, err
 	}
 
@@ -629,6 +634,51 @@ func (db *Database) RemoveStorageStateInfo(instanceIdent aostypes.InstanceIdent)
 	return err
 }
 
+// AddNetworkInstanceInfo adds network instance info.
+func (db *Database) AddNetworkInstanceInfo(networkInfo networkmanager.NetworkInfo) error {
+	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?, ?, ?, ?)",
+		networkInfo.ServiceID, networkInfo.SubjectID, networkInfo.Instance, networkInfo.NetworkID,
+		networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID)
+}
+
+// RemoveNetworkInstanceInfo removes network instance info.
+func (db *Database) RemoveNetworkInstanceInfo(instanceIdent aostypes.InstanceIdent) (err error) {
+	if err = db.executeQuery(
+		"DELETE FROM network WHERE serviceID = ? AND subjectID = ? AND instance = ?",
+		instanceIdent.ServiceID, instanceIdent.SubjectID,
+		instanceIdent.Instance); errors.Is(err, errNotExist) {
+		return nil
+	}
+
+	return err
+}
+
+// GetNetworkInstancesInfo returns network instances info.
+func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.NetworkInfo, err error) {
+	rows, err := db.sql.Query("SELECT * FROM network")
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
+	for rows.Next() {
+		var networkInfo networkmanager.NetworkInfo
+
+		if err = rows.Scan(&networkInfo.ServiceID, &networkInfo.SubjectID, &networkInfo.Instance,
+			&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet, &networkInfo.VlanID); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		networkInfos = append(networkInfos, networkInfo)
+	}
+
+	return networkInfos, nil
+}
+
 // Close closes database.
 func (db *Database) Close() {
 	db.sql.Close()
@@ -743,6 +793,21 @@ func (db *Database) createInstancesTable() (err error) {
                                                                 instance INTEGER,
                                                                 uid integer,
                                                                 PRIMARY KEY(serviceId, subjectId, instance))`)
+
+	return aoserrors.Wrap(err)
+}
+
+func (db *Database) createNetworkTable() (err error) {
+	log.Info("Create network table")
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS network (serviceId TEXT,
+                                                              subjectId TEXT,
+                                                              instance INTEGER,
+                                                              networkID TEXT,
+                                                              ip TEXT,
+                                                              subnet TEXT,
+                                                              vlanID INTEGER,
+                                                              PRIMARY KEY(serviceId, subjectId, instance))`)
 
 	return aoserrors.Wrap(err)
 }
