@@ -20,6 +20,7 @@ package launcher_test
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"reflect"
 	"testing"
@@ -28,6 +29,7 @@ import (
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/apparentlymart/go-cidr/cidr"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -84,6 +86,12 @@ type testStateStorage struct {
 	cleanedInstances []aostypes.InstanceIdent
 }
 
+type testNetworkManager struct {
+	currentIP   net.IP
+	subnet      net.IPNet
+	networkInfo map[string]map[aostypes.InstanceIdent]struct{}
+}
+
 /***********************************************************************************************************************
  * Init
  **********************************************************************************************************************/
@@ -118,7 +126,9 @@ func TestInitialStatus(t *testing.T) {
 	)
 
 	launcherInstance, err := launcher.New(
-		cfg, testStorage, nodeManager, nil, &testResourceManager{}, stateStorageProvider)
+		cfg, testStorage, nodeManager, nil, &testResourceManager{}, stateStorageProvider, &testNetworkManager{
+			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
+		})
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -191,8 +201,17 @@ func TestBalancing(t *testing.T) {
 	}
 	resourceManager.nodeResources["runxSMType"] = aostypes.NodeUnitConfig{Priority: 100}
 
+	ip, ipNet, err := net.ParseCIDR("172.17.0.1/16")
+	if err != nil {
+		t.Errorf("Can't parse subnet: %v", err)
+	}
+
 	launcherInstance, err := launcher.New(
-		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, stateStorageProvider)
+		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, stateStorageProvider, &testNetworkManager{
+			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
+			currentIP:   ip,
+			subnet:      *ipNet,
+		})
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -293,14 +312,26 @@ func TestBalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.2",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
 					UID:           5001, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.3",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.4",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -321,6 +352,10 @@ func TestBalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "runxServ1", SubjectID: "subj2", Instance: 0},
 					UID:           5003, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.5",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -457,8 +492,17 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
 	}
 
+	ip, ipNet, err := net.ParseCIDR("172.17.0.1/16")
+	if err != nil {
+		t.Errorf("Can't parse subnet: %v", err)
+	}
+
 	launcherInstance, err := launcher.New(
-		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{})
+		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{}, &testNetworkManager{
+			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
+			currentIP:   ip,
+			subnet:      *ipNet,
+		})
 	if err != nil {
 		t.Fatalf("Can't create launcher: %v", err)
 	}
@@ -526,6 +570,10 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.3",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -540,6 +588,10 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj1", Instance: 1},
 					UID:           5002, Priority: 90, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.4",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -555,6 +607,10 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.2",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -701,8 +757,17 @@ func TestRebalancing(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
 	}
 
+	ip, ipNet, err := net.ParseCIDR("172.17.0.1/16")
+	if err != nil {
+		t.Errorf("Can't parse subnet: %v", err)
+	}
+
 	launcherInstance, err := launcher.New(
-		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{})
+		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{}, &testNetworkManager{
+			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
+			currentIP:   ip,
+			subnet:      *ipNet,
+		})
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -776,10 +841,18 @@ func TestRebalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.3",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.4",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -794,6 +867,10 @@ func TestRebalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
 					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.5",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -813,10 +890,18 @@ func TestRebalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.2",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
 					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.6",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -895,6 +980,10 @@ func TestRebalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.8",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -909,6 +998,10 @@ func TestRebalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
 					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.10",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -928,14 +1021,26 @@ func TestRebalancing(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.7",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
 					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.11",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
+					NetworkParameters: aostypes.NetworkParameters{
+						IP:     "172.17.0.9",
+						Subnet: "172.17.0.0/16",
+					},
 				},
 			},
 		},
@@ -1169,6 +1274,39 @@ func (testProvider *testImageProvider) RevertService(serviceID string) error {
 	testProvider.revertedServices = append(testProvider.revertedServices, serviceID)
 
 	return nil
+}
+
+func (network *testNetworkManager) PrepareInstanceNetworkParameters(
+	instanceIdent aostypes.InstanceIdent, networkID string,
+) (aostypes.NetworkParameters, error) {
+	if len(network.networkInfo[networkID]) == 0 {
+		network.networkInfo[networkID] = make(map[aostypes.InstanceIdent]struct{})
+	}
+
+	network.currentIP = cidr.Inc(network.currentIP)
+
+	network.networkInfo[networkID][instanceIdent] = struct{}{}
+
+	return aostypes.NetworkParameters{
+		IP:     network.currentIP.String(),
+		Subnet: network.subnet.String(),
+	}, nil
+}
+
+func (network *testNetworkManager) RemoveInstanceNetworkParameters(
+	instanceIdent aostypes.InstanceIdent, networkID string,
+) {
+	delete(network.networkInfo[networkID], instanceIdent)
+}
+
+func (network *testNetworkManager) GetInstances() (instances []aostypes.InstanceIdent) {
+	for networkID := range network.networkInfo {
+		for instanceIdent := range network.networkInfo[networkID] {
+			instances = append(instances, instanceIdent)
+		}
+	}
+
+	return instances
 }
 
 /***********************************************************************************************************************
