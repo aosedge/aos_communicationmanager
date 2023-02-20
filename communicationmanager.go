@@ -50,6 +50,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
 	"github.com/aoscloud/aos_communicationmanager/monitorcontroller"
+	"github.com/aoscloud/aos_communicationmanager/networkmanager"
 	"github.com/aoscloud/aos_communicationmanager/smcontroller"
 	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/umcontroller"
@@ -87,6 +88,7 @@ type communicationManager struct {
 	statusHandler     *unitstatushandler.Instance
 	launcher          *launcher.Launcher
 	imagemanager      *imagemanager.Imagemanager
+	network           *networkmanager.NetworkManager
 	storageState      *storagestate.StorageState
 	cmServer          *cmserver.CMServer
 }
@@ -208,8 +210,12 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	if cm.network, err = networkmanager.New(cm.db); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	if cm.launcher, err = launcher.New(
-		cfg, cm.db, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState); err != nil {
+		cfg, cm.db, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState, cm.network); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
