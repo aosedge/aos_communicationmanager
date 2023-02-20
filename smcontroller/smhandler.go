@@ -203,11 +203,12 @@ func (handler *smHandler) runInstances(
 
 	for i, instanceInfo := range instances {
 		pbRunInstances.Instances[i] = &pb.InstanceInfo{
-			Instance:    pbconvert.InstanceIdentToPB(instanceInfo.InstanceIdent),
-			Uid:         instanceInfo.UID,
-			Priority:    instanceInfo.Priority,
-			StoragePath: instanceInfo.StoragePath,
-			StatePath:   instanceInfo.StatePath,
+			Instance:          pbconvert.InstanceIdentToPB(instanceInfo.InstanceIdent),
+			Uid:               instanceInfo.UID,
+			Priority:          instanceInfo.Priority,
+			StoragePath:       instanceInfo.StoragePath,
+			StatePath:         instanceInfo.StatePath,
+			NetworkParameters: pbconvert.NetworkParametersToPB(instanceInfo.NetworkParameters),
 		}
 	}
 
