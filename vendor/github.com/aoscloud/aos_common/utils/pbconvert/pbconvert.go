@@ -45,10 +45,26 @@ func InstanceIdentToPB(ident aostypes.InstanceIdent) *pb.InstanceIdent {
 	return &pb.InstanceIdent{ServiceId: ident.ServiceID, SubjectId: ident.SubjectID, Instance: int64(ident.Instance)}
 }
 
+func NetworkParametersToPB(params aostypes.NetworkParameters) *pb.NetworkParameters {
+	return &pb.NetworkParameters{
+		Ip:     params.IP,
+		Subnet: params.Subnet,
+		VlanId: params.VlanID,
+	}
+}
+
 func NewInstanceIdentFromPB(ident *pb.InstanceIdent) aostypes.InstanceIdent {
 	return aostypes.InstanceIdent{
 		ServiceID: ident.ServiceId,
 		SubjectID: ident.SubjectId,
 		Instance:  uint64(ident.Instance),
+	}
+}
+
+func NewNetworkParametersFromPB(params *pb.NetworkParameters) aostypes.NetworkParameters {
+	return aostypes.NetworkParameters{
+		IP:     params.Ip,
+		Subnet: params.Subnet,
+		VlanID: params.VlanId,
 	}
 }
