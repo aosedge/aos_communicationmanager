@@ -939,8 +939,9 @@ func TestRunInstances(t *testing.T) {
 				},
 				Instances: []*pb.InstanceInfo{
 					{
-						Instance: &pb.InstanceIdent{ServiceId: "s1", SubjectId: "subj1", Instance: 1},
-						Uid:      500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+						Instance:          &pb.InstanceIdent{ServiceId: "s1", SubjectId: "subj1", Instance: 1},
+						NetworkParameters: &pb.NetworkParameters{Ip: "172.17.0.3", Subnet: "172.17.0.0/16", VlanId: 1},
+						Uid:               500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 					},
 				},
 			},
@@ -956,8 +957,9 @@ func TestRunInstances(t *testing.T) {
 			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 		}}
 		sendInstances = []aostypes.InstanceInfo{{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
-			UID:           500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+			InstanceIdent:     aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
+			NetworkParameters: aostypes.NetworkParameters{IP: "172.17.0.3", Subnet: "172.17.0.0/16", VlanID: 1},
+			UID:               500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 		}}
 	)
 
