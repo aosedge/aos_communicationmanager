@@ -166,9 +166,17 @@ type InstanceIdent struct {
 	Instance  uint64 `json:"instance"`
 }
 
+// NetworkParameters networks parameters.
+type NetworkParameters struct {
+	Subnet string
+	IP     string
+	VlanID uint64
+}
+
 // InstanceInfo instance information to start it.
 type InstanceInfo struct {
 	InstanceIdent
+	NetworkParameters
 	UID         uint32 `json:"uid"`
 	Priority    uint64 `json:"priority"`
 	StoragePath string `json:"storagePath"`
