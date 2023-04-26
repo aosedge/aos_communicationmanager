@@ -313,24 +313,27 @@ func TestBalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.2",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.2",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
 					UID:           5001, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.3",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.3",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.4",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.4",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -353,8 +356,9 @@ func TestBalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "runxServ1", SubjectID: "subj2", Instance: 0},
 					UID:           5003, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.5",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.5",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -571,8 +575,9 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.3",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.3",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -589,8 +594,9 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj1", Instance: 1},
 					UID:           5002, Priority: 90, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.4",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.4",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -608,8 +614,9 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.2",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.2",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -842,16 +849,18 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.3",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.3",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.4",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.4",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -868,8 +877,9 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
 					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.5",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.5",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -891,16 +901,18 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.2",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.2",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
 					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.6",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.6",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -981,8 +993,9 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.8",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.8",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -999,8 +1012,9 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
 					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.10",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.10",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -1022,24 +1036,27 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servRes1", SubjectID: "subj1", Instance: 0},
 					UID:           5000, Priority: 100, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.7",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.7",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
 					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.11",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.11",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:     "172.17.0.9",
-						Subnet: "172.17.0.0/16",
+						IP:         "172.17.0.9",
+						Subnet:     "172.17.0.0/16",
+						DNSServers: []string{"10.10.0.1"},
 					},
 				},
 			},
@@ -1277,7 +1294,7 @@ func (testProvider *testImageProvider) RevertService(serviceID string) error {
 }
 
 func (network *testNetworkManager) PrepareInstanceNetworkParameters(
-	instanceIdent aostypes.InstanceIdent, networkID string,
+	instanceIdent aostypes.InstanceIdent, networkID string, hosts []string,
 ) (aostypes.NetworkParameters, error) {
 	if len(network.networkInfo[networkID]) == 0 {
 		network.networkInfo[networkID] = make(map[aostypes.InstanceIdent]struct{})
@@ -1288,8 +1305,9 @@ func (network *testNetworkManager) PrepareInstanceNetworkParameters(
 	network.networkInfo[networkID][instanceIdent] = struct{}{}
 
 	return aostypes.NetworkParameters{
-		IP:     network.currentIP.String(),
-		Subnet: network.subnet.String(),
+		IP:         network.currentIP.String(),
+		Subnet:     network.subnet.String(),
+		DNSServers: []string{"10.10.0.1"},
 	}, nil
 }
 
@@ -1307,6 +1325,10 @@ func (network *testNetworkManager) GetInstances() (instances []aostypes.Instance
 	}
 
 	return instances
+}
+
+func (network *testNetworkManager) RestartDNSServer() error {
+	return nil
 }
 
 /***********************************************************************************************************************
