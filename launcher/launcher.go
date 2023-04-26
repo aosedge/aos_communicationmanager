@@ -101,8 +101,9 @@ type Storage interface {
 // NetworkManager network manager interface.
 type NetworkManager interface {
 	PrepareInstanceNetworkParameters(
-		instanceIdent aostypes.InstanceIdent, networkID string) (aostypes.NetworkParameters, error)
+		instanceIdent aostypes.InstanceIdent, networkID string, hosts []string) (aostypes.NetworkParameters, error)
 	RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent, networkID string)
+	RestartDNSServer() error
 	GetInstances() []aostypes.InstanceIdent
 }
 
@@ -229,6 +230,10 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, n
 	launcher.currentDesiredInstances = instances
 	launcher.pendingNewServices = newServices
 	launcher.currentErrorStatus = launcher.performNodeBalancing(instances)
+
+	if err := launcher.networkManager.RestartDNSServer(); err != nil {
+		log.Errorf("Can't restart DNS server: %v", err)
+	}
 
 	return launcher.sendRunInstances(false)
 }
@@ -751,8 +756,14 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 		return instanceInfo, aoserrors.Errorf("can't setup storage and state for instance: %v", err)
 	}
 
+	var hosts []string
+
+	if service.Config.Hostname != nil {
+		hosts = append(hosts, *service.Config.Hostname)
+	}
+
 	if instanceInfo.NetworkParameters, err = launcher.networkManager.PrepareInstanceNetworkParameters(
-		instanceInfo.InstanceIdent, service.ProviderID); err != nil {
+		instanceInfo.InstanceIdent, service.ProviderID, hosts); err != nil {
 		return instanceInfo, aoserrors.Wrap(err)
 	}
 
