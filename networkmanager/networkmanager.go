@@ -21,12 +21,15 @@ package networkmanager
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"net"
+	"path/filepath"
 	"sync"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aoscloud/aos_communicationmanager/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -53,6 +56,7 @@ type NetworkManager struct {
 	instancesData map[string]map[aostypes.InstanceIdent]aostypes.NetworkParameters
 	vlanIDs       map[string]uint64
 	ipamSubnet    *ipSubnet
+	dns           *dnsServer
 	storage       Storage
 }
 
@@ -79,10 +83,15 @@ var (
  **********************************************************************************************************************/
 
 // New creates network manager instance.
-func New(storage Storage) (*NetworkManager, error) {
+func New(storage Storage, config *config.Config) (*NetworkManager, error) {
 	log.Debug("Create network manager")
 
 	ipamSubnet, err := newIPam()
+	if err != nil {
+		return nil, err
+	}
+
+	dns, err := newDNSServer(filepath.Join(config.WorkingDir, "network"))
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +104,7 @@ func New(storage Storage) (*NetworkManager, error) {
 		instancesData: make(map[string]map[aostypes.InstanceIdent]aostypes.NetworkParameters),
 		vlanIDs:       make(map[string]uint64),
 		ipamSubnet:    ipamSubnet,
+		dns:           dns,
 		storage:       storage,
 	}
 
@@ -121,8 +131,8 @@ func New(storage Storage) (*NetworkManager, error) {
 
 // RemoveInstanceNetworkConf removes stored instance network parameters.
 func (manager *NetworkManager) RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent, networkID string) {
-	networkParameters, err := manager.getNetworkParametersToCache(networkID, instanceIdent)
-	if err != nil {
+	networkParameters, found := manager.getNetworkParametersToCache(networkID, instanceIdent)
+	if !found {
 		return
 	}
 
@@ -149,13 +159,37 @@ func (manager *NetworkManager) GetInstances() []aostypes.InstanceIdent {
 	return instances
 }
 
+// Restart restarts DNS server.
+func (manager *NetworkManager) RestartDNSServer() error {
+	if err := manager.dns.rewriteHostsFile(); err != nil {
+		return err
+	}
+
+	manager.dns.cleanCacheHosts()
+
+	return manager.dns.restart()
+}
+
 // PrepareInstanceNetworkParameters prepares network parameters for instance.
 func (manager *NetworkManager) PrepareInstanceNetworkParameters(
-	instanceIdent aostypes.InstanceIdent, networkID string,
-) (aostypes.NetworkParameters, error) {
-	networkParameters, err := manager.getNetworkParametersToCache(networkID, instanceIdent)
-	if err == nil {
-		return networkParameters, nil
+	instanceIdent aostypes.InstanceIdent, networkID string, hosts []string,
+) (networkParameters aostypes.NetworkParameters, err error) {
+	if instanceIdent.ServiceID != "" && instanceIdent.SubjectID != "" {
+		hosts = append(
+			hosts, fmt.Sprintf("%d.%s.%s", instanceIdent.Instance, instanceIdent.SubjectID, instanceIdent.ServiceID))
+
+		if instanceIdent.Instance == 0 {
+			hosts = append(hosts, fmt.Sprintf("%s.%s", instanceIdent.SubjectID, instanceIdent.ServiceID))
+		}
+	}
+
+	networkParameters, found := manager.getNetworkParametersToCache(networkID, instanceIdent)
+	if found {
+		if err := manager.dns.addHosts(hosts, networkParameters.IP); err != nil {
+			return networkParameters, err
+		}
+
+		return networkParameters, err
 	}
 
 	var (
@@ -176,8 +210,13 @@ func (manager *NetworkManager) PrepareInstanceNetworkParameters(
 
 	networkParameters.IP = ip.String()
 	networkParameters.Subnet = subnet.String()
+	networkParameters.DNSServers = []string{manager.dns.IPAddress}
 
 	if networkParameters.VlanID, err = GetVlanID(networkID); err != nil {
+		return networkParameters, err
+	}
+
+	if err := manager.dns.addHosts(hosts, ip.String()); err != nil {
 		return networkParameters, err
 	}
 
@@ -205,6 +244,7 @@ func (manager *NetworkManager) deleteNetworkParametersFromCache(
 	defer manager.Unlock()
 
 	delete(manager.instancesData[networkID], instanceIdent)
+	delete(manager.dns.hosts, ip.String())
 
 	if len(manager.instancesData[networkID]) == 0 {
 		manager.ipamSubnet.releaseIPNetPool(networkID)
@@ -230,17 +270,17 @@ func (manager *NetworkManager) addNetworkParametersToCache(
 
 func (manager *NetworkManager) getNetworkParametersToCache(
 	networkID string, instanceIdent aostypes.InstanceIdent,
-) (aostypes.NetworkParameters, error) {
+) (aostypes.NetworkParameters, bool) {
 	manager.RLock()
 	defer manager.RUnlock()
 
 	if instances, ok := manager.instancesData[networkID]; ok {
 		if networkParameter, ok := instances[instanceIdent]; ok {
-			return networkParameter, nil
+			return networkParameter, true
 		}
 	}
 
-	return aostypes.NetworkParameters{}, aoserrors.Errorf("not found")
+	return aostypes.NetworkParameters{}, false
 }
 
 func (manager *NetworkManager) getVlanID(networkID string) (uint64, error) {
