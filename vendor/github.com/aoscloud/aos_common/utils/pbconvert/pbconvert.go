@@ -46,11 +46,16 @@ func InstanceIdentToPB(ident aostypes.InstanceIdent) *pb.InstanceIdent {
 }
 
 func NetworkParametersToPB(params aostypes.NetworkParameters) *pb.NetworkParameters {
-	return &pb.NetworkParameters{
-		Ip:     params.IP,
-		Subnet: params.Subnet,
-		VlanId: params.VlanID,
+	networkParams := &pb.NetworkParameters{
+		Ip:         params.IP,
+		Subnet:     params.Subnet,
+		VlanId:     params.VlanID,
+		DnsServers: make([]string, len(params.DNSServers)),
 	}
+
+	copy(networkParams.DnsServers, params.DNSServers)
+
+	return networkParams
 }
 
 func NewInstanceIdentFromPB(ident *pb.InstanceIdent) aostypes.InstanceIdent {
@@ -62,9 +67,14 @@ func NewInstanceIdentFromPB(ident *pb.InstanceIdent) aostypes.InstanceIdent {
 }
 
 func NewNetworkParametersFromPB(params *pb.NetworkParameters) aostypes.NetworkParameters {
-	return aostypes.NetworkParameters{
-		IP:     params.Ip,
-		Subnet: params.Subnet,
-		VlanID: params.VlanId,
+	networkParams := aostypes.NetworkParameters{
+		IP:         params.Ip,
+		Subnet:     params.Subnet,
+		VlanID:     params.VlanId,
+		DNSServers: make([]string, len(params.DnsServers)),
 	}
+
+	copy(networkParams.DNSServers, params.DnsServers)
+
+	return networkParams
 }
