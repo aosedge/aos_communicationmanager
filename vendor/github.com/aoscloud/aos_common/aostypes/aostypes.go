@@ -168,9 +168,10 @@ type InstanceIdent struct {
 
 // NetworkParameters networks parameters.
 type NetworkParameters struct {
-	Subnet string
-	IP     string
-	VlanID uint64
+	Subnet     string
+	IP         string
+	VlanID     uint64
+	DNSServers []string
 }
 
 // InstanceInfo instance information to start it.
