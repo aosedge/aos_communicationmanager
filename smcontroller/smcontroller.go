@@ -245,6 +245,16 @@ func (controller *Controller) RunInstances(nodeID string,
 	return handler.runInstances(services, layers, instances, forceRestart)
 }
 
+// UpdateNetwork updates node networks configuration.
+func (controller *Controller) UpdateNetwork(nodeID string, networkParameters []aostypes.NetworkParameters) error {
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
+
+	return handler.updateNetworks(networkParameters)
+}
+
 // OverrideEnvVars overrides instance env vars.
 func (controller *Controller) OverrideEnvVars(nodeID string, envVars cloudprotocol.OverrideEnvVars) error {
 	handler, err := controller.getNodeHandlerByID(nodeID)
