@@ -33,6 +33,7 @@ import (
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/image"
 	"github.com/aoscloud/aos_common/spaceallocator"
+	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -106,12 +107,13 @@ type Imagemanager struct {
 // ServiceInfo service information.
 type ServiceInfo struct {
 	aostypes.ServiceInfo
-	RemoteURL string
-	Path      string
-	Timestamp time.Time
-	Cached    bool
-	Config    aostypes.ServiceConfig
-	Layers    []string
+	RemoteURL    string
+	Path         string
+	Timestamp    time.Time
+	Cached       bool
+	Config       aostypes.ServiceConfig
+	Layers       []string
+	ExposedPorts []string
 }
 
 // LayerInfo service information.
@@ -367,7 +369,7 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 func (imagemanager *Imagemanager) addService(
 	decryptedFile string, serviceInfo cloudprotocol.ServiceInfo, gid int,
 ) error {
-	layers, serviceConfig, err := imagemanager.getLayersAndServiceConfigFromManifest(decryptedFile)
+	layers, exposedPorts, serviceConfig, err := imagemanager.getServiceDataFromManifest(decryptedFile)
 	if err != nil {
 		return err
 	}
@@ -393,11 +395,12 @@ func (imagemanager *Imagemanager) addService(
 			Sha256:      fileInfo.Sha256,
 			Sha512:      fileInfo.Sha512,
 		},
-		RemoteURL: remoteURL,
-		Path:      decryptedFile,
-		Timestamp: time.Now().UTC(),
-		Config:    serviceConfig,
-		Layers:    layers,
+		RemoteURL:    remoteURL,
+		Path:         decryptedFile,
+		Timestamp:    time.Now().UTC(),
+		Config:       serviceConfig,
+		Layers:       layers,
+		ExposedPorts: exposedPorts,
 	}); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -702,17 +705,17 @@ func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceI
 	return nil
 }
 
-func (imagemanager *Imagemanager) getLayersAndServiceConfigFromManifest(
+func (imagemanager *Imagemanager) getServiceDataFromManifest(
 	sourceFile string,
-) (layers []string, serviceConfig aostypes.ServiceConfig, err error) {
+) (layers []string, exposedPorts []string, serviceConfig aostypes.ServiceConfig, err error) {
 	size, err := image.GetUncompressedTarContentSize(sourceFile)
 	if err != nil {
-		return nil, serviceConfig, aoserrors.Wrap(err)
+		return nil, nil, serviceConfig, aoserrors.Wrap(err)
 	}
 
 	space, err := imagemanager.tmpAllocator.AllocateSpace(uint64(size))
 	if err != nil {
-		return nil, serviceConfig, aoserrors.Wrap(err)
+		return nil, nil, serviceConfig, aoserrors.Wrap(err)
 	}
 
 	defer func() {
@@ -723,39 +726,52 @@ func (imagemanager *Imagemanager) getLayersAndServiceConfigFromManifest(
 
 	imagePath, err := ioutil.TempDir(imagemanager.tmpDir, "")
 	if err != nil {
-		return nil, serviceConfig, aoserrors.Wrap(err)
+		return nil, nil, serviceConfig, aoserrors.Wrap(err)
 	}
 
 	defer os.RemoveAll(imagePath)
 
 	if err = image.UnpackTarImage(sourceFile, imagePath); err != nil {
-		return nil, serviceConfig, aoserrors.Wrap(err)
+		return nil, nil, serviceConfig, aoserrors.Wrap(err)
 	}
 
 	manifest, err := image.GetImageManifest(imagePath)
 	if err != nil {
-		return nil, serviceConfig, aoserrors.Wrap(err)
+		return nil, nil, serviceConfig, aoserrors.Wrap(err)
 	}
 
 	layers = image.GetLayersFromManifest(manifest)
 
+	imageConfigPath := path.Join(imagePath, blobsFolder, string(manifest.Config.Digest.Algorithm()),
+		manifest.Config.Digest.Hex())
+
+	var imageConfig imagespec.Image
+
+	if err = getJSONFromFile(imageConfigPath, &imageConfig); err != nil {
+		return nil, nil, serviceConfig, aoserrors.Wrap(err)
+	}
+
 	if manifest.AosService != nil {
 		if err = image.ValidateDigest(imagePath, manifest.AosService.Digest); err != nil {
-			return nil, serviceConfig, aoserrors.Wrap(err)
+			return nil, nil, serviceConfig, aoserrors.Wrap(err)
 		}
 
 		byteValue, err := ioutil.ReadFile(path.Join(
 			imagePath, blobsFolder, string(manifest.AosService.Digest.Algorithm()), manifest.AosService.Digest.Hex()))
 		if err != nil {
-			return nil, serviceConfig, aoserrors.Wrap(err)
+			return nil, nil, serviceConfig, aoserrors.Wrap(err)
 		}
 
 		if err = json.Unmarshal(byteValue, &serviceConfig); err != nil {
-			return nil, serviceConfig, aoserrors.Errorf("invalid Aos service config: %v", err)
+			return nil, nil, serviceConfig, aoserrors.Errorf("invalid Aos service config: %v", err)
 		}
 	}
 
-	return layers, serviceConfig, nil
+	for exposedPort := range imageConfig.Config.ExposedPorts {
+		exposedPorts = append(exposedPorts, exposedPort)
+	}
+
+	return layers, exposedPorts, serviceConfig, nil
 }
 
 func (imagemanager *Imagemanager) clearServiceResource(service ServiceInfo) error {
@@ -1030,4 +1046,17 @@ func releaseAllocatedSpace(filePath string, space spaceallocator.Space) {
 	if err := space.Release(); err != nil {
 		log.Errorf("Can't release memory: %v", err)
 	}
+}
+
+func getJSONFromFile(fileName string, data interface{}) error {
+	byteValue, err := os.ReadFile(fileName)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err = json.Unmarshal(byteValue, data); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
 }
