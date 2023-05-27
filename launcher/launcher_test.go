@@ -35,6 +35,7 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/config"
 	"github.com/aoscloud/aos_communicationmanager/imagemanager"
 	"github.com/aoscloud/aos_communicationmanager/launcher"
+	"github.com/aoscloud/aos_communicationmanager/networkmanager"
 	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
 )
@@ -849,7 +850,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.3",
+						IP:         "172.17.0.4",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -858,7 +859,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.4",
+						IP:         "172.17.0.5",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -877,7 +878,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
 					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.5",
+						IP:         "172.17.0.6",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -910,7 +911,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
 					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.6",
+						IP:         "172.17.0.3",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -993,7 +994,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servNoDev", SubjectID: "subj1", Instance: 0},
 					UID:           5001, Priority: 90, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.8",
+						IP:         "172.17.0.9",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -1012,7 +1013,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 1},
 					UID:           5003, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.10",
+						IP:         "172.17.0.11",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -1045,7 +1046,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 2},
 					UID:           5004, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.11",
+						IP:         "172.17.0.8",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -1054,7 +1055,7 @@ func TestRebalancing(t *testing.T) {
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "servCommonDev", SubjectID: "subj1", Instance: 0},
 					UID:           5002, Priority: 50, StoragePath: "", StatePath: "",
 					NetworkParameters: aostypes.NetworkParameters{
-						IP:         "172.17.0.9",
+						IP:         "172.17.0.10",
 						Subnet:     "172.17.0.0/16",
 						DNSServers: []string{"10.10.0.1"},
 					},
@@ -1293,8 +1294,13 @@ func (testProvider *testImageProvider) RevertService(serviceID string) error {
 	return nil
 }
 
+func (network *testNetworkManager) UpdateProviderNetwork(providers []string, nodeID string) error {
+	return nil
+}
+
 func (network *testNetworkManager) PrepareInstanceNetworkParameters(
-	instanceIdent aostypes.InstanceIdent, networkID string, hosts []string,
+	instanceIdent aostypes.InstanceIdent, networkID string,
+	params networkmanager.NetworkParameters,
 ) (aostypes.NetworkParameters, error) {
 	if len(network.networkInfo[networkID]) == 0 {
 		network.networkInfo[networkID] = make(map[aostypes.InstanceIdent]struct{})
