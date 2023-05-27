@@ -23,10 +23,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
-	"unicode"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
@@ -41,13 +41,26 @@ import (
  * Types
  **********************************************************************************************************************/
 
+type ipam struct {
+	ip     net.IP
+	subnet net.IPNet
+}
+
 type ipamTest struct {
-	currentIP net.IP
-	subnet    net.IPNet
+	ipamData map[string]*ipam
 }
 
 type testStore struct {
-	networkInfos map[aostypes.InstanceIdent]networkmanager.NetworkInfo
+	networkInfos map[aostypes.InstanceIdent]networkmanager.InstanceNetworkInfo
+}
+
+type testNodeManager struct {
+	network   map[string][]aostypes.NetworkParameters
+	chanReady chan struct{}
+}
+
+type testVlan struct {
+	vlanID int
 }
 
 /***********************************************************************************************************************
@@ -97,16 +110,15 @@ func TestBaseNetwork(t *testing.T) {
 	}
 
 	networkmanager.GetIPSubnet = ipam.getIPSubnet
-	networkmanager.GetVlanID = getVlanID
 	networkmanager.LookPath = lookPath
 	networkmanager.DiscoverInterface = discoverInterface
 	networkmanager.ExecContext = newTestShellCommander
 
 	storage := &testStore{
-		networkInfos: make(map[aostypes.InstanceIdent]networkmanager.NetworkInfo),
+		networkInfos: make(map[aostypes.InstanceIdent]networkmanager.InstanceNetworkInfo),
 	}
 
-	manager, err := networkmanager.New(storage, &config.Config{
+	manager, err := networkmanager.New(storage, nil, &config.Config{
 		WorkingDir: tmpDir,
 	})
 	if err != nil {
@@ -123,7 +135,6 @@ func TestBaseNetwork(t *testing.T) {
 			networkParameters: aostypes.NetworkParameters{
 				IP:     ("172.17.0.2"),
 				Subnet: ("172.17.0.0/16"),
-				VlanID: 1,
 			},
 			instance: aostypes.InstanceIdent{
 				ServiceID: "service1",
@@ -136,7 +147,6 @@ func TestBaseNetwork(t *testing.T) {
 			networkParameters: aostypes.NetworkParameters{
 				IP:     ("172.17.0.3"),
 				Subnet: ("172.17.0.0/16"),
-				VlanID: 1,
 			},
 			instance: aostypes.InstanceIdent{
 				ServiceID: "service1",
@@ -144,41 +154,6 @@ func TestBaseNetwork(t *testing.T) {
 				Instance:  2,
 			},
 			hosts: []string{"hosts2"},
-		},
-		{
-			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.3"),
-				Subnet: ("172.17.0.0/16"),
-				VlanID: 1,
-			},
-			instance: aostypes.InstanceIdent{
-				ServiceID: "service1",
-				SubjectID: "subject1",
-				Instance:  2,
-			},
-			hosts: []string{"hosts3"},
-		},
-		{
-			instance: aostypes.InstanceIdent{
-				ServiceID: "service1",
-				SubjectID: "subject1",
-				Instance:  2,
-			},
-			hosts:        []string{"hosts4"},
-			removeConfig: true,
-		},
-		{
-			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.4"),
-				Subnet: ("172.17.0.0/16"),
-				VlanID: 1,
-			},
-			instance: aostypes.InstanceIdent{
-				ServiceID: "service1",
-				SubjectID: "subject1",
-				Instance:  2,
-			},
-			hosts: []string{"hosts5"},
 		},
 	}
 
@@ -189,7 +164,10 @@ func TestBaseNetwork(t *testing.T) {
 			continue
 		}
 
-		networkParameters, err := manager.PrepareInstanceNetworkParameters(data.instance, "network1", data.hosts)
+		networkParameters, err := manager.PrepareInstanceNetworkParameters(
+			data.instance, "network1", networkmanager.NetworkParameters{
+				Hosts: data.hosts,
+			})
 		if err != nil {
 			t.Fatalf("Can't prepare instance network configuration: %v", err)
 		}
@@ -219,14 +197,23 @@ func TestBaseNetwork(t *testing.T) {
 		t.Fatalf("Can't restart dns server: %v", err)
 	}
 
-	hosts, err := ioutil.ReadFile(filepath.Join(tmpDir, "network", "addnhosts"))
+	expected := []string{
+		"172.17.0.2\thosts1\t1.subject1.service1",
+		"172.17.0.3\thosts2\t2.subject1.service1",
+	}
+	sort.Strings(expected)
+
+	rawHosts, err := ioutil.ReadFile(filepath.Join(tmpDir, "network", "addnhosts"))
 	if err != nil {
 		t.Fatalf("Can't read hosts file: %v", err)
 	}
 
-	expected := "172.17.0.2hosts11.subject1.service1172.17.0.4hosts52.subject1.service1"
-	if removeSpaces(string(hosts)) != expected {
-		t.Errorf("Unexpected hosts file content: %v", string(hosts))
+	hosts := strings.TrimSpace(string(rawHosts))
+	hostsLines := strings.Split(hosts, "\n")
+	sort.Strings(hostsLines)
+
+	if !reflect.DeepEqual(hostsLines, expected) {
+		t.Errorf("Unexpected hosts file content: %v", hostsLines)
 	}
 
 	expectedInstancesIdent := []aostypes.InstanceIdent{
@@ -355,10 +342,10 @@ func TestNetworkStorage(t *testing.T) {
 	networkmanager.ExecContext = newTestShellCommander
 
 	storage := &testStore{
-		networkInfos: make(map[aostypes.InstanceIdent]networkmanager.NetworkInfo),
+		networkInfos: make(map[aostypes.InstanceIdent]networkmanager.InstanceNetworkInfo),
 	}
 
-	manager, err := networkmanager.New(storage, &config.Config{
+	manager, err := networkmanager.New(storage, nil, &config.Config{
 		WorkingDir: tmpDir,
 	})
 	if err != nil {
@@ -398,12 +385,14 @@ func TestNetworkStorage(t *testing.T) {
 
 	for _, data := range testData {
 		if _, err := manager.PrepareInstanceNetworkParameters(
-			data.instance, "network1", data.hosts); err != nil {
+			data.instance, "network1", networkmanager.NetworkParameters{
+				Hosts: data.hosts,
+			}); err != nil {
 			t.Fatalf("Can't prepare instance network configuration: %v", err)
 		}
 	}
 
-	manager1, err := networkmanager.New(storage, &config.Config{
+	manager1, err := networkmanager.New(storage, nil, &config.Config{
 		WorkingDir: tmpDir,
 	})
 	if err != nil {
@@ -521,26 +510,53 @@ func TestNetworkUpdates(t *testing.T) {
  **********************************************************************************************************************/
 
 func newIpam() (*ipamTest, error) {
-	ipam := &ipamTest{}
+	ipamInfo := &ipamTest{
+		ipamData: make(map[string]*ipam),
+	}
 
 	ip, ipnet, err := net.ParseCIDR("172.17.0.0/16")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	ipam.currentIP = cidr.Inc(ip)
-	ipam.subnet = *ipnet
+	ipamInfo.ipamData["network1"] = &ipam{
+		subnet: *ipnet,
+		ip:     cidr.Inc(ip),
+	}
 
-	return ipam, nil
+	if ip, ipnet, err = net.ParseCIDR("172.18.0.0/16"); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	ipamInfo.ipamData["network2"] = &ipam{
+		subnet: *ipnet,
+		ip:     cidr.Inc(ip),
+	}
+
+	return ipamInfo, nil
 }
 
 func (ipam *ipamTest) getIPSubnet(networkID string) (*net.IPNet, net.IP, error) {
-	ipam.currentIP = cidr.Inc(ipam.currentIP)
+	ipamInfo, ok := ipam.ipamData[networkID]
+	if !ok {
+		return nil, nil, aoserrors.Errorf("Can't find network %v", networkID)
+	}
 
-	return &ipam.subnet, ipam.currentIP, nil
+	ipamInfo.ip = cidr.Inc(ipamInfo.ip)
+
+	return &ipamInfo.subnet, ipamInfo.ip, nil
 }
 
-func (storage *testStore) AddNetworkInstanceInfo(networkInfo networkmanager.NetworkInfo) error {
+func (ipam *ipamTest) getSubnet(networkID string) (*net.IPNet, error) {
+	ipamInfo, ok := ipam.ipamData[networkID]
+	if !ok {
+		return nil, aoserrors.Errorf("Can't find network %v", networkID)
+	}
+
+	return &ipamInfo.subnet, nil
+}
+
+func (storage *testStore) AddNetworkInstanceInfo(networkInfo networkmanager.InstanceNetworkInfo) error {
 	storage.networkInfos[networkInfo.InstanceIdent] = networkInfo
 
 	return nil
@@ -552,12 +568,32 @@ func (storage *testStore) RemoveNetworkInstanceInfo(instanceIdent aostypes.Insta
 	return nil
 }
 
-func (storage *testStore) GetNetworkInstancesInfo() (networkInfos []networkmanager.NetworkInfo, err error) {
+func (storage *testStore) GetNetworkInstancesInfo() (networkInfos []networkmanager.InstanceNetworkInfo, err error) {
 	for _, networkInfo := range storage.networkInfos {
 		networkInfos = append(networkInfos, networkInfo)
 	}
 
 	return networkInfos, err
+}
+
+func (storage *testStore) RemoveNetworkInfo(networkID string) error {
+	return nil
+}
+
+func (storage *testStore) AddNetworkInfo(networkInfo networkmanager.NetworkInfo) error {
+	return nil
+}
+
+func (storage *testStore) GetNetworksInfo() (networkInfos []networkmanager.NetworkInfo, err error) {
+	return nil, nil
+}
+
+func (node *testNodeManager) UpdateNetwork(nodeID string, networkParameters []aostypes.NetworkParameters) error {
+	node.network[nodeID] = networkParameters
+
+	node.chanReady <- struct{}{}
+
+	return nil
 }
 
 /***********************************************************************************************************************
@@ -583,8 +619,10 @@ nextInstance:
 	return true
 }
 
-func getVlanID(networkID string) (uint64, error) {
-	return 1, nil
+func (vlan *testVlan) getVlanID(networkID string) (uint64, error) {
+	vlan.vlanID++
+
+	return uint64(vlan.vlanID), nil
 }
 
 func setup() (err error) {
@@ -611,14 +649,4 @@ func discoverInterface() (ip net.IP, err error) {
 
 func newTestShellCommander(name string, arg ...string) (string, error) {
 	return "", nil
-}
-
-func removeSpaces(str string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) {
-			return -1
-		}
-
-		return r
-	}, str)
 }
