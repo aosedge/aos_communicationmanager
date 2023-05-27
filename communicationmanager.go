@@ -210,7 +210,7 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.network, err = networkmanager.New(cm.db, cfg); err != nil {
+	if cm.network, err = networkmanager.New(cm.db, cm.smController, cfg); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
