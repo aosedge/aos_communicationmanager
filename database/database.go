@@ -644,6 +644,45 @@ func (db *Database) RemoveStorageStateInfo(instanceIdent aostypes.InstanceIdent)
 	return err
 }
 
+func (db *Database) AddNetworkInfo(networkInfo networkmanager.NetworkInfo) error {
+	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?)",
+		networkInfo.NetworkID, networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID)
+}
+
+func (db *Database) RemoveNetworkInfo(networkID string) (err error) {
+	if err = db.executeQuery("DELETE FROM network WHERE networkID = ?", networkID); errors.Is(err, errNotExist) {
+		return nil
+	}
+
+	return err
+}
+
+func (db *Database) GetNetworksInfo() ([]networkmanager.NetworkInfo, error) {
+	rows, err := db.sql.Query("SELECT * FROM network")
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
+	var networks []networkmanager.NetworkInfo
+
+	for rows.Next() {
+		var networkInfo networkmanager.NetworkInfo
+
+		if err = rows.Scan(&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet, &networkInfo.VlanID); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		networks = append(networks, networkInfo)
+	}
+
+	return networks, nil
+}
+
 // AddNetworkInstanceInfo adds network instance info.
 func (db *Database) AddNetworkInstanceInfo(networkInfo networkmanager.InstanceNetworkInfo) error {
 	ports, err := json.Marshal(&networkInfo.Rules)
@@ -832,6 +871,15 @@ func (db *Database) createNetworkTable() (err error) {
                                                               vlanID INTEGER,
                                                               port BLOB,
                                                               PRIMARY KEY(serviceId, subjectId, instance))`)
+
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS network (networkID TEXT NOT NULL PRIMARY KEY,
+                                                              ip TEXT,
+                                                              subnet TEXT,
+                                                              vlanID INTEGER)`)
 
 	return aoserrors.Wrap(err)
 }
