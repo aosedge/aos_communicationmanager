@@ -368,8 +368,9 @@ func (db *Database) GetServicesInfo() ([]imagemanager.ServiceInfo, error) {
 // GetServiceInfo returns service info by ID.
 func (db *Database) GetServiceInfo(serviceID string) (service imagemanager.ServiceInfo, err error) {
 	var (
-		configJSON []byte
-		layers     []byte
+		configJSON   []byte
+		layers       []byte
+		exposedPorts []byte
 	)
 
 	if err = db.getDataFromQuery(
@@ -377,7 +378,7 @@ func (db *Database) GetServiceInfo(serviceID string) (service imagemanager.Servi
 		[]any{serviceID, serviceID},
 		&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion, &service.Description,
 		&service.URL, &service.RemoteURL, &service.Path, &service.Size, &service.Timestamp, &service.Cached,
-		&configJSON, &layers, &service.Sha256, &service.Sha512, &service.GID); err != nil {
+		&configJSON, &layers, &service.Sha256, &service.Sha512, &exposedPorts, &service.GID); err != nil {
 		if errors.Is(err, errNotExist) {
 			return service, imagemanager.ErrNotExist
 		}
@@ -390,6 +391,10 @@ func (db *Database) GetServiceInfo(serviceID string) (service imagemanager.Servi
 	}
 
 	if err = json.Unmarshal(layers, &service.Layers); err != nil {
+		return service, aoserrors.Wrap(err)
+	}
+
+	if err = json.Unmarshal(exposedPorts, &service.ExposedPorts); err != nil {
 		return service, aoserrors.Wrap(err)
 	}
 
@@ -408,10 +413,15 @@ func (db *Database) AddService(service imagemanager.ServiceInfo) error {
 		return aoserrors.Wrap(err)
 	}
 
-	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	exposedPorts, err := json.Marshal(&service.ExposedPorts)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		service.ID, service.AosVersion, service.ProviderID, service.VendorVersion, service.Description,
 		service.URL, service.RemoteURL, service.Path, service.Size, service.Timestamp, service.Cached,
-		configJSON, layers, service.Sha256, service.Sha512, service.GID)
+		configJSON, layers, service.Sha256, service.Sha512, exposedPorts, service.GID)
 }
 
 // SetServiceCached sets cached status for the service.
@@ -635,16 +645,21 @@ func (db *Database) RemoveStorageStateInfo(instanceIdent aostypes.InstanceIdent)
 }
 
 // AddNetworkInstanceInfo adds network instance info.
-func (db *Database) AddNetworkInstanceInfo(networkInfo networkmanager.NetworkInfo) error {
-	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?, ?, ?, ?)",
+func (db *Database) AddNetworkInstanceInfo(networkInfo networkmanager.InstanceNetworkInfo) error {
+	ports, err := json.Marshal(&networkInfo.Rules)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return db.executeQuery("INSERT INTO instance_network values(?, ?, ?, ?, ?, ?, ?, ?)",
 		networkInfo.ServiceID, networkInfo.SubjectID, networkInfo.Instance, networkInfo.NetworkID,
-		networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID)
+		networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID, ports)
 }
 
 // RemoveNetworkInstanceInfo removes network instance info.
 func (db *Database) RemoveNetworkInstanceInfo(instanceIdent aostypes.InstanceIdent) (err error) {
 	if err = db.executeQuery(
-		"DELETE FROM network WHERE serviceID = ? AND subjectID = ? AND instance = ?",
+		"DELETE FROM instance_network WHERE serviceID = ? AND subjectID = ? AND instance = ?",
 		instanceIdent.ServiceID, instanceIdent.SubjectID,
 		instanceIdent.Instance); errors.Is(err, errNotExist) {
 		return nil
@@ -654,8 +669,8 @@ func (db *Database) RemoveNetworkInstanceInfo(instanceIdent aostypes.InstanceIde
 }
 
 // GetNetworkInstancesInfo returns network instances info.
-func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.NetworkInfo, err error) {
-	rows, err := db.sql.Query("SELECT * FROM network")
+func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.InstanceNetworkInfo, err error) {
+	rows, err := db.sql.Query("SELECT * FROM instance_network")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -666,10 +681,17 @@ func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.Net
 	}
 
 	for rows.Next() {
-		var networkInfo networkmanager.NetworkInfo
+		var networkInfo networkmanager.InstanceNetworkInfo
+
+		var ports []byte
 
 		if err = rows.Scan(&networkInfo.ServiceID, &networkInfo.SubjectID, &networkInfo.Instance,
-			&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet, &networkInfo.VlanID); err != nil {
+			&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet,
+			&networkInfo.VlanID, &ports); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if err = json.Unmarshal(ports, &networkInfo.Rules); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -759,6 +781,7 @@ func (db *Database) createServiceTable() (err error) {
                                                                layers BLOB,
                                                                sha256 BLOB,
                                                                sha512 BLOB,
+                                                               exposedPorts BLOB,
                                                                gid INTEGER,
                                                                PRIMARY KEY(id, aosVersion))`)
 
@@ -800,13 +823,14 @@ func (db *Database) createInstancesTable() (err error) {
 func (db *Database) createNetworkTable() (err error) {
 	log.Info("Create network table")
 
-	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS network (serviceId TEXT,
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS instance_network (serviceId TEXT,
                                                               subjectId TEXT,
                                                               instance INTEGER,
                                                               networkID TEXT,
                                                               ip TEXT,
                                                               subnet TEXT,
                                                               vlanID INTEGER,
+                                                              port BLOB,
                                                               PRIMARY KEY(serviceId, subjectId, instance))`)
 
 	return aoserrors.Wrap(err)
@@ -881,15 +905,16 @@ func (db *Database) getServicesFromQuery(
 
 	for rows.Next() {
 		var (
-			service    imagemanager.ServiceInfo
-			configJSON []byte
-			layers     []byte
+			service      imagemanager.ServiceInfo
+			configJSON   []byte
+			layers       []byte
+			exposedPorts []byte
 		)
 
 		if err = rows.Scan(&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion,
 			&service.Description, &service.URL, &service.RemoteURL, &service.Path, &service.Size,
 			&service.Timestamp, &service.Cached, &configJSON, &layers, &service.Sha256,
-			&service.Sha512, &service.GID); err != nil {
+			&service.Sha512, &exposedPorts, &service.GID); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -898,6 +923,10 @@ func (db *Database) getServicesFromQuery(
 		}
 
 		if err = json.Unmarshal(layers, &service.Layers); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if err = json.Unmarshal(exposedPorts, &service.ExposedPorts); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
