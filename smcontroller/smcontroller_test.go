@@ -997,6 +997,90 @@ func TestRunInstances(t *testing.T) {
 	}
 }
 
+func TestUpdateNetwork(t *testing.T) {
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
+		}
+		config = config.Config{
+			SMController: config.SMController{
+				CMServerURL: cmServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+	)
+
+	networkParameters := []aostypes.NetworkParameters{
+		{
+			Subnet:    "172.17.0.0/16",
+			IP:        "172.17.0.1",
+			VlanID:    1,
+			NetworkID: "network1",
+		},
+		{
+			Subnet:    "172.18.0.0/16",
+			IP:        "172.18.0.1",
+			VlanID:    2,
+			NetworkID: "network2",
+		},
+	}
+
+	expectedUpdatesNetwork := &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_UpdateNetworks{
+		UpdateNetworks: &pb.UpdateNetworks{
+			Networks: []*pb.NetworkParameters{
+				{
+					Subnet:    "172.17.0.0/16",
+					Ip:        "172.17.0.1",
+					VlanId:    1,
+					NetworkId: "network1",
+				},
+				{
+					Subnet:    "172.18.0.0/16",
+					Ip:        "172.18.0.1",
+					VlanId:    2,
+					NetworkId: "network2",
+				},
+			},
+		},
+	}}
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create SM controller: %v", err)
+	}
+	defer controller.Close()
+
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
+
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	if err := controller.UpdateNetwork(nodeID, networkParameters); err != nil {
+		t.Fatalf("Can't send run instances: %v", err)
+	}
+
+	if err := smClient.waitMessage(expectedUpdatesNetwork, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+}
+
 func TestGetNodeMonitoringData(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
