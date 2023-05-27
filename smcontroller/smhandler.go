@@ -154,6 +154,33 @@ func (handler *smHandler) setUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersi
 	return nil
 }
 
+func (handler *smHandler) updateNetworks(networkParameters []aostypes.NetworkParameters) error {
+	log.WithFields(log.Fields{
+		"nodeID": handler.config.NodeID,
+	}).Debug("CM update networks")
+
+	pbNetworkParameters := make([]*pb.NetworkParameters, len(networkParameters))
+
+	for i, networkParameter := range networkParameters {
+		pbNetworkParameters[i] = &pb.NetworkParameters{
+			NetworkId: networkParameter.NetworkID,
+			Ip:        networkParameter.IP,
+			Subnet:    networkParameter.Subnet,
+			VlanId:    networkParameter.VlanID,
+		}
+	}
+
+	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_UpdateNetworks{
+		UpdateNetworks: &pb.UpdateNetworks{
+			Networks: pbNetworkParameters,
+		},
+	}}); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
 func (handler *smHandler) runInstances(
 	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo, forceRestart bool,
 ) error {
