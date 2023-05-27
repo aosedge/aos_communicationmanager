@@ -145,15 +145,9 @@ func (ipam *ipSubnet) prepareSubnet(networkID string) (allocIPNet *net.IPNet, ip
 	ipam.Lock()
 	defer ipam.Unlock()
 
-	var ipSubnet *net.IPNet
-
-	subnet, exist := ipam.usedIPSubnets[networkID]
-	if !exist {
-		if ipSubnet, err = ipam.requestIPNetPool(networkID); err != nil {
-			return nil, ip, err
-		}
-	} else {
-		ipSubnet = subnet.ipNet
+	ipSubnet, err := ipam.getAvailableSubnet(networkID)
+	if err != nil {
+		return nil, ip, err
 	}
 
 	ip, err = ipam.findAvailableIP(networkID)
@@ -162,6 +156,20 @@ func (ipam *ipSubnet) prepareSubnet(networkID string) (allocIPNet *net.IPNet, ip
 	}
 
 	return ipSubnet, ip, err
+}
+
+func (ipam *ipSubnet) getAvailableSubnet(networkID string) (*net.IPNet, error) {
+	subnet, exist := ipam.usedIPSubnets[networkID]
+	if !exist {
+		ipSubnet, err := ipam.requestIPNetPool(networkID)
+		if err != nil {
+			return nil, err
+		}
+
+		return ipSubnet, nil
+	}
+
+	return subnet.ipNet, nil
 }
 
 func generateSubnetIPs(ipNet *net.IPNet) []net.IP {
