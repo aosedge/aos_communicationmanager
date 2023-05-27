@@ -22,8 +22,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/aoscloud/aos_common/aoserrors"
@@ -246,6 +248,101 @@ func TestBaseNetwork(t *testing.T) {
 	}
 }
 
+func TestAllowConnection(t *testing.T) {
+	ipam, err := newIpam()
+	if err != nil {
+		t.Fatalf("Can't init ipam management: %v", err)
+	}
+
+	networkmanager.GetIPSubnet = ipam.getIPSubnet
+	networkmanager.LookPath = lookPath
+	networkmanager.DiscoverInterface = discoverInterface
+	networkmanager.ExecContext = newTestShellCommander
+
+	storage := &testStore{
+		networkInfos: make(map[aostypes.InstanceIdent]networkmanager.InstanceNetworkInfo),
+	}
+
+	manager, err := networkmanager.New(storage, nil, &config.Config{
+		WorkingDir: tmpDir,
+	})
+	if err != nil {
+		t.Fatalf("Can't create network manager: %v", err)
+	}
+
+	testData := []struct {
+		instance          aostypes.InstanceIdent
+		network           string
+		networkParameters aostypes.NetworkParameters
+		exposePorts       []string
+		allowConnections  []string
+	}{
+		{
+			networkParameters: aostypes.NetworkParameters{
+				IP:     ("172.17.0.2"),
+				Subnet: ("172.17.0.0/16"),
+			},
+			instance: aostypes.InstanceIdent{
+				ServiceID: "service1",
+				SubjectID: "subject1",
+				Instance:  1,
+			},
+			network:     "network1",
+			exposePorts: []string{"10001/udp"},
+		},
+		{
+			networkParameters: aostypes.NetworkParameters{
+				IP:     ("172.18.0.2"),
+				Subnet: ("172.18.0.0/16"),
+				FirewallRules: []aostypes.FirewallRule{
+					{
+						Proto:   "udp",
+						DstPort: "10001",
+						SrcIP:   "172.18.0.2",
+						DstIP:   "172.17.0.2",
+					},
+				},
+			},
+			instance: aostypes.InstanceIdent{
+				ServiceID: "service2",
+				SubjectID: "subject2",
+				Instance:  1,
+			},
+			network:          "network2",
+			allowConnections: []string{"service1/10001/udp"},
+		},
+	}
+
+	for _, data := range testData {
+		networkParameters, err := manager.PrepareInstanceNetworkParameters(
+			data.instance, data.network, networkmanager.NetworkParameters{
+				AllowConnections: data.allowConnections,
+				ExposePorts:      data.exposePorts,
+			})
+		if err != nil {
+			t.Fatalf("Can't prepare instance network configuration: %v", err)
+		}
+
+		if networkParameters.IP != data.networkParameters.IP {
+			t.Errorf("Wrong IP: %v", data.networkParameters.IP)
+		}
+
+		if networkParameters.Subnet != data.networkParameters.Subnet {
+			t.Errorf("Wrong subnet: %v", data.networkParameters.Subnet)
+		}
+
+		if len(data.networkParameters.FirewallRules) != 0 {
+			if len(networkParameters.FirewallRules) != 1 {
+				t.Errorf("Wrong firewall rules: %v", networkParameters.FirewallRules)
+			}
+
+			if networkParameters.FirewallRules[0] != data.networkParameters.FirewallRules[0] {
+				t.Errorf("Wrong firewall rules: %v", networkParameters.FirewallRules)
+			}
+		}
+	}
+}
+
 func TestNetworkStorage(t *testing.T) {
 	ipam, err := newIpam()
 	if err != nil {
@@ -329,6 +426,93 @@ func TestNetworkStorage(t *testing.T) {
 	instances := manager1.GetInstances()
 	if !compareInstancesIdent(instances, expectedInstancesIdent) {
 		t.Error("Unexpected instances ident")
+	}
+}
+
+func TestNetworkUpdates(t *testing.T) {
+	ipam, err := newIpam()
+	if err != nil {
+		t.Fatalf("Can't init ipam management: %v", err)
+	}
+
+	vlan := &testVlan{}
+
+	networkmanager.GetIPSubnet = ipam.getIPSubnet
+	networkmanager.LookPath = lookPath
+	networkmanager.DiscoverInterface = discoverInterface
+	networkmanager.ExecContext = newTestShellCommander
+	networkmanager.GetSubnet = ipam.getSubnet
+	networkmanager.GetVlanID = vlan.getVlanID
+
+	storage := &testStore{
+		networkInfos: make(map[aostypes.InstanceIdent]networkmanager.InstanceNetworkInfo),
+	}
+
+	nodeManager := &testNodeManager{
+		network:   make(map[string][]aostypes.NetworkParameters),
+		chanReady: make(chan struct{}, 2),
+	}
+
+	manager, err := networkmanager.New(storage, nodeManager, &config.Config{
+		WorkingDir: tmpDir,
+	})
+	if err != nil {
+		t.Fatalf("Can't create network manager: %v", err)
+	}
+
+	testData := []struct {
+		providers                 []string
+		nodeID                    string
+		expectedNetworkParameters []aostypes.NetworkParameters
+	}{
+		{
+			providers: []string{"network1", "network2"},
+			nodeID:    "node1",
+			expectedNetworkParameters: []aostypes.NetworkParameters{
+				{
+					NetworkID: "network1",
+					IP:        "172.17.0.1",
+					Subnet:    "172.17.0.0/16",
+					VlanID:    1,
+				},
+				{
+					NetworkID: "network2",
+					IP:        "172.18.0.1",
+					Subnet:    "172.18.0.0/16",
+					VlanID:    2,
+				},
+			},
+		},
+		{
+			providers: []string{"network1"},
+			nodeID:    "node1",
+			expectedNetworkParameters: []aostypes.NetworkParameters{
+				{
+					NetworkID: "network1",
+					IP:        "172.17.0.1",
+					Subnet:    "172.17.0.0/16",
+					VlanID:    1,
+				},
+			},
+		},
+	}
+
+	for _, data := range testData {
+		if err := manager.UpdateProviderNetwork(data.providers, data.nodeID); err != nil {
+			t.Fatalf("Can't update node network parameters: %v", err)
+		}
+
+		select {
+		case <-nodeManager.chanReady:
+		case <-time.After(1 * time.Second):
+			t.Fatal("Timeout waiting for node manager")
+		}
+
+		networkParameters := nodeManager.network[data.nodeID]
+
+		if !reflect.DeepEqual(networkParameters, data.expectedNetworkParameters) {
+			t.Error("Unexpected network parameters")
+		}
 	}
 }
 
