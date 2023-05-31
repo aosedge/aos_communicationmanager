@@ -67,6 +67,8 @@ github.com/aoscloud/aos_common v0.0.0-20230410084910-6f7518cc6f8a h1:Jcy6FfAKYaa
 github.com/aoscloud/aos_common v0.0.0-20230410084910-6f7518cc6f8a/go.mod h1:fpxs7GLEsl87n8gwXmS9n6HT6tkS3waA4AldQBx/2gI=
 github.com/aoscloud/aos_common v0.0.0-20230511132042-b309ceebb3ab h1:zSQVwCKPf07lydDl1F1y9tCNbVhDpjqOW8RWEop01+4=
 github.com/aoscloud/aos_common v0.0.0-20230511132042-b309ceebb3ab/go.mod h1:fpxs7GLEsl87n8gwXmS9n6HT6tkS3waA4AldQBx/2gI=
+github.com/aoscloud/aos_common v0.0.0-20230530122251-c4fba6793b79 h1:+FKmr85ddarRNMQeSMsnxeQrBt0jJphFoRNK26kdUwo=
+github.com/aoscloud/aos_common v0.0.0-20230530122251-c4fba6793b79/go.mod h1:fpxs7GLEsl87n8gwXmS9n6HT6tkS3waA4AldQBx/2gI=
 github.com/aoscloud/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f h1:1CPr+UrVduUABuDLGzsKaz7Dp8Nu6zSfp8WqR5TiH0I=
 github.com/aoscloud/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f/go.mod h1:ILDKtnCKiQ7zRoNxcp36Y1ZR8LBPmR2E23+wTQe/MlE=
 github.com/apache/arrow/go/arrow v0.0.0-20200601151325-b2287a20f230/go.mod h1:QNYViu/X0HXDHw7m3KXzWSVXIbfUvJqBFe6Gj8/pYA0=

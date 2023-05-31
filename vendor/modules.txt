@@ -7,7 +7,7 @@ github.com/ThalesIgnite/crypto11
 # github.com/anexia-it/fsquota v0.1.3
 ## explicit
 github.com/anexia-it/fsquota
-# github.com/aoscloud/aos_common v0.0.0-20230511132042-b309ceebb3ab
+# github.com/aoscloud/aos_common v0.0.0-20230530122251-c4fba6793b79
 ## explicit; go 1.18
 github.com/aoscloud/aos_common/aoserrors
 github.com/aoscloud/aos_common/aostypes
