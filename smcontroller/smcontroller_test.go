@@ -758,6 +758,22 @@ func TestLogMessages(t *testing.T) {
 		},
 		{
 			sendLogRequest: cloudprotocol.RequestLog{
+				LogID:   "serviceLogID2",
+				LogType: cloudprotocol.ServiceLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("", "", -1),
+					Till:           &currentTime,
+				},
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
+				InstanceLogRequest: &pb.InstanceLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "", SubjectId: "", Instance: -1},
+					LogId:    "serviceLogID2", Till: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestLog{
 				LogID:   "serviceLogID1",
 				LogType: cloudprotocol.CrashLog,
 				Filter: cloudprotocol.LogFilter{
@@ -785,6 +801,22 @@ func TestLogMessages(t *testing.T) {
 				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
 					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
 					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+				},
+			}},
+		},
+		{
+			sendLogRequest: cloudprotocol.RequestLog{
+				LogID:   "serviceLogID2",
+				LogType: cloudprotocol.CrashLog,
+				Filter: cloudprotocol.LogFilter{
+					InstanceFilter: cloudprotocol.NewInstanceFilter("", "", -1),
+					Till:           &currentTime,
+				},
+			},
+			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
+				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
+					Instance: &pb.InstanceIdent{ServiceId: "", SubjectId: "", Instance: -1},
+					LogId:    "serviceLogID2", Till: timestamppb.New(currentTime),
 				},
 			}},
 		},
