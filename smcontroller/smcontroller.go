@@ -405,10 +405,6 @@ func (controller *Controller) getSystemLog(logRequest cloudprotocol.RequestLog) 
 }
 
 func (controller *Controller) getServiceLog(logRequest cloudprotocol.RequestLog) error {
-	if logRequest.Filter.ServiceID == nil {
-		return aoserrors.New("serviceId required field for service log")
-	}
-
 	handlers, err := controller.getNodeHandlersByIDs(logRequest.Filter.NodeIDs)
 	if err != nil {
 		return err
@@ -424,10 +420,6 @@ func (controller *Controller) getServiceLog(logRequest cloudprotocol.RequestLog)
 }
 
 func (controller *Controller) getCrashLog(logRequest cloudprotocol.RequestLog) error {
-	if logRequest.Filter.ServiceID == nil {
-		return aoserrors.New("serviceId required field for service log")
-	}
-
 	handlers, err := controller.getNodeHandlersByIDs(logRequest.Filter.NodeIDs)
 	if err != nil {
 		return err
