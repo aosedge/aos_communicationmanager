@@ -677,7 +677,9 @@ func (component ComponentInfo) String() string {
 }
 
 func NewInstanceFilter(serviceID, subjectID string, instance int64) (filter InstanceFilter) {
-	filter.ServiceID = &serviceID
+	if serviceID != "" {
+		filter.ServiceID = &serviceID
+	}
 
 	if subjectID != "" {
 		filter.SubjectID = &subjectID
