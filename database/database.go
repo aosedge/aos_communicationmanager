@@ -931,7 +931,7 @@ func (db *Database) createConfigTable() (err error) {
 			fotaUpdateState,
 			sotaUpdateState,
 			desiredInstances) values(?, ?, ?, ?, ?)`,
-		"", "", json.RawMessage{}, json.RawMessage{}, json.RawMessage{}); err != nil {
+		"", "", json.RawMessage{}, json.RawMessage{}, json.RawMessage("[]")); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
