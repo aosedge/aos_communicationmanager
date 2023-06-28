@@ -90,11 +90,17 @@ type Launcher struct {
 	connectionTimer time.Timer
 }
 
+type InstanceInfo struct {
+	aostypes.InstanceIdent
+	UID int
+}
+
 // Storage storage interface.
 type Storage interface {
-	AddInstance(instance aostypes.InstanceIdent, uid int) error
+	AddInstance(instanceInfo InstanceInfo) error
+	RemoveInstance(instanceIdent aostypes.InstanceIdent) error
 	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
-	GetAllUIDs() ([]int, error)
+	GetInstances() ([]InstanceInfo, error)
 	SetDesiredInstances(instances json.RawMessage) error
 	GetDesiredInstances() (instances json.RawMessage, err error)
 }
@@ -285,13 +291,13 @@ func (launcher *Launcher) GetNodesConfiguration() []cloudprotocol.NodeInfo {
  **********************************************************************************************************************/
 
 func (launcher *Launcher) fillUIDPool() {
-	uids, err := launcher.storage.GetAllUIDs()
+	instances, err := launcher.storage.GetInstances()
 	if err != nil {
 		log.Errorf("Can't fill UID pool: %v", err)
 	}
 
-	for _, uid := range uids {
-		if err = launcher.uidPool.AddID(uid); err != nil {
+	for _, instance := range instances {
+		if err = launcher.uidPool.AddID(instance.UID); err != nil {
 			log.Errorf("Can't add UID to pool: %v", err)
 		}
 	}
@@ -646,6 +652,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 	sort.Slice(instances, func(i, j int) bool { return instances[i].Priority > instances[j].Priority })
 
+	launcher.removeInstances(instances)
 	launcher.removeInstanceNetworkParameters(instances)
 
 instancesLoop:
@@ -797,6 +804,43 @@ nextNetInstance:
 	}
 }
 
+func (launcher *Launcher) removeInstances(instances []cloudprotocol.InstanceInfo) {
+	storeInstances, err := launcher.storage.GetInstances()
+	if err != nil {
+		log.Errorf("Can't get instances from storage: %v", err)
+		return
+	}
+
+nextStoreInstance:
+	for _, storeInstance := range storeInstances {
+		for _, instance := range instances {
+			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+				instanceIdent := aostypes.InstanceIdent{
+					ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
+					Instance: instanceIndex,
+				}
+
+				if storeInstance.InstanceIdent == instanceIdent {
+					continue nextStoreInstance
+				}
+			}
+		}
+
+		err = launcher.uidPool.RemoveID(storeInstance.UID)
+		if err != nil {
+			log.WithFields(
+				instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Errorf("Can't remove instance UID: %v", err)
+		}
+
+		err = launcher.storage.RemoveInstance(storeInstance.InstanceIdent)
+		if err != nil {
+			log.WithFields(
+				instanceIdentLogFields(
+					storeInstance.InstanceIdent, nil)).Errorf("Can't remove instance from storage: %v", err)
+		}
+	}
+}
+
 func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceInfo,
 	instance cloudprotocol.InstanceInfo, index uint64,
 ) (aostypes.InstanceInfo, error) {
@@ -818,7 +862,10 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 			return instanceInfo, aoserrors.Errorf("Can't get free UID: %v", err)
 		}
 
-		if err := launcher.storage.AddInstance(instanceInfo.InstanceIdent, uid); err != nil {
+		if err := launcher.storage.AddInstance(InstanceInfo{
+			InstanceIdent: instanceInfo.InstanceIdent,
+			UID:           uid,
+		}); err != nil {
 			log.Errorf("Can't store uid: %v", err)
 		}
 	}
