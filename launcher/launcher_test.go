@@ -74,12 +74,8 @@ type testResourceManager struct {
 	nodeResources map[string]aostypes.NodeUnitConfig
 }
 
-type instanceUID struct {
-	aostypes.InstanceIdent
-	uid int
-}
 type testStorage struct {
-	uids             []instanceUID
+	instanceInfo     []launcher.InstanceInfo
 	desiredInstances json.RawMessage
 }
 
@@ -1217,30 +1213,42 @@ func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string
 	return resource
 }
 
-func (storage *testStorage) AddInstance(instance aostypes.InstanceIdent, uid int) error {
-	for _, uid := range storage.uids {
-		if uid.InstanceIdent == instance {
-			return aoserrors.New("uid for instacne already exist")
+func (storage *testStorage) AddInstance(instanceInfo launcher.InstanceInfo) error {
+	for _, uid := range storage.instanceInfo {
+		if uid.InstanceIdent == instanceInfo.InstanceIdent {
+			return aoserrors.New("uid for instance already exist")
 		}
 	}
 
-	storage.uids = append(storage.uids, instanceUID{InstanceIdent: instance, uid: uid})
+	storage.instanceInfo = append(storage.instanceInfo, instanceInfo)
 
 	return nil
 }
 
 func (storage *testStorage) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
-	for _, uid := range storage.uids {
-		if uid.InstanceIdent == instance {
-			return uid.uid, nil
+	for _, instanceInfo := range storage.instanceInfo {
+		if instanceInfo.InstanceIdent == instance {
+			return instanceInfo.UID, nil
 		}
 	}
 
 	return 0, launcher.ErrNotExist
 }
 
-func (storage *testStorage) GetAllUIDs() ([]int, error) {
-	return []int{}, nil
+func (storage *testStorage) GetInstances() ([]launcher.InstanceInfo, error) {
+	return storage.instanceInfo, nil
+}
+
+func (storage *testStorage) RemoveInstance(instanceIdent aostypes.InstanceIdent) error {
+	for i, instanceInfo := range storage.instanceInfo {
+		if instanceInfo.InstanceIdent == instanceIdent {
+			storage.instanceInfo = append(storage.instanceInfo[:i], storage.instanceInfo[i+1:]...)
+
+			return nil
+		}
+	}
+
+	return launcher.ErrNotExist
 }
 
 func (storage *testStorage) SetDesiredInstances(instances json.RawMessage) error {
