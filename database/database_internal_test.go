@@ -819,15 +819,15 @@ func TestDownloadInfo(t *testing.T) {
 }
 
 func TestInstance(t *testing.T) {
-	var expectedUIDs []int
+	var expectedInstances []launcher.InstanceInfo
 
-	uids, err := db.GetAllUIDs()
+	instances, err := db.GetInstances()
 	if err != nil {
-		t.Errorf("Can't get all uids: %v", err)
+		t.Errorf("Can't get all instances: %v", err)
 	}
 
-	if len(uids) != 0 {
-		t.Error("Incorrect empty uids")
+	if len(instances) != 0 {
+		t.Error("Incorrect empty instances")
 	}
 
 	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
@@ -837,13 +837,18 @@ func TestInstance(t *testing.T) {
 	}
 
 	for i := 100; i < 105; i++ {
-		if err := db.AddInstance(aostypes.InstanceIdent{
-			ServiceID: "serv" + strconv.Itoa(i), SubjectID: "subj" + strconv.Itoa(i), Instance: 0,
-		}, i); err != nil {
+		instanceInfo := launcher.InstanceInfo{
+			InstanceIdent: aostypes.InstanceIdent{
+				ServiceID: "serv" + strconv.Itoa(i), SubjectID: "subj" + strconv.Itoa(i), Instance: 0,
+			},
+			UID: i,
+		}
+
+		if err := db.AddInstance(instanceInfo); err != nil {
 			t.Errorf("Can't add instance: %v", err)
 		}
 
-		expectedUIDs = append(expectedUIDs, i)
+		expectedInstances = append(expectedInstances, instanceInfo)
 	}
 
 	expectedUID := 103
@@ -859,13 +864,25 @@ func TestInstance(t *testing.T) {
 		t.Error("Incorrect uid for instance")
 	}
 
-	uids, err = db.GetAllUIDs()
+	instances, err = db.GetInstances()
 	if err != nil {
-		t.Errorf("Can't get all uids: %v", err)
+		t.Errorf("Can't get all instances: %v", err)
 	}
 
-	if !reflect.DeepEqual(uids, expectedUIDs) {
-		t.Errorf("Incorrect result for get all UIDs")
+	if !reflect.DeepEqual(instances, expectedInstances) {
+		t.Errorf("Incorrect result for get instances: %v, expected: %v", instances, expectedInstances)
+	}
+
+	if err := db.RemoveInstance(aostypes.InstanceIdent{
+		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	}); err != nil {
+		t.Errorf("Can't remove instance: %v", err)
+	}
+
+	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	}); !errors.Is(err, launcher.ErrNotExist) {
+		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
 	}
 }
 
