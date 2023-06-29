@@ -506,9 +506,9 @@ func (db *Database) RemoveLayer(digest string) (err error) {
 }
 
 // AddInstance adds instanace with uid.
-func (db *Database) AddInstance(instance aostypes.InstanceIdent, uid int) error {
+func (db *Database) AddInstance(instnceInfo launcher.InstanceInfo) error {
 	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?)",
-		instance.ServiceID, instance.SubjectID, instance.Instance, uid)
+		instnceInfo.ServiceID, instnceInfo.SubjectID, instnceInfo.Instance, instnceInfo.UID)
 }
 
 // GetInstanceUID gets uid by instanace ident.
@@ -527,29 +527,38 @@ func (db *Database) GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
 	return uid, nil
 }
 
-// GetAllUIDs gets all used uids.
-func (db *Database) GetAllUIDs() (uids []int, err error) {
-	rows, err := db.sql.Query("SELECT uid FROM instances")
+// GetInstances gets all instances.
+func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
+	rows, err := db.sql.Query("SELECT * FROM instances")
 	if err != nil {
-		return uids, aoserrors.Wrap(err)
+		return nil, aoserrors.Wrap(err)
 	}
+
 	defer rows.Close()
 
 	if rows.Err() != nil {
 		return nil, aoserrors.Wrap(rows.Err())
 	}
 
-	for rows.Next() {
-		var uid int
+	var instances []launcher.InstanceInfo
 
-		if err = rows.Scan(&uid); err != nil {
-			return uids, aoserrors.Wrap(err)
+	for rows.Next() {
+		var instance launcher.InstanceInfo
+
+		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.UID); err != nil {
+			return nil, aoserrors.Wrap(err)
 		}
 
-		uids = append(uids, uid)
+		instances = append(instances, instance)
 	}
 
-	return uids, nil
+	return instances, nil
+}
+
+// RemoveInstance removes existing instance.
+func (db *Database) RemoveInstance(instance aostypes.InstanceIdent) error {
+	return db.executeQuery("DELETE FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
+		instance.ServiceID, instance.SubjectID, instance.Instance)
 }
 
 // GetStorageStateInfo returns storage and state info by instance ident.
