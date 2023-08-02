@@ -20,7 +20,7 @@ package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"path"
 	"time"
 
@@ -125,7 +125,7 @@ type Config struct {
 
 // New creates new config object.
 func New(fileName string) (config *Config, err error) {
-	raw, err := ioutil.ReadFile(fileName)
+	raw, err := os.ReadFile(fileName)
 	if err != nil {
 		return config, aoserrors.Wrap(err)
 	}

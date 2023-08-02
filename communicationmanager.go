@@ -21,7 +21,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -102,7 +102,7 @@ type journalHook struct {
  **********************************************************************************************************************/
 
 // GitSummary provided by govvv at compile-time.
-var GitSummary = "Unknown" // nolint:gochecknoglobals
+var GitSummary = "Unknown" //nolint:gochecknoglobals
 
 /***********************************************************************************************************************
  * Init
@@ -553,7 +553,7 @@ func main() {
 	// Show version
 
 	if *showVersion {
-		fmt.Printf("Version: %s\n", GitSummary) // nolint:forbidigo // logs are't initialized
+		fmt.Printf("Version: %s\n", GitSummary) //nolint:forbidigo // logs are't initialized
 
 		return
 	}
@@ -562,7 +562,7 @@ func main() {
 
 	if *useJournal {
 		log.AddHook(newJournalHook())
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	} else {
 		log.SetOutput(os.Stdout)
 	}

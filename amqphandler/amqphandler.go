@@ -23,7 +23,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"sync"
@@ -57,7 +57,7 @@ const (
  **********************************************************************************************************************/
 
 // AmqpHandler structure with all amqp connection info.
-type AmqpHandler struct { // nolint:stylecheck
+type AmqpHandler struct { //nolint:stylecheck
 	sync.Mutex
 
 	// MessageChannel channel for amqp messages
@@ -101,7 +101,7 @@ type ConnectionEventsConsumer interface {
  * Variables
  **********************************************************************************************************************/
 
-var messageMap = map[string]func() interface{}{ // nolint:gochecknoglobals
+var messageMap = map[string]func() interface{}{ //nolint:gochecknoglobals
 	cloudprotocol.DesiredStatusType: func() interface{} {
 		return &cloudprotocol.DesiredStatus{}
 	},
@@ -132,7 +132,7 @@ var (
 	ErrSendChannelFull = errors.New("send channel full")
 )
 
-var importantMessages = []string{ // nolint:gochecknoglobals // used as const
+var importantMessages = []string{ //nolint:gochecknoglobals // used as const
 	cloudprotocol.DesiredStatusType, cloudprotocol.StateAcceptanceType,
 	cloudprotocol.RenewCertsNotificationType, cloudprotocol.IssuedUnitCertsType, cloudprotocol.OverrideEnvVarsType,
 	cloudprotocol.NewStateType, cloudprotocol.StateRequestType, cloudprotocol.UnitStatusType,
@@ -370,7 +370,7 @@ func getConnectionInfo(
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqJSON))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return info, aoserrors.Wrap(err)
 	}
@@ -383,7 +383,7 @@ func getConnectionInfo(
 	}
 	defer resp.Body.Close()
 
-	htmlData, err := ioutil.ReadAll(resp.Body)
+	htmlData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return info, aoserrors.Wrap(err)
 	}

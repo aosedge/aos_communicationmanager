@@ -45,7 +45,7 @@ type FileServer struct {
  **********************************************************************************************************************/
 
 const (
-	fileScheme = "file" // nolint // deadcode and varcheck
+	fileScheme = "file"
 	httpScheme = "http"
 )
 

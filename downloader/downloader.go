@@ -104,7 +104,7 @@ type AlertSender interface {
 
 var (
 	// NewSpaceAllocator space allocator constructor.
-	// nolint:gochecknoglobals // used for unit test mock
+	//nolint:gochecknoglobals // used for unit test mock
 	NewSpaceAllocator = spaceallocator.New
 
 	// ErrNotExist not exist download info error.

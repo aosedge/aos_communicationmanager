@@ -81,11 +81,11 @@ func getAvailableTimetableTime(
 		return availableTime, err
 	}
 
-	startTime := time.Date(fromDate.Year(), fromDate.Month(), fromDate.Day(), 0, 0, 0, 0, time.Local)
+	startTime := time.Date(fromDate.Year(), fromDate.Month(), fromDate.Day(), 0, 0, 0, 0, time.Local) //nolint:gosmopolitan
 
 	for _, entry := range timetable {
 		// Convert to time.Weekday
-		entryWeekday := time.Weekday((entry.DayOfWeek) % 7) // nolint:gomnd
+		entryWeekday := time.Weekday((entry.DayOfWeek) % 7) //nolint:gomnd
 		fromWeekday := fromDate.Weekday()
 
 		// Get num of days from weekday to entry weekday
@@ -97,9 +97,11 @@ func getAvailableTimetableTime(
 		startEntry := startTime.Add(time.Duration(shiftDays) * 24 * time.Hour)
 
 		for _, slot := range entry.TimeSlots {
+			//nolint:gosmopolitan
 			startDate := time.Date(startEntry.Year(), startEntry.Month(), startEntry.Day(),
 				slot.Start.Hour(), slot.Start.Minute(), slot.Start.Second(), slot.Start.Nanosecond(), time.Local)
 
+			//nolint:gosmopolitan
 			finishDate := time.Date(startEntry.Year(), startEntry.Month(), startEntry.Day(),
 				slot.Finish.Hour(), slot.Finish.Minute(), slot.Finish.Second(), slot.Finish.Nanosecond(), time.Local)
 

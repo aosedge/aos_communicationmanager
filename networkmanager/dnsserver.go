@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,7 +70,8 @@ type dnsServer struct {
  **********************************************************************************************************************/
 
 // These global variable is used to be able to mocking the functionality of networking in tests.
-// nolint:gochecknoglobals
+//
+//nolint:gochecknoglobals
 var (
 	LookPath          = exec.LookPath
 	DiscoverInterface = gateway.DiscoverInterface
@@ -177,7 +177,7 @@ func (dns *dnsServer) prepareDNSConfFile() error {
 		return aoserrors.Wrap(err)
 	}
 
-	return aoserrors.Wrap(ioutil.WriteFile(dns.configFile, newConfig, 0o600))
+	return aoserrors.Wrap(os.WriteFile(dns.configFile, newConfig, 0o600))
 }
 
 func (dns *dnsServer) generateDNSMasqConfig() ([]byte, error) {
@@ -219,7 +219,7 @@ func (dns *dnsServer) findServerProcess() (*os.Process, error) {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	pidFileContents, err := ioutil.ReadFile(dns.PidFile)
+	pidFileContents, err := os.ReadFile(dns.PidFile)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}

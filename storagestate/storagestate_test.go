@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -802,7 +801,7 @@ func TestNewStateCancel(t *testing.T) {
 		t.Fatalf("Can't setup instance: %v", err)
 	}
 
-	if err := ioutil.WriteFile(
+	if err := os.WriteFile(
 		path.Join(stateDir, "1_subject1_service1_state.dat"), []byte("New state"), 0o600); err != nil {
 		t.Fatalf("Can't write state file: %v", err)
 	}
@@ -927,7 +926,7 @@ func TestStateAcceptance(t *testing.T) {
 
 		pathToStateFile := path.Join(stateDir, fmt.Sprintf("%s_state.dat", stateStorageInfo.InstanceID))
 
-		if err := ioutil.WriteFile(pathToStateFile, []byte(testData.stateData), 0o600); err != nil {
+		if err := os.WriteFile(pathToStateFile, []byte(testData.stateData), 0o600); err != nil {
 			t.Fatalf("Can't write state file: %v", err)
 		}
 
@@ -1108,7 +1107,7 @@ func (storage *testStorageInterface) GetAllStorageStateInfo() (
  **********************************************************************************************************************/
 
 func setup() (err error) {
-	if tmpDir, err = ioutil.TempDir("", "aos_"); err != nil {
+	if tmpDir, err = os.MkdirTemp("", "aos_"); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -1143,7 +1142,7 @@ func getStateFileChecksum(fileName string) (checksum []byte, err error) {
 		return nil, nil
 	}
 
-	data, err := ioutil.ReadFile(fileName)
+	data, err := os.ReadFile(fileName)
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}

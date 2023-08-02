@@ -182,7 +182,7 @@ const (
 
 // client sates.
 const (
-	umIdle     = "IDLE" // nolint // deadcode and varcheck
+	umIdle     = "IDLE"
 	umPrepared = "PREPARED"
 	umUpdated  = "UPDATED"
 	umFailed   = "FAILED"

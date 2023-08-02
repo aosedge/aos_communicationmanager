@@ -1261,7 +1261,7 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	for i, digest := range digests {
 		layer, err := launcher.imageProvider.GetLayerInfo(digest)
 		if err != nil {
-			return layers, err // nolint
+			return layers, err //nolint:wrapcheck
 		}
 
 		layers[i] = layer

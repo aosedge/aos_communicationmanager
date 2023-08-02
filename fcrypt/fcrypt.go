@@ -56,7 +56,7 @@ const (
  * Vars
  **********************************************************************************************************************/
 
-// nolint:gochecknoglobals // use as const
+//nolint:gochecknoglobals // use as const
 var issuerAltNameExtID = asn1.ObjectIdentifier{2, 5, 29, 18}
 
 /***********************************************************************************************************************
@@ -315,7 +315,7 @@ func (handler *CryptoHandler) ImportSessionKey(
 
 		opts = &rsa.PKCS1v15DecryptOptions{SessionKeyLen: keySize}
 
-	// nolint:goconst
+	//nolint:goconst
 	case "RSA/OAEP":
 		opts = &rsa.OAEPOptions{Hash: crypto.SHA1}
 
@@ -825,7 +825,7 @@ func (symmetricContext *SymmetricCipherContext) setAlg(algString string) {
 
 func (symmetricContext *SymmetricCipherContext) appendPadding(dataIn []byte, dataLen int) (fullSize int, err error) {
 	switch strings.ToUpper(symmetricContext.paddingName) {
-	// nolint:goconst
+	//nolint:goconst
 	case "PKCS7PADDING", "PKCS7":
 		if fullSize, err = symmetricContext.appendPkcs7Padding(dataIn, dataLen); err != nil {
 			return 0, aoserrors.Wrap(err)
