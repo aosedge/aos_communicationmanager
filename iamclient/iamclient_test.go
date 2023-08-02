@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/url"
 	"os"
@@ -108,7 +107,7 @@ func init() {
 func TestMain(m *testing.M) {
 	var err error
 
-	tmpDir, err = ioutil.TempDir("", "iam_")
+	tmpDir, err = os.MkdirTemp("", "iam_")
 	if err != nil {
 		log.Fatalf("Error create temporary dir: %s", err)
 	}
@@ -246,11 +245,11 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 -----END CERTIFICATE-----	
 `
 
-	if err = ioutil.WriteFile(path.Join(tmpDir, "online_cert.pem"), []byte(onlineCert), 0o600); err != nil {
+	if err = os.WriteFile(path.Join(tmpDir, "online_cert.pem"), []byte(onlineCert), 0o600); err != nil {
 		t.Fatalf("Error create online cert: %s", err)
 	}
 
-	if err = ioutil.WriteFile(path.Join(tmpDir, "offline_cert.pem"), []byte(offlineCert), 0o600); err != nil {
+	if err = os.WriteFile(path.Join(tmpDir, "offline_cert.pem"), []byte(offlineCert), 0o600); err != nil {
 		t.Fatalf("Error create offline cert: %s", err)
 	}
 

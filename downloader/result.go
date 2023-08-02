@@ -37,7 +37,7 @@ type Result interface {
 type downloadResult struct {
 	id string
 
-	ctx         context.Context // nolint:containedctx
+	ctx         context.Context //nolint:containedctx
 	packageInfo PackageInfo
 
 	statusChannel chan error

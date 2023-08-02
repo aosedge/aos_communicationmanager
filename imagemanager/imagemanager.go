@@ -22,7 +22,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path"
@@ -137,7 +136,7 @@ var (
 	ErrVersionMismatch = errors.New("version mismatch")
 
 	// NewSpaceAllocator space allocator constructor.
-	// nolint:gochecknoglobals // used for unit test mock
+	//nolint:gochecknoglobals // used for unit test mock
 	NewSpaceAllocator = spaceallocator.New
 )
 
@@ -724,7 +723,7 @@ func (imagemanager *Imagemanager) getServiceDataFromManifest(
 		}
 	}()
 
-	imagePath, err := ioutil.TempDir(imagemanager.tmpDir, "")
+	imagePath, err := os.MkdirTemp(imagemanager.tmpDir, "")
 	if err != nil {
 		return nil, nil, serviceConfig, aoserrors.Wrap(err)
 	}
@@ -756,7 +755,7 @@ func (imagemanager *Imagemanager) getServiceDataFromManifest(
 			return nil, nil, serviceConfig, aoserrors.Wrap(err)
 		}
 
-		byteValue, err := ioutil.ReadFile(path.Join(
+		byteValue, err := os.ReadFile(path.Join(
 			imagePath, blobsFolder, string(manifest.AosService.Digest.Algorithm()), manifest.AosService.Digest.Hex()))
 		if err != nil {
 			return nil, nil, serviceConfig, aoserrors.Wrap(err)

@@ -38,7 +38,7 @@ type networkToSplit struct {
  * Var
  **********************************************************************************************************************/
 
-// nolint:gochecknoglobals
+//nolint:gochecknoglobals
 var predefinedPrivateNetworks = []*networkToSplit{
 	{"172.17.0.0/16", 16},
 	{"172.18.0.0/16", 16},

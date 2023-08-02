@@ -107,7 +107,8 @@ type NetworkParameters struct {
  **********************************************************************************************************************/
 
 // These global variable is used to be able to mocking the functionality of networking in tests.
-// nolint:gochecknoglobals
+//
+//nolint:gochecknoglobals
 var (
 	GetIPSubnet func(networkID string) (allocIPNet *net.IPNet, ip net.IP, err error)
 	GetSubnet   func(networkID string) (*net.IPNet, error)

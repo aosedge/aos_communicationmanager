@@ -92,7 +92,7 @@ type keyTransRecipientInfo struct {
  * Vars
  **********************************************************************************************************************/
 
-// nolint:gochecknoglobals // use as consts
+//nolint:gochecknoglobals // use as consts
 var (
 	envelopedDataOid = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 3}
 	rsaEncryptionOid = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}

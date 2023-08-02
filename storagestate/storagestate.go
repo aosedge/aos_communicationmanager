@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -57,7 +56,8 @@ const (
  **********************************************************************************************************************/
 
 // These global variables are used to be able to mocking the functionality in tests.
-// nolint:gochecknoglobals
+//
+//nolint:gochecknoglobals
 var (
 	SetUserFSQuota     = fs.SetUserFSQuota
 	StateChangeTimeout = 1 * time.Second
@@ -331,7 +331,7 @@ func (storageState *StorageState) UpdateState(updateState cloudprotocol.UpdateSt
 		return aoserrors.Wrap(err)
 	}
 
-	if err := ioutil.WriteFile(state.stateFilePath, []byte(updateState.State), 0o600); err != nil {
+	if err := os.WriteFile(state.stateFilePath, []byte(updateState.State), 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -726,7 +726,7 @@ func getFileDataChecksum(fileName string) (data []byte, checksum []byte, err err
 		return nil, nil, nil
 	}
 
-	if data, err = ioutil.ReadFile(fileName); err != nil {
+	if data, err = os.ReadFile(fileName); err != nil {
 		return nil, nil, aoserrors.Wrap(err)
 	}
 

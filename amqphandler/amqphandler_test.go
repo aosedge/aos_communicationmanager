@@ -869,7 +869,7 @@ func TestSendMultipleMessages(t *testing.T) {
 	}
 
 	for i := 0; i < numMessages; i++ {
-		// nolint:gosec // it is enough to use weak random generator in this case
+		//nolint:gosec // it is enough to use weak random generator in this case
 		call := testData[rand.Intn(len(testData))]
 
 		if err = call(); err != nil {
@@ -1004,7 +1004,7 @@ func serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-	case "POST":
+	case http.MethodPost:
 		log.Debug("Receive POST")
 
 		password, _ := amqpURL.User.Password()
@@ -1046,7 +1046,7 @@ func serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 func startServiceDiscoveryServer() {
 	http.HandleFunc("/", serviceDiscovery)
 
-	if err := http.ListenAndServe(":8010", nil); err != nil {
+	if err := http.ListenAndServe(":8010", nil); err != nil { //nolint:gosec
 		log.Fatal(err)
 	}
 }
