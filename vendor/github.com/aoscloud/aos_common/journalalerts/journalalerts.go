@@ -106,7 +106,7 @@ type JournalAlerts struct {
  * Variable
  **********************************************************************************************************************/
 
-var coreComponents = []string{ // nolint:gochecknoglobals
+var coreComponents = []string{ //nolint:gochecknoglobals
 	"aos-servicemanager",
 	"aos-updatemanager",
 	"aos-iamanager",
@@ -115,7 +115,7 @@ var coreComponents = []string{ // nolint:gochecknoglobals
 }
 
 // SDJournal is using to mock systemd journal in unit tests.
-var SDJournal JournalInterface // nolint:gochecknoglobals
+var SDJournal JournalInterface //nolint:gochecknoglobals
 
 /***********************************************************************************************************************
  * Public

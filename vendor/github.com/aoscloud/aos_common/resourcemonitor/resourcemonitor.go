@@ -161,7 +161,8 @@ type processInterface interface {
  **********************************************************************************************************************/
 
 // These global variables are used to be able to mocking the functionality of getting quota in tests.
-// nolint:gochecknoglobals
+//
+//nolint:gochecknoglobals
 var (
 	systemCPUPersent    = cpu.Percent
 	cpuCounts           = cpu.Counts
@@ -626,7 +627,7 @@ func (xen *xenSystemUsage) FillSystemInfo(instanceID string, instance *instanceM
 	systemInfo, ok := xen.systemInfos[instanceID]
 	if ok {
 		instance.monitoringData.CPU = uint64(systemInfo.CPUFraction)
-		instance.monitoringData.RAM = uint64(systemInfo.Memory) * 1024 // nolint:gomnd
+		instance.monitoringData.RAM = uint64(systemInfo.Memory) * 1024 //nolint:gomnd
 	}
 
 	return nil
