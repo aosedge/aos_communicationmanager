@@ -94,7 +94,7 @@ type byTimestamp []outdatedItem
  * Vars
  **********************************************************************************************************************/
 
-// nolint:gochecknoglobals // common partitions storage
+//nolint:gochecknoglobals // common partitions storage
 var (
 	partsMutex sync.Mutex
 	partsMap   map[string]*partition
