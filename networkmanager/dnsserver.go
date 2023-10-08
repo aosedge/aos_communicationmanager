@@ -76,8 +76,13 @@ var (
 	LookPath          = exec.LookPath
 	DiscoverInterface = gateway.DiscoverInterface
 	ExecContext       = execShellCommander
-	errProcessNotExit = aoserrors.New("process is not exit")
 )
+
+var errProcessNotExist = aoserrors.New("process not exist")
+
+/***********************************************************************************************************************
+ * Private
+ **********************************************************************************************************************/
 
 func newDNSServer(networkDir string) (*dnsServer, error) {
 	dnsMasqBinary, err := LookPath("dnsmasq")
@@ -199,7 +204,7 @@ func (dns *dnsServer) generateDNSMasqConfig() ([]byte, error) {
 
 func (dns *dnsServer) restart() error {
 	process, err := dns.findServerProcess()
-	if err != nil && !errors.Is(err, errProcessNotExit) {
+	if err != nil && !errors.Is(err, errProcessNotExist) {
 		return aoserrors.Wrap(err)
 	}
 
@@ -213,7 +218,7 @@ func (dns *dnsServer) restart() error {
 func (dns *dnsServer) findServerProcess() (*os.Process, error) {
 	if _, err := os.Stat(dns.PidFile); err != nil {
 		if os.IsNotExist(err) {
-			return nil, errProcessNotExit
+			return nil, errProcessNotExist
 		}
 
 		return nil, aoserrors.Wrap(err)
