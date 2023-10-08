@@ -229,6 +229,10 @@ func (dns *dnsServer) findServerProcess() (*os.Process, error) {
 		return nil, aoserrors.Wrap(err)
 	}
 
+	if len(pidFileContents) == 0 {
+		return nil, errProcessNotExist
+	}
+
 	pid, err := strconv.Atoi(strings.TrimSpace(string(pidFileContents)))
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
