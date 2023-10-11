@@ -188,7 +188,7 @@ const (
 	umFailed   = "FAILED"
 )
 
-const connectionTimeout = 300 * time.Second
+const connectionTimeout = 600 * time.Second
 
 const fileScheme = "file"
 
