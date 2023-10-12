@@ -407,12 +407,6 @@ func (manager *NetworkManager) deleteNetworkParametersFromCache(
 	delete(manager.instancesData[networkID], instanceIdent)
 	delete(manager.dns.hosts, ip.String())
 
-	if len(manager.instancesData[networkID]) == 0 {
-		manager.ipamSubnet.releaseIPNetPool(networkID)
-
-		return
-	}
-
 	manager.ipamSubnet.releaseIPToSubnet(networkID, ip)
 }
 
@@ -452,6 +446,8 @@ next:
 		}
 
 		delete(manager.providerNetworks, networkID)
+
+		manager.ipamSubnet.releaseIPNetPool(networkID)
 
 		if err := manager.storage.RemoveNetworkInfo(networkID); err != nil {
 			log.Errorf("Can't remove network info: %v", err)
