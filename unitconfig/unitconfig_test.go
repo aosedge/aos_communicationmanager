@@ -19,7 +19,6 @@ package unitconfig_test
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -80,7 +79,7 @@ func init() {
 func TestMain(m *testing.M) {
 	var err error
 
-	if tmpDir, err = ioutil.TempDir("", "cm_"); err != nil {
+	if tmpDir, err = os.MkdirTemp("", "cm_"); err != nil {
 		log.Fatalf("Can't create tmp dir: %s", err)
 	}
 
@@ -98,7 +97,7 @@ func TestMain(m *testing.M) {
  **********************************************************************************************************************/
 
 func TestValidGetStatus(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
@@ -135,7 +134,7 @@ func TestInvalidGetStatus(t *testing.T) {
 	something not valid
 }`
 
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(testUnitConfig), 0o600); err != nil {
+	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(testUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
@@ -155,7 +154,7 @@ func TestInvalidGetStatus(t *testing.T) {
 }
 
 func TestCheckUnitConfig(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
@@ -195,7 +194,7 @@ func TestCheckUnitConfig(t *testing.T) {
 }
 
 func TestUpdateUnitConfig(t *testing.T) {
-	if err := ioutil.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
@@ -223,7 +222,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Errorf("Wrong unit config version: %s", vendorVersion)
 	}
 
-	readUnitConfig, err := ioutil.ReadFile(path.Join(tmpDir, "aos_unit.cfg"))
+	readUnitConfig, err := os.ReadFile(path.Join(tmpDir, "aos_unit.cfg"))
 	if err != nil {
 		t.Fatalf("Can't read unit config file: %s", err)
 	}

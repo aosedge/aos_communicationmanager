@@ -107,7 +107,8 @@ type NetworkParameters struct {
  **********************************************************************************************************************/
 
 // These global variable is used to be able to mocking the functionality of networking in tests.
-// nolint:gochecknoglobals
+//
+//nolint:gochecknoglobals
 var (
 	GetIPSubnet func(networkID string) (allocIPNet *net.IPNet, ip net.IP, err error)
 	GetSubnet   func(networkID string) (*net.IPNet, error)
@@ -406,12 +407,6 @@ func (manager *NetworkManager) deleteNetworkParametersFromCache(
 	delete(manager.instancesData[networkID], instanceIdent)
 	delete(manager.dns.hosts, ip.String())
 
-	if len(manager.instancesData[networkID]) == 0 {
-		manager.ipamSubnet.releaseIPNetPool(networkID)
-
-		return
-	}
-
 	manager.ipamSubnet.releaseIPToSubnet(networkID, ip)
 }
 
@@ -451,6 +446,8 @@ next:
 		}
 
 		delete(manager.providerNetworks, networkID)
+
+		manager.ipamSubnet.releaseIPNetPool(networkID)
 
 		if err := manager.storage.RemoveNetworkInfo(networkID); err != nil {
 			log.Errorf("Can't remove network info: %v", err)

@@ -18,7 +18,6 @@
 package networkmanager_test
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -203,7 +202,7 @@ func TestBaseNetwork(t *testing.T) {
 	}
 	sort.Strings(expected)
 
-	rawHosts, err := ioutil.ReadFile(filepath.Join(tmpDir, "network", "addnhosts"))
+	rawHosts, err := os.ReadFile(filepath.Join(tmpDir, "network", "addnhosts"))
 	if err != nil {
 		t.Fatalf("Can't read hosts file: %v", err)
 	}
@@ -626,7 +625,7 @@ func (vlan *testVlan) getVlanID(networkID string) (uint64, error) {
 }
 
 func setup() (err error) {
-	if tmpDir, err = ioutil.TempDir("", "aos_"); err != nil {
+	if tmpDir, err = os.MkdirTemp("", "aos_"); err != nil {
 		return aoserrors.Wrap(err)
 	}
 

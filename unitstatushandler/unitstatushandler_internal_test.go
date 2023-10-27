@@ -20,7 +20,6 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"sort"
@@ -92,7 +91,7 @@ type TestDownloader struct {
 }
 
 type TestResult struct {
-	ctx          context.Context // nolint:containedctx
+	ctx          context.Context //nolint:containedctx
 	downloadTime time.Duration
 	fileName     string
 	err          error
@@ -139,7 +138,7 @@ func init() {
 func TestMain(m *testing.M) {
 	var err error
 
-	tmpDir, err = ioutil.TempDir("", "cm_")
+	tmpDir, err = os.MkdirTemp("", "cm_")
 	if err != nil {
 		log.Fatalf("Can't create tmp dir: %s", tmpDir)
 	}
@@ -1563,7 +1562,7 @@ func (testDownloader *TestDownloader) SetError(url string, err error) {
 func (testDownloader *TestDownloader) Download(
 	ctx context.Context, packageInfo downloader.PackageInfo,
 ) (result downloader.Result, err error) {
-	file, err := ioutil.TempFile(tmpDir, "*.dec")
+	file, err := os.CreateTemp(tmpDir, "*.dec")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}

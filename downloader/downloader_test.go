@@ -24,7 +24,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -153,7 +152,7 @@ func TestDownload(t *testing.T) {
 
 	fileName := path.Join(serverDir, "package.txt")
 
-	if err := ioutil.WriteFile(fileName, []byte("Hello downloader\n"), 0o600); err != nil {
+	if err := os.WriteFile(fileName, []byte("Hello downloader\n"), 0o600); err != nil {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 	defer os.RemoveAll(fileName)
@@ -213,7 +212,7 @@ func TestInterruptResumeDownload(t *testing.T) {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
 
-	defer clearWondershaperLimit("lo") // nolint:errcheck
+	defer clearWondershaperLimit("lo") //nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
 
@@ -293,7 +292,7 @@ func TestContinueDownload(t *testing.T) {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
 
-	defer clearWondershaperLimit("lo") // nolint:errcheck
+	defer clearWondershaperLimit("lo") //nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
 
@@ -361,7 +360,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
 
-	defer clearWondershaperLimit("lo") // nolint:errcheck
+	defer clearWondershaperLimit("lo") //nolint:errcheck
 
 	fileName := path.Join(serverDir, "package.txt")
 
@@ -371,7 +370,7 @@ func TestResumeDownloadFromTwoServers(t *testing.T) {
 	defer os.RemoveAll(fileName)
 
 	go func() {
-		log.Fatal(http.ListenAndServe(":8002", http.FileServer(http.Dir(serverDir))))
+		log.Fatal(http.ListenAndServe(":8002", http.FileServer(http.Dir(serverDir)))) //nolint:gosec
 	}()
 
 	time.Sleep(time.Second)
@@ -435,7 +434,7 @@ func TestConcurrentDownloads(t *testing.T) {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
 
-	defer clearWondershaperLimit("lo") // nolint:errcheck
+	defer clearWondershaperLimit("lo") //nolint:errcheck
 
 	for i := 0; i < numDownloads; i++ {
 		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), 100*Kilobyte); err != nil {
@@ -504,7 +503,7 @@ func TestConcurrentLimitSpaceDownloads(t *testing.T) {
 		t.Fatalf("Can't set speed limit: %s", err)
 	}
 
-	defer clearWondershaperLimit("lo") // nolint:errcheck
+	defer clearWondershaperLimit("lo") //nolint:errcheck
 
 	cases := []struct {
 		fileName    string
@@ -915,7 +914,7 @@ func (space *testSpace) Release() error {
  **********************************************************************************************************************/
 
 func setup() (err error) {
-	tmpDir, err = ioutil.TempDir("", "cm_")
+	tmpDir, err = os.MkdirTemp("", "cm_")
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -928,7 +927,7 @@ func setup() (err error) {
 	}
 
 	go func() {
-		log.Fatal(http.ListenAndServe(":8001", http.FileServer(http.Dir(serverDir))))
+		log.Fatal(http.ListenAndServe(":8001", http.FileServer(http.Dir(serverDir)))) //nolint:gosec
 	}()
 
 	time.Sleep(time.Second)

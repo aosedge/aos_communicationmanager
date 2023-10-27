@@ -20,7 +20,7 @@ package unitconfig
 import (
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"os"
 	"sync"
 
 	"github.com/aoscloud/aos_common/aoserrors"
@@ -145,7 +145,7 @@ func (instance *Instance) UpdateUnitConfig(configJSON json.RawMessage) (err erro
 		return aoserrors.Wrap(err)
 	}
 
-	if err = ioutil.WriteFile(instance.unitConfigFile, configJSON, 0o600); err != nil {
+	if err = os.WriteFile(instance.unitConfigFile, configJSON, 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -165,7 +165,7 @@ func (instance *Instance) load() (err error) {
 		instance.unitConfigError = aoserrors.Wrap(err)
 	}()
 
-	byteValue, err := ioutil.ReadFile(instance.unitConfigFile)
+	byteValue, err := os.ReadFile(instance.unitConfigFile)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}

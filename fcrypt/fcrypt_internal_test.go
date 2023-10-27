@@ -30,7 +30,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -358,7 +357,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 			t.Fatalf("Error creating context: '%v'", err)
 		}
 
-		clearFile, err := ioutil.TempFile("", "aos_test_fcrypt.bin.")
+		clearFile, err := os.CreateTemp("", "aos_test_fcrypt.bin.")
 		if err != nil {
 			t.Fatalf("Error creating file: '%v'", err)
 		}
@@ -368,12 +367,12 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 			t.Errorf("Error writing file")
 		}
 
-		encFile, err := ioutil.TempFile("", "aos_test_fcrypt.enc.")
+		encFile, err := os.CreateTemp("", "aos_test_fcrypt.enc.")
 		if err != nil {
 			t.Fatalf("Error creating file: '%v'", err)
 		}
 
-		decFile, err := ioutil.TempFile("", "aos_test_fcrypt.dec.")
+		decFile, err := os.CreateTemp("", "aos_test_fcrypt.dec.")
 		if err != nil {
 			t.Fatalf("Error creating file: '%v'", err)
 		}
@@ -528,8 +527,8 @@ func TestInvalidParams(t *testing.T) {
 
 	keyInfo.SessionKey = encryptedKey
 	keyInfo.SessionIV = []byte{1, 2}
-	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING" // nolint:goconst
-	keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"          // nolint:goconst
+	keyInfo.SymmetricAlgName = "AES128/CBC/PKCS7PADDING" //nolint:goconst
+	keyInfo.AsymmetricAlgName = "RSA/PKCS1v1_5"          //nolint:goconst
 
 	if _, err = cryptoContext.ImportSessionKey(keyInfo); err == nil {
 		t.Fatalf("Import session key not failed")
@@ -807,12 +806,12 @@ func TestVerifySignOfComponent(t *testing.T) {
 	}
 
 	privKey := path.Join(tmpDir, "privKey.pem")
-	if err = ioutil.WriteFile(privKey, keyPEM, 0o600); err != nil {
+	if err = os.WriteFile(privKey, keyPEM, 0o600); err != nil {
 		t.Fatalf("Can't save certificate: '%v'", err)
 	}
 
 	test := path.Join(tmpDir, "test.txt")
-	if err = ioutil.WriteFile(test, []byte("test"), 0o600); err != nil {
+	if err = os.WriteFile(test, []byte("test"), 0o600); err != nil {
 		t.Fatalf("Can't save certificate: '%v'", err)
 	}
 
@@ -825,7 +824,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 		t.Fatalf("message: %s, %s", string(out), err)
 	}
 
-	signValue, err := ioutil.ReadFile(signFile)
+	signValue, err := os.ReadFile(signFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -908,7 +907,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 	}
 
 	for _, data := range upgradeMetadata.Data {
-		tmpFile, err := ioutil.TempFile(os.TempDir(), "aos_update-")
+		tmpFile, err := os.CreateTemp(os.TempDir(), "aos_update-")
 		if err != nil {
 			t.Fatal("Cannot create temporary file", err)
 		}
@@ -934,7 +933,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 	}
 
 	for _, data := range upgradeMetadata.Data {
-		tmpFile, err := ioutil.TempFile(os.TempDir(), "aos_update-")
+		tmpFile, err := os.CreateTemp(os.TempDir(), "aos_update-")
 		if err != nil {
 			t.Fatal("Cannot create temporary file", err)
 		}
@@ -1038,7 +1037,7 @@ func setupFileStorage() (err error) {
 				return aoserrors.Wrap(err)
 			}
 
-			if err := ioutil.WriteFile(certURL.Path, certData.cert, 0o600); err != nil {
+			if err := os.WriteFile(certURL.Path, certData.cert, 0o600); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
@@ -1049,7 +1048,7 @@ func setupFileStorage() (err error) {
 				return aoserrors.Wrap(err)
 			}
 
-			if err := ioutil.WriteFile(keyURL.Path, certData.key, 0o600); err != nil {
+			if err := os.WriteFile(keyURL.Path, certData.key, 0o600); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
@@ -1087,7 +1086,7 @@ func pkcs11ImportCert(name string, data []byte) (err error) {
 	id := name
 
 	for i, cert := range certs {
-		if err := ioutil.WriteFile(fileName, cert.Raw, 0o600); err != nil {
+		if err := os.WriteFile(fileName, cert.Raw, 0o600); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -1123,7 +1122,7 @@ func pkcs11ImportKey(name string, data []byte) (err error) {
 
 	fileName := path.Join(tmpDir, "data.tmp")
 
-	if err := ioutil.WriteFile(fileName, data, 0o600); err != nil {
+	if err := os.WriteFile(fileName, data, 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -1371,7 +1370,7 @@ func prepareTestCert() error {
 	}
 
 	offlineCert := path.Join(tmpDir, "offline.pem")
-	if err = ioutil.WriteFile(offlineCert, certOffline1Pem, 0o600); err != nil {
+	if err = os.WriteFile(offlineCert, certOffline1Pem, 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -1393,12 +1392,12 @@ func prepareTestCert() error {
 		return aoserrors.Errorf("message: %s, %s", string(out), err)
 	}
 
-	aesKeyData, err := ioutil.ReadFile(encAesKey)
+	aesKeyData, err := os.ReadFile(encAesKey)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	aesKeyOaepData, err := ioutil.ReadFile(encAesOaepKey)
+	aesKeyOaepData, err := os.ReadFile(encAesOaepKey)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}

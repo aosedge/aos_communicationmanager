@@ -19,7 +19,6 @@ package config_test
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -343,7 +342,7 @@ func TestComponentStoreDir(t *testing.T) {
  **********************************************************************************************************************/
 
 func createConfigFile(fileName string) (err error) {
-	if err := ioutil.WriteFile(fileName, []byte(testConfigContent), 0o600); err != nil {
+	if err := os.WriteFile(fileName, []byte(testConfigContent), 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -351,7 +350,7 @@ func createConfigFile(fileName string) (err error) {
 }
 
 func setup() (err error) {
-	if tmpDir, err = ioutil.TempDir("", "aos_"); err != nil {
+	if tmpDir, err = os.MkdirTemp("", "aos_"); err != nil {
 		return aoserrors.Wrap(err)
 	}
 

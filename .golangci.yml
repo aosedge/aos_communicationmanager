@@ -1,34 +1,38 @@
 linters:
   enable-all: true
   disable:
-    - varnamelen
-    - exhaustivestruct
-    - gochecknoinits
-    - gci
-    - exhaustive
-    - nlreturn
     - cyclop
-    - nestif
-    - ireturn
-    - gomoddirectives
-    - unparam
-    - nonamedreturns
+    - exhaustive
+    - exhaustivestruct
     - exhaustruct
+    - depguard
+    - gci
+    - gochecknoinits
+    - gomoddirectives
+    - ireturn
+    - nestif
+    - nlreturn
+    - nonamedreturns
     - nosnakecase
+    - unparam
+    - varnamelen
     # deprecated
-    - interfacer
-    - golint
-    - scopelint
-    - maligned
     - bodyclose
     - contextcheck
+    - deadcode
+    - golint
+    - ifshort
+    - interfacer
+    - maligned
     - nilerr
     - noctx
     - rowserrcheck
+    - scopelint
     - sqlclosecheck
     - structcheck
     - tparallel
     - unparam
+    - varcheck
     - wastedassign
 
 linters-settings:
@@ -53,6 +57,9 @@ linters-settings:
 
   gofumpt:
     lang-version: "1.18"
+
+  interfacebloat:
+    max: 12
 
 issues:
   include:

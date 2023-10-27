@@ -1,12 +1,12 @@
 module github.com/aoscloud/aos_communicationmanager
 
-go 1.18
+go 1.20
 
 replace github.com/ThalesIgnite/crypto11 => github.com/aoscloud/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5
-	github.com/aoscloud/aos_common v0.0.0-20230607132225-c5f6da51dcf4
+	github.com/aoscloud/aos_common v0.0.0-20230802082015-dd58afc4ed81
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f

@@ -28,7 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -954,7 +953,7 @@ func TestFileServer(t *testing.T) {
 
 	fileName := path.Join(tmpDir, "layer")
 
-	if err := ioutil.WriteFile(fileName, []byte("Hello fileserver"), 0o600); err != nil {
+	if err := os.WriteFile(fileName, []byte("Hello fileserver"), 0o600); err != nil {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 
@@ -1337,7 +1336,7 @@ func prepareServiceInfo(
 
 func prepareService(servicelayerSize uint64, srvConfig []byte,
 ) (outputURL string, layersDigest []string, err error) {
-	imageDir, err := ioutil.TempDir("", "aos_")
+	imageDir, err := os.MkdirTemp("", "aos_")
 	if err != nil {
 		return "", nil, aoserrors.Wrap(err)
 	}
@@ -1387,7 +1386,7 @@ func prepareService(servicelayerSize uint64, srvConfig []byte,
 		return "", layersDigest, aoserrors.Wrap(err)
 	}
 
-	imageFile, err := ioutil.TempFile("", "aos_")
+	imageFile, err := os.CreateTemp("", "aos_")
 	if err != nil {
 		return "", layersDigest, aoserrors.Wrap(err)
 	}
@@ -1484,7 +1483,7 @@ func generateFsLayer(imgFolder, rootfs string) (digest digest.Digest, err error)
 	}
 	defer file.Close()
 
-	byteValue, err := ioutil.ReadAll(file)
+	byteValue, err := io.ReadAll(file)
 	if err != nil {
 		return digest, aoserrors.Wrap(err)
 	}
@@ -1524,7 +1523,7 @@ func generateAndSaveDigest(folder string, data []byte) (retDigest digest.Digest,
 }
 
 func setup() (err error) {
-	tmpDir, err = ioutil.TempDir("", "cm_")
+	tmpDir, err = os.MkdirTemp("", "cm_")
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}

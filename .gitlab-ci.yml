@@ -1,4 +1,4 @@
-image: golang:1.14
+image: golang:1.20
 
 stages:
   - build
@@ -22,7 +22,7 @@ test:
   variables:
     RABBITMQ_DEFAULT_USER: guest
     RABBITMQ_DEFAULT_PASS: guest
-    AMQP_URL: 'amqp://guest:guest@rabbitmq:5672'
+    AMQP_URL: "amqp://guest:guest@rabbitmq:5672"
   services:
     - rabbitmq:latest
   before_script:
@@ -35,8 +35,8 @@ test:
 whitesource:
   only:
     refs:
-     - master
-     - develop
+      - master
+      - develop
   tags:
     - whitesource_ci
   stage: dependency

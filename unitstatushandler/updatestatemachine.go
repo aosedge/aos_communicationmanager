@@ -87,7 +87,7 @@ type syncExecutor struct {
  * Vars
  **********************************************************************************************************************/
 
-var updateSynchronizer = newSyncExecutor() // nolint:gochecknoglobals
+var updateSynchronizer = newSyncExecutor() //nolint:gochecknoglobals
 
 /***********************************************************************************************************************
  * Interface

@@ -282,7 +282,7 @@ func randomString(n int) string {
 	s := make([]rune, n)
 
 	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))] // nolint:gosec // weak rand is ok in this case
+		s[i] = letters[rand.Intn(len(letters))] //nolint:gosec // weak rand is ok in this case
 	}
 
 	return string(s)

@@ -660,8 +660,18 @@ instancesLoop:
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 		if err != nil {
 			log.WithField("serviceID", instance.ServiceID).Errorf("Can't get service info: %v", err)
+
 			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
 				cloudprotocol.InstanceStateFailed, err.Error()))
+
+			continue
+		}
+
+		if serviceInfo.Cached {
+			log.WithField("serviceID", instance.ServiceID).Error("Can't start instances: service deleted")
+
+			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
+				cloudprotocol.InstanceStateFailed, "service deleted"))
 
 			continue
 		}
@@ -1261,7 +1271,7 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	for i, digest := range digests {
 		layer, err := launcher.imageProvider.GetLayerInfo(digest)
 		if err != nil {
-			return layers, err // nolint
+			return layers, err //nolint:wrapcheck
 		}
 
 		layers[i] = layer

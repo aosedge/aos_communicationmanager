@@ -145,7 +145,7 @@ func (handler *umHandler) Close() {
 	handler.closeChannel <- true
 }
 
-func (handler *umHandler) GetInitilState() (state string) {
+func (handler *umHandler) GetInitialState() (state string) {
 	return handler.initialUmState
 }
 

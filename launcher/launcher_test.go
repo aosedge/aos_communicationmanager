@@ -1283,7 +1283,7 @@ func (testProvider *testImageProvider) GetServiceInfo(serviceID string) (imagema
 		}
 	}
 
-	return imagemanager.ServiceInfo{}, errors.New("service does't exist") // nolint:goerr113
+	return imagemanager.ServiceInfo{}, errors.New("service does't exist") //nolint:goerr113
 }
 
 func (testProvider *testImageProvider) GetLayerInfo(digest string) (imagemanager.LayerInfo, error) {
@@ -1293,7 +1293,7 @@ func (testProvider *testImageProvider) GetLayerInfo(digest string) (imagemanager
 		}
 	}
 
-	return imagemanager.LayerInfo{}, errors.New("layer does't exist") // nolint:goerr113
+	return imagemanager.LayerInfo{}, errors.New("layer does't exist") //nolint:goerr113
 }
 
 func (testProvider *testImageProvider) RevertService(serviceID string) error {

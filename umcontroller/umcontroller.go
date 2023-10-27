@@ -182,13 +182,13 @@ const (
 
 // client sates.
 const (
-	umIdle     = "IDLE" // nolint // deadcode and varcheck
+	umIdle     = "IDLE"
 	umPrepared = "PREPARED"
 	umUpdated  = "UPDATED"
 	umFailed   = "FAILED"
 )
 
-const connectionTimeout = 300 * time.Second
+const connectionTimeout = 600 * time.Second
 
 const fileScheme = "file"
 
@@ -243,7 +243,7 @@ func New(config *config.Config, storage storage, certProvider CertificateProvide
 		return nil, aoserrors.Wrap(err)
 	}
 
-	go umCtrl.processInternallMessages()
+	go umCtrl.processInternalMessages()
 
 	umCtrl.connectionMonitor.wg.Add(1)
 
@@ -384,7 +384,7 @@ func (umCtrl *Controller) UpdateComponents(
  * Private
  **********************************************************************************************************************/
 
-func (umCtrl *Controller) processInternallMessages() {
+func (umCtrl *Controller) processInternalMessages() {
 	for {
 		select {
 		case <-umCtrl.connectionMonitor.timeoutChan:
@@ -436,7 +436,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 			continue
 		}
 
-		umCtrl.updateCurrentComponetsStatus(status.componsStatus)
+		umCtrl.updateCurrentComponentsStatus(status.componsStatus)
 
 		umIDfound = true
 
@@ -446,7 +446,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		}
 
 		umCtrl.connections[i].handler = handler
-		umCtrl.connections[i].state = handler.GetInitilState()
+		umCtrl.connections[i].state = handler.GetInitialState()
 		umCtrl.connections[i].components = []string{}
 
 		for _, newComponent := range status.componsStatus {
@@ -510,7 +510,7 @@ func (umCtrl *Controller) handleCloseConnection(umID string) {
 	}
 }
 
-func (umCtrl *Controller) updateCurrentComponetsStatus(componsStatus []systemComponentStatus) {
+func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemComponentStatus) {
 	log.Debug("Receive components: ", componsStatus)
 
 	for _, value := range componsStatus {
@@ -623,12 +623,12 @@ func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 		umCtrl.connections[i].updatePackages = []SystemComponent{}
 	}
 
-	updatecomponents, err := umCtrl.storage.GetComponentsUpdateInfo()
+	updateComponents, err := umCtrl.storage.GetComponentsUpdateInfo()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	for _, component := range updatecomponents {
+	for _, component := range updateComponents {
 		if addErr := umCtrl.addComponentForUpdateToUm(component); addErr != nil {
 			if err == nil {
 				err = aoserrors.Wrap(addErr)
@@ -691,13 +691,13 @@ func (umCtrl *Controller) cleanupUpdateData() {
 		}
 	}
 
-	updatecomponents, err := umCtrl.storage.GetComponentsUpdateInfo()
+	updateComponents, err := umCtrl.storage.GetComponentsUpdateInfo()
 	if err != nil {
 		log.Error("Can't get components update info ", err)
 		return
 	}
 
-	if len(updatecomponents) == 0 {
+	if len(updateComponents) == 0 {
 		return
 	}
 
@@ -987,7 +987,7 @@ func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
 		}
 	}
 
-	umCtrl.updateCurrentComponetsStatus(status.componsStatus)
+	umCtrl.updateCurrentComponentsStatus(status.componsStatus)
 
 	go umCtrl.generateFSMEvent(evContinue)
 }

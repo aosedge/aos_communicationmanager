@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -123,7 +122,7 @@ func TestMain(m *testing.M) {
 }
 
 func setup() (err error) {
-	tmpDir, err = ioutil.TempDir("", "cm_")
+	tmpDir, err = os.MkdirTemp("", "cm_")
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -278,7 +277,7 @@ func TestFullUpdate(t *testing.T) {
 	um2 := newTestUM(t, "testUM2", pb.UmState_IDLE, "init", um2Components)
 	go um2.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
@@ -438,7 +437,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um4 := newTestUM(t, "testUM4", pb.UmState_IDLE, "init", um4Components)
 	go um4.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
@@ -615,7 +614,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6 := newTestUM(t, "testUM6", pb.UmState_IDLE, "init", um6Components)
 	go um6.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
@@ -817,7 +816,7 @@ func TestRevertOnPrepare(t *testing.T) {
 	um8 := newTestUM(t, "testUM8", pb.UmState_IDLE, "init", um8Components)
 	go um8.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
@@ -950,7 +949,7 @@ func TestRevertOnUpdate(t *testing.T) {
 	um10 := newTestUM(t, "testUM10", pb.UmState_IDLE, "init", um10Components)
 	go um10.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
@@ -1107,7 +1106,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um12 := newTestUM(t, "testUM12", pb.UmState_IDLE, "init", um12Components)
 	go um12.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
@@ -1269,7 +1268,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um14 := newTestUM(t, "testUM14", pb.UmState_IDLE, "init", um14Components)
 	go um14.processMessages()
 
-	componentDir, err := ioutil.TempDir("", "aosComponent_")
+	componentDir, err := os.MkdirTemp("", "aosComponent_")
 	if err != nil {
 		t.Fatalf("Can't create component dir: %v", componentDir)
 	}
