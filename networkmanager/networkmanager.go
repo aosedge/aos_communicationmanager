@@ -166,12 +166,12 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 		networkManager.providerNetworks[networkInfo.NetworkID] = networkInfo.NetworkParameters
 	}
 
-	networkInfos, err := storage.GetNetworkInstancesInfo()
+	networkInstancesInfos, err := storage.GetNetworkInstancesInfo()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	for _, networkInfo := range networkInfos {
+	for _, networkInfo := range networkInstancesInfos {
 		if len(networkManager.instancesData[networkInfo.NetworkID]) == 0 {
 			networkManager.instancesData[networkInfo.NetworkID] = make(
 				map[aostypes.InstanceIdent]InstanceNetworkInfo)
@@ -180,6 +180,8 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 		networkInfo.DNSServers = []string{networkManager.dns.IPAddress}
 		networkManager.instancesData[networkInfo.NetworkID][networkInfo.InstanceIdent] = networkInfo
 	}
+
+	ipamSubnet.removeAllocatedSubnets(networksInfo, networkInstancesInfos)
 
 	return networkManager, nil
 }
