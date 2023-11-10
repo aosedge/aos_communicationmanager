@@ -434,6 +434,9 @@ func (handler *smHandler) processSMMessages() {
 		case *pb.SMOutgoingMessages_OverrideEnvVarStatus:
 			handler.processOverrideEnvVarsStatus(data.OverrideEnvVarStatus)
 
+		case *pb.SMOutgoingMessages_ClockSyncRequest:
+			handler.sendClockSyncResponse()
+
 		default:
 			log.Warn("Received unprocessed message")
 		}
@@ -589,6 +592,19 @@ func (handler *smHandler) processOverrideEnvVarsStatus(envVarStatus *pb.Override
 	if err := handler.messageSender.SendOverrideEnvVarsStatus(
 		cloudprotocol.OverrideEnvVarsStatus{OverrideEnvVarsStatus: response}); err != nil {
 		log.Errorf("Can't send override env ears status: %v", err.Error())
+	}
+}
+
+func (handler *smHandler) sendClockSyncResponse() {
+	tm := time.Now()
+
+	log.Debugf("Send clock sync response: %v", tm)
+
+	if err := handler.stream.Send(
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ClockSync{
+			ClockSync: &pb.ClockSync{CurrentTime: timestamppb.New(tm)},
+		}}); err != nil {
+		log.Errorf("Can't send clock sync response: %v", err.Error())
 	}
 }
 
