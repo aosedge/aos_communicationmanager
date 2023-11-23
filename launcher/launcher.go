@@ -685,10 +685,6 @@ instancesLoop:
 			continue instancesLoop
 		}
 
-		if serviceInfo.Config.Runner == "" {
-			serviceInfo.Config.Runner = defaultRunner
-		}
-
 		nodes, status := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, instance, false)
 		if len(nodes) == 0 {
 			errStatus = append(errStatus, status)
@@ -1103,6 +1099,10 @@ nodeLoop:
 }
 
 func (launcher *Launcher) getNodeByRunner(allNodes []*nodeStatus, runner string) (nodes []*nodeStatus) {
+	if runner == "" {
+		runner = defaultRunner
+	}
+
 	for _, node := range allNodes {
 		if slices.Contains(node.RunnerFeature, runner) {
 			nodes = append(nodes, node)
