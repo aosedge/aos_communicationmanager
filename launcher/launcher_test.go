@@ -1397,7 +1397,7 @@ func waitRunInstancesStatus(
 		}
 
 		if err := deepSlicesCompare(expectedMsg.UnitSubjects, message.UnitSubjects); err != nil {
-			return aoserrors.New("incorrect subejects in run status")
+			return aoserrors.New("incorrect subjects in run status")
 		}
 
 		for i := range message.ErrorServices {
@@ -1417,11 +1417,11 @@ func deepSlicesCompare[T any](sliceA, sliceB []T) error {
 		return aoserrors.New("incorrect length")
 	}
 
-toplabel:
+topLabel:
 	for _, elementA := range sliceA {
 		for _, elementB := range sliceB {
 			if reflect.DeepEqual(elementA, elementB) {
-				continue toplabel
+				continue topLabel
 			}
 		}
 
