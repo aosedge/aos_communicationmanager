@@ -413,7 +413,7 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 
 	nodeWithIssue := launcher.getNode(alert.NodeID)
 
-	for i := len(nodeWithIssue.currentRunRequest.instances) - 1; i >= 0; i++ {
+	for i := len(nodeWithIssue.currentRunRequest.instances) - 1; i >= 0; i-- {
 		currentServiceID := nodeWithIssue.currentRunRequest.instances[i].ServiceID
 
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(currentServiceID)
