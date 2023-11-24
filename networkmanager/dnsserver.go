@@ -21,7 +21,6 @@ package networkmanager
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"html/template"
 	"os"
@@ -203,10 +202,7 @@ func (dns *dnsServer) generateDNSMasqConfig() ([]byte, error) {
 }
 
 func (dns *dnsServer) restart() error {
-	process, err := dns.findServerProcess()
-	if err != nil && !errors.Is(err, errProcessNotExist) {
-		return aoserrors.Wrap(err)
-	}
+	process, _ := dns.findServerProcess()
 
 	if process == nil || !dns.isRunning(process) {
 		return dns.start()
