@@ -159,7 +159,7 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 		}
 
 		newCerts = append(newCerts, cloudprotocol.IssueCertData{
-			Type: response.Type, Csr: response.Csr, NodeID: cert.NodeID,
+			Type: response.GetType(), Csr: response.GetCsr(), NodeID: cert.NodeID,
 		})
 	}
 
@@ -200,7 +200,7 @@ func (client *Client) InstallCertificates(
 		}
 
 		if response != nil {
-			certConfirmation.Serial = response.Serial
+			certConfirmation.Serial = response.GetSerial()
 		}
 
 		confirmations[i] = certConfirmation
@@ -236,9 +236,11 @@ func (client *Client) GetCertificate(
 		return "", "", aoserrors.Wrap(err)
 	}
 
-	log.WithFields(log.Fields{"certURL": response.CertUrl, "keyURL": response.KeyUrl}).Debug("Certificate info")
+	log.WithFields(log.Fields{
+		"certURL": response.GetCertUrl(), "keyURL": response.GetKeyUrl(),
+	}).Debug("Certificate info")
 
-	return response.CertUrl, response.KeyUrl, nil
+	return response.GetCertUrl(), response.GetKeyUrl(), nil
 }
 
 // Close closes IAM client.
@@ -300,11 +302,11 @@ func (client *Client) getNodeInfo() (nodeID, nodeType string, err error) {
 	}
 
 	log.WithFields(log.Fields{
-		"nodeID":   response.NodeId,
-		"nodeType": response.NodeType,
+		"nodeID":   response.GetNodeId(),
+		"nodeType": response.GetNodeType(),
 	}).Debug("Get node Info")
 
-	return response.NodeId, response.NodeType, nil
+	return response.GetNodeId(), response.GetNodeType(), nil
 }
 
 func (client *Client) createProtectedConnection(
@@ -350,7 +352,7 @@ func (client *Client) getSystemID() (systemID string, err error) {
 		return "", aoserrors.Wrap(err)
 	}
 
-	log.WithFields(log.Fields{"systemID": response.SystemId}).Debug("Get system ID")
+	log.WithFields(log.Fields{"systemID": response.GetSystemId()}).Debug("Get system ID")
 
-	return response.SystemId, nil
+	return response.GetSystemId(), nil
 }

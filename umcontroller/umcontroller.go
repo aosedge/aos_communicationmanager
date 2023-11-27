@@ -188,6 +188,11 @@ const (
 	umFailed   = "FAILED"
 )
 
+const (
+	enterPrefix  = "enter_"
+	beforePrefix = "before_"
+)
+
 const connectionTimeout = 600 * time.Second
 
 const fileScheme = "file"
@@ -750,21 +755,21 @@ func (umCtrl *Controller) createStateMachine() (string, []fsm.EventDesc, map[str
 			{Name: evConnectionTimeout, Src: []string{stateInit}, Dst: stateFaultState},
 		},
 		fsm.Callbacks{
-			"enter_" + stateIdle:                          umCtrl.processIdleState,
-			"enter_" + statePrepareUpdate:                 umCtrl.processPrepareState,
-			"enter_" + stateUpdateUmStatusOnPrepareUpdate: umCtrl.processUpdateUmState,
-			"enter_" + stateStartUpdate:                   umCtrl.processStartUpdateState,
-			"enter_" + stateUpdateUmStatusOnStartUpdate:   umCtrl.processUpdateUmState,
-			"enter_" + stateStartApply:                    umCtrl.processStartApplyState,
-			"enter_" + stateUpdateUmStatusOnStartApply:    umCtrl.processUpdateUmState,
-			"enter_" + stateStartRevert:                   umCtrl.processStartRevertState,
-			"enter_" + stateUpdateUmStatusOnRevert:        umCtrl.processUpdateUmState,
-			"enter_" + stateFaultState:                    umCtrl.processFaultState,
+			enterPrefix + stateIdle:                          umCtrl.processIdleState,
+			enterPrefix + statePrepareUpdate:                 umCtrl.processPrepareState,
+			enterPrefix + stateUpdateUmStatusOnPrepareUpdate: umCtrl.processUpdateUmState,
+			enterPrefix + stateStartUpdate:                   umCtrl.processStartUpdateState,
+			enterPrefix + stateUpdateUmStatusOnStartUpdate:   umCtrl.processUpdateUmState,
+			enterPrefix + stateStartApply:                    umCtrl.processStartApplyState,
+			enterPrefix + stateUpdateUmStatusOnStartApply:    umCtrl.processUpdateUmState,
+			enterPrefix + stateStartRevert:                   umCtrl.processStartRevertState,
+			enterPrefix + stateUpdateUmStatusOnRevert:        umCtrl.processUpdateUmState,
+			enterPrefix + stateFaultState:                    umCtrl.processFaultState,
 
-			"before_event":               umCtrl.onEvent,
-			"before_" + evApplyComplete:  umCtrl.updateComplete,
-			"before_" + evSystemReverted: umCtrl.revertComplete,
-			"before_" + evUpdateFailed:   umCtrl.processError,
+			beforePrefix + "event":          umCtrl.onEvent,
+			beforePrefix + evApplyComplete:  umCtrl.updateComplete,
+			beforePrefix + evSystemReverted: umCtrl.revertComplete,
+			beforePrefix + evUpdateFailed:   umCtrl.processError,
 		}
 }
 

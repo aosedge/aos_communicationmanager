@@ -50,6 +50,15 @@ var (
 )
 
 /***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+const (
+	servicePrefix = "serv"
+	subjectPrefix = "subj"
+)
+
+/***********************************************************************************************************************
  * Init
  **********************************************************************************************************************/
 
@@ -838,7 +847,7 @@ func TestInstance(t *testing.T) {
 	for i := 100; i < 105; i++ {
 		instanceInfo := launcher.InstanceInfo{
 			InstanceIdent: aostypes.InstanceIdent{
-				ServiceID: "serv" + strconv.Itoa(i), SubjectID: "subj" + strconv.Itoa(i), Instance: 0,
+				ServiceID: servicePrefix + strconv.Itoa(i), SubjectID: subjectPrefix + strconv.Itoa(i), Instance: 0,
 			},
 			UID: i,
 		}
@@ -853,7 +862,8 @@ func TestInstance(t *testing.T) {
 	expectedUID := 103
 
 	uid, err := db.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
 	})
 	if err != nil {
 		t.Errorf("Can't get instance uid: %v", err)
@@ -873,13 +883,15 @@ func TestInstance(t *testing.T) {
 	}
 
 	if err := db.RemoveInstance(aostypes.InstanceIdent{
-		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
 	}); err != nil {
 		t.Errorf("Can't remove instance: %v", err)
 	}
 
 	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
 	}); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
 	}

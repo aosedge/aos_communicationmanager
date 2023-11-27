@@ -1163,8 +1163,8 @@ func TestSyncClock(t *testing.T) {
 			t.Fatalf("Incorrect message type: %v", message)
 		}
 
-		if clockSync.ClockSync.CurrentTime.CheckValid() != nil {
-			t.Fatalf("Incorrect time: %v", clockSync.ClockSync.CurrentTime)
+		if clockSync.ClockSync.GetCurrentTime().CheckValid() != nil {
+			t.Fatalf("Incorrect time: %v", clockSync.ClockSync.GetCurrentTime())
 		}
 	}
 }

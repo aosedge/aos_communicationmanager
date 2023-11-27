@@ -19,8 +19,8 @@
 package uidgidpool
 
 import (
-	"fmt"
 	"os/user"
+	"strconv"
 	"sync"
 
 	"github.com/aoscloud/aos_common/aoserrors"
@@ -52,7 +52,7 @@ type IdentifierPool struct {
 func NewGroupIDPool() (pool *IdentifierPool) {
 	pool = &IdentifierPool{
 		systemAvailability: func(gid int) bool {
-			if group, err := user.LookupGroupId(fmt.Sprint(gid)); err == nil || group != nil {
+			if group, err := user.LookupGroupId(strconv.Itoa(gid)); err == nil || group != nil {
 				return false
 			}
 
@@ -66,7 +66,7 @@ func NewGroupIDPool() (pool *IdentifierPool) {
 func NewUserIDPool() (pool *IdentifierPool) {
 	pool = &IdentifierPool{
 		systemAvailability: func(uid int) bool {
-			if user, err := user.LookupId(fmt.Sprint(uid)); err == nil || user != nil {
+			if user, err := user.LookupId(strconv.Itoa(uid)); err == nil || user != nil {
 				return false
 			}
 
