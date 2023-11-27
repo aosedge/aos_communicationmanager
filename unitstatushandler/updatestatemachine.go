@@ -125,13 +125,13 @@ func (stateMachine *updateStateMachine) close() (err error) {
 func (stateMachine *updateStateMachine) init(ttlDate time.Time) (err error) {
 	switch stateMachine.fsm.Current() {
 	case stateDownloading:
-		stateMachine.onStateDownloading(nil)
+		stateMachine.onStateDownloading(context.Background(), nil)
 
 	case stateReadyToUpdate:
-		stateMachine.onStateReadyToUpdate(nil)
+		stateMachine.onStateReadyToUpdate(context.Background(), nil)
 
 	case stateUpdating:
-		stateMachine.onStateUpdating(nil)
+		stateMachine.onStateUpdating(context.Background(), nil)
 	}
 
 	if stateMachine.fsm.Current() != stateNoUpdate && !ttlDate.IsZero() {
@@ -150,7 +150,7 @@ func (stateMachine *updateStateMachine) sendEvent(event string, managerErr strin
 		stateMachine.cancel()
 	}
 
-	if err = stateMachine.fsm.Event(event, managerErr); err != nil {
+	if err = stateMachine.fsm.Event(context.Background(), event, managerErr); err != nil {
 		log.Errorf("Can't send event: %s", err)
 		return aoserrors.Wrap(err)
 	}
@@ -248,7 +248,7 @@ func (stateMachine *updateStateMachine) cancel() {
 	stateMachine.wg.Wait()
 }
 
-func (stateMachine *updateStateMachine) onBeforeEvent(event *fsm.Event) {
+func (stateMachine *updateStateMachine) onBeforeEvent(ctx context.Context, event *fsm.Event) {
 	var managerErr string
 
 	if len(event.Args) != 0 {
@@ -260,36 +260,36 @@ func (stateMachine *updateStateMachine) onBeforeEvent(event *fsm.Event) {
 	stateMachine.manager.stateChanged(event.Event, event.Dst, managerErr)
 }
 
-func (stateMachine *updateStateMachine) onStateNoUpdate(event *fsm.Event) {
+func (stateMachine *updateStateMachine) onStateNoUpdate(ctx context.Context, event *fsm.Event) {
 	stateMachine.resetTimers()
 	stateMachine.manager.noUpdate()
 }
 
-func (stateMachine *updateStateMachine) onStateDownloading(event *fsm.Event) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
+func (stateMachine *updateStateMachine) onStateDownloading(ctx context.Context, event *fsm.Event) {
+	downloadCtx, cancelFunc := context.WithCancel(context.Background())
 	stateMachine.cancelFunc = cancelFunc
 
 	stateMachine.wg.Add(1)
 
 	go func() {
 		defer stateMachine.wg.Done()
-		stateMachine.manager.download(ctx)
+		stateMachine.manager.download(downloadCtx)
 	}()
 }
 
-func (stateMachine *updateStateMachine) onStateReadyToUpdate(event *fsm.Event) {
+func (stateMachine *updateStateMachine) onStateReadyToUpdate(ctx context.Context, event *fsm.Event) {
 	stateMachine.manager.readyToUpdate()
 }
 
-func (stateMachine *updateStateMachine) onStateUpdating(event *fsm.Event) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
+func (stateMachine *updateStateMachine) onStateUpdating(ctx context.Context, event *fsm.Event) {
+	updateCtx, cancelFunc := context.WithCancel(context.Background())
 	stateMachine.cancelFunc = cancelFunc
 
 	stateMachine.wg.Add(1)
 
 	updateSynchronizer.execute(ctx, func() {
 		defer stateMachine.wg.Done()
-		stateMachine.manager.update(ctx)
+		stateMachine.manager.update(updateCtx)
 	})
 
 	go func() {

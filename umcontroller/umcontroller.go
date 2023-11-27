@@ -712,7 +712,7 @@ func (umCtrl *Controller) generateFSMEvent(event string, args ...interface{}) {
 		return
 	}
 
-	if err := umCtrl.fsm.Event(event, args...); err != nil {
+	if err := umCtrl.fsm.Event(context.Background(), event, args...); err != nil {
 		log.Error("Error transaction ", err)
 	}
 }
@@ -832,11 +832,11 @@ func getFilePath(fileURL string) (string, error) {
  * FSM callbacks
  **********************************************************************************************************************/
 
-func (umCtrl *Controller) onEvent(e *fsm.Event) {
+func (umCtrl *Controller) onEvent(ctx context.Context, e *fsm.Event) {
 	log.Debugf("[CtrlFSM] %s -> %s : Event: %s", e.Src, e.Dst, e.Event)
 }
 
-func (umCtrl *Controller) processIdleState(e *fsm.Event) {
+func (umCtrl *Controller) processIdleState(ctx context.Context, e *fsm.Event) {
 	umState := umCtrl.getCurrentUpdateState()
 
 	switch umState {
@@ -858,10 +858,10 @@ func (umCtrl *Controller) processIdleState(e *fsm.Event) {
 	umCtrl.updateFinishCond.Broadcast()
 }
 
-func (umCtrl *Controller) processFaultState(e *fsm.Event) {
+func (umCtrl *Controller) processFaultState(ctx context.Context, e *fsm.Event) {
 }
 
-func (umCtrl *Controller) processPrepareState(e *fsm.Event) {
+func (umCtrl *Controller) processPrepareState(ctx context.Context, e *fsm.Event) {
 	for i := range umCtrl.connections {
 		if len(umCtrl.connections[i].updatePackages) > 0 {
 			if umCtrl.connections[i].state == umFailed {
@@ -883,7 +883,7 @@ func (umCtrl *Controller) processPrepareState(e *fsm.Event) {
 	go umCtrl.generateFSMEvent(evUpdatePrepared)
 }
 
-func (umCtrl *Controller) processStartUpdateState(e *fsm.Event) {
+func (umCtrl *Controller) processStartUpdateState(ctx context.Context, e *fsm.Event) {
 	log.Debug("processStartUpdateState")
 
 	for i := range umCtrl.connections {
@@ -907,7 +907,7 @@ func (umCtrl *Controller) processStartUpdateState(e *fsm.Event) {
 	go umCtrl.generateFSMEvent(evSystemUpdated)
 }
 
-func (umCtrl *Controller) processStartRevertState(e *fsm.Event) {
+func (umCtrl *Controller) processStartRevertState(ctx context.Context, e *fsm.Event) {
 	errAvailable := false
 
 	for i := range umCtrl.connections {
@@ -941,7 +941,7 @@ func (umCtrl *Controller) processStartRevertState(e *fsm.Event) {
 	go umCtrl.generateFSMEvent(evSystemReverted)
 }
 
-func (umCtrl *Controller) processStartApplyState(e *fsm.Event) {
+func (umCtrl *Controller) processStartApplyState(ctx context.Context, e *fsm.Event) {
 	for i := range umCtrl.connections {
 		if len(umCtrl.connections[i].updatePackages) > 0 {
 			if umCtrl.connections[i].state == umFailed {
@@ -963,7 +963,7 @@ func (umCtrl *Controller) processStartApplyState(e *fsm.Event) {
 	go umCtrl.generateFSMEvent(evApplyComplete)
 }
 
-func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
+func (umCtrl *Controller) processUpdateUmState(ctx context.Context, e *fsm.Event) {
 	log.Debug("processUpdateUmState")
 
 	umID, ok := e.Args[0].(string)
@@ -992,7 +992,7 @@ func (umCtrl *Controller) processUpdateUmState(e *fsm.Event) {
 	go umCtrl.generateFSMEvent(evContinue)
 }
 
-func (umCtrl *Controller) processError(e *fsm.Event) {
+func (umCtrl *Controller) processError(ctx context.Context, e *fsm.Event) {
 	var ok bool
 
 	if umCtrl.updateError, ok = e.Args[0].(error); !ok {
@@ -1004,13 +1004,13 @@ func (umCtrl *Controller) processError(e *fsm.Event) {
 	umCtrl.cleanupCurrentComponentStatus()
 }
 
-func (umCtrl *Controller) revertComplete(e *fsm.Event) {
+func (umCtrl *Controller) revertComplete(ctx context.Context, e *fsm.Event) {
 	log.Debug("Revert complete")
 
 	umCtrl.cleanupCurrentComponentStatus()
 }
 
-func (umCtrl *Controller) updateComplete(e *fsm.Event) {
+func (umCtrl *Controller) updateComplete(ctx context.Context, e *fsm.Event) {
 	log.Debug("Update finished")
 
 	umCtrl.cleanupCurrentComponentStatus()
