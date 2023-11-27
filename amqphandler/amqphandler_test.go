@@ -292,7 +292,7 @@ func TestReceiveMessages(t *testing.T) {
 					{Type: "online", Serial: "1234", ValidTill: testTime},
 				},
 				UnitSecret: cloudprotocol.UnitSecret{Version: 1, Data: struct {
-					OwnerPassword string "json:\"ownerPassword\""
+					OwnerPassword string `json:"ownerPassword"`
 				}{OwnerPassword: "pwd"}},
 			},
 		},

@@ -323,28 +323,28 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 	pbStatus.State = updateStatus.State.getPbState()
 
 	for _, layer := range updateStatus.InstallLayers {
-		pbStatus.InstallLayers = append(pbStatus.InstallLayers, &pb.LayerInfo{
+		pbStatus.InstallLayers = append(pbStatus.GetInstallLayers(), &pb.LayerInfo{
 			Id:         layer.ID,
 			AosVersion: layer.AosVersion, Digest: layer.Digest,
 		})
 	}
 
 	for _, layer := range updateStatus.RemoveLayers {
-		pbStatus.RemoveLayers = append(pbStatus.RemoveLayers, &pb.LayerInfo{
+		pbStatus.RemoveLayers = append(pbStatus.GetRemoveLayers(), &pb.LayerInfo{
 			Id:         layer.ID,
 			AosVersion: layer.AosVersion, Digest: layer.Digest,
 		})
 	}
 
 	for _, service := range updateStatus.InstallServices {
-		pbStatus.InstallServices = append(pbStatus.InstallServices, &pb.ServiceInfo{
+		pbStatus.InstallServices = append(pbStatus.GetInstallServices(), &pb.ServiceInfo{
 			Id:         service.ID,
 			AosVersion: service.AosVersion,
 		})
 	}
 
 	for _, service := range updateStatus.RemoveServices {
-		pbStatus.RemoveServices = append(pbStatus.RemoveServices, &pb.ServiceInfo{
+		pbStatus.RemoveServices = append(pbStatus.GetRemoveServices(), &pb.ServiceInfo{
 			Id:         service.ID,
 			AosVersion: service.AosVersion,
 		})
@@ -359,7 +359,7 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 	pbStatus.State = updateStatus.State.getPbState()
 
 	for _, component := range updateStatus.Components {
-		pbStatus.Components = append(pbStatus.Components, &pb.ComponentInfo{
+		pbStatus.Components = append(pbStatus.GetComponents(), &pb.ComponentInfo{
 			Id:         component.ID,
 			AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
 		})

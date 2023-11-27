@@ -119,17 +119,17 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 			},
 		},
 		fsm.Callbacks{
-			"enter_" + hStateWaitForPrepareResp:  handler.sendPrepareUpdateRequest,
-			"enter_" + hStateWaitForUpdateStatus: handler.sendStartUpdateToUM,
-			"enter_" + hStateWaitForApplyStatus:  handler.sendApplyUpdateToUM,
-			"enter_" + hStateWaitForRevertStatus: handler.sendRevertUpdateToUM,
+			enterPrefix + hStateWaitForPrepareResp:  handler.sendPrepareUpdateRequest,
+			enterPrefix + hStateWaitForUpdateStatus: handler.sendStartUpdateToUM,
+			enterPrefix + hStateWaitForApplyStatus:  handler.sendApplyUpdateToUM,
+			enterPrefix + hStateWaitForRevertStatus: handler.sendRevertUpdateToUM,
 			// notify umcontroller about current state
-			"before_" + eventPrepareSuccess: handler.updateStatusNtf,
-			"before_" + eventUpdateSuccess:  handler.updateStatusNtf,
-			"before_" + eventIdleState:      handler.updateStatusNtf,
-			"before_" + eventUpdateError:    handler.updateStatusNtf,
+			beforePrefix + eventPrepareSuccess: handler.updateStatusNtf,
+			beforePrefix + eventUpdateSuccess:  handler.updateStatusNtf,
+			beforePrefix + eventIdleState:      handler.updateStatusNtf,
+			beforePrefix + eventUpdateError:    handler.updateStatusNtf,
 
-			"before_event": func(ctx context.Context, e *fsm.Event) {
+			beforePrefix + "event": func(ctx context.Context, e *fsm.Event) {
 				log.Debugf("[UMID %s]: %s -> %s : Event: %s", handler.umID, e.Src, e.Dst, e.Event)
 			},
 		},

@@ -313,31 +313,32 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 		return aoserrors.Wrap(err)
 	}
 
-	nodeConfig, ok := message.SMOutgoingMessage.(*pb.SMOutgoingMessages_NodeConfiguration)
+	nodeConfig, ok := message.GetSMOutgoingMessage().(*pb.SMOutgoingMessages_NodeConfiguration)
 	if !ok {
 		log.Error("Unexpected first message from stream")
 
 		return aoserrors.New("unexpected first message from stream")
 	}
 
-	log.WithFields(log.Fields{"nodeID": nodeConfig.NodeConfiguration.NodeId}).Debug("Register SM")
+	log.WithFields(log.Fields{"nodeID": nodeConfig.NodeConfiguration.GetNodeId()}).Debug("Register SM")
 
 	nodeCfg := launcher.NodeInfo{
 		NodeInfo: cloudprotocol.NodeInfo{
-			NodeID: nodeConfig.NodeConfiguration.NodeId, NodeType: nodeConfig.NodeConfiguration.NodeType,
+			NodeID: nodeConfig.NodeConfiguration.GetNodeId(), NodeType: nodeConfig.NodeConfiguration.GetNodeType(),
 			SystemInfo: cloudprotocol.SystemInfo{
-				NumCPUs: nodeConfig.NodeConfiguration.NumCpus, TotalRAM: nodeConfig.NodeConfiguration.TotalRam,
-				Partitions: make([]cloudprotocol.PartitionInfo, len(nodeConfig.NodeConfiguration.Partitions)),
+				NumCPUs: nodeConfig.NodeConfiguration.GetNumCpus(), TotalRAM: nodeConfig.NodeConfiguration.GetTotalRam(),
+				Partitions: make([]cloudprotocol.PartitionInfo, len(nodeConfig.NodeConfiguration.GetPartitions())),
 			},
 		},
-		RemoteNode:    nodeConfig.NodeConfiguration.RemoteNode,
-		RunnerFeature: message.GetNodeConfiguration().RunnerFeatures,
+		RemoteNode:    nodeConfig.NodeConfiguration.GetRemoteNode(),
+		RunnerFeature: message.GetNodeConfiguration().GetRunnerFeatures(),
 	}
 
-	for i, pbPartition := range nodeConfig.NodeConfiguration.Partitions {
+	for i, pbPartition := range nodeConfig.NodeConfiguration.GetPartitions() {
 		nodeCfg.Partitions[i] = cloudprotocol.PartitionInfo{
-			Name:  pbPartition.Name,
-			Types: pbPartition.Types, TotalSize: pbPartition.TotalSize,
+			Name:      pbPartition.GetName(),
+			Types:     pbPartition.GetTypes(),
+			TotalSize: pbPartition.GetTotalSize(),
 		}
 	}
 
@@ -348,7 +349,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 		return err
 	}
 
-	if err := controller.handleNewConnection(nodeConfig.NodeConfiguration.NodeId, handler); err != nil {
+	if err := controller.handleNewConnection(nodeConfig.NodeConfiguration.GetNodeId(), handler); err != nil {
 		log.Errorf("Can't register new SM connection: %v", err)
 
 		return err
@@ -356,7 +357,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 	handler.processSMMessages()
 
-	controller.handleCloseConnection(nodeConfig.NodeConfiguration.NodeId)
+	controller.handleCloseConnection(nodeConfig.NodeConfiguration.GetNodeId())
 
 	return nil
 }

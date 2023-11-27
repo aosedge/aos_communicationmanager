@@ -112,15 +112,15 @@ func TestConnection(t *testing.T) {
 			t.Fatalf("Can't receive notification: %s", err)
 		}
 
-		switch notification.SchedulerNotification.(type) {
+		switch notification.GetSchedulerNotification().(type) {
 		case *pb.SchedulerNotifications_FotaStatus:
-			if notification.GetFotaStatus().State != pb.UpdateState_NO_UPDATE {
-				t.Error("Incorrect state: ", notification.GetFotaStatus().State.String())
+			if notification.GetFotaStatus().GetState() != pb.UpdateState_NO_UPDATE {
+				t.Error("Incorrect state: ", notification.GetFotaStatus().GetState().String())
 			}
 
 		case *pb.SchedulerNotifications_SotaStatus:
-			if notification.GetSotaStatus().State != pb.UpdateState_NO_UPDATE {
-				t.Error("Incorrect state: ", notification.GetSotaStatus().State.String())
+			if notification.GetSotaStatus().GetState() != pb.UpdateState_NO_UPDATE {
+				t.Error("Incorrect state: ", notification.GetSotaStatus().GetState().String())
 			}
 		}
 	}
@@ -143,31 +143,31 @@ func TestConnection(t *testing.T) {
 		t.Fatalf("No FOTA status")
 	}
 
-	if status.State != pb.UpdateState_READY_TO_UPDATE {
-		t.Error("Incorrect state: ", status.State.String())
+	if status.GetState() != pb.UpdateState_READY_TO_UPDATE {
+		t.Error("Incorrect state: ", status.GetState().String())
 	}
 
-	if len(status.Components) != 1 {
+	if len(status.GetComponents()) != 1 {
 		t.Fatal("Incorrect count of components")
 	}
 
-	if status.Components[0].Id != "1234" {
+	if status.GetComponents()[0].GetId() != "1234" {
 		t.Error("Incorrect component id")
 	}
 
-	if status.Components[0].VendorVersion != "4321" {
+	if status.GetComponents()[0].GetVendorVersion() != "4321" {
 		t.Error("Incorrect vendor version")
 	}
 
-	if status.Components[0].AosVersion != 123 {
+	if status.GetComponents()[0].GetAosVersion() != 123 {
 		t.Error("Incorrect aos version")
 	}
 
-	if status.UnitConfig == nil {
+	if status.GetUnitConfig() == nil {
 		t.Fatal("Unit Config is nil")
 	}
 
-	if status.UnitConfig.VendorVersion != "bc_version" {
+	if status.GetUnitConfig().GetVendorVersion() != "bc_version" {
 		t.Error("Incorrect unit config version")
 	}
 
@@ -191,39 +191,39 @@ func TestConnection(t *testing.T) {
 		t.Fatalf("No SOTA status")
 	}
 
-	if sotaStatus.State != pb.UpdateState_DOWNLOADING {
-		t.Error("Incorrect state: ", status.State.String())
+	if sotaStatus.GetState() != pb.UpdateState_DOWNLOADING {
+		t.Error("Incorrect state: ", status.GetState().String())
 	}
 
-	if sotaStatus.Error != "SOTA error" {
-		t.Error("Incorrect error message: ", status.Error)
+	if sotaStatus.GetError() != "SOTA error" {
+		t.Error("Incorrect error message: ", status.GetError())
 	}
 
-	if len(sotaStatus.InstallServices) != 1 {
+	if len(sotaStatus.GetInstallServices()) != 1 {
 		t.Fatal("Incorrect count of services")
 	}
 
-	if sotaStatus.InstallServices[0].Id != "s1" {
+	if sotaStatus.GetInstallServices()[0].GetId() != "s1" {
 		t.Error("Incorrect service id")
 	}
 
-	if sotaStatus.InstallServices[0].AosVersion != 42 {
+	if sotaStatus.GetInstallServices()[0].GetAosVersion() != 42 {
 		t.Error("Incorrect service aos version")
 	}
 
-	if len(sotaStatus.InstallLayers) != 1 {
+	if len(sotaStatus.GetInstallLayers()) != 1 {
 		t.Fatal("Incorrect count of layers")
 	}
 
-	if sotaStatus.InstallLayers[0].Id != "l1" {
+	if sotaStatus.GetInstallLayers()[0].GetId() != "l1" {
 		t.Error("Incorrect layer id")
 	}
 
-	if sotaStatus.InstallLayers[0].Digest != "someSha" {
+	if sotaStatus.GetInstallLayers()[0].GetDigest() != "someSha" {
 		t.Error("Incorrect layer digest")
 	}
 
-	if sotaStatus.InstallLayers[0].AosVersion != 42 {
+	if sotaStatus.GetInstallLayers()[0].GetAosVersion() != 42 {
 		t.Error("Incorrect layer aos version")
 	}
 

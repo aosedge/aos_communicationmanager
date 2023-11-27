@@ -395,9 +395,9 @@ func (server *testProtectedServer) close() (err error) {
 func (server *testProtectedServer) CreateKey(
 	context context.Context, req *pb.CreateKeyRequest,
 ) (rsp *pb.CreateKeyResponse, err error) {
-	rsp = &pb.CreateKeyResponse{Type: req.Type}
+	rsp = &pb.CreateKeyResponse{Type: req.GetType()}
 
-	csr, ok := server.csr[req.Type]
+	csr, ok := server.csr[req.GetType()]
 	if !ok {
 		return rsp, aoserrors.New("not found")
 	}
@@ -410,9 +410,9 @@ func (server *testProtectedServer) CreateKey(
 func (server *testProtectedServer) ApplyCert(
 	context context.Context, req *pb.ApplyCertRequest,
 ) (rsp *pb.ApplyCertResponse, err error) {
-	rsp = &pb.ApplyCertResponse{Type: req.Type}
+	rsp = &pb.ApplyCertResponse{Type: req.GetType()}
 
-	certURL, ok := server.certURL[req.Type]
+	certURL, ok := server.certURL[req.GetType()]
 	if !ok {
 		return rsp, aoserrors.New("not found")
 	}
@@ -425,14 +425,14 @@ func (server *testProtectedServer) ApplyCert(
 func (server *testPublicServer) GetCert(
 	context context.Context, req *pb.GetCertRequest,
 ) (rsp *pb.GetCertResponse, err error) {
-	rsp = &pb.GetCertResponse{Type: req.Type}
+	rsp = &pb.GetCertResponse{Type: req.GetType()}
 
-	certURL, ok := server.certURL[req.Type]
+	certURL, ok := server.certURL[req.GetType()]
 	if !ok {
 		return rsp, aoserrors.New("not found")
 	}
 
-	keyURL, ok := server.keyURL[req.Type]
+	keyURL, ok := server.keyURL[req.GetType()]
 	if !ok {
 		return rsp, aoserrors.New("not found")
 	}

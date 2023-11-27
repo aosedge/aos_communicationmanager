@@ -52,11 +52,11 @@ const (
 
 // Storage provides API to create, remove or access information from DB.
 type Storage interface {
-	AddNetworkInstanceInfo(InstanceNetworkInfo) error
-	RemoveNetworkInstanceInfo(aostypes.InstanceIdent) error
+	AddNetworkInstanceInfo(info InstanceNetworkInfo) error
+	RemoveNetworkInstanceInfo(instance aostypes.InstanceIdent) error
 	GetNetworkInstancesInfo() ([]InstanceNetworkInfo, error)
 	RemoveNetworkInfo(networkID string) error
-	AddNetworkInfo(NetworkInfo) error
+	AddNetworkInfo(info NetworkInfo) error
 	GetNetworksInfo() ([]NetworkInfo, error)
 }
 
