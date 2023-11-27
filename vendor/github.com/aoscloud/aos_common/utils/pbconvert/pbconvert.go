@@ -58,7 +58,7 @@ func NetworkParametersToPB(params aostypes.NetworkParameters) *pb.NetworkParamet
 		Rules:      make([]*pb.FirewallRule, len(params.FirewallRules)),
 	}
 
-	copy(networkParams.DnsServers, params.DNSServers)
+	copy(networkParams.GetDnsServers(), params.DNSServers)
 
 	for i, rule := range params.FirewallRules {
 		networkParams.Rules[i] = &pb.FirewallRule{
@@ -74,29 +74,29 @@ func NetworkParametersToPB(params aostypes.NetworkParameters) *pb.NetworkParamet
 
 func NewInstanceIdentFromPB(ident *pb.InstanceIdent) aostypes.InstanceIdent {
 	return aostypes.InstanceIdent{
-		ServiceID: ident.ServiceId,
-		SubjectID: ident.SubjectId,
-		Instance:  uint64(ident.Instance),
+		ServiceID: ident.GetServiceId(),
+		SubjectID: ident.GetSubjectId(),
+		Instance:  uint64(ident.GetInstance()),
 	}
 }
 
 func NewNetworkParametersFromPB(params *pb.NetworkParameters) aostypes.NetworkParameters {
 	networkParams := aostypes.NetworkParameters{
-		IP:            params.Ip,
-		Subnet:        params.Subnet,
-		VlanID:        params.VlanId,
-		DNSServers:    make([]string, len(params.DnsServers)),
-		FirewallRules: make([]aostypes.FirewallRule, len(params.Rules)),
+		IP:            params.GetIp(),
+		Subnet:        params.GetSubnet(),
+		VlanID:        params.GetVlanId(),
+		DNSServers:    make([]string, len(params.GetDnsServers())),
+		FirewallRules: make([]aostypes.FirewallRule, len(params.GetRules())),
 	}
 
-	copy(networkParams.DNSServers, params.DnsServers)
+	copy(networkParams.DNSServers, params.GetDnsServers())
 
-	for i, rule := range params.Rules {
+	for i, rule := range params.GetRules() {
 		networkParams.FirewallRules[i] = aostypes.FirewallRule{
-			DstIP:   rule.DstIp,
-			SrcIP:   rule.SrcIp,
-			DstPort: rule.DstPort,
-			Proto:   rule.Proto,
+			DstIP:   rule.GetDstIp(),
+			SrcIP:   rule.GetSrcIp(),
+			DstPort: rule.GetDstPort(),
+			Proto:   rule.GetProto(),
 		}
 	}
 
