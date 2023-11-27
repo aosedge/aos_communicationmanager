@@ -40,6 +40,8 @@ type alertProcessor struct {
 func createAlertProcessor(name string, source *uint64,
 	callback alertCallback, rule aostypes.AlertRuleParam,
 ) (alert *alertProcessor) {
+	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert processor")
+
 	return &alertProcessor{name: name, source: source, callback: callback, rule: rule}
 }
 
@@ -48,10 +50,18 @@ func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 	value := *alert.source
 
 	if value >= alert.rule.MaxThreshold && alert.thresholdTime.IsZero() {
+		log.WithFields(log.Fields{
+			"name": alert.name, "maxThreshold": alert.rule.MaxThreshold, "value": value,
+		}).Debugf("Max threshold crossed")
+
 		alert.thresholdTime = currentTime
 	}
 
 	if value < alert.rule.MinThreshold && !alert.thresholdTime.IsZero() {
+		log.WithFields(log.Fields{
+			"name": alert.name, "minThreshold": alert.rule.MinThreshold, "value": value,
+		}).Debugf("Min threshold crossed")
+
 		alert.thresholdTime = time.Time{}
 		alert.thresholdDetected = false
 	}
@@ -60,9 +70,10 @@ func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 		currentTime.Sub(alert.thresholdTime) >= alert.rule.MinTimeout.Duration &&
 		!alert.thresholdDetected {
 		log.WithFields(log.Fields{
-			"value": value,
-			"time":  currentTime.Format("Jan 2 15:04:05"),
-		}).Debugf("%s alert", alert.name)
+			"name":        alert.name,
+			"value":       value,
+			"currentTime": currentTime.Format("Jan 2 15:04:05"),
+		}).Debugf("Resource alert")
 
 		alert.thresholdDetected = true
 
