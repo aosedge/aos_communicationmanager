@@ -56,7 +56,7 @@ linters-settings:
         ignored-files: config/config.go,fcrypt/utils.go
 
   gofumpt:
-    lang-version: "1.18"
+    lang-version: "1.21"
 
   interfacebloat:
     max: 12
