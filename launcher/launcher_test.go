@@ -115,13 +115,13 @@ func TestInitialStatus(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager       = createTestNodeManager()
+		nodeManager       = newTestNodeManager()
 		expectedRunStatus = unitstatushandler.RunInstancesStatus{}
 		expectedNodeInfo  = []cloudprotocol.NodeInfo{}
 	)
 
-	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, nil, &testResourceManager{},
-		&testStateStorage{}, createTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, nil, &testResourceManager{},
+		&testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -158,7 +158,7 @@ func TestInitialStatus(t *testing.T) {
 
 	nodesInfo := launcherInstance.GetNodesConfiguration()
 	if !reflect.DeepEqual(expectedNodeInfo, nodesInfo) {
-		log.Error("Incorrect nodes info")
+		t.Error("Incorrect nodes info")
 	}
 }
 
@@ -170,8 +170,8 @@ func TestBalancing(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager          = createTestNodeManager()
-		resourceManager      = createTestResourceManager()
+		nodeManager          = newTestNodeManager()
+		resourceManager      = newTestResourceManager()
 		imageManager         = &testImageProvider{}
 		stateStorageProvider = &testStateStorage{}
 	)
@@ -194,8 +194,8 @@ func TestBalancing(t *testing.T) {
 	}
 	resourceManager.nodeResources["runxSMType"] = aostypes.NodeUnitConfig{Priority: 100}
 
-	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, imageManager, resourceManager,
-		stateStorageProvider, createTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
+		stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -443,8 +443,8 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = createTestNodeManager()
-		resourceManager = createTestResourceManager()
+		nodeManager     = newTestNodeManager()
+		resourceManager = newTestResourceManager()
 		imageManager    = &testImageProvider{}
 	)
 
@@ -480,8 +480,8 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
 	}
 
-	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, createTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher: %v", err)
 	}
@@ -701,8 +701,8 @@ func TestRebalancing(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = createTestNodeManager()
-		resourceManager = createTestResourceManager()
+		nodeManager     = newTestNodeManager()
+		resourceManager = newTestResourceManager()
 		imageManager    = &testImageProvider{}
 	)
 
@@ -739,8 +739,8 @@ func TestRebalancing(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
 	}
 
-	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, createTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -1083,7 +1083,7 @@ func TestRebalancing(t *testing.T) {
 
 // testNodeManager
 
-func createTestNodeManager() *testNodeManager {
+func newTestNodeManager() *testNodeManager {
 	nodeManager := &testNodeManager{
 		runStatusChan:   make(chan launcher.NodeRunInstanceStatus, 10),
 		nodeInformation: make(map[string]launcher.NodeInfo),
@@ -1171,7 +1171,7 @@ func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[s
 
 // testResourceManager
 
-func createTestResourceManager() *testResourceManager {
+func newTestResourceManager() *testResourceManager {
 	resourceManager := &testResourceManager{
 		nodeResources: make(map[string]aostypes.NodeUnitConfig),
 	}
@@ -1188,7 +1188,7 @@ func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string
 
 // testStorage
 
-func createTestStorage() *testStorage {
+func newTestStorage() *testStorage {
 	return &testStorage{
 		desiredInstances: json.RawMessage("[]"),
 	}
@@ -1289,7 +1289,7 @@ func (testProvider *testImageProvider) RevertService(serviceID string) error {
 
 // testNetworkManager
 
-func createTestNetworkManager(network string) *testNetworkManager {
+func newTestNetworkManager(network string) *testNetworkManager {
 	networkManager := &testNetworkManager{
 		networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
 	}
@@ -1382,8 +1382,6 @@ func waitRunInstancesStatus(
 
 				if receivedEl.ErrorInfo != nil && expectedEl.ErrorInfo != nil {
 					if !reflect.DeepEqual(*receivedEl.ErrorInfo, *expectedEl.ErrorInfo) {
-						log.Debug("ERREXP: ", *expectedEl.ErrorInfo)
-						log.Debug("ERRREC: ", *receivedEl.ErrorInfo)
 						continue
 					}
 				}
