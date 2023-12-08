@@ -131,9 +131,9 @@ func TestInitialStatus(t *testing.T) {
 	}
 	defer launcherInstance.Close()
 
-	for _, id := range cfg.SMController.NodeIDs {
+	for i, id := range cfg.SMController.NodeIDs {
 		instances := []cloudprotocol.InstanceStatus{{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
 			AosVersion:    1, StateChecksum: magicSum, RunState: "running",
 			NodeID: id,
 		}}
@@ -405,8 +405,8 @@ func TestBalancing(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("incorrectRun request: %v", err)
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrect run request: %v", err)
 	}
 
 	if !reflect.DeepEqual(expectedRevertedServices, imageManager.revertedServices) {
@@ -654,8 +654,8 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("incorrectRun request: %v", err)
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrect run request: %v", err)
 	}
 
 	resourceManager.nodeResources["remoteSMType"] = aostypes.NodeUnitConfig{
@@ -702,7 +702,7 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 
 	if err := waitRunInstancesStatus(
 		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status after update unitconfig: %v", err)
+		t.Errorf("Incorrect run status after update unit config: %v", err)
 	}
 
 	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
@@ -965,8 +965,8 @@ func TestRebalancing(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("incorrectRun request: %v", err)
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("Incorrect run request: %v", err)
 	}
 
 	// cpu alert
@@ -1103,8 +1103,8 @@ func TestRebalancing(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	if err := nodeManager.compreRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("incorrectRun request: %v", err)
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrect run request: %v", err)
 	}
 }
 
@@ -1176,22 +1176,22 @@ func (nodeManager *testNodeManager) GetNodeMonitoringData(nodeID string) (cloudp
 	return cloudprotocol.NodeMonitoringData{}, nil
 }
 
-func (nodeManager *testNodeManager) compreRunRequests(expectedRunRequests map[string]runRequest) error {
+func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[string]runRequest) error {
 	for nodeID, runRequest := range nodeManager.runRequest {
 		if err := deepSlicesCompare(expectedRunRequests[nodeID].services, runRequest.services); err != nil {
-			return aoserrors.Errorf("Incorrect services for node %s: %v", nodeID, err)
+			return aoserrors.Errorf("incorrect services for node %s: %v", nodeID, err)
 		}
 
 		if err := deepSlicesCompare(expectedRunRequests[nodeID].layers, runRequest.layers); err != nil {
-			return aoserrors.Errorf("Incorrect layers for node %s: %v", nodeID, err)
+			return aoserrors.Errorf("incorrect layers for node %s: %v", nodeID, err)
 		}
 
 		if err := deepSlicesCompare(expectedRunRequests[nodeID].instances, runRequest.instances); err != nil {
-			return aoserrors.Errorf("Incorrect instances for node %s: %v", nodeID, err)
+			return aoserrors.Errorf("incorrect instances for node %s: %v", nodeID, err)
 		}
 
 		if expectedRunRequests[nodeID].forceRestart {
-			return aoserrors.Errorf("Incorrect force restart flag")
+			return aoserrors.Errorf("incorrect force restart flag")
 		}
 	}
 
