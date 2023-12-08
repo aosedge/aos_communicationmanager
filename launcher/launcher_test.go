@@ -115,17 +115,13 @@ func TestInitialStatus(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager          = createTestNodeManager()
-		expectedRunStatus    = unitstatushandler.RunInstancesStatus{}
-		expectedNodeInfo     = []cloudprotocol.NodeInfo{}
-		stateStorageProvider = &testStateStorage{}
-		testStorage          = &testStorage{}
+		nodeManager       = createTestNodeManager()
+		expectedRunStatus = unitstatushandler.RunInstancesStatus{}
+		expectedNodeInfo  = []cloudprotocol.NodeInfo{}
 	)
 
-	launcherInstance, err := launcher.New(
-		cfg, testStorage, nodeManager, nil, &testResourceManager{}, stateStorageProvider, &testNetworkManager{
-			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
-		})
+	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, nil, &testResourceManager{},
+		&testStateStorage{}, createTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -198,17 +194,8 @@ func TestBalancing(t *testing.T) {
 	}
 	resourceManager.nodeResources["runxSMType"] = aostypes.NodeUnitConfig{Priority: 100}
 
-	ip, ipNet, err := net.ParseCIDR("172.17.0.1/16")
-	if err != nil {
-		t.Errorf("Can't parse subnet: %v", err)
-	}
-
-	launcherInstance, err := launcher.New(
-		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, stateStorageProvider, &testNetworkManager{
-			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
-			currentIP:   ip,
-			subnet:      *ipNet,
-		})
+	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, imageManager, resourceManager,
+		stateStorageProvider, createTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -493,17 +480,8 @@ func TestBalancingByUnitConfiguration(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
 	}
 
-	ip, ipNet, err := net.ParseCIDR("172.17.0.1/16")
-	if err != nil {
-		t.Errorf("Can't parse subnet: %v", err)
-	}
-
-	launcherInstance, err := launcher.New(
-		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{}, &testNetworkManager{
-			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
-			currentIP:   ip,
-			subnet:      *ipNet,
-		})
+	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, createTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher: %v", err)
 	}
@@ -761,17 +739,8 @@ func TestRebalancing(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{"runc", "crun"},
 	}
 
-	ip, ipNet, err := net.ParseCIDR("172.17.0.1/16")
-	if err != nil {
-		t.Errorf("Can't parse subnet: %v", err)
-	}
-
-	launcherInstance, err := launcher.New(
-		cfg, &testStorage{}, nodeManager, imageManager, resourceManager, &testStateStorage{}, &testNetworkManager{
-			networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
-			currentIP:   ip,
-			subnet:      *ipNet,
-		})
+	launcherInstance, err := launcher.New(cfg, createTestStorage(), nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, createTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -1112,6 +1081,8 @@ func TestRebalancing(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
+// testNodeManager
+
 func createTestNodeManager() *testNodeManager {
 	nodeManager := &testNodeManager{
 		runStatusChan:   make(chan launcher.NodeRunInstanceStatus, 10),
@@ -1198,6 +1169,8 @@ func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[s
 	return nil
 }
 
+// testResourceManager
+
 func createTestResourceManager() *testResourceManager {
 	resourceManager := &testResourceManager{
 		nodeResources: make(map[string]aostypes.NodeUnitConfig),
@@ -1211,6 +1184,14 @@ func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string
 	resource.NodeType = nodeType
 
 	return resource
+}
+
+// testStorage
+
+func createTestStorage() *testStorage {
+	return &testStorage{
+		desiredInstances: json.RawMessage("[]"),
+	}
 }
 
 func (storage *testStorage) AddInstance(instanceInfo launcher.InstanceInfo) error {
@@ -1260,6 +1241,8 @@ func (storage *testStorage) GetDesiredInstances() (instances json.RawMessage, er
 	return storage.desiredInstances, nil
 }
 
+// testStateStorage
+
 func (provider *testStateStorage) Setup(
 	params storagestate.SetupParams,
 ) (storagePath string, statePath string, err error) {
@@ -1275,6 +1258,8 @@ func (provider *testStateStorage) Cleanup(instanceIdent aostypes.InstanceIdent) 
 func (provider *testStateStorage) GetInstanceCheckSum(instance aostypes.InstanceIdent) string {
 	return magicSum
 }
+
+// testImageProvider
 
 func (testProvider *testImageProvider) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
 	for _, service := range testProvider.services {
@@ -1300,6 +1285,26 @@ func (testProvider *testImageProvider) RevertService(serviceID string) error {
 	testProvider.revertedServices = append(testProvider.revertedServices, serviceID)
 
 	return nil
+}
+
+// testNetworkManager
+
+func createTestNetworkManager(network string) *testNetworkManager {
+	networkManager := &testNetworkManager{
+		networkInfo: make(map[string]map[aostypes.InstanceIdent]struct{}),
+	}
+
+	if len(network) != 0 {
+		ip, ipNet, err := net.ParseCIDR(network)
+		if err != nil {
+			log.Fatalf("Can't parse CIDR: %v", err)
+		}
+
+		networkManager.currentIP = ip
+		networkManager.subnet = *ipNet
+	}
+
+	return networkManager
 }
 
 func (network *testNetworkManager) UpdateProviderNetwork(providers []string, nodeID string) error {
