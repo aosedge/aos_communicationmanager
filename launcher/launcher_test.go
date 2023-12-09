@@ -688,6 +688,105 @@ func TestBalancing(t *testing.T) {
 	}
 }
 
+func TestServiceRevert(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{nodeIDLocalSM},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+		}
+		nodeManager     = newTestNodeManager()
+		imageManager    = &testImageProvider{}
+		resourceManager = newTestResourceManager()
+	)
+
+	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
+		RemoteNode: false,
+	}
+	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{NodeType: nodeTypeLocalSM, Priority: 100}
+
+	imageManager.services = map[string]imagemanager.ServiceInfo{
+		service1: {
+			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
+			RemoteURL:   service1RemoteURL,
+			Layers:      []string{layer1},
+		},
+		service2: {
+			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
+			RemoteURL:   service2RemoteURL,
+			Layers:      []string{layer2},
+		},
+	}
+
+	imageManager.layers = map[string]imagemanager.LayerInfo{
+		layer1: {
+			LayerInfo: createLayerInfo(layer1, layer1LocalURL),
+			RemoteURL: layer1RemoteURL,
+		},
+	}
+
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+
+	// Wait initial run status
+
+	for nodeID, info := range nodeManager.nodeInformation {
+		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+		}
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	// Run instances
+
+	desiredInstances := []cloudprotocol.InstanceInfo{
+		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
+		{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
+	}
+
+	if err := launcherInstance.RunInstances(desiredInstances, []string{service2}); err != nil {
+		t.Fatalf("Can't run instances %v", err)
+	}
+
+	expectedRunStatus := unitstatushandler.RunInstancesStatus{
+		Instances: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, "", errors.New("layer does't exist")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 1,
+			}, "", errors.New("layer does't exist")), //nolint:goerr113
+		},
+		ErrorServices: []cloudprotocol.ServiceStatus{
+			{ID: service2, AosVersion: 1, Status: cloudprotocol.ErrorStatus},
+		},
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if !reflect.DeepEqual([]string{service2}, imageManager.revertedServices) {
+		t.Errorf("Incorrect reverted services: %v", imageManager.revertedServices)
+	}
+}
+
 func TestRebalancing(t *testing.T) {
 	const nodeTypeSuffix = "Type"
 	var (
