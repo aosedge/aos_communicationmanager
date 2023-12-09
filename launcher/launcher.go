@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -180,6 +179,8 @@ func New(
 	config *config.Config, storage Storage, nodeManager NodeManager, imageProvider ImageProvider,
 	resourceManager ResourceManager, storageStateProvider StorageStateProvider, networkManager NetworkManager,
 ) (launcher *Launcher, err error) {
+	log.Debug("Create launcher")
+
 	launcher = &Launcher{
 		config: config, storage: storage, nodeManager: nodeManager, imageProvider: imageProvider,
 		resourceManager: resourceManager, storageStateProvider: storageStateProvider,
@@ -212,6 +213,8 @@ func New(
 
 // Close closes launcher.
 func (launcher *Launcher) Close() {
+	log.Debug("Close launcher")
+
 	if launcher.cancelFunc != nil {
 		launcher.cancelFunc()
 	}
@@ -430,7 +433,7 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 		nodesToRebalance, _ := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, cloudprotocol.InstanceInfo{
 			ServiceID: currentServiceID,
 			SubjectID: nodeWithIssue.currentRunRequest.instances[i].SubjectID, Labels: labels,
-		}, true)
+		})
 		if len(nodesToRebalance) == 0 {
 			continue
 		}
@@ -657,6 +660,13 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 instancesLoop:
 	for _, instance := range instances {
+		log.WithFields(log.Fields{
+			"serviceID":    instance.ServiceID,
+			"subjectID":    instance.SubjectID,
+			"numInstances": instance.NumInstances,
+			"priority":     instance.Priority,
+		}).Debug("Balance instances")
+
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 		if err != nil {
 			log.WithField("serviceID", instance.ServiceID).Errorf("Can't get service info: %v", err)
@@ -685,11 +695,17 @@ instancesLoop:
 			continue instancesLoop
 		}
 
-		nodes, status := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, instance, false)
-		if len(nodes) == 0 {
-			errStatus = append(errStatus, status)
+		nodes, err := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, instance)
+		if err != nil {
+			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
+					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+			}
+
 			continue
 		}
+
+		// createInstanceStatusFromInfo
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
 			instanceInfo, err := launcher.prepareInstanceStartInfo(serviceInfo, instance, instanceIndex)
@@ -711,6 +727,11 @@ instancesLoop:
 			}
 
 			node := launcher.getMostPriorityNode(nodeForInstance, serviceInfo)
+
+			log.WithFields(log.Fields{
+				"ident": instanceInfo.InstanceIdent,
+				"node":  node.NodeID,
+			}).Debug("Schedule instance on node")
 
 			launcher.addRunRequest(serviceInfo, layers, instanceInfo, node)
 		}
@@ -858,14 +879,12 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 	uid, err := launcher.storage.GetInstanceUID(instanceInfo.InstanceIdent)
 	if err != nil {
 		if !errors.Is(err, ErrNotExist) {
-			log.Errorf("Can't get instance UID: %v", err)
-			return instanceInfo, aoserrors.Errorf("Can't get instance UID: %v", err)
+			return instanceInfo, aoserrors.Wrap(err)
 		}
 
 		uid, err = launcher.uidPool.GetFreeID()
 		if err != nil {
-			log.Errorf("Can't get free UID: %v", err)
-			return instanceInfo, aoserrors.Errorf("Can't get free UID: %v", err)
+			return instanceInfo, aoserrors.Wrap(err)
 		}
 
 		if err := launcher.storage.AddInstance(InstanceInfo{
@@ -893,59 +912,33 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 
 	instanceInfo.StoragePath, instanceInfo.StatePath, err = launcher.storageStateProvider.Setup(stateStorageParams)
 	if err != nil {
-		log.Errorf("Can't setup storage and state for instance: %v", err)
-
 		_ = launcher.uidPool.RemoveID(uid)
 
-		return instanceInfo, aoserrors.Errorf("can't setup storage and state for instance: %v", err)
+		return instanceInfo, aoserrors.Wrap(err)
 	}
 
 	return instanceInfo, nil
 }
 
 func (launcher *Launcher) getNodesByStaticResources(allNodes []*nodeStatus,
-	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo, rebalancing bool,
-) (nodes []*nodeStatus, errStatus cloudprotocol.InstanceStatus) {
-	nodes = launcher.getNodeByRunner(allNodes, serviceInfo.Config.Runner)
+	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo,
+) ([]*nodeStatus, error) {
+	nodes := launcher.getNodeByRunner(allNodes, serviceInfo.Config.Runner)
 	if len(nodes) == 0 {
-		if rebalancing {
-			return nodes, errStatus
-		}
-
-		log.Errorf("No appropriate node with runner: %s", serviceInfo.Config.Runner)
-
-		return nodes, createInstanceStatusFromInfo(instanceInfo.ServiceID, instanceInfo.SubjectID, 0,
-			serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, fmt.Sprintf(
-				"no appropriate node with runner: %s", serviceInfo.Config.Runner))
+		return nodes, aoserrors.Errorf("no node with runner [%s]", serviceInfo.Config.Runner)
 	}
 
 	nodes = launcher.getNodesByResources(nodes, serviceInfo.Config.Resources)
 	if len(nodes) == 0 {
-		if rebalancing {
-			return nodes, errStatus
-		}
-
-		log.Errorf("No appropriate node with resources: %v", serviceInfo.Config.Resources)
-
-		return nodes, createInstanceStatusFromInfo(instanceInfo.ServiceID, instanceInfo.SubjectID, 0,
-			serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, fmt.Sprintf(
-				"no appropriate node with resources: %v", serviceInfo.Config.Resources))
+		return nodes, aoserrors.Errorf("no node with resources %v", serviceInfo.Config.Resources)
 	}
 
 	nodes = launcher.getNodesByLabels(nodes, instanceInfo.Labels)
 	if len(nodes) == 0 {
-		if rebalancing {
-			return nodes, errStatus
-		}
-
-		log.Errorf("No appropriate node with labels %v", instanceInfo.Labels)
-
-		return nodes, createInstanceStatusFromInfo(instanceInfo.ServiceID, instanceInfo.SubjectID, 0,
-			serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, fmt.Sprintf(
-				"no appropriate node with labels: %v", instanceInfo.Labels))
+		return nodes, aoserrors.Errorf("no node with labels %v", instanceInfo.Labels)
 	}
 
-	return nodes, errStatus
+	return nodes, nil
 }
 
 func (launcher *Launcher) getNodesByDevices(
@@ -1212,6 +1205,12 @@ func createInstanceStatusFromInfo(
 	}
 
 	if errorMsg != "" {
+		log.WithFields(log.Fields{
+			"serviceID": serviceID,
+			"subjectID": subjectID,
+			"instance":  instanceIndex,
+		}).Errorf("Can't schedule instance: %s", errorMsg)
+
 		instanceStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: errorMsg}
 	}
 
