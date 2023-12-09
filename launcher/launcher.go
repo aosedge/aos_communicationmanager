@@ -924,14 +924,14 @@ func (launcher *Launcher) getNodesByStaticResources(allNodes []*nodeStatus,
 		return nodes, aoserrors.Errorf("no node with runner [%s]", serviceInfo.Config.Runner)
 	}
 
-	nodes = launcher.getNodesByResources(nodes, serviceInfo.Config.Resources)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with resources %v", serviceInfo.Config.Resources)
-	}
-
 	nodes = launcher.getNodesByLabels(nodes, instanceInfo.Labels)
 	if len(nodes) == 0 {
 		return nodes, aoserrors.Errorf("no node with labels %v", instanceInfo.Labels)
+	}
+
+	nodes = launcher.getNodesByResources(nodes, serviceInfo.Config.Resources)
+	if len(nodes) == 0 {
+		return nodes, aoserrors.Errorf("no node with resources %v", serviceInfo.Config.Resources)
 	}
 
 	return nodes, nil
