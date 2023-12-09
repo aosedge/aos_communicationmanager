@@ -373,7 +373,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 				return a.NodeID < b.NodeID
 			}
 
-			return a.priority < b.priority
+			return a.priority > b.priority
 		})
 	}
 
