@@ -438,7 +438,7 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 			continue
 		}
 
-		nodesToRebalance = launcher.getNodesByDevices(nodesToRebalance, serviceInfo.Config.Devices)
+		nodesToRebalance, _ = launcher.getNodesByDevices(nodesToRebalance, serviceInfo.Config.Devices)
 		if len(nodesToRebalance) == 0 {
 			continue
 		}
@@ -708,22 +708,18 @@ instancesLoop:
 		// createInstanceStatusFromInfo
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+			nodeForInstance, err := launcher.getNodesByDevices(nodes, serviceInfo.Config.Devices)
+			if err != nil {
+				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
+					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+
+				continue
+			}
+
 			instanceInfo, err := launcher.prepareInstanceStartInfo(serviceInfo, instance, instanceIndex)
 			if err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
 					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
-			}
-
-			nodeForInstance := launcher.getNodesByDevices(nodes, serviceInfo.Config.Devices)
-			if len(nodeForInstance) == 0 {
-				log.WithFields(instanceIdentLogFields(aostypes.InstanceIdent{
-					ServiceID: instance.ServiceID, SubjectID: instance.SubjectID, Instance: instanceIndex,
-				}, nil)).Error("No devices for instance")
-
-				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, "no devices for instance"))
-
-				continue
 			}
 
 			node := launcher.getMostPriorityNode(nodeForInstance, serviceInfo)
@@ -942,13 +938,15 @@ func (launcher *Launcher) getNodesByStaticResources(allNodes []*nodeStatus,
 }
 
 func (launcher *Launcher) getNodesByDevices(
-	nodes []*nodeStatus, desiredDevices []aostypes.ServiceDevice,
-) (newNodes []*nodeStatus) {
+	availableNodes []*nodeStatus, desiredDevices []aostypes.ServiceDevice,
+) ([]*nodeStatus, error) {
 	if len(desiredDevices) == 0 {
-		return slices.Clone(nodes)
+		return slices.Clone(availableNodes), nil
 	}
 
-	for _, node := range nodes {
+	nodes := make([]*nodeStatus, 0)
+
+	for _, node := range availableNodes {
 		if len(node.availableDevices) == 0 {
 			continue
 		}
@@ -963,7 +961,7 @@ func (launcher *Launcher) getNodesByDevices(
 		}
 
 		if nodeAdded {
-			newNodes = append(newNodes, node)
+			nodes = append(nodes, node)
 		}
 
 		for i := range node.availableDevices {
@@ -975,7 +973,11 @@ func (launcher *Launcher) getNodesByDevices(
 		}
 	}
 
-	return newNodes
+	if len(nodes) == 0 {
+		return nodes, aoserrors.New("no available device found")
+	}
+
+	return nodes, nil
 }
 
 func (launcher *Launcher) getNodeByMonitoringData(nodes []*nodeStatus, alertType string) (newNodes []*nodeStatus) {
