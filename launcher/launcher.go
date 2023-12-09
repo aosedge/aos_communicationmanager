@@ -451,6 +451,7 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 		layersForService, err := launcher.getLayersForService(serviceInfo.Layers)
 		if err != nil {
 			log.Errorf("Can't get layer: %v", err)
+
 			launcher.releaseResources(nodesToRebalance, serviceInfo)
 
 			continue
@@ -560,10 +561,8 @@ func (launcher *Launcher) sendCurrentStatus() {
 newServicesLoop:
 	for _, newService := range launcher.pendingNewServices {
 		for _, instance := range runStatusToSend.Instances {
-			if instance.ServiceID == newService {
-				if instance.ErrorInfo == nil {
-					continue newServicesLoop
-				}
+			if instance.ServiceID == newService && instance.ErrorInfo == nil {
+				continue newServicesLoop
 			}
 		}
 
@@ -650,6 +649,7 @@ func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo)
 	return nil
 }
 
+//nolint:funlen
 func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo,
 ) (errStatus []cloudprotocol.InstanceStatus) {
 	for _, node := range launcher.nodes {
@@ -661,7 +661,6 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 	launcher.removeInstances(instances)
 	launcher.removeInstanceNetworkParameters(instances)
 
-instancesLoop:
 	for _, instance := range instances {
 		log.WithFields(log.Fields{
 			"serviceID":    instance.ServiceID,
@@ -691,11 +690,12 @@ instancesLoop:
 
 		layers, err := launcher.getLayersForService(serviceInfo.Layers)
 		if err != nil {
-			log.Errorf("Can't get layer: %v", err)
-			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-				0, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
+					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+			}
 
-			continue instancesLoop
+			continue
 		}
 
 		nodes, err := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, instance)
@@ -1276,7 +1276,7 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	for i, digest := range digests {
 		layer, err := launcher.imageProvider.GetLayerInfo(digest)
 		if err != nil {
-			return layers, err //nolint:wrapcheck
+			return layers, aoserrors.Wrap(err)
 		}
 
 		layers[i] = layer
