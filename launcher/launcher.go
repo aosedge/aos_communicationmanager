@@ -48,6 +48,9 @@ var ErrNotExist = errors.New("instance not exist")
 
 const defaultRunner = "crun"
 
+//nolint:gochecknoglobals
+var defaultRunnerFeatures = []string{"crun", "runc"}
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -1099,7 +1102,8 @@ func (launcher *Launcher) getNodeByRunner(allNodes []*nodeStatus, runner string)
 	}
 
 	for _, node := range allNodes {
-		if slices.Contains(node.RunnerFeature, runner) {
+		if (len(node.RunnerFeature) == 0 && slices.Contains(defaultRunnerFeatures, runner)) ||
+			slices.Contains(node.RunnerFeature, runner) {
 			nodes = append(nodes, node)
 		}
 	}
