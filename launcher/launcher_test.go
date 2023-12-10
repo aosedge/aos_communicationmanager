@@ -787,6 +787,163 @@ func TestServiceRevert(t *testing.T) {
 	}
 }
 
+func TestStorageCleanup(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{nodeIDLocalSM, nodeIDRunxSM},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+		}
+		nodeManager          = newTestNodeManager()
+		resourceManager      = newTestResourceManager()
+		imageManager         = &testImageProvider{}
+		stateStorageProvider = &testStateStorage{}
+	)
+
+	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
+		NodeInfo:      cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
+		RemoteNode:    false,
+		RunnerFeature: []string{runnerRunc},
+	}
+	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{Priority: 100}
+
+	nodeManager.nodeInformation[nodeIDRunxSM] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeRunxSM},
+		RemoteNode: true, RunnerFeature: []string{runnerRunx},
+	}
+	resourceManager.nodeResources[nodeTypeRunxSM] = aostypes.NodeUnitConfig{Priority: 0}
+
+	imageManager.services = map[string]imagemanager.ServiceInfo{
+		service1: {
+			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
+			RemoteURL:   service1RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunc},
+		},
+		service2: {
+			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
+			RemoteURL:   service2RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunc},
+		},
+		service3: {
+			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
+			RemoteURL:   service3RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunx},
+		},
+	}
+
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
+		stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+	defer launcherInstance.Close()
+
+	for nodeID, info := range nodeManager.nodeInformation {
+		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+		}
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	desiredInstances := []cloudprotocol.InstanceInfo{
+		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
+		{ServiceID: service2, SubjectID: subject1, Priority: 100, NumInstances: 1},
+		{ServiceID: service3, SubjectID: subject1, Priority: 100, NumInstances: 1},
+	}
+
+	if err := launcherInstance.RunInstances(desiredInstances, nil); err != nil {
+		t.Fatalf("Can't run instances %v", err)
+	}
+
+	expectedRunRequests := map[string]runRequest{
+		nodeIDLocalSM: {
+			services: []aostypes.ServiceInfo{
+				createServiceInfo(service1, 5000, service1LocalURL),
+				createServiceInfo(service2, 5001, service2LocalURL),
+			},
+			instances: []aostypes.InstanceInfo{
+				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, 100),
+				createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 1,
+				}, 100),
+				createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, 100),
+			},
+		},
+		nodeIDRunxSM: {
+			services: []aostypes.ServiceInfo{
+				createServiceInfo(service3, 5002, service3RemoteURL),
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				createInstanceInfo(5003, 5, aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, 100),
+			},
+		},
+	}
+
+	expectedRunStatus := unitstatushandler.RunInstancesStatus{
+		Instances: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRunxSM, nil),
+		},
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("incorrect run request: %v", err)
+	}
+
+	desiredInstances = []cloudprotocol.InstanceInfo{
+		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+	}
+
+	expectedRunStatus.Instances = []cloudprotocol.InstanceStatus{
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service1, SubjectID: subject1, Instance: 0,
+		}, nodeIDLocalSM, nil),
+	}
+
+	expectedCleanInstances := []aostypes.InstanceIdent{
+		{ServiceID: service1, SubjectID: subject1, Instance: 1},
+		{ServiceID: service2, SubjectID: subject1, Instance: 0},
+		{ServiceID: service3, SubjectID: subject1, Instance: 0},
+	}
+
+	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
+		t.Fatalf("Can't run instances %v", err)
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if !reflect.DeepEqual(expectedCleanInstances, stateStorageProvider.cleanedInstances) {
+		t.Errorf("Incorrect state storage cleanup: %v", stateStorageProvider.cleanedInstances)
+	}
+}
+
 func TestRebalancing(t *testing.T) {
 	const nodeTypeSuffix = "Type"
 	var (
@@ -1312,7 +1469,10 @@ func (storage *testStorage) GetInstanceUID(instance aostypes.InstanceIdent) (int
 }
 
 func (storage *testStorage) GetInstances() ([]launcher.InstanceInfo, error) {
-	return storage.instanceInfo, nil
+	instances := make([]launcher.InstanceInfo, len(storage.instanceInfo))
+	copy(instances, storage.instanceInfo)
+
+	return instances, nil
 }
 
 func (storage *testStorage) RemoveInstance(instanceIdent aostypes.InstanceIdent) error {
