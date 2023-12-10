@@ -153,18 +153,17 @@ type nodeStatus struct {
 	NodeInfo
 	availableResources   []string
 	availableLabels      []string
-	availableDevices     []nodeDeviceResource
+	availableDevices     []nodeDevice
 	priority             uint32
 	receivedRunInstances []cloudprotocol.InstanceStatus
 	currentRunRequest    *runRequestInfo
 	waitStatus           bool
 }
 
-type nodeDeviceResource struct {
-	name             string
-	sharedCount      int
-	allocatedCount   int
-	preallocateCount int
+type nodeDevice struct {
+	name           string
+	sharedCount    int
+	allocatedCount int
 }
 
 type runRequestInfo struct {
@@ -452,15 +451,17 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 		if err != nil {
 			log.Errorf("Can't get layer: %v", err)
 
-			launcher.releaseResources(nodesToRebalance, serviceInfo)
-
 			continue
 		}
 
 		launcher.addRunRequest(
 			serviceInfo, layersForService, nodeWithIssue.currentRunRequest.instances[i], nodesToRebalance[0])
 
-		launcher.releaseResources(append(nodesToRebalance[1:], nodeWithIssue), serviceInfo)
+		if err := launcher.releaseDevices(nodeWithIssue, serviceInfo.Config.Devices); err != nil {
+			log.Errorf("Can't release devices: %v", err)
+
+			continue
+		}
 
 		nodeWithIssue.currentRunRequest.instances = append(nodeWithIssue.currentRunRequest.instances[:i],
 			nodeWithIssue.currentRunRequest.instances[i+1:]...)
@@ -498,28 +499,23 @@ func (launcher *Launcher) initNodeUnitConfiguration(nodeStatus *nodeStatus, node
 	nodeStatus.priority = nodeUnitConfig.Priority
 	nodeStatus.availableLabels = nodeUnitConfig.Labels
 	nodeStatus.availableResources = make([]string, len(nodeUnitConfig.Resources))
-	nodeStatus.availableDevices = make([]nodeDeviceResource, len(nodeUnitConfig.Devices))
+	nodeStatus.availableDevices = make([]nodeDevice, len(nodeUnitConfig.Devices))
 
 	for i, resource := range nodeUnitConfig.Resources {
 		nodeStatus.availableResources[i] = resource.Name
 	}
 
 	for i, device := range nodeUnitConfig.Devices {
-		nodeStatus.availableDevices[i] = nodeDeviceResource{
-			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0, preallocateCount: 0,
+		nodeStatus.availableDevices[i] = nodeDevice{
+			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0,
 		}
 	}
 }
 
 func (launcher *Launcher) resetDeviceAllocation() {
 	for _, node := range launcher.nodes {
-		for i, device := range node.availableDevices {
-			if device.sharedCount == 0 {
-				continue
-			}
-
+		for i := range node.availableDevices {
 			node.availableDevices[i].allocatedCount = 0
-			node.availableDevices[i].preallocateCount = 0
 		}
 	}
 }
@@ -733,10 +729,12 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 			node := launcher.getMostPriorityNode(nodeForInstance, serviceInfo)
 
-			log.WithFields(log.Fields{
-				"ident": instanceInfo.InstanceIdent,
-				"node":  node.NodeID,
-			}).Debug("Schedule instance on node")
+			if err = launcher.allocateDevices(node, serviceInfo.Config.Devices); err != nil {
+				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
+					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+
+				continue
+			}
 
 			launcher.addRunRequest(serviceInfo, layers, instanceInfo, node)
 		}
@@ -962,30 +960,11 @@ func (launcher *Launcher) getNodesByDevices(
 	nodes := make([]*nodeStatus, 0)
 
 	for _, node := range availableNodes {
-		if len(node.availableDevices) == 0 {
+		if !launcher.nodeHasDesiredDevices(node, desiredDevices) {
 			continue
 		}
 
-		nodeAdded := true
-
-		for _, desiredDevice := range desiredDevices {
-			if !launcher.preallocateDevicesForNode(node, desiredDevice.Name) {
-				nodeAdded = false
-				break
-			}
-		}
-
-		if nodeAdded {
-			nodes = append(nodes, node)
-		}
-
-		for i := range node.availableDevices {
-			if nodeAdded {
-				node.availableDevices[i].allocatedCount = node.availableDevices[i].preallocateCount
-			} else {
-				node.availableDevices[i].preallocateCount = node.availableDevices[i].allocatedCount
-			}
-		}
+		nodes = append(nodes, node)
 	}
 
 	if len(nodes) == 0 {
@@ -1038,31 +1017,76 @@ func (launcher *Launcher) getNodeByMonitoringData(nodes []*nodeStatus, alertType
 	return newNodes
 }
 
-func (launcher *Launcher) preallocateDevicesForNode(node *nodeStatus, deviceName string) bool {
-	for i, nodeDevice := range node.availableDevices {
-		if nodeDevice.name != deviceName {
-			continue
-		}
+func (launcher *Launcher) nodeHasDesiredDevices(node *nodeStatus, desiredDevices []aostypes.ServiceDevice) bool {
+devicesLoop:
+	for _, desiredDevice := range desiredDevices {
+		for _, nodeDevice := range node.availableDevices {
+			if desiredDevice.Name != nodeDevice.name {
+				continue
+			}
 
-		if nodeDevice.sharedCount == 0 {
-			return true
-		}
-
-		if nodeDevice.preallocateCount < nodeDevice.sharedCount {
-			node.availableDevices[i].preallocateCount++
-
-			return true
+			if nodeDevice.sharedCount == 0 || nodeDevice.allocatedCount != nodeDevice.sharedCount {
+				continue devicesLoop
+			}
 		}
 
 		return false
 	}
 
-	return false
+	return true
 }
 
-func (launcher *Launcher) getNodesByResources(
-	nodes []*nodeStatus, desiredResources []string,
-) (newNodes []*nodeStatus) {
+func (launcher *Launcher) allocateDevices(node *nodeStatus, serviceDevices []aostypes.ServiceDevice) error {
+serviceDeviceLoop:
+	for _, serviceDevice := range serviceDevices {
+		for i := range node.availableDevices {
+			if node.availableDevices[i].name != serviceDevice.Name {
+				continue
+			}
+
+			if node.availableDevices[i].sharedCount != 0 {
+				if node.availableDevices[i].allocatedCount == node.availableDevices[i].sharedCount {
+					return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
+				}
+
+				node.availableDevices[i].allocatedCount++
+
+				continue serviceDeviceLoop
+			}
+		}
+
+		return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
+	}
+
+	return nil
+}
+
+func (launcher *Launcher) releaseDevices(node *nodeStatus, serviceDevices []aostypes.ServiceDevice) error {
+serviceDeviceLoop:
+	for _, serviceDevice := range serviceDevices {
+		for i := range node.availableDevices {
+			if node.availableDevices[i].name != serviceDevice.Name {
+				continue
+			}
+
+			if node.availableDevices[i].sharedCount != 0 {
+				if node.availableDevices[i].allocatedCount == 0 {
+					return aoserrors.Errorf("can't release device: %s", serviceDevice.Name)
+				}
+
+				node.availableDevices[i].allocatedCount--
+
+				continue serviceDeviceLoop
+			}
+		}
+
+		return aoserrors.Errorf("can't release device: %s", serviceDevice.Name)
+	}
+
+	return nil
+}
+
+func (launcher *Launcher) getNodesByResources(nodes []*nodeStatus, desiredResources []string) (newNodes []*nodeStatus) {
 	if len(desiredResources) == 0 {
 		return nodes
 	}
@@ -1123,9 +1147,7 @@ func (launcher *Launcher) getNodeByRunner(allNodes []*nodeStatus, runner string)
 	return nodes
 }
 
-func (launcher *Launcher) getMostPriorityNode(
-	nodes []*nodeStatus, serviceInfo imagemanager.ServiceInfo,
-) (node *nodeStatus) {
+func (launcher *Launcher) getMostPriorityNode(nodes []*nodeStatus, serviceInfo imagemanager.ServiceInfo) *nodeStatus {
 	if len(nodes) == 1 {
 		return nodes[0]
 	}
@@ -1138,41 +1160,17 @@ func (launcher *Launcher) getMostPriorityNode(
 		}
 	}
 
-	node = nodes[maxNodePriorityIndex]
-
-	nodesForCleanUp := slices.Delete(slices.Clone(nodes), maxNodePriorityIndex, maxNodePriorityIndex+1)
-
-	launcher.releaseResources(nodesForCleanUp, serviceInfo)
-
-	return node
-}
-
-func (launcher *Launcher) releaseResources(nodes []*nodeStatus, serviceInfo imagemanager.ServiceInfo) {
-	if len(serviceInfo.Config.Devices) == 0 {
-		return
-	}
-
-	for _, device := range serviceInfo.Config.Devices {
-		for _, node := range nodes {
-			for i, nodeDeviceStatus := range node.availableDevices {
-				if nodeDeviceStatus.name != device.Name {
-					continue
-				}
-
-				if nodeDeviceStatus.sharedCount != 0 {
-					node.availableDevices[i].allocatedCount--
-					node.availableDevices[i].preallocateCount--
-				}
-
-				break
-			}
-		}
-	}
+	return nodes[maxNodePriorityIndex]
 }
 
 func (launcher *Launcher) addRunRequest(service imagemanager.ServiceInfo, layers []imagemanager.LayerInfo,
 	instance aostypes.InstanceInfo, node *nodeStatus,
 ) {
+	log.WithFields(log.Fields{
+		"ident": instance.InstanceIdent,
+		"node":  node.NodeID,
+	}).Debug("Schedule instance on node")
+
 	node.currentRunRequest.instances = append(node.currentRunRequest.instances, instance)
 
 	serviceInfo := service.ServiceInfo
