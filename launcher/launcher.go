@@ -656,7 +656,13 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		node.currentRunRequest = &runRequestInfo{}
 	}
 
-	sort.Slice(instances, func(i, j int) bool { return instances[i].Priority > instances[j].Priority })
+	sort.Slice(instances, func(i, j int) bool {
+		if instances[i].Priority == instances[j].Priority {
+			return instances[i].ServiceID < instances[j].ServiceID
+		}
+
+		return instances[i].Priority > instances[j].Priority
+	})
 
 	launcher.removeInstances(instances)
 	launcher.removeInstanceNetworkParameters(instances)
@@ -851,6 +857,12 @@ nextStoreInstance:
 				}
 			}
 		}
+
+		log.WithFields(log.Fields{
+			"serviceID": storeInstance.ServiceID,
+			"subjectID": storeInstance.SubjectID,
+			"instance":  storeInstance.Instance,
+		}).Debug("Remove instance")
 
 		err = launcher.uidPool.RemoveID(storeInstance.UID)
 		if err != nil {
