@@ -755,7 +755,11 @@ func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.Ins
 
 // SetNodeState stores node state.
 func (db *Database) SetNodeState(nodeID string, state json.RawMessage) error {
-	return db.executeQuery("INSERT INTO nodes values(?, ?)", nodeID, state)
+	if err := db.executeQuery("UPDATE nodes SET state = ? WHERE nodeID = ?", state, nodeID); errors.Is(err, errNotExist) {
+		return db.executeQuery("INSERT INTO nodes values(?, ?)", nodeID, state)
+	} else {
+		return err
+	}
 }
 
 // GetNodeState retrieves node state.
