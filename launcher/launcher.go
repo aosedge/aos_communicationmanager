@@ -44,7 +44,7 @@ import (
 * Consts
 **********************************************************************************************************************/
 
-var ErrNotExist = errors.New("instance not exist")
+var ErrNotExist = errors.New("entry not exist")
 
 const defaultRunner = "crun"
 
@@ -104,7 +104,9 @@ type Storage interface {
 	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
 	GetInstances() ([]InstanceInfo, error)
 	SetDesiredInstances(instances json.RawMessage) error
-	GetDesiredInstances() (instances json.RawMessage, err error)
+	GetDesiredInstances() (json.RawMessage, error)
+	SetNodeState(nodeID string, state json.RawMessage) error
+	GetNodeState(nodeID string) (json.RawMessage, error)
 }
 
 // NetworkManager network manager interface.
@@ -167,9 +169,9 @@ type nodeDevice struct {
 }
 
 type runRequestInfo struct {
-	services  []aostypes.ServiceInfo
-	layers    []aostypes.LayerInfo
-	instances []aostypes.InstanceInfo
+	Services  []aostypes.ServiceInfo  `json:"services"`
+	Layers    []aostypes.LayerInfo    `json:"layers"`
+	Instances []aostypes.InstanceInfo `json:"instances"`
 }
 
 /***********************************************************************************************************************
@@ -327,9 +329,13 @@ func (launcher *Launcher) sendRunInstances(forceRestart bool) (err error) {
 	for _, node := range launcher.nodes {
 		node.waitStatus = true
 
+		if err := launcher.saveNodeRunRequest(node); err != nil {
+			log.WithFields(log.Fields{"nodeID": node.NodeID}).Errorf("Can't save node run request: %v", err)
+		}
+
 		if runErr := launcher.nodeManager.RunInstances(
-			node.NodeID, node.currentRunRequest.services, node.currentRunRequest.layers,
-			node.currentRunRequest.instances, forceRestart); runErr != nil {
+			node.NodeID, node.currentRunRequest.Services, node.currentRunRequest.Layers,
+			node.currentRunRequest.Instances, forceRestart); runErr != nil {
 			log.WithField("nodeID", node.NodeID).Errorf("Can't run instances %v", runErr)
 
 			if err == nil {
@@ -413,8 +419,8 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 		return
 	}
 
-	if len(nodeWithIssue.currentRunRequest.instances) <= 1 {
-		log.Warn("No appropriate condition for rebalancing found")
+	if len(nodeWithIssue.currentRunRequest.Instances) <= 1 {
+		log.Warn("No instances for rebalancing")
 
 		return
 	}
@@ -426,8 +432,8 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 		return
 	}
 
-	for i := len(nodeWithIssue.currentRunRequest.instances) - 1; i >= 0; i-- {
-		currentInstance := nodeWithIssue.currentRunRequest.instances[i]
+	for i := len(nodeWithIssue.currentRunRequest.Instances) - 1; i >= 0; i-- {
+		currentInstance := nodeWithIssue.currentRunRequest.Instances[i]
 
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(currentInstance.ServiceID)
 		if err != nil {
@@ -475,6 +481,17 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 			continue
 		}
 
+		sort.Slice(nodeWithIssue.currentRunRequest.Instances, func(i, j int) bool {
+			if nodeWithIssue.currentRunRequest.Instances[i].Priority ==
+				nodeWithIssue.currentRunRequest.Instances[j].Priority {
+				return nodeWithIssue.currentRunRequest.Instances[i].ServiceID <
+					nodeWithIssue.currentRunRequest.Instances[j].ServiceID
+			}
+
+			return nodeWithIssue.currentRunRequest.Instances[i].Priority >
+				nodeWithIssue.currentRunRequest.Instances[j].Priority
+		})
+
 		launcher.removeRunRequest(currentInstance, nodeWithIssue)
 
 		launcher.connectionTimer = time.AfterFunc(
@@ -491,7 +508,9 @@ func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAler
 }
 
 func (launcher *Launcher) initNodeStatus(nodeID, nodeType string) (*nodeStatus, error) {
-	status := &nodeStatus{}
+	status := &nodeStatus{currentRunRequest: &runRequestInfo{}}
+
+	log.WithFields(log.Fields{"nodeID": nodeID}).Debug("Init node status")
 
 	config, err := launcher.nodeManager.GetNodeConfiguration(nodeID)
 	if err != nil {
@@ -499,6 +518,10 @@ func (launcher *Launcher) initNodeStatus(nodeID, nodeType string) (*nodeStatus, 
 	}
 
 	status.NodeInfo = config
+
+	if err := launcher.loadNodeRunRequest(status); err != nil && !errors.Is(err, ErrNotExist) {
+		log.WithFields(log.Fields{"nodeID": nodeID}).Errorf("Can't load node run request")
+	}
 
 	launcher.initNodeUnitConfiguration(status, nodeType)
 
@@ -522,6 +545,19 @@ func (launcher *Launcher) initNodeUnitConfiguration(nodeStatus *nodeStatus, node
 			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0,
 		}
 	}
+
+	for _, instance := range nodeStatus.currentRunRequest.Instances {
+		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
+		if err != nil {
+			log.WithFields(log.Fields{"serviceID": instance.ServiceID}).Errorf("Can't get service info: %v", err)
+			continue
+		}
+
+		if err = launcher.allocateDevices(nodeStatus, serviceInfo.Config.Devices); err != nil {
+			log.WithFields(
+				instanceIdentLogFields(instance.InstanceIdent, nil)).Errorf("Can't allocate devices: %v", err)
+		}
+	}
 }
 
 func (launcher *Launcher) resetDeviceAllocation() {
@@ -541,7 +577,7 @@ func (launcher *Launcher) sendCurrentStatus() {
 		if node.waitStatus {
 			node.waitStatus = false
 
-			for _, errInstance := range node.currentRunRequest.instances {
+			for _, errInstance := range node.currentRunRequest.Instances {
 				runStatusToSend.Instances = append(runStatusToSend.Instances, cloudprotocol.InstanceStatus{
 					InstanceIdent: errInstance.InstanceIdent,
 					NodeID:        node.NodeID, RunState: cloudprotocol.InstanceStateFailed,
@@ -767,7 +803,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (errStatus []cloudprotocol.InstanceStatus) {
 	for _, node := range launcher.nodes {
-		for i, instance := range node.currentRunRequest.instances {
+		for i, instance := range node.currentRunRequest.Instances {
 			serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 			if err != nil {
 				log.WithField("serviceID", instance.ServiceID).Errorf("Can't get service info: %v", err)
@@ -791,7 +827,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 					instance.Instance, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
-			node.currentRunRequest.instances[i] = instance
+			node.currentRunRequest.Instances[i] = instance
 		}
 	}
 
@@ -870,11 +906,7 @@ nextStoreInstance:
 			}
 		}
 
-		log.WithFields(log.Fields{
-			"serviceID": storeInstance.ServiceID,
-			"subjectID": storeInstance.SubjectID,
-			"instance":  storeInstance.Instance,
-		}).Debug("Remove instance")
+		log.WithFields(instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Debug("Remove instance")
 
 		err = launcher.uidPool.RemoveID(storeInstance.UID)
 		if err != nil {
@@ -1180,12 +1212,10 @@ func (launcher *Launcher) getMostPriorityNode(nodes []*nodeStatus, serviceInfo i
 func (launcher *Launcher) addRunRequest(instance aostypes.InstanceInfo, service imagemanager.ServiceInfo,
 	layers []imagemanager.LayerInfo, node *nodeStatus,
 ) {
-	log.WithFields(log.Fields{
-		"ident": instance.InstanceIdent,
-		"node":  node.NodeID,
-	}).Debug("Schedule instance on node")
+	log.WithFields(instanceIdentLogFields(
+		instance.InstanceIdent, log.Fields{"node": node.NodeID})).Debug("Schedule instance on node")
 
-	node.currentRunRequest.instances = append(node.currentRunRequest.instances, instance)
+	node.currentRunRequest.Instances = append(node.currentRunRequest.Instances, instance)
 
 	serviceInfo := service.ServiceInfo
 
@@ -1195,7 +1225,7 @@ func (launcher *Launcher) addRunRequest(instance aostypes.InstanceInfo, service 
 
 	isNewService := true
 
-	for _, oldService := range node.currentRunRequest.services {
+	for _, oldService := range node.currentRunRequest.Services {
 		if reflect.DeepEqual(oldService, serviceInfo) {
 			isNewService = false
 			break
@@ -1203,7 +1233,9 @@ func (launcher *Launcher) addRunRequest(instance aostypes.InstanceInfo, service 
 	}
 
 	if isNewService {
-		node.currentRunRequest.services = append(node.currentRunRequest.services, serviceInfo)
+		log.WithFields(log.Fields{"serviceID": serviceInfo.ID, "node": node.NodeID}).Debug("Schedule service on node")
+
+		node.currentRunRequest.Services = append(node.currentRunRequest.Services, serviceInfo)
 	}
 
 layerLoopLabel:
@@ -1214,13 +1246,15 @@ layerLoopLabel:
 			newLayer.URL = layer.RemoteURL
 		}
 
-		for _, oldLayer := range node.currentRunRequest.layers {
+		for _, oldLayer := range node.currentRunRequest.Layers {
 			if reflect.DeepEqual(newLayer, oldLayer) {
 				continue layerLoopLabel
 			}
 		}
 
-		node.currentRunRequest.layers = append(node.currentRunRequest.layers, newLayer)
+		log.WithFields(log.Fields{"digest": newLayer, "node": node.NodeID}).Debug("Schedule layer on node")
+
+		node.currentRunRequest.Layers = append(node.currentRunRequest.Layers, newLayer)
 	}
 }
 
@@ -1229,14 +1263,14 @@ func (launcher *Launcher) removeInstanceFromNode(ident aostypes.InstanceIdent, n
 
 	i := 0
 
-	for _, instance := range node.currentRunRequest.instances {
+	for _, instance := range node.currentRunRequest.Instances {
 		if instance.InstanceIdent != ident {
-			node.currentRunRequest.instances[i] = instance
+			node.currentRunRequest.Instances[i] = instance
 			i++
 		}
 	}
 
-	node.currentRunRequest.instances = node.currentRunRequest.instances[:i]
+	node.currentRunRequest.Instances = node.currentRunRequest.Instances[:i]
 }
 
 func (launcher *Launcher) removeServiceFromNode(serviceID string, node *nodeStatus) {
@@ -1244,14 +1278,14 @@ func (launcher *Launcher) removeServiceFromNode(serviceID string, node *nodeStat
 
 	i := 0
 
-	for _, service := range node.currentRunRequest.services {
+	for _, service := range node.currentRunRequest.Services {
 		if service.ID != serviceID {
-			node.currentRunRequest.services[i] = service
+			node.currentRunRequest.Services[i] = service
 			i++
 		}
 	}
 
-	node.currentRunRequest.services = node.currentRunRequest.services[:i]
+	node.currentRunRequest.Services = node.currentRunRequest.Services[:i]
 }
 
 func (launcher *Launcher) removeLayerFromNode(digest string, node *nodeStatus) {
@@ -1259,14 +1293,14 @@ func (launcher *Launcher) removeLayerFromNode(digest string, node *nodeStatus) {
 
 	i := 0
 
-	for _, layer := range node.currentRunRequest.layers {
+	for _, layer := range node.currentRunRequest.Layers {
 		if layer.Digest != digest {
-			node.currentRunRequest.layers[i] = layer
+			node.currentRunRequest.Layers[i] = layer
 			i++
 		}
 	}
 
-	node.currentRunRequest.layers = node.currentRunRequest.layers[:i]
+	node.currentRunRequest.Layers = node.currentRunRequest.Layers[:i]
 }
 
 func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node *nodeStatus) {
@@ -1275,7 +1309,7 @@ func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node 
 	// check if we need to remove service
 	removeService := true
 
-	for _, currentInstance := range node.currentRunRequest.instances {
+	for _, currentInstance := range node.currentRunRequest.Instances {
 		if currentInstance.ServiceID == instance.ServiceID {
 			removeService = false
 		}
@@ -1293,7 +1327,7 @@ func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node 
 
 	layerLoop:
 		for _, currentDigest := range currentServiceInfo.Layers {
-			for _, service := range node.currentRunRequest.services {
+			for _, service := range node.currentRunRequest.Services {
 				serviceInfo, err := launcher.imageProvider.GetServiceInfo(service.ID)
 				if err != nil {
 					log.Errorf("Can't get service info: %v", err)
@@ -1316,19 +1350,17 @@ func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node 
 func createInstanceStatusFromInfo(
 	serviceID, subjectID string, instanceIndex, serviceVersion uint64, runState, errorMsg string,
 ) cloudprotocol.InstanceStatus {
+	ident := aostypes.InstanceIdent{
+		ServiceID: serviceID, SubjectID: subjectID, Instance: instanceIndex,
+	}
+
 	instanceStatus := cloudprotocol.InstanceStatus{
-		InstanceIdent: aostypes.InstanceIdent{
-			ServiceID: serviceID, SubjectID: subjectID, Instance: instanceIndex,
-		},
-		AosVersion: serviceVersion, RunState: runState,
+		InstanceIdent: ident,
+		AosVersion:    serviceVersion, RunState: runState,
 	}
 
 	if errorMsg != "" {
-		log.WithFields(log.Fields{
-			"serviceID": serviceID,
-			"subjectID": subjectID,
-			"instance":  instanceIndex,
-		}).Errorf("Can't schedule instance: %s", errorMsg)
+		log.WithFields(instanceIdentLogFields(ident, nil)).Errorf("Can't schedule instance: %s", errorMsg)
 
 		instanceStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: errorMsg}
 	}
@@ -1381,6 +1413,32 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	}
 
 	return layers, nil
+}
+
+func (launcher *Launcher) loadNodeRunRequest(node *nodeStatus) error {
+	currentRunRequestJSON, err := launcher.storage.GetNodeState(node.NodeID)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err = json.Unmarshal(currentRunRequestJSON, &node.currentRunRequest); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (launcher *Launcher) saveNodeRunRequest(node *nodeStatus) error {
+	runRequestJSON, err := json.Marshal(node.currentRunRequest)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err := launcher.storage.SetNodeState(node.NodeID, runRequestJSON); err != nil {
+		log.Errorf("Can't store desired instances: %v", err)
+	}
+
+	return nil
 }
 
 func instanceIdentLogFields(instance aostypes.InstanceIdent, extraFields log.Fields) log.Fields {
