@@ -112,6 +112,7 @@ type testResourceManager struct {
 type testStorage struct {
 	instanceInfo     []launcher.InstanceInfo
 	desiredInstances json.RawMessage
+	nodeState        map[string]json.RawMessage
 }
 
 type testStateStorage struct {
@@ -1208,6 +1209,7 @@ func TestRebalancingSameNodePriority(t *testing.T) {
 		nodeManager     = newTestNodeManager()
 		resourceManager = newTestResourceManager()
 		imageManager    = &testImageProvider{}
+		storage         = newTestStorage()
 	)
 
 	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
@@ -1228,7 +1230,7 @@ func TestRebalancingSameNodePriority(t *testing.T) {
 		Labels:   []string{"label2"},
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
+	launcherInstance, err := launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
 		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
@@ -1432,6 +1434,208 @@ func TestRebalancingSameNodePriority(t *testing.T) {
 	}
 }
 
+func TestRebalancingAfterRestart(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+		}
+		nodeManager     = newTestNodeManager()
+		resourceManager = newTestResourceManager()
+		imageManager    = &testImageProvider{}
+		storage         = newTestStorage()
+	)
+
+	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
+		RemoteNode: false,
+	}
+	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
+		NodeType: nodeTypeLocalSM,
+		Labels:   []string{"label1"},
+	}
+
+	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
+		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
+		RemoteNode: true,
+	}
+	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
+		NodeType: nodeTypeRemoteSM,
+		Labels:   []string{"label2"},
+	}
+
+	launcherInstance, err := launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+
+	for nodeID, info := range nodeManager.nodeInformation {
+		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+		}
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	imageManager.services = map[string]imagemanager.ServiceInfo{
+		service1: {
+			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
+			RemoteURL:   service1RemoteURL,
+		},
+		service2: {
+			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
+			RemoteURL:   service2RemoteURL,
+		},
+		service3: {
+			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
+			RemoteURL:   service3RemoteURL,
+		},
+	}
+
+	desiredInstances := []cloudprotocol.InstanceInfo{
+		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1, Labels: []string{"label1"}},
+		{ServiceID: service2, SubjectID: subject1, Priority: 100, NumInstances: 1, Labels: []string{"label2"}},
+		{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+	}
+
+	expectedRunRequests := map[string]runRequest{
+		nodeIDLocalSM: {
+			services: []aostypes.ServiceInfo{
+				createServiceInfo(service1, 5000, service1LocalURL),
+				createServiceInfo(service3, 5002, service3LocalURL),
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, 100),
+				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, 0),
+			},
+		},
+		nodeIDRemoteSM1: {
+			services: []aostypes.ServiceInfo{
+				createServiceInfo(service2, 5001, service2RemoteURL),
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, 100),
+			},
+		},
+	}
+
+	expectedRunStatus := unitstatushandler.RunInstancesStatus{
+		Instances: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+		},
+	}
+
+	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
+		t.Fatalf("Can't run instances %v", err)
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("Incorrect run request: %v", err)
+	}
+
+	launcherInstance.Close()
+
+	// Restart
+
+	launcherInstance, err = launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
+		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+
+	for nodeID, info := range nodeManager.nodeInformation {
+		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+		}
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: nodeIDLocalSM, Parameter: "cpu"}
+
+	expectedRunRequests = map[string]runRequest{
+		nodeIDLocalSM: {
+			services: []aostypes.ServiceInfo{
+				createServiceInfo(service1, 5000, service1LocalURL),
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, 100),
+			},
+		},
+		nodeIDRemoteSM1: {
+			services: []aostypes.ServiceInfo{
+				createServiceInfo(service2, 5001, service2RemoteURL),
+				createServiceInfo(service3, 5002, service3RemoteURL),
+			},
+			layers: []aostypes.LayerInfo{},
+			instances: []aostypes.InstanceInfo{
+				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, 100),
+				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, 0),
+			},
+		},
+	}
+
+	expectedRunStatus = unitstatushandler.RunInstancesStatus{
+		Instances: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+		},
+	}
+
+	if err := waitRunInstancesStatus(
+		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
+		t.Errorf("Incorrect run status: %v", err)
+	}
+
+	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
+		t.Errorf("Incorrect run request: %v", err)
+	}
+}
+
 /***********************************************************************************************************************
  * Interfaces
  **********************************************************************************************************************/
@@ -1546,6 +1750,7 @@ func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string
 func newTestStorage() *testStorage {
 	return &testStorage{
 		desiredInstances: json.RawMessage("[]"),
+		nodeState:        make(map[string]json.RawMessage),
 	}
 }
 
@@ -1597,6 +1802,21 @@ func (storage *testStorage) SetDesiredInstances(instances json.RawMessage) error
 
 func (storage *testStorage) GetDesiredInstances() (instances json.RawMessage, err error) {
 	return storage.desiredInstances, nil
+}
+
+func (storage *testStorage) SetNodeState(nodeID string, runRequest json.RawMessage) error {
+	storage.nodeState[nodeID] = runRequest
+
+	return nil
+}
+
+func (storage *testStorage) GetNodeState(nodeID string) (json.RawMessage, error) {
+	runRequestJSON, ok := storage.nodeState[nodeID]
+	if !ok {
+		return nil, launcher.ErrNotExist
+	}
+
+	return runRequestJSON, nil
 }
 
 // testStateStorage
