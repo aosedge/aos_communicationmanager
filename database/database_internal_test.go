@@ -1008,13 +1008,28 @@ func TestStorageState(t *testing.T) {
 }
 
 func TestNodeState(t *testing.T) {
-	setNodeState := json.RawMessage("node state")
+	setNodeState := json.RawMessage("node state 1")
 
 	if err := db.SetNodeState("nodeID", setNodeState); err != nil {
 		t.Fatalf("Can't set node state: %v", err)
 	}
 
 	getNodeState, err := db.GetNodeState("nodeID")
+	if err != nil {
+		t.Errorf("Can't get node state: %v", err)
+	}
+
+	if string(setNodeState) != string(getNodeState) {
+		t.Errorf("Wrong get node state: %s", string(getNodeState))
+	}
+
+	setNodeState = json.RawMessage("node state 2")
+
+	if err := db.SetNodeState("nodeID", setNodeState); err != nil {
+		t.Fatalf("Can't set node state: %v", err)
+	}
+
+	getNodeState, err = db.GetNodeState("nodeID")
 	if err != nil {
 		t.Errorf("Can't get node state: %v", err)
 	}
