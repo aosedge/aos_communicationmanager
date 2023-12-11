@@ -1006,3 +1006,20 @@ func TestStorageState(t *testing.T) {
 		t.Errorf("Should be: entry does not exist")
 	}
 }
+
+func TestNodeState(t *testing.T) {
+	setNodeState := json.RawMessage("node state")
+
+	if err := db.SetNodeState("nodeID", setNodeState); err != nil {
+		t.Fatalf("Can't set node state: %v", err)
+	}
+
+	getNodeState, err := db.GetNodeState("nodeID")
+	if err != nil {
+		t.Errorf("Can't get node state: %v", err)
+	}
+
+	if string(setNodeState) != string(getNodeState) {
+		t.Errorf("Wrong get node state: %s", string(getNodeState))
+	}
+}
