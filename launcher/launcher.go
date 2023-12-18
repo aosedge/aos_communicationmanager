@@ -723,8 +723,6 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 		if err != nil {
-			log.WithField("serviceID", instance.ServiceID).Errorf("Can't get service info: %v", err)
-
 			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
 				cloudprotocol.InstanceStateFailed, err.Error()))
 
@@ -732,8 +730,6 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		}
 
 		if serviceInfo.Cached {
-			log.WithField("serviceID", instance.ServiceID).Error("Can't start instances: service deleted")
-
 			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
 				cloudprotocol.InstanceStateFailed, "service deleted"))
 
@@ -806,8 +802,6 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 		for i, instance := range node.currentRunRequest.Instances {
 			serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 			if err != nil {
-				log.WithField("serviceID", instance.ServiceID).Errorf("Can't get service info: %v", err)
-
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
 					cloudprotocol.InstanceStateFailed, err.Error()))
 
@@ -821,8 +815,6 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 			if instance.NetworkParameters, err = launcher.networkManager.PrepareInstanceNetworkParameters(
 				instance.InstanceIdent, serviceInfo.ProviderID,
 				prepareNetworkParameters(instance, serviceInfo)); err != nil {
-				log.WithFields(instanceIdentLogFields(instance.InstanceIdent, nil)).Errorf("Can't prepare network: %v", err)
-
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
 					instance.Instance, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
@@ -1252,7 +1244,7 @@ layerLoopLabel:
 			}
 		}
 
-		log.WithFields(log.Fields{"digest": newLayer, "node": node.NodeID}).Debug("Schedule layer on node")
+		log.WithFields(log.Fields{"digest": newLayer.Digest, "node": node.NodeID}).Debug("Schedule layer on node")
 
 		node.currentRunRequest.Layers = append(node.currentRunRequest.Layers, newLayer)
 	}
