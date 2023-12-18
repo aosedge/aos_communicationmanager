@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/aoscloud/aos_common/aoserrors"
@@ -76,7 +75,7 @@ type Database struct {
 
 // New creates new database handle.
 func New(config *config.Config) (db *Database, err error) {
-	fileName := path.Join(config.WorkingDir, dbFileName)
+	fileName := filepath.Join(config.WorkingDir, dbFileName)
 
 	log.WithField("fileName", fileName).Debug("Open database")
 
@@ -830,7 +829,7 @@ func (db *Database) executeQuery(query string, args ...interface{}) error {
 }
 
 func (db *Database) createDownloadTable() (err error) {
-	log.Info("Create service table")
+	log.Info("Create download table")
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS download (path TEXT NOT NULL PRIMARY KEY,
                                                                targetType TEXT NOT NULL,
@@ -938,7 +937,7 @@ func (db *Database) createStorageStateTable() (err error) {
 }
 
 func (db *Database) createNodeStateTable() (err error) {
-	log.Info("Create instances table")
+	log.Info("Create nodes table")
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS nodes (nodeID TEXT NOT NULL PRIMARY KEY,
                                                             state BLOB)`)
