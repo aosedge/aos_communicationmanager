@@ -18,17 +18,22 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_common/migration"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -1037,4 +1042,215 @@ func TestNodeState(t *testing.T) {
 	if string(setNodeState) != string(getNodeState) {
 		t.Errorf("Wrong get node state: %s", string(getNodeState))
 	}
+}
+
+func TestMigration(t *testing.T) {
+	migrationDBName := filepath.Join(tmpDir, "test_migration.db")
+	mergedMigrationDir := filepath.Join(tmpDir, "mergedMigration")
+	migrationDir := "migration"
+
+	if err := os.MkdirAll(mergedMigrationDir, 0o755); err != nil {
+		t.Fatalf("Error creating merged migration dir: %v", err)
+	}
+
+	defer func() {
+		if err := os.RemoveAll(mergedMigrationDir); err != nil {
+			t.Fatalf("Error removing merged migration dir: %v", err)
+		}
+
+		if err := os.RemoveAll(migrationDBName); err != nil {
+			t.Fatalf("Error removing migration db: %v", err)
+		}
+	}()
+
+	if err := migration.MergeMigrationFiles(migrationDir, mergedMigrationDir); err != nil {
+		t.Fatalf("Can't merge migration files: %v", err)
+	}
+
+	if err := createDatabaseV0(migrationDBName); err != nil {
+		t.Fatalf("Can't create initial db: %v", err)
+	}
+
+	migrationDB, err := sql.Open("sqlite3", fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=%s&_sync=%s",
+		migrationDBName, busyTimeout, journalMode, syncMode))
+	if err != nil {
+		t.Fatalf("Can't create initial db: %v", err)
+	}
+	defer migrationDB.Close()
+
+	// Migration upward
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 1); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer1(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+
+	// Migration downward
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 0); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer0(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+}
+
+func createDatabaseV0(name string) error {
+	sqlite, err := sql.Open("sqlite3", fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=%s&_sync=%s",
+		name, busyTimeout, journalMode, syncMode))
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer sqlite.Close()
+
+	// Create config table
+
+	if _, err = sqlite.Exec(
+		`CREATE TABLE config (
+			cursor TEXT,
+			componentsUpdateInfo BLOB,
+			fotaUpdateState BLOB,
+			sotaUpdateState BLOB,
+			desiredInstances BLOB)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(
+		`INSERT INTO config (
+			cursor,
+			componentsUpdateInfo,
+			fotaUpdateState,
+			sotaUpdateState,
+			desiredInstances) values(?, ?, ?, ?, ?)`,
+		"", "", json.RawMessage{}, json.RawMessage{}, json.RawMessage("[]")); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS download (path TEXT NOT NULL PRIMARY KEY,
+		targetType TEXT NOT NULL,
+		interruptReason TEXT,
+		downloaded INTEGER)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS services (id TEXT NOT NULL ,
+		aosVersion INTEGER,
+		providerId TEXT,
+		vendorVersion TEXT,
+		description TEXT,
+		localURL   TEXT,
+		remoteURL  TEXT,
+		path TEXT,
+		size INTEGER,
+		timestamp TIMESTAMP,
+		cached INTEGER,
+		config BLOB,
+		layers BLOB,
+		sha256 BLOB,
+		sha512 BLOB,
+		exposedPorts BLOB,
+		gid INTEGER,
+		PRIMARY KEY(id, aosVersion))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS layers (digest TEXT NOT NULL PRIMARY KEY,
+		layerId TEXT,
+		aosVersion INTEGER,
+		vendorVersion TEXT,
+		description TEXT,
+		localURL   TEXT,
+		remoteURL  TEXT,
+		Path       TEXT,
+		Size       INTEGER,
+		Timestamp  TIMESTAMP,
+		sha256 BLOB,
+		sha512 BLOB,
+		cached INTEGER)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS instances (serviceId TEXT,
+		subjectId TEXT,
+		instance INTEGER,
+		uid integer,
+		PRIMARY KEY(serviceId, subjectId, instance))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS instance_network (serviceId TEXT,
+		subjectId TEXT,
+		instance INTEGER,
+		networkID TEXT,
+		ip TEXT,
+		subnet TEXT,
+		vlanID INTEGER,
+		port BLOB,
+		PRIMARY KEY(serviceId, subjectId, instance))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS network (networkID TEXT NOT NULL PRIMARY KEY,
+		ip TEXT,
+		subnet TEXT,
+		vlanID INTEGER)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS storagestate (instanceID TEXT,
+		serviceID TEXT,
+		subjectID TEXT,
+		instance INTEGER,
+		storageQuota INTEGER,
+		stateQuota INTEGER,
+		stateChecksum BLOB,
+		PRIMARY KEY(instance, subjectID, serviceID))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func checkDatabaseVer0(sqlite *sql.DB) error {
+	exist, err := isTableExist(sqlite, "nodes")
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return aoserrors.New("table nodes should not exist")
+	}
+
+	return nil
+}
+
+func checkDatabaseVer1(sqlite *sql.DB) error {
+	exist, err := isTableExist(sqlite, "nodes")
+	if err != nil {
+		return err
+	}
+
+	if !exist {
+		return errNotExist
+	}
+
+	return nil
+}
+
+func isTableExist(sqlite *sql.DB, tableName string) (bool, error) {
+	rows, err := sqlite.Query("SELECT * FROM sqlite_master WHERE name = ? and type='table'", tableName)
+	if err != nil {
+		return false, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		return true, nil
+	}
+
+	return false, aoserrors.Wrap(rows.Err())
 }
