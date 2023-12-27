@@ -8,7 +8,7 @@ replace github.com/anexia-it/fsquota => github.com/aoscloud/fsquota v0.0.0-20231
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20231017140541-3b893ed0421b
-	github.com/aoscloud/aos_common v0.0.0-20231127154544-f0075875ceac
+	github.com/aoscloud/aos_common v0.0.0-20231227133432-0c97aef1696d
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
@@ -24,9 +24,9 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/streadway/amqp v1.1.0
 	github.com/vishvananda/netlink v1.1.0
-	golang.org/x/crypto v0.15.0
+	golang.org/x/crypto v0.16.0
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0
-	golang.org/x/sys v0.14.0
+	golang.org/x/sys v0.15.0
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 )
