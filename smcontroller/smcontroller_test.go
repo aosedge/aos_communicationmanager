@@ -1113,6 +1113,62 @@ func TestUpdateNetwork(t *testing.T) {
 	}
 }
 
+func TestSyncClock(t *testing.T) {
+	var (
+		nodeID        = "mainSM"
+		messageSender = newTestMessageSender()
+		nodeConfig    = &pb.NodeConfiguration{
+			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
+			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
+		}
+
+		config = config.Config{
+			SMController: config.SMController{
+				CMServerURL: cmServerURL,
+				NodeIDs:     []string{nodeID},
+			},
+		}
+	)
+
+	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create SM controller: %v", err)
+	}
+	defer controller.Close()
+
+	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	if err != nil {
+		t.Fatalf("Can't create test SM: %v", err)
+	}
+
+	defer smClient.close()
+
+	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pb.ConnectionStatus{},
+	}}, messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
+
+	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
+		SMOutgoingMessage: &pb.SMOutgoingMessages_ClockSyncRequest{},
+	}
+
+	select {
+	case <-time.After(messageTimeout):
+		t.Fatalf("Wait message error: %v", err)
+
+	case message := <-smClient.receivedMessagesChannel:
+		clockSync, ok := message.GetSMIncomingMessage().(*pb.SMIncomingMessages_ClockSync)
+		if !ok {
+			t.Fatalf("Incorrect message type: %v", message)
+		}
+
+		if clockSync.ClockSync.GetCurrentTime().CheckValid() != nil {
+			t.Fatalf("Incorrect time: %v", clockSync.ClockSync.GetCurrentTime())
+		}
+	}
+}
+
 func TestGetNodeMonitoringData(t *testing.T) {
 	var (
 		nodeID        = "mainSM"

@@ -18,6 +18,7 @@
 package umcontroller
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -118,17 +119,17 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 			},
 		},
 		fsm.Callbacks{
-			"enter_" + hStateWaitForPrepareResp:  handler.sendPrepareUpdateRequest,
-			"enter_" + hStateWaitForUpdateStatus: handler.sendStartUpdateToUM,
-			"enter_" + hStateWaitForApplyStatus:  handler.sendApplyUpdateToUM,
-			"enter_" + hStateWaitForRevertStatus: handler.sendRevertUpdateToUM,
+			enterPrefix + hStateWaitForPrepareResp:  handler.sendPrepareUpdateRequest,
+			enterPrefix + hStateWaitForUpdateStatus: handler.sendStartUpdateToUM,
+			enterPrefix + hStateWaitForApplyStatus:  handler.sendApplyUpdateToUM,
+			enterPrefix + hStateWaitForRevertStatus: handler.sendRevertUpdateToUM,
 			// notify umcontroller about current state
-			"before_" + eventPrepareSuccess: handler.updateStatusNtf,
-			"before_" + eventUpdateSuccess:  handler.updateStatusNtf,
-			"before_" + eventIdleState:      handler.updateStatusNtf,
-			"before_" + eventUpdateError:    handler.updateStatusNtf,
+			beforePrefix + eventPrepareSuccess: handler.updateStatusNtf,
+			beforePrefix + eventUpdateSuccess:  handler.updateStatusNtf,
+			beforePrefix + eventIdleState:      handler.updateStatusNtf,
+			beforePrefix + eventUpdateError:    handler.updateStatusNtf,
 
-			"before_event": func(e *fsm.Event) {
+			beforePrefix + "event": func(ctx context.Context, e *fsm.Event) {
 				log.Debugf("[UMID %s]: %s -> %s : Event: %s", handler.umID, e.Src, e.Dst, e.Event)
 			},
 		},
@@ -155,24 +156,24 @@ func (handler *umHandler) PrepareUpdate(prepareComponents []SystemComponent) (er
 
 	request := prepareRequest{components: prepareComponents}
 
-	err = handler.FSM.Event(eventPrepareUpdate, request)
+	err = handler.FSM.Event(context.Background(), eventPrepareUpdate, request)
 
 	return aoserrors.Wrap(err)
 }
 
 func (handler *umHandler) StartUpdate() (err error) {
 	log.Debug("StartUpdate for UMID ", handler.umID)
-	return aoserrors.Wrap(handler.FSM.Event(eventStartUpdate))
+	return aoserrors.Wrap(handler.FSM.Event(context.Background(), eventStartUpdate))
 }
 
 func (handler *umHandler) StartApply() (err error) {
 	log.Debug("StartApply for UMID ", handler.umID)
-	return aoserrors.Wrap(handler.FSM.Event(eventStartApply))
+	return aoserrors.Wrap(handler.FSM.Event(context.Background(), eventStartApply))
 }
 
 func (handler *umHandler) StartRevert() (err error) {
 	log.Debug("StartRevert for UMID ", handler.umID)
-	return aoserrors.Wrap(handler.FSM.Event(eventStartRevert))
+	return aoserrors.Wrap(handler.FSM.Event(context.Background(), eventStartRevert))
 }
 
 /***********************************************************************************************************************
@@ -210,7 +211,7 @@ func (handler *umHandler) receiveData() {
 			evt = eventUpdateError
 		}
 
-		err = handler.FSM.Event(evt, getUmStatusFromUmMessage(statusMsg))
+		err = handler.FSM.Event(context.Background(), evt, getUmStatusFromUmMessage(statusMsg))
 		if err != nil {
 			log.Errorf("Can't make transition umID %s %s", handler.umID, err.Error())
 		}
@@ -219,7 +220,7 @@ func (handler *umHandler) receiveData() {
 	}
 }
 
-func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
+func (handler *umHandler) sendPrepareUpdateRequest(ctx context.Context, e *fsm.Event) {
 	log.Debug("Send prepare request for UMID = ", handler.umID)
 
 	request, ok := e.Args[0].(prepareRequest)
@@ -251,7 +252,7 @@ func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
 		log.Error("Fail send Prepare update: ", err)
 
 		go func() {
-			err := handler.FSM.Event(eventUpdateError, err.Error())
+			err := handler.FSM.Event(context.Background(), eventUpdateError, err.Error())
 			if err != nil {
 				log.Error("Can't make transition: ", err)
 			}
@@ -259,7 +260,7 @@ func (handler *umHandler) sendPrepareUpdateRequest(e *fsm.Event) {
 	}
 }
 
-func (handler *umHandler) updateStatusNtf(e *fsm.Event) {
+func (handler *umHandler) updateStatusNtf(ctx context.Context, e *fsm.Event) {
 	status, ok := e.Args[0].(umStatus)
 
 	if !ok {
@@ -273,7 +274,7 @@ func (handler *umHandler) updateStatusNtf(e *fsm.Event) {
 	}
 }
 
-func (handler *umHandler) sendStartUpdateToUM(e *fsm.Event) {
+func (handler *umHandler) sendStartUpdateToUM(ctx context.Context, e *fsm.Event) {
 	log.Debug("Send start update UMID = ", handler.umID)
 
 	cmMsg := &pb.CMMessages_StartUpdate{StartUpdate: &pb.StartUpdate{}}
@@ -282,7 +283,7 @@ func (handler *umHandler) sendStartUpdateToUM(e *fsm.Event) {
 		log.Error("Fail send start update: ", err)
 
 		go func() {
-			err := handler.FSM.Event(eventUpdateError, err.Error())
+			err := handler.FSM.Event(context.Background(), eventUpdateError, err.Error())
 			if err != nil {
 				log.Error("Can't make transition: ", err)
 			}
@@ -290,7 +291,7 @@ func (handler *umHandler) sendStartUpdateToUM(e *fsm.Event) {
 	}
 }
 
-func (handler *umHandler) sendApplyUpdateToUM(e *fsm.Event) {
+func (handler *umHandler) sendApplyUpdateToUM(ctx context.Context, e *fsm.Event) {
 	log.Debug("Send apply UMID = ", handler.umID)
 
 	cmMsg := &pb.CMMessages_ApplyUpdate{ApplyUpdate: &pb.ApplyUpdate{}}
@@ -299,7 +300,7 @@ func (handler *umHandler) sendApplyUpdateToUM(e *fsm.Event) {
 		log.Error("Fail send apply update: ", err)
 
 		go func() {
-			err := handler.FSM.Event(eventUpdateError, err.Error())
+			err := handler.FSM.Event(context.Background(), eventUpdateError, err.Error())
 			if err != nil {
 				log.Error("Can't make transition: ", err)
 			}
@@ -307,7 +308,7 @@ func (handler *umHandler) sendApplyUpdateToUM(e *fsm.Event) {
 	}
 }
 
-func (handler *umHandler) sendRevertUpdateToUM(e *fsm.Event) {
+func (handler *umHandler) sendRevertUpdateToUM(ctx context.Context, e *fsm.Event) {
 	log.Debug("Send revert UMID = ", handler.umID)
 
 	cmMsg := &pb.CMMessages_RevertUpdate{RevertUpdate: &pb.RevertUpdate{}}
@@ -316,7 +317,7 @@ func (handler *umHandler) sendRevertUpdateToUM(e *fsm.Event) {
 		log.Error("Fail send revert update: ", err)
 
 		go func() {
-			err := handler.FSM.Event(eventUpdateError, err.Error())
+			err := handler.FSM.Event(context.Background(), eventUpdateError, err.Error())
 			if err != nil {
 				log.Error("Can't make transition: ", err)
 			}

@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/aoscloud/aos_common/aoserrors"
@@ -51,7 +50,7 @@ const (
 	syncMode    = "NORMAL"
 )
 
-const dbVersion = 0
+const dbVersion = 1
 
 const dbFileName = "communicationmanager.db"
 
@@ -76,7 +75,7 @@ type Database struct {
 
 // New creates new database handle.
 func New(config *config.Config) (db *Database, err error) {
-	fileName := path.Join(config.WorkingDir, dbFileName)
+	fileName := filepath.Join(config.WorkingDir, dbFileName)
 
 	log.WithField("fileName", fileName).Debug("Open database")
 
@@ -144,6 +143,10 @@ func New(config *config.Config) (db *Database, err error) {
 	}
 
 	if err := db.createInstancesTable(); err != nil {
+		return db, err
+	}
+
+	if err := db.createNodeStateTable(); err != nil {
 		return db, err
 	}
 
@@ -749,6 +752,31 @@ func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.Ins
 	return networkInfos, nil
 }
 
+// SetNodeState stores node state.
+func (db *Database) SetNodeState(nodeID string, state json.RawMessage) error {
+	if err := db.executeQuery("UPDATE nodes SET state = ? WHERE nodeID = ?", state, nodeID); errors.Is(err, errNotExist) {
+		return db.executeQuery("INSERT INTO nodes values(?, ?)", nodeID, state)
+	} else {
+		return err
+	}
+}
+
+// GetNodeState retrieves node state.
+func (db *Database) GetNodeState(nodeID string) (json.RawMessage, error) {
+	var state json.RawMessage
+
+	if err := db.getDataFromQuery(
+		"SELECT state FROM nodes WHERE nodeID = ?", []any{nodeID}, &state); err != nil {
+		if errors.Is(err, errNotExist) {
+			return nil, launcher.ErrNotExist
+		}
+
+		return nil, err
+	}
+
+	return state, nil
+}
+
 // Close closes database.
 func (db *Database) Close() {
 	db.sql.Close()
@@ -801,7 +829,7 @@ func (db *Database) executeQuery(query string, args ...interface{}) error {
 }
 
 func (db *Database) createDownloadTable() (err error) {
-	log.Info("Create service table")
+	log.Info("Create download table")
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS download (path TEXT NOT NULL PRIMARY KEY,
                                                                targetType TEXT NOT NULL,
@@ -904,6 +932,15 @@ func (db *Database) createStorageStateTable() (err error) {
                                                                    stateQuota INTEGER,
                                                                    stateChecksum BLOB,
                                                                    PRIMARY KEY(instance, subjectID, serviceID))`)
+
+	return aoserrors.Wrap(err)
+}
+
+func (db *Database) createNodeStateTable() (err error) {
+	log.Info("Create nodes table")
+
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS nodes (nodeID TEXT NOT NULL PRIMARY KEY,
+                                                            state BLOB)`)
 
 	return aoserrors.Wrap(err)
 }

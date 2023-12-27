@@ -59,7 +59,7 @@ type MonitorController struct {
 // MinSendPeriod used to adjust min send period.
 //
 //nolint:gochecknoglobals
-var MinSendPeriod = 10 * time.Second
+var MinSendPeriod = 1 * time.Second
 
 /***********************************************************************************************************************
  * Public

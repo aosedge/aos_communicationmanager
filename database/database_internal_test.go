@@ -18,17 +18,22 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aoscloud/aos_common/migration"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aoscloud/aos_communicationmanager/config"
@@ -46,7 +51,16 @@ import (
 
 var (
 	tmpDir string
-	db     *Database
+	testDB *Database
+)
+
+/***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+const (
+	servicePrefix = "serv"
+	subjectPrefix = "subj"
 )
 
 /***********************************************************************************************************************
@@ -70,12 +84,12 @@ func init() {
 func TestMain(m *testing.M) {
 	var err error
 
-	tmpDir, err = os.MkdirTemp("", "sm_")
+	tmpDir, err = os.MkdirTemp("", "cm_")
 	if err != nil {
 		log.Fatalf("Error create temporary dir: %s", err)
 	}
 
-	db, err = New(&config.Config{
+	testDB, err = New(&config.Config{
 		WorkingDir: tmpDir,
 		Migration: config.Migration{
 			MigrationPath:       tmpDir,
@@ -92,7 +106,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Error cleaning up: %s", err)
 	}
 
-	db.Close()
+	testDB.Close()
 
 	os.Exit(ret)
 }
@@ -104,11 +118,11 @@ func TestMain(m *testing.M) {
 func TestCursor(t *testing.T) {
 	setCursor := "cursor123"
 
-	if err := db.SetJournalCursor(setCursor); err != nil {
+	if err := testDB.SetJournalCursor(setCursor); err != nil {
 		t.Fatalf("Can't set logging cursor: %s", err)
 	}
 
-	getCursor, err := db.GetJournalCursor()
+	getCursor, err := testDB.GetJournalCursor()
 	if err != nil {
 		t.Fatalf("Can't get logger cursor: %s", err)
 	}
@@ -127,11 +141,11 @@ func TestComponentsUpdateInfo(t *testing.T) {
 		{ID: "component2", VendorVersion: "v1", AosVersion: 1, URL: "url12", Sha512: []byte{1, 3, 90, 42}},
 	}
 
-	if err := db.SetComponentsUpdateInfo(testData); err != nil {
+	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
 		t.Fatal("Can't set update manager's update info ", err)
 	}
 
-	getUpdateInfo, err := db.GetComponentsUpdateInfo()
+	getUpdateInfo, err := testDB.GetComponentsUpdateInfo()
 	if err != nil {
 		t.Fatal("Can't get update manager's update info ", err)
 	}
@@ -142,11 +156,11 @@ func TestComponentsUpdateInfo(t *testing.T) {
 
 	testData = []umcontroller.SystemComponent{}
 
-	if err := db.SetComponentsUpdateInfo(testData); err != nil {
+	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
 		t.Fatal("Can't set update manager's update info ", err)
 	}
 
-	getUpdateInfo, err = db.GetComponentsUpdateInfo()
+	getUpdateInfo, err = testDB.GetComponentsUpdateInfo()
 	if err != nil {
 		t.Fatal("Can't get update manager's update info ", err)
 	}
@@ -161,19 +175,19 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 	sotaState := json.RawMessage("sotaState")
 	desiredInstances := json.RawMessage("desiredInstances")
 
-	if err := db.SetFirmwareUpdateState(fotaState); err != nil {
+	if err := testDB.SetFirmwareUpdateState(fotaState); err != nil {
 		t.Fatalf("Can't set FOTA state: %v", err)
 	}
 
-	if err := db.SetSoftwareUpdateState(sotaState); err != nil {
+	if err := testDB.SetSoftwareUpdateState(sotaState); err != nil {
 		t.Fatalf("Can't set SOTA state: %v", err)
 	}
 
-	if err := db.SetDesiredInstances(desiredInstances); err != nil {
+	if err := testDB.SetDesiredInstances(desiredInstances); err != nil {
 		t.Fatalf("Can't set desired instances: %v", err)
 	}
 
-	retFota, err := db.GetFirmwareUpdateState()
+	retFota, err := testDB.GetFirmwareUpdateState()
 	if err != nil {
 		t.Fatalf("Can't get FOTA state: %v", err)
 	}
@@ -182,7 +196,7 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 		t.Errorf("Incorrect FOTA state: %s", string(retFota))
 	}
 
-	retSota, err := db.GetSoftwareUpdateState()
+	retSota, err := testDB.GetSoftwareUpdateState()
 	if err != nil {
 		t.Fatalf("Can't get SOTA state: %v", err)
 	}
@@ -191,7 +205,7 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 		t.Errorf("Incorrect SOTA state: %s", string(retSota))
 	}
 
-	retInstances, err := db.GetDesiredInstances()
+	retInstances, err := testDB.GetDesiredInstances()
 	if err != nil {
 		t.Fatalf("Can't get desired instances state %v", err)
 	}
@@ -212,7 +226,7 @@ func TestMultiThread(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < numIterations; i++ {
-			if err := db.SetJournalCursor(strconv.Itoa(i)); err != nil {
+			if err := testDB.SetJournalCursor(strconv.Itoa(i)); err != nil {
 				t.Errorf("Can't set journal cursor: %s", err)
 			}
 		}
@@ -222,7 +236,7 @@ func TestMultiThread(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < numIterations; i++ {
-			if _, err := db.GetJournalCursor(); err != nil {
+			if _, err := testDB.GetJournalCursor(); err != nil {
 				t.Errorf("Can't get journal cursor: %s", err)
 			}
 		}
@@ -232,7 +246,7 @@ func TestMultiThread(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < numIterations; i++ {
-			if err := db.SetComponentsUpdateInfo([]umcontroller.SystemComponent{{AosVersion: uint64(i)}}); err != nil {
+			if err := testDB.SetComponentsUpdateInfo([]umcontroller.SystemComponent{{AosVersion: uint64(i)}}); err != nil {
 				t.Errorf("Can't set journal cursor: %s", err)
 			}
 		}
@@ -242,7 +256,7 @@ func TestMultiThread(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < numIterations; i++ {
-			if _, err := db.GetComponentsUpdateInfo(); err != nil {
+			if _, err := testDB.GetComponentsUpdateInfo(); err != nil {
 				t.Errorf("Can't get journal cursor: %s", err)
 			}
 		}
@@ -333,11 +347,11 @@ func TestServiceStore(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := db.AddService(tCase.service); err != nil {
+		if err := testDB.AddService(tCase.service); err != nil {
 			t.Errorf("Can't add service: %v", err)
 		}
 
-		service, err := db.GetServiceInfo(tCase.service.ID)
+		service, err := testDB.GetServiceInfo(tCase.service.ID)
 		if err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
@@ -346,7 +360,7 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("service %s doesn't match stored one", tCase.service.ID)
 		}
 
-		serviceVersions, err := db.GetServiceVersions(tCase.service.ID)
+		serviceVersions, err := testDB.GetServiceVersions(tCase.service.ID)
 		if err != nil {
 			t.Errorf("Can't get service versions: %v", err)
 		}
@@ -355,7 +369,7 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Incorrect count of service versions: %v", len(serviceVersions))
 		}
 
-		services, err := db.GetServicesInfo()
+		services, err := testDB.GetServicesInfo()
 		if err != nil {
 			t.Errorf("Can't get services: %v", err)
 		}
@@ -364,11 +378,11 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Incorrect count of services: %v", len(services))
 		}
 
-		if err := db.SetServiceCached(tCase.service.ID, !tCase.service.Cached); err != nil {
+		if err := testDB.SetServiceCached(tCase.service.ID, !tCase.service.Cached); err != nil {
 			t.Errorf("Can't set service cached: %v", err)
 		}
 
-		if service, err = db.GetServiceInfo(tCase.service.ID); err != nil {
+		if service, err = testDB.GetServiceInfo(tCase.service.ID); err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
@@ -378,11 +392,11 @@ func TestServiceStore(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := db.RemoveService(tCase.service.ID, tCase.service.AosVersion); err != nil {
+		if err := testDB.RemoveService(tCase.service.ID, tCase.service.AosVersion); err != nil {
 			t.Errorf("Can't remove service: %v", err)
 		}
 
-		if _, err := db.GetServiceInfo(tCase.service.ID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
+		if _, err := testDB.GetServiceInfo(tCase.service.ID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	}
@@ -428,11 +442,11 @@ func TestLayerStore(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := db.AddLayer(tCase.layer); err != nil {
+		if err := testDB.AddLayer(tCase.layer); err != nil {
 			t.Errorf("Can't add layer: %v", err)
 		}
 
-		layer, err := db.GetLayerInfo(tCase.layer.Digest)
+		layer, err := testDB.GetLayerInfo(tCase.layer.Digest)
 		if err != nil {
 			t.Errorf("Can't get layer: %v", err)
 		}
@@ -441,7 +455,7 @@ func TestLayerStore(t *testing.T) {
 			t.Errorf("layer %s doesn't match stored one", tCase.layer.ID)
 		}
 
-		layers, err := db.GetLayersInfo()
+		layers, err := testDB.GetLayersInfo()
 		if err != nil {
 			t.Errorf("Can't get layers: %v", err)
 		}
@@ -450,11 +464,11 @@ func TestLayerStore(t *testing.T) {
 			t.Errorf("Incorrect count of layers: %v", len(layers))
 		}
 
-		if err := db.SetLayerCached(tCase.layer.Digest, !tCase.layer.Cached); err != nil {
+		if err := testDB.SetLayerCached(tCase.layer.Digest, !tCase.layer.Cached); err != nil {
 			t.Errorf("Can't set layer cached: %v", err)
 		}
 
-		if layer, err = db.GetLayerInfo(tCase.layer.Digest); err != nil {
+		if layer, err = testDB.GetLayerInfo(tCase.layer.Digest); err != nil {
 			t.Errorf("Can't get layer: %v", err)
 		}
 
@@ -464,11 +478,11 @@ func TestLayerStore(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := db.RemoveLayer(tCase.layer.Digest); err != nil {
+		if err := testDB.RemoveLayer(tCase.layer.Digest); err != nil {
 			t.Errorf("Can't remove service: %v", err)
 		}
 
-		if _, err := db.GetServiceInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
+		if _, err := testDB.GetServiceInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	}
@@ -540,7 +554,7 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 	}
 
 	for _, tCase := range casesAdd {
-		if err := db.AddNetworkInstanceInfo(tCase.networkInfo); err != nil {
+		if err := testDB.AddNetworkInstanceInfo(tCase.networkInfo); err != nil {
 			t.Errorf("Can't add network info: %v", err)
 		}
 	}
@@ -623,11 +637,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 	}
 
 	for _, tCase := range casesRemove {
-		if err := db.RemoveNetworkInstanceInfo(tCase.removeInstance); err != nil {
+		if err := testDB.RemoveNetworkInstanceInfo(tCase.removeInstance); err != nil {
 			t.Errorf("Can't remove network info: %v", err)
 		}
 
-		networkInfo, err := db.GetNetworkInstancesInfo()
+		networkInfo, err := testDB.GetNetworkInstancesInfo()
 		if err != nil {
 			t.Errorf("Can't get network info: %v", err)
 		}
@@ -675,7 +689,7 @@ func TestNetworkConfiguration(t *testing.T) {
 	}
 
 	for _, tCase := range casesAdd {
-		if err := db.AddNetworkInfo(tCase.networkInfo); err != nil {
+		if err := testDB.AddNetworkInfo(tCase.networkInfo); err != nil {
 			t.Errorf("Can't add network info: %v", err)
 		}
 	}
@@ -725,11 +739,11 @@ func TestNetworkConfiguration(t *testing.T) {
 	}
 
 	for _, tCase := range casesRemove {
-		if err := db.RemoveNetworkInfo(tCase.removeNetwork); err != nil {
+		if err := testDB.RemoveNetworkInfo(tCase.removeNetwork); err != nil {
 			t.Errorf("Can't remove network info: %v", err)
 		}
 
-		networkInfo, err := db.GetNetworksInfo()
+		networkInfo, err := testDB.GetNetworksInfo()
 		if err != nil {
 			t.Errorf("Can't get network info: %v", err)
 		}
@@ -772,11 +786,11 @@ func TestDownloadInfo(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := db.SetDownloadInfo(tCase.downloadInfo); err != nil {
+		if err := testDB.SetDownloadInfo(tCase.downloadInfo); err != nil {
 			t.Errorf("Can't set download info: %v", err)
 		}
 
-		downloadInfo, err := db.GetDownloadInfo(tCase.downloadInfo.Path)
+		downloadInfo, err := testDB.GetDownloadInfo(tCase.downloadInfo.Path)
 		if err != nil {
 			t.Errorf("Can't get download info: %v", err)
 		}
@@ -785,7 +799,7 @@ func TestDownloadInfo(t *testing.T) {
 			t.Error("Unexpected download info")
 		}
 
-		downloadInfos, err := db.GetDownloadInfos()
+		downloadInfos, err := testDB.GetDownloadInfos()
 		if err != nil {
 			t.Errorf("Can't get download info list: %v", err)
 		}
@@ -807,11 +821,11 @@ func TestDownloadInfo(t *testing.T) {
 	}
 
 	for _, tCase := range casesRemove {
-		if err := db.RemoveDownloadInfo(tCase.path); err != nil {
+		if err := testDB.RemoveDownloadInfo(tCase.path); err != nil {
 			t.Errorf("Can't remove download info: %v", err)
 		}
 
-		if _, err := db.GetDownloadInfo(tCase.path); err == nil {
+		if _, err := testDB.GetDownloadInfo(tCase.path); err == nil {
 			t.Error("Download info should be removed")
 		}
 	}
@@ -820,7 +834,7 @@ func TestDownloadInfo(t *testing.T) {
 func TestInstance(t *testing.T) {
 	var expectedInstances []launcher.InstanceInfo
 
-	instances, err := db.GetInstances()
+	instances, err := testDB.GetInstances()
 	if err != nil {
 		t.Errorf("Can't get all instances: %v", err)
 	}
@@ -829,7 +843,7 @@ func TestInstance(t *testing.T) {
 		t.Error("Incorrect empty instances")
 	}
 
-	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
+	if _, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
 		ServiceID: "notexist", SubjectID: "notexist", Instance: 0,
 	}); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
@@ -838,12 +852,12 @@ func TestInstance(t *testing.T) {
 	for i := 100; i < 105; i++ {
 		instanceInfo := launcher.InstanceInfo{
 			InstanceIdent: aostypes.InstanceIdent{
-				ServiceID: "serv" + strconv.Itoa(i), SubjectID: "subj" + strconv.Itoa(i), Instance: 0,
+				ServiceID: servicePrefix + strconv.Itoa(i), SubjectID: subjectPrefix + strconv.Itoa(i), Instance: 0,
 			},
 			UID: i,
 		}
 
-		if err := db.AddInstance(instanceInfo); err != nil {
+		if err := testDB.AddInstance(instanceInfo); err != nil {
 			t.Errorf("Can't add instance: %v", err)
 		}
 
@@ -852,8 +866,9 @@ func TestInstance(t *testing.T) {
 
 	expectedUID := 103
 
-	uid, err := db.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	uid, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
 	})
 	if err != nil {
 		t.Errorf("Can't get instance uid: %v", err)
@@ -863,7 +878,7 @@ func TestInstance(t *testing.T) {
 		t.Error("Incorrect uid for instance")
 	}
 
-	instances, err = db.GetInstances()
+	instances, err = testDB.GetInstances()
 	if err != nil {
 		t.Errorf("Can't get all instances: %v", err)
 	}
@@ -872,14 +887,16 @@ func TestInstance(t *testing.T) {
 		t.Errorf("Incorrect result for get instances: %v, expected: %v", instances, expectedInstances)
 	}
 
-	if err := db.RemoveInstance(aostypes.InstanceIdent{
-		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	if err := testDB.RemoveInstance(aostypes.InstanceIdent{
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
 	}); err != nil {
 		t.Errorf("Can't remove instance: %v", err)
 	}
 
-	if _, err := db.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: "serv" + strconv.Itoa(expectedUID), SubjectID: "subj" + strconv.Itoa(expectedUID), Instance: 0,
+	if _, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
 	}); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
 	}
@@ -899,7 +916,7 @@ func TestStorageState(t *testing.T) {
 		SubjectID: "subject1",
 	}
 
-	if _, err := db.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
+	if _, err := testDB.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
 		t.Errorf("Should be entry does not exist")
 	}
 
@@ -910,11 +927,11 @@ func TestStorageState(t *testing.T) {
 		InstanceIdent: instanceIdent,
 	}
 
-	if err := db.AddStorageStateInfo(testStateStorageInfo); err != nil {
+	if err := testDB.AddStorageStateInfo(testStateStorageInfo); err != nil {
 		t.Fatalf("Can't add state storage info: %v", err)
 	}
 
-	stateStorageInfos, err := db.GetAllStorageStateInfo()
+	stateStorageInfos, err := testDB.GetAllStorageStateInfo()
 	if err != nil {
 		t.Fatalf("Can't get all state storage infos: %v", err)
 	}
@@ -931,7 +948,7 @@ func TestStorageState(t *testing.T) {
 		t.Errorf("Unexpected instance ident")
 	}
 
-	info, err := db.GetStorageStateInfo(instanceIdent)
+	info, err := testDB.GetStorageStateInfo(instanceIdent)
 	if err != nil {
 		t.Fatalf("Can't get state storage info: %v", err)
 	}
@@ -946,17 +963,17 @@ func TestStorageState(t *testing.T) {
 		Instance:  20,
 	}
 
-	if err := db.SetStateChecksum(notExistInstanceIdent, newCheckSum); !errors.Is(err, storagestate.ErrNotExist) {
+	if err := testDB.SetStateChecksum(notExistInstanceIdent, newCheckSum); !errors.Is(err, storagestate.ErrNotExist) {
 		t.Errorf("Should be entry does not exist")
 	}
 
-	if err := db.SetStateChecksum(instanceIdent, newCheckSum); err != nil {
+	if err := testDB.SetStateChecksum(instanceIdent, newCheckSum); err != nil {
 		t.Fatalf("Can't update checksum: %v", err)
 	}
 
 	testStateStorageInfo.StateChecksum = newCheckSum
 
-	info, err = db.GetStorageStateInfo(instanceIdent)
+	info, err = testDB.GetStorageStateInfo(instanceIdent)
 	if err != nil {
 		t.Fatalf("Can't get state storage info: %v", err)
 	}
@@ -965,19 +982,19 @@ func TestStorageState(t *testing.T) {
 		t.Error("Update state storage info from database doesn't match expected one")
 	}
 
-	if err := db.SetStorageStateQuotas(
+	if err := testDB.SetStorageStateQuotas(
 		notExistInstanceIdent, newStorageQuota, newStateQuota); !errors.Is(err, storagestate.ErrNotExist) {
 		t.Errorf("Should be: entry does not exist")
 	}
 
-	if err := db.SetStorageStateQuotas(instanceIdent, newStorageQuota, newStateQuota); err != nil {
+	if err := testDB.SetStorageStateQuotas(instanceIdent, newStorageQuota, newStateQuota); err != nil {
 		t.Fatalf("Can't update state and storage quotas: %v", err)
 	}
 
 	testStateStorageInfo.StateQuota = newStateQuota
 	testStateStorageInfo.StorageQuota = newStorageQuota
 
-	info, err = db.GetStorageStateInfo(instanceIdent)
+	info, err = testDB.GetStorageStateInfo(instanceIdent)
 	if err != nil {
 		t.Fatalf("Can't get state storage info: %v", err)
 	}
@@ -986,11 +1003,254 @@ func TestStorageState(t *testing.T) {
 		t.Error("Update state storage info from database doesn't match expected one")
 	}
 
-	if err := db.RemoveStorageStateInfo(instanceIdent); err != nil {
+	if err := testDB.RemoveStorageStateInfo(instanceIdent); err != nil {
 		t.Fatalf("Can't remove state storage info: %v", err)
 	}
 
-	if _, err := db.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
+	if _, err := testDB.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
 		t.Errorf("Should be: entry does not exist")
 	}
+}
+
+func TestNodeState(t *testing.T) {
+	setNodeState := json.RawMessage("node state 1")
+
+	if err := testDB.SetNodeState("nodeID", setNodeState); err != nil {
+		t.Fatalf("Can't set node state: %v", err)
+	}
+
+	getNodeState, err := testDB.GetNodeState("nodeID")
+	if err != nil {
+		t.Errorf("Can't get node state: %v", err)
+	}
+
+	if string(setNodeState) != string(getNodeState) {
+		t.Errorf("Wrong get node state: %s", string(getNodeState))
+	}
+
+	setNodeState = json.RawMessage("node state 2")
+
+	if err := testDB.SetNodeState("nodeID", setNodeState); err != nil {
+		t.Fatalf("Can't set node state: %v", err)
+	}
+
+	getNodeState, err = testDB.GetNodeState("nodeID")
+	if err != nil {
+		t.Errorf("Can't get node state: %v", err)
+	}
+
+	if string(setNodeState) != string(getNodeState) {
+		t.Errorf("Wrong get node state: %s", string(getNodeState))
+	}
+}
+
+func TestMigration(t *testing.T) {
+	migrationDBName := filepath.Join(tmpDir, "test_migration.db")
+	mergedMigrationDir := filepath.Join(tmpDir, "mergedMigration")
+	migrationDir := "migration"
+
+	if err := os.MkdirAll(mergedMigrationDir, 0o755); err != nil {
+		t.Fatalf("Error creating merged migration dir: %v", err)
+	}
+
+	defer func() {
+		if err := os.RemoveAll(mergedMigrationDir); err != nil {
+			t.Fatalf("Error removing merged migration dir: %v", err)
+		}
+
+		if err := os.RemoveAll(migrationDBName); err != nil {
+			t.Fatalf("Error removing migration db: %v", err)
+		}
+	}()
+
+	if err := migration.MergeMigrationFiles(migrationDir, mergedMigrationDir); err != nil {
+		t.Fatalf("Can't merge migration files: %v", err)
+	}
+
+	if err := createDatabaseV0(migrationDBName); err != nil {
+		t.Fatalf("Can't create initial db: %v", err)
+	}
+
+	migrationDB, err := sql.Open("sqlite3", fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=%s&_sync=%s",
+		migrationDBName, busyTimeout, journalMode, syncMode))
+	if err != nil {
+		t.Fatalf("Can't create initial db: %v", err)
+	}
+	defer migrationDB.Close()
+
+	// Migration upward
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 1); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer1(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+
+	// Migration downward
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 0); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer0(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+}
+
+func createDatabaseV0(name string) error {
+	sqlite, err := sql.Open("sqlite3", fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=%s&_sync=%s",
+		name, busyTimeout, journalMode, syncMode))
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+	defer sqlite.Close()
+
+	// Create config table
+
+	if _, err = sqlite.Exec(
+		`CREATE TABLE config (
+			cursor TEXT,
+			componentsUpdateInfo BLOB,
+			fotaUpdateState BLOB,
+			sotaUpdateState BLOB,
+			desiredInstances BLOB)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(
+		`INSERT INTO config (
+			cursor,
+			componentsUpdateInfo,
+			fotaUpdateState,
+			sotaUpdateState,
+			desiredInstances) values(?, ?, ?, ?, ?)`,
+		"", "", json.RawMessage{}, json.RawMessage{}, json.RawMessage("[]")); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS download (path TEXT NOT NULL PRIMARY KEY,
+		targetType TEXT NOT NULL,
+		interruptReason TEXT,
+		downloaded INTEGER)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS services (id TEXT NOT NULL ,
+		aosVersion INTEGER,
+		providerId TEXT,
+		vendorVersion TEXT,
+		description TEXT,
+		localURL   TEXT,
+		remoteURL  TEXT,
+		path TEXT,
+		size INTEGER,
+		timestamp TIMESTAMP,
+		cached INTEGER,
+		config BLOB,
+		layers BLOB,
+		sha256 BLOB,
+		sha512 BLOB,
+		exposedPorts BLOB,
+		gid INTEGER,
+		PRIMARY KEY(id, aosVersion))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS layers (digest TEXT NOT NULL PRIMARY KEY,
+		layerId TEXT,
+		aosVersion INTEGER,
+		vendorVersion TEXT,
+		description TEXT,
+		localURL   TEXT,
+		remoteURL  TEXT,
+		Path       TEXT,
+		Size       INTEGER,
+		Timestamp  TIMESTAMP,
+		sha256 BLOB,
+		sha512 BLOB,
+		cached INTEGER)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS instances (serviceId TEXT,
+		subjectId TEXT,
+		instance INTEGER,
+		uid integer,
+		PRIMARY KEY(serviceId, subjectId, instance))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS instance_network (serviceId TEXT,
+		subjectId TEXT,
+		instance INTEGER,
+		networkID TEXT,
+		ip TEXT,
+		subnet TEXT,
+		vlanID INTEGER,
+		port BLOB,
+		PRIMARY KEY(serviceId, subjectId, instance))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS network (networkID TEXT NOT NULL PRIMARY KEY,
+		ip TEXT,
+		subnet TEXT,
+		vlanID INTEGER)`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if _, err = sqlite.Exec(`CREATE TABLE IF NOT EXISTS storagestate (instanceID TEXT,
+		serviceID TEXT,
+		subjectID TEXT,
+		instance INTEGER,
+		storageQuota INTEGER,
+		stateQuota INTEGER,
+		stateChecksum BLOB,
+		PRIMARY KEY(instance, subjectID, serviceID))`); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func checkDatabaseVer0(sqlite *sql.DB) error {
+	exist, err := isTableExist(sqlite, "nodes")
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return aoserrors.New("table nodes should not exist")
+	}
+
+	return nil
+}
+
+func checkDatabaseVer1(sqlite *sql.DB) error {
+	exist, err := isTableExist(sqlite, "nodes")
+	if err != nil {
+		return err
+	}
+
+	if !exist {
+		return errNotExist
+	}
+
+	return nil
+}
+
+func isTableExist(sqlite *sql.DB, tableName string) (bool, error) {
+	rows, err := sqlite.Query("SELECT * FROM sqlite_master WHERE name = ? and type='table'", tableName)
+	if err != nil {
+		return false, aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		return true, nil
+	}
+
+	return false, aoserrors.Wrap(rows.Err())
 }

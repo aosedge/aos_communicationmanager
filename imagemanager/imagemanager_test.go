@@ -222,7 +222,7 @@ func TestInstallService(t *testing.T) {
 	}()
 
 	for _, tCase := range cases {
-		configJSON, err := json.Marshal(&tCase.serviceConfig)
+		configJSON, err := json.Marshal(tCase.serviceConfig)
 		if err != nil {
 			t.Errorf("Can't generate config json: %v", err)
 		}
@@ -330,7 +330,7 @@ func TestRevertService(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		configJSON, err := json.Marshal(&tCase.serviceConfig)
+		configJSON, err := json.Marshal(tCase.serviceConfig)
 		if err != nil {
 			t.Errorf("Can't generate config json: %v", err)
 		}
@@ -443,7 +443,7 @@ func TestRemoveService(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		configJSON, err := json.Marshal(&tCase.serviceConfig)
+		configJSON, err := json.Marshal(tCase.serviceConfig)
 		if err != nil {
 			t.Errorf("Can't generate config json: %v", err)
 		}
@@ -564,7 +564,7 @@ func TestRestoreService(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		configJSON, err := json.Marshal(&tCase.serviceConfig)
+		configJSON, err := json.Marshal(tCase.serviceConfig)
 		if err != nil {
 			t.Errorf("Can't generate config json: %v", err)
 		}
