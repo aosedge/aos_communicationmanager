@@ -33,8 +33,8 @@ import (
 	"github.com/aoscloud/aos_common/utils/xentop"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/docker"
 	"github.com/shirou/gopsutil/mem"
-	"github.com/shirou/gopsutil/process"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -142,6 +142,8 @@ type instanceMonitoring struct {
 	partitions             []PartitionParam
 	monitoringData         cloudprotocol.InstanceMonitoringData
 	alertProcessorElements []*list.Element
+	prevCPU                float64
+	prevTime               time.Time
 }
 
 type xenSystemUsage struct {
@@ -149,12 +151,6 @@ type xenSystemUsage struct {
 }
 
 type hostSystemUsage struct{}
-
-type processInterface interface {
-	Uids() ([]int32, error)
-	CPUPercent() (float64, error)
-	MemoryInfo() (*process.MemoryInfoStat, error)
-}
 
 /***********************************************************************************************************************
  * Variable
@@ -164,13 +160,13 @@ type processInterface interface {
 //
 //nolint:gochecknoglobals
 var (
-	systemCPUPersent    = cpu.Percent
-	cpuCounts           = cpu.Counts
-	systemVirtualMemory = mem.VirtualMemory
-	systemDiskUsage     = disk.Usage
-	getUserFSQuotaUsage = fs.GetUserFSQuotaUsage
-	getProcesses        = getProcessesList
-	numCPU              = runtime.NumCPU()
+	systemCPUPercent                            = cpu.Percent
+	cpuCounts                                   = cpu.Counts
+	systemVirtualMemory                         = mem.VirtualMemory
+	systemDiskUsage                             = disk.Usage
+	getUserFSQuotaUsage                         = fs.GetUserFSQuotaUsage
+	numCPU                                      = runtime.NumCPU()
+	hostSystemUsageInstance SystemUsageProvider = &hostSystemUsage{}
 )
 
 /***********************************************************************************************************************
@@ -637,24 +633,31 @@ func (host *hostSystemUsage) CacheSystemInfos() {
 }
 
 func (host *hostSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
-	cpuUsage, err := getInstanceCPUUsage(int32(instance.uid))
+	now := time.Now()
+
+	cpu, err := docker.CgroupCPUUsage(instanceID, "/sys/fs/cgroup/cpu")
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
 
-	instance.monitoringData.CPU = uint64(math.Round(cpuUsage / float64(numCPU)))
-
-	instance.monitoringData.RAM, err = getInstanceRAMUsage(int32(instance.uid))
+	memStat, err := docker.CgroupMem(instanceID, "/sys/fs/cgroup/memory")
 	if err != nil {
-		return err
+		return aoserrors.Wrap(err)
 	}
+
+	instance.monitoringData.CPU = uint64(math.Round(
+		(cpu - instance.prevCPU) * 100.0 / (now.Sub(instance.prevTime).Seconds()) / float64(numCPU)))
+	instance.monitoringData.RAM = memStat.RSS
+
+	instance.prevCPU = cpu
+	instance.prevTime = now
 
 	return nil
 }
 
-// getSystemCPUUsage returns CPU usage in parcent.
+// getSystemCPUUsage returns CPU usage in percent.
 func getSystemCPUUsage() (cpuUse float64, err error) {
-	v, err := systemCPUPersent(0, false)
+	v, err := systemCPUPercent(0, false)
 	if err != nil {
 		return 0, aoserrors.Wrap(err)
 	}
@@ -682,81 +685,6 @@ func getSystemDiskUsage(path string) (discUse uint64, err error) {
 	}
 
 	return v.Used, nil
-}
-
-// getServiceCPUUsage returns service CPU usage in percent.
-func getInstanceCPUUsage(uid int32) (cpuUse float64, err error) {
-	processes, err := getProcesses()
-	if err != nil {
-		return 0, aoserrors.Wrap(err)
-	}
-
-	for _, process := range processes {
-		uids, err := process.Uids()
-		if err != nil {
-			continue
-		}
-
-		for _, id := range uids {
-			if id == uid {
-				cpu, err := process.CPUPercent()
-				if err != nil {
-					return 0, aoserrors.Wrap(err)
-				}
-
-				cpuUse += cpu
-
-				break
-			}
-		}
-	}
-
-	return cpuUse, nil
-}
-
-// getServiceRAMUsage returns service RAM usage in bytes.
-func getInstanceRAMUsage(uid int32) (ram uint64, err error) {
-	processes, err := getProcesses()
-	if err != nil {
-		return 0, aoserrors.Wrap(err)
-	}
-
-	for _, process := range processes {
-		uids, err := process.Uids()
-		if err != nil {
-			continue
-		}
-
-		for _, id := range uids {
-			if id == uid {
-				memInfo, err := process.MemoryInfo()
-				if err != nil {
-					return 0, aoserrors.Wrap(err)
-				}
-
-				ram += memInfo.RSS
-
-				break
-			}
-		}
-	}
-
-	return ram, nil
-}
-
-func getProcessesList() (processes []processInterface, err error) {
-	proc, err := process.Processes()
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	processes = make([]processInterface, len(proc))
-
-	for i, process := range proc {
-		processes[i] = process
-	}
-
-	return processes, nil
 }
 
 // getServiceDiskUsage returns service disk usage in bytes.
@@ -798,5 +726,5 @@ func getSourceSystemUsage(source string) SystemUsageProvider {
 		return &xenSystemUsage{}
 	}
 
-	return &hostSystemUsage{}
+	return hostSystemUsageInstance
 }
