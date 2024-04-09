@@ -7,7 +7,7 @@ github.com/ThalesIgnite/crypto11
 # github.com/anexia-it/fsquota v0.0.0-00010101000000-000000000000 => github.com/aoscloud/fsquota v0.0.0-20231127111317-842d831105a7
 ## explicit; go 1.21
 github.com/anexia-it/fsquota
-# github.com/aoscloud/aos_common v0.0.0-20240402105404-b14f7b83241b
+# github.com/aoscloud/aos_common v0.0.0-20240409092038-4c73ccbde411
 ## explicit; go 1.21
 github.com/aoscloud/aos_common/aoserrors
 github.com/aoscloud/aos_common/aostypes
@@ -128,7 +128,6 @@ github.com/pmezard/go-difflib/difflib
 ## explicit
 github.com/shirou/gopsutil/cpu
 github.com/shirou/gopsutil/disk
-github.com/shirou/gopsutil/docker
 github.com/shirou/gopsutil/internal/common
 github.com/shirou/gopsutil/mem
 # github.com/sirupsen/logrus v1.9.3
