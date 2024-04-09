@@ -30,10 +30,8 @@ import (
 	"github.com/aoscloud/aos_common/aostypes"
 	"github.com/aoscloud/aos_common/api/cloudprotocol"
 	"github.com/aoscloud/aos_common/utils/fs"
-	"github.com/aoscloud/aos_common/utils/xentop"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/docker"
 	"github.com/shirou/gopsutil/mem"
 	log "github.com/sirupsen/logrus"
 )
@@ -142,15 +140,9 @@ type instanceMonitoring struct {
 	partitions             []PartitionParam
 	monitoringData         cloudprotocol.InstanceMonitoringData
 	alertProcessorElements []*list.Element
-	prevCPU                float64
+	prevCPU                uint64
 	prevTime               time.Time
 }
-
-type xenSystemUsage struct {
-	systemInfos map[string]xentop.SystemInfo
-}
-
-type hostSystemUsage struct{}
 
 /***********************************************************************************************************************
  * Variable
@@ -161,12 +153,11 @@ type hostSystemUsage struct{}
 //nolint:gochecknoglobals
 var (
 	systemCPUPercent                            = cpu.Percent
-	cpuCounts                                   = cpu.Counts
 	systemVirtualMemory                         = mem.VirtualMemory
 	systemDiskUsage                             = disk.Usage
 	getUserFSQuotaUsage                         = fs.GetUserFSQuotaUsage
-	numCPU                                      = runtime.NumCPU()
-	hostSystemUsageInstance SystemUsageProvider = &hostSystemUsage{}
+	cpuCount                                    = runtime.NumCPU()
+	hostSystemUsageInstance SystemUsageProvider = nil
 )
 
 /***********************************************************************************************************************
@@ -468,12 +459,7 @@ func (monitor *ResourceMonitor) createInstanceMonitoring(
 }
 
 func (monitor *ResourceMonitor) gatheringSystemInfo() (err error) {
-	cores, err := cpuCounts(true)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	monitor.systemInfo.NumCPUs = uint64(cores)
+	monitor.systemInfo.NumCPUs = uint64(cpuCount)
 
 	memStat, err := systemVirtualMemory()
 	if err != nil {
@@ -608,53 +594,6 @@ func (monitor *ResourceMonitor) processAlerts() {
 	}
 }
 
-func (xen *xenSystemUsage) CacheSystemInfos() {
-	instanceInfos, err := xentop.GetSystemInfos()
-	if err != nil {
-		log.Errorf("Can't get system infos: %v", err)
-
-		return
-	}
-
-	xen.systemInfos = instanceInfos
-}
-
-func (xen *xenSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
-	systemInfo, ok := xen.systemInfos[instanceID]
-	if ok {
-		instance.monitoringData.CPU = uint64(systemInfo.CPUFraction)
-		instance.monitoringData.RAM = uint64(systemInfo.Memory) * 1024 //nolint:gomnd
-	}
-
-	return nil
-}
-
-func (host *hostSystemUsage) CacheSystemInfos() {
-}
-
-func (host *hostSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
-	now := time.Now()
-
-	cpu, err := docker.CgroupCPUUsage(instanceID, "/sys/fs/cgroup/cpu")
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	memStat, err := docker.CgroupMem(instanceID, "/sys/fs/cgroup/memory")
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	instance.monitoringData.CPU = uint64(math.Round(
-		(cpu - instance.prevCPU) * 100.0 / (now.Sub(instance.prevTime).Seconds()) / float64(numCPU)))
-	instance.monitoringData.RAM = memStat.RSS
-
-	instance.prevCPU = cpu
-	instance.prevTime = now
-
-	return nil
-}
-
 // getSystemCPUUsage returns CPU usage in percent.
 func getSystemCPUUsage() (cpuUse float64, err error) {
 	v, err := systemCPUPercent(0, false)
@@ -726,5 +665,9 @@ func getSourceSystemUsage(source string) SystemUsageProvider {
 		return &xenSystemUsage{}
 	}
 
-	return hostSystemUsageInstance
+	if hostSystemUsageInstance != nil {
+		return hostSystemUsageInstance
+	}
+
+	return &cgroupsSystemUsage{}
 }
