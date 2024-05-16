@@ -37,7 +37,6 @@ import (
 	"github.com/aoscloud/aos_communicationmanager/networkmanager"
 	"github.com/aoscloud/aos_communicationmanager/storagestate"
 	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
-	"github.com/aoscloud/aos_communicationmanager/utils/uidgidpool"
 )
 
 /**********************************************************************************************************************
@@ -82,7 +81,6 @@ type Launcher struct {
 	networkManager          NetworkManager
 	runStatusChannel        chan unitstatushandler.RunInstancesStatus
 	nodes                   []*nodeStatus
-	uidPool                 *uidgidpool.IdentifierPool
 	currentDesiredInstances []cloudprotocol.InstanceInfo
 	currentRunStatus        []cloudprotocol.InstanceStatus
 	currentErrorStatus      []cloudprotocol.InstanceStatus
@@ -90,6 +88,8 @@ type Launcher struct {
 
 	cancelFunc      context.CancelFunc
 	connectionTimer *time.Timer
+
+	instanceManager *instanceManager
 }
 
 type InstanceInfo struct {
@@ -106,8 +106,9 @@ type Storage interface {
 	SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error
 	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
 	GetInstances() ([]InstanceInfo, error)
-	SetDesiredInstances(instances json.RawMessage) error
+	GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error)
 	GetDesiredInstances() (json.RawMessage, error)
+	SetDesiredInstances(instances json.RawMessage) error
 	SetNodeState(nodeID string, state json.RawMessage) error
 	GetNodeState(nodeID string) (json.RawMessage, error)
 }
@@ -128,6 +129,7 @@ type ImageProvider interface {
 	GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error)
 	GetLayerInfo(digest string) (imagemanager.LayerInfo, error)
 	RevertService(serviceID string) error
+	GetRemoveServiceChannel() (channel <-chan string)
 }
 
 // NodeManager nodes controller.
@@ -151,6 +153,7 @@ type ResourceManager interface {
 type StorageStateProvider interface {
 	Setup(params storagestate.SetupParams) (storagePath string, statePath string, err error)
 	Cleanup(instanceIdent aostypes.InstanceIdent) error
+	RemoveServiceInstance(instanceIdent aostypes.InstanceIdent) error
 	GetInstanceCheckSum(instance aostypes.InstanceIdent) string
 }
 
@@ -194,10 +197,12 @@ func New(
 		networkManager:   networkManager,
 		runStatusChannel: make(chan unitstatushandler.RunInstancesStatus, 10),
 		nodes:            []*nodeStatus{},
-		uidPool:          uidgidpool.NewUserIDPool(),
 	}
 
-	launcher.fillUIDPool()
+	if launcher.instanceManager, err = newInstanceManager(config, storage, storageStateProvider,
+		launcher.imageProvider.GetRemoveServiceChannel()); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
 
 	if rawDesiredInstances, err := launcher.storage.GetDesiredInstances(); err != nil {
 		log.Errorf("Can't get desired instances: %v", err)
@@ -225,6 +230,8 @@ func (launcher *Launcher) Close() {
 	if launcher.cancelFunc != nil {
 		launcher.cancelFunc()
 	}
+
+	launcher.instanceManager.close()
 }
 
 // RunInstances performs run service instances.
@@ -299,19 +306,6 @@ func (launcher *Launcher) GetNodesConfiguration() []cloudprotocol.NodeInfo {
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
-
-func (launcher *Launcher) fillUIDPool() {
-	instances, err := launcher.storage.GetInstances()
-	if err != nil {
-		log.Errorf("Can't fill UID pool: %v", err)
-	}
-
-	for _, instance := range instances {
-		if err = launcher.uidPool.AddID(instance.UID); err != nil {
-			log.Errorf("Can't add UID to pool: %v", err)
-		}
-	}
-}
 
 func (launcher *Launcher) processChannels(ctx context.Context) {
 	for {
@@ -713,7 +707,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		return instances[i].Priority > instances[j].Priority
 	})
 
-	launcher.removeInstances(instances)
+	launcher.cacheInstances(instances)
 	launcher.removeInstanceNetworkParameters(instances)
 
 	for _, instance := range instances {
@@ -879,7 +873,7 @@ nextNetInstance:
 	}
 }
 
-func (launcher *Launcher) removeInstances(instances []cloudprotocol.InstanceInfo) {
+func (launcher *Launcher) cacheInstances(instances []cloudprotocol.InstanceInfo) {
 	storeInstances, err := launcher.storage.GetInstances()
 	if err != nil {
 		log.Errorf("Can't get instances from storage: %v", err)
@@ -901,19 +895,11 @@ nextStoreInstance:
 			}
 		}
 
-		log.WithFields(instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Debug("Remove instance")
+		log.WithFields(instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Debug("Cache instance")
 
-		err = launcher.uidPool.RemoveID(storeInstance.UID)
-		if err != nil {
+		if err := launcher.storage.SetInstanceCached(storeInstance.InstanceIdent, true); err != nil {
 			log.WithFields(
-				instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Errorf("Can't remove instance UID: %v", err)
-		}
-
-		err = launcher.storage.RemoveInstance(storeInstance.InstanceIdent)
-		if err != nil {
-			log.WithFields(
-				instanceIdentLogFields(
-					storeInstance.InstanceIdent, nil)).Errorf("Can't remove instance from storage: %v", err)
+				instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Errorf("Can't mark instance as cached: %v", err)
 		}
 	}
 }
@@ -932,7 +918,7 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 			return instanceInfo, aoserrors.Wrap(err)
 		}
 
-		uid, err = launcher.uidPool.GetFreeID()
+		uid, err = launcher.instanceManager.acquireUID()
 		if err != nil {
 			return instanceInfo, aoserrors.Wrap(err)
 		}
@@ -963,14 +949,15 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 
 	instanceInfo.StoragePath, instanceInfo.StatePath, err = launcher.storageStateProvider.Setup(stateStorageParams)
 	if err != nil {
-		_ = launcher.uidPool.RemoveID(uid)
+		_ = launcher.instanceManager.releaseUID(uid)
 
 		return instanceInfo, aoserrors.Wrap(err)
 	}
 
 	// make sure that instance is not cached
 	if err := launcher.storage.SetInstanceCached(instanceInfo.InstanceIdent, false); err != nil {
-		log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Errorf("Can't mark instance as not cached: %v", err)
+		log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent,
+			nil)).Errorf("Can't mark instance as not cached: %v", err)
 
 		return instanceInfo, aoserrors.Wrap(err)
 	}

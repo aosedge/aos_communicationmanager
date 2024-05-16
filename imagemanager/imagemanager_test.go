@@ -71,8 +71,6 @@ const (
 
 type testCryptoContext struct{}
 
-type testState struct{}
-
 type testStorageProvider struct {
 	layers   map[string]imagemanager.LayerInfo
 	services map[string][]imagemanager.ServiceInfo
@@ -155,7 +153,7 @@ func TestInstallService(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
@@ -289,7 +287,7 @@ func TestRevertService(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
@@ -394,10 +392,19 @@ func TestRemoveService(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
+
+	go func() {
+		for serviceID := range imagemanagerInstance.GetRemoveServiceChannel() {
+			if serviceID != "service1" {
+				t.Errorf("Expected service1, got: %s", serviceID)
+			}
+		}
+	}()
+
 	defer imagemanagerInstance.Close()
 
 	cases := []struct {
@@ -518,10 +525,19 @@ func TestRestoreService(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
+
+	go func() {
+		for serviceID := range imagemanagerInstance.GetRemoveServiceChannel() {
+			if serviceID != "service1" {
+				t.Errorf("Expected service1, got: %s", serviceID)
+			}
+		}
+	}()
+
 	defer imagemanagerInstance.Close()
 
 	cases := []struct {
@@ -636,7 +652,7 @@ func TestRestoreLayer(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
@@ -740,7 +756,7 @@ func TestRemoveLayer(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
@@ -841,7 +857,7 @@ func TestInstallLayer(t *testing.T) {
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
 		ImageStoreDir: tmpDir,
 		WorkingDir:    tmpDir,
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
@@ -945,7 +961,7 @@ func TestFileServer(t *testing.T) {
 		SMController: config.SMController{
 			FileServerURL: "localhost:8092",
 		},
-	}, storage, &testState{}, &testCryptoContext{})
+	}, storage, &testCryptoContext{})
 	if err != nil {
 		t.Fatalf("Can't create image manager instance: %v", err)
 	}
@@ -1087,10 +1103,6 @@ func (space *testSpace) Accept() error {
 func (space *testSpace) Release() error {
 	space.allocator.FreeSpace(space.size)
 
-	return nil
-}
-
-func (state *testState) Remove(serviceID string) error {
 	return nil
 }
 
