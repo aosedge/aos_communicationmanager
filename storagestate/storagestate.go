@@ -268,15 +268,16 @@ func (storageState *StorageState) Cleanup(instanceIdent aostypes.InstanceIdent) 
 	return nil
 }
 
-// Remove removes storagestate dirs.
-func (storageState *StorageState) Remove(serviceID string) error {
+func (storageState *StorageState) RemoveServiceInstance(instanceIdent aostypes.InstanceIdent) error {
 	stateStorageInfos, err := storageState.storage.GetAllStorageStateInfo()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, stateStorageInfo := range stateStorageInfos {
-		if stateStorageInfo.ServiceID != serviceID {
+		if stateStorageInfo.ServiceID != instanceIdent.ServiceID ||
+			stateStorageInfo.SubjectID != instanceIdent.SubjectID ||
+			stateStorageInfo.Instance != instanceIdent.Instance {
 			continue
 		}
 
@@ -291,7 +292,7 @@ func (storageState *StorageState) Remove(serviceID string) error {
 		}
 
 		if err := storageState.remove(stateStorageInfo.InstanceIdent, stateStorageInfo.InstanceID); err != nil {
-			return err
+			return aoserrors.Wrap(err)
 		}
 	}
 
@@ -435,6 +436,12 @@ func (storageState *StorageState) prepareState(
 }
 
 func (storageState *StorageState) remove(instanceIdent aostypes.InstanceIdent, instanceID string) error {
+	log.WithFields(log.Fields{
+		"instanceID": instanceID, "serviceID": instanceIdent.ServiceID,
+		"storagePath": storageState.getStoragePath(instanceID),
+		"statePath":   storageState.getStatePath(instanceID),
+	}).Debug("Remove storage and state")
+
 	if err := os.RemoveAll(storageState.getStoragePath(instanceID)); err != nil {
 		return aoserrors.Wrap(err)
 	}

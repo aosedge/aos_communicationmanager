@@ -80,11 +80,6 @@ type Decrypter interface {
 	DecryptAndValidate(encryptedFile, decryptedFile string, params fcrypt.DecryptParams) error
 }
 
-// StateStorageRemove provides API to remove state storage.
-type StateStorageRemover interface {
-	Remove(serviceID string) error
-}
-
 // Imagemanager image manager instance.
 type Imagemanager struct {
 	layersDir              string
@@ -92,7 +87,6 @@ type Imagemanager struct {
 	tmpDir                 string
 	storage                Storage
 	decrypter              Decrypter
-	stateStorageRemove     StateStorageRemover
 	serviceAllocator       spaceallocator.Allocator
 	layerAllocator         spaceallocator.Allocator
 	tmpAllocator           spaceallocator.Allocator
@@ -100,6 +94,7 @@ type Imagemanager struct {
 	serviceTTLDays         uint64
 	layerTTLDays           uint64
 	validateTTLStopChannel chan struct{}
+	removeServiceChannel   chan string
 	fileServer             *fileserver.FileServer
 }
 
@@ -145,7 +140,7 @@ var (
  **********************************************************************************************************************/
 // New creates new image manager object.
 func New(
-	cfg *config.Config, storage Storage, stateStorageRemove StateStorageRemover, decrypter Decrypter,
+	cfg *config.Config, storage Storage, decrypter Decrypter,
 ) (imagemanager *Imagemanager, err error) {
 	imagemanager = &Imagemanager{
 		layersDir:              path.Join(cfg.ImageStoreDir, "layers"),
@@ -153,11 +148,11 @@ func New(
 		tmpDir:                 path.Join(cfg.ImageStoreDir, "tmp"),
 		storage:                storage,
 		decrypter:              decrypter,
-		stateStorageRemove:     stateStorageRemove,
 		serviceTTLDays:         cfg.ServiceTTLDays,
 		layerTTLDays:           cfg.LayerTTLDays,
 		gidPool:                uidgidpool.NewGroupIDPool(),
 		validateTTLStopChannel: make(chan struct{}),
+		removeServiceChannel:   make(chan string, 1),
 	}
 
 	if err := os.MkdirAll(imagemanager.layersDir, 0o755); err != nil {
@@ -232,6 +227,7 @@ func (imagemanager *Imagemanager) Close() {
 	}
 
 	close(imagemanager.validateTTLStopChannel)
+	close(imagemanager.removeServiceChannel)
 }
 
 // GetServicesStatus gets all services status.
@@ -281,6 +277,10 @@ func (imagemanager *Imagemanager) GetLayersStatus() ([]unitstatushandler.LayerSt
 	}
 
 	return layersStatus, nil
+}
+
+func (imagemanager *Imagemanager) GetRemoveServiceChannel() (channel <-chan string) {
+	return imagemanager.removeServiceChannel
 }
 
 // InstallService installs service to the image store dir.
@@ -690,7 +690,10 @@ func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceI
 	for _, storageService := range services {
 		if service.AosVersion != storageService.AosVersion {
 			if removeErr := imagemanager.removeService(storageService); removeErr != nil {
-				log.WithFields(log.Fields{"serviceID": storageService.ID, "AosVersion": storageService.AosVersion}).Errorf("Can't remove service: %v", removeErr)
+				log.WithFields(log.Fields{
+					"serviceID":  storageService.ID,
+					"AosVersion": storageService.AosVersion,
+				}).Errorf("Can't remove service: %v", removeErr)
 
 				if err == nil {
 					err = removeErr
@@ -868,22 +871,14 @@ func (imagemanager *Imagemanager) removeOutdatedLayer(digest string) error {
 }
 
 func (imagemanager *Imagemanager) removeOutdatedService(serviceID string) error {
-	err := imagemanager.stateStorageRemove.Remove(serviceID)
+	imagemanager.removeServiceChannel <- serviceID
 
-	services, errRem := imagemanager.storage.GetServiceVersions(serviceID)
-	if errRem != nil {
-		if err == nil {
-			err = errRem
-		}
-
+	services, err := imagemanager.storage.GetServiceVersions(serviceID)
+	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if len(services) > 0 {
-		if errRem := imagemanager.gidPool.RemoveID(int(services[0].GID)); errRem != nil && err == nil {
-			err = errRem
-		}
-	}
+	var errRem error
 
 	for _, service := range services {
 		if errRem = os.RemoveAll(service.Path); errRem != nil && err == nil {
@@ -891,6 +886,12 @@ func (imagemanager *Imagemanager) removeOutdatedService(serviceID string) error 
 		}
 
 		if errRem = imagemanager.storage.RemoveService(service.ID, service.AosVersion); errRem != nil && err == nil {
+			err = errRem
+		}
+	}
+
+	if len(services) > 0 {
+		if errRem = imagemanager.gidPool.RemoveID(int(services[0].GID)); errRem != nil && err == nil {
 			err = errRem
 		}
 	}

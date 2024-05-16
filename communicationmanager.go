@@ -206,7 +206,7 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.imagemanager, err = imagemanager.New(cfg, cm.db, cm.storageState, cm.crypt); err != nil {
+	if cm.imagemanager, err = imagemanager.New(cfg, cm.db, cm.crypt); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 

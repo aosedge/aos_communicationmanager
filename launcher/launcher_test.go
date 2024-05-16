@@ -100,9 +100,10 @@ type testNodeManager struct {
 }
 
 type testImageProvider struct {
-	services         map[string]imagemanager.ServiceInfo
-	layers           map[string]imagemanager.LayerInfo
-	revertedServices []string
+	services                      map[string]imagemanager.ServiceInfo
+	layers                        map[string]imagemanager.LayerInfo
+	revertedServices              []string
+	removeServiceInstancesChannel chan string
 }
 
 type testResourceManager struct {
@@ -113,10 +114,12 @@ type testStorage struct {
 	instanceInfo     []launcher.InstanceInfo
 	desiredInstances json.RawMessage
 	nodeState        map[string]json.RawMessage
+	services         map[string][]imagemanager.ServiceInfo
 }
 
 type testStateStorage struct {
 	cleanedInstances []aostypes.InstanceIdent
+	removedInstances []aostypes.InstanceIdent
 }
 
 type testNetworkManager struct {
@@ -143,6 +146,188 @@ func init() {
  * Tests
  **********************************************************************************************************************/
 
+func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+		}
+		nodeManager  = newTestNodeManager()
+		imageManager = &testImageProvider{}
+		testStorage  = newTestStorage()
+	)
+
+	err := testStorage.AddInstance(launcher.InstanceInfo{
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: "SubjectId"},
+	})
+	if err != nil {
+		t.Fatalf("Can't add instance %v", err)
+	}
+
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
+		&testStateStorage{}, newTestNetworkManager(""))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+	defer launcherInstance.Close()
+
+	instances, err := testStorage.GetInstances()
+	if err != nil {
+		t.Fatalf("Can't get instances %v", err)
+	}
+
+	if len(instances) != 0 {
+		t.Fatalf("Instances should be removed, but found %v", instances)
+	}
+}
+
+func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+			ServiceTTLDays: 1,
+		}
+		nodeManager      = newTestNodeManager()
+		imageManager     = &testImageProvider{}
+		testStorage      = newTestStorage()
+		testStateStorage = &testStateStorage{}
+	)
+
+	err := testStorage.AddInstance(launcher.InstanceInfo{
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
+		Cached:        true,
+		Timestamp:     time.Now().Add(-time.Hour * 25).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("Can't add instance %v", err)
+	}
+
+	err = testStorage.AddInstance(launcher.InstanceInfo{
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: service2},
+		Cached:        true,
+		Timestamp:     time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("Can't add instance %v", err)
+	}
+
+	// add a service to the storage
+	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
+	testStorage.services[service1][0].ServiceInfo.ID = service1
+
+	testStorage.services[service2] = make([]imagemanager.ServiceInfo, 1)
+	testStorage.services[service2][0].ServiceInfo.ID = service2
+
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
+		testStateStorage, newTestNetworkManager(""))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+	defer launcherInstance.Close()
+
+	instances, err := testStorage.GetInstances()
+	if err != nil {
+		t.Fatalf("Can't get instances %v", err)
+	}
+
+	if len(instances) != 1 {
+		t.Fatalf("Instances should be removed, but found %v", instances)
+	}
+
+	if instances[0].ServiceID != service2 {
+		t.Fatalf("Unexpected service ID: %v", instances[0].ServiceID)
+	}
+
+	if removedLen := len(testStateStorage.removedInstances); removedLen != 1 {
+		t.Fatalf("Expected exactly 1 instance to be removed, but got %v", removedLen)
+	}
+
+	if testStateStorage.removedInstances[0].ServiceID != service1 {
+		t.Fatalf("Unexpected serviceID: %v", testStateStorage.removedInstances[0].ServiceID)
+	}
+}
+
+func TestInstancesAreRemovedViaChannel(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+			ServiceTTLDays: 1,
+		}
+		nodeManager      = newTestNodeManager()
+		testImageManager = newTestImageProvider()
+		testStorage      = newTestStorage()
+		testStateStorage = &testStateStorage{}
+	)
+
+	err := testStorage.AddInstance(launcher.InstanceInfo{
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
+		Cached:        false,
+	})
+	if err != nil {
+		t.Fatalf("Can't add instance %v", err)
+	}
+
+	// add a service to the storage
+	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
+	testStorage.services[service1][0].ServiceInfo.ID = service1
+
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, testImageManager, &testResourceManager{},
+		testStateStorage, newTestNetworkManager(""))
+	if err != nil {
+		t.Fatalf("Can't create launcher %v", err)
+	}
+	defer launcherInstance.Close()
+
+	defer testImageManager.close()
+
+	testImageManager.removeServiceInstancesChannel <- service1
+
+	instancesWereRemoved := false
+
+	for i := 0; i < 3; i++ {
+		time.Sleep(time.Duration(i) * time.Second)
+
+		instances, err := testStorage.GetInstances()
+		if err != nil {
+			t.Logf("Can't get instances %v", err)
+
+			continue
+		}
+
+		if len(instances) != 0 {
+			t.Logf("Instances should be removed, but found %v", instances)
+
+			continue
+		}
+
+		if removedLen := len(testStateStorage.removedInstances); removedLen != 1 {
+			t.Logf("Expected exactly 1 instance to be removed, but got %v", removedLen)
+
+			continue
+		}
+
+		if testStateStorage.removedInstances[0].ServiceID != service1 {
+			t.Logf("Unexpected service ID: %v", testStateStorage.removedInstances[0].ServiceID)
+
+			continue
+		}
+
+		instancesWereRemoved = true
+	}
+
+	if !instancesWereRemoved {
+		t.Error("Instances were not removed")
+	}
+}
+
 func TestInitialStatus(t *testing.T) {
 	var (
 		cfg = &config.Config{
@@ -154,9 +339,10 @@ func TestInitialStatus(t *testing.T) {
 		nodeManager       = newTestNodeManager()
 		expectedRunStatus = unitstatushandler.RunInstancesStatus{}
 		expectedNodeInfo  = []cloudprotocol.NodeInfo{}
+		imageManager      = &testImageProvider{}
 	)
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, nil, &testResourceManager{},
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, &testResourceManager{},
 		&testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
@@ -1751,6 +1937,7 @@ func newTestStorage() *testStorage {
 	return &testStorage{
 		desiredInstances: json.RawMessage("[]"),
 		nodeState:        make(map[string]json.RawMessage),
+		services:         make(map[string][]imagemanager.ServiceInfo),
 	}
 }
 
@@ -1800,6 +1987,18 @@ func (storage *testStorage) SetDesiredInstances(instances json.RawMessage) error
 	return nil
 }
 
+func (storage *testStorage) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
+	for i, instanceInfo := range storage.instanceInfo {
+		if instanceInfo.InstanceIdent == instance {
+			storage.instanceInfo[i].Cached = cached
+
+			return nil
+		}
+	}
+
+	return launcher.ErrNotExist
+}
+
 func (storage *testStorage) GetDesiredInstances() (instances json.RawMessage, err error) {
 	return storage.desiredInstances, nil
 }
@@ -1817,6 +2016,15 @@ func (storage *testStorage) GetNodeState(nodeID string) (json.RawMessage, error)
 	}
 
 	return runRequestJSON, nil
+}
+
+func (storage *testStorage) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
+	services, ok := storage.services[serviceID]
+	if !ok {
+		return imagemanager.ServiceInfo{}, imagemanager.ErrNotExist
+	}
+
+	return services[len(services)-1], nil
 }
 
 // testStateStorage
@@ -1837,7 +2045,25 @@ func (provider *testStateStorage) GetInstanceCheckSum(instance aostypes.Instance
 	return magicSum
 }
 
+func (provider *testStateStorage) RemoveServiceInstance(instanceIdent aostypes.InstanceIdent) error {
+	provider.removedInstances = append(provider.removedInstances, instanceIdent)
+
+	return nil
+}
+
 // testImageProvider
+
+func newTestImageProvider() *testImageProvider {
+	return &testImageProvider{
+		services:                      make(map[string]imagemanager.ServiceInfo),
+		layers:                        make(map[string]imagemanager.LayerInfo),
+		removeServiceInstancesChannel: make(chan string, 1),
+	}
+}
+
+func (testProvider *testImageProvider) close() {
+	close(testProvider.removeServiceInstancesChannel)
+}
 
 func (testProvider *testImageProvider) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
 	if service, ok := testProvider.services[serviceID]; ok {
@@ -1853,6 +2079,10 @@ func (testProvider *testImageProvider) GetLayerInfo(digest string) (imagemanager
 	}
 
 	return imagemanager.LayerInfo{}, errors.New("layer does't exist") //nolint:goerr113
+}
+
+func (testProvider *testImageProvider) GetRemoveServiceChannel() (channel <-chan string) {
+	return testProvider.removeServiceInstancesChannel
 }
 
 func (testProvider *testImageProvider) RevertService(serviceID string) error {
