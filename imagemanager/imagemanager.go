@@ -689,19 +689,27 @@ func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceI
 
 	for _, storageService := range services {
 		if service.AosVersion != storageService.AosVersion {
-			if err = imagemanager.removeService(storageService); err != nil {
-				return err
+			if removeErr := imagemanager.removeService(storageService); removeErr != nil {
+				log.WithFields(log.Fields{"serviceID": storageService.ID, "AosVersion": storageService.AosVersion}).Errorf("Can't remove service: %v", removeErr)
+
+				if err == nil {
+					err = removeErr
+				}
 			}
 		}
 	}
 
 	if service.Cached {
-		if err = imagemanager.setServiceCached(service, false); err != nil {
-			return err
+		if cacheErr := imagemanager.setServiceCached(service, false); cacheErr != nil {
+			log.WithField("serviceID", service.ID).Errorf("Can't cached service: %v", cacheErr)
+
+			if err == nil {
+				err = cacheErr
+			}
 		}
 	}
 
-	return nil
+	return err
 }
 
 func (imagemanager *Imagemanager) getServiceDataFromManifest(
@@ -957,11 +965,17 @@ func (imagemanager *Imagemanager) removeOutdatedServices() error {
 	for _, service := range services {
 		if service.Cached &&
 			service.Timestamp.Add(time.Hour*24*time.Duration(imagemanager.serviceTTLDays)).Before(time.Now()) {
-			return imagemanager.removeService(service)
+			if removeErr := imagemanager.removeService(service); removeErr != nil {
+				log.WithField("serviceID", service.ID).Errorf("Can't remove outdated service: %v", removeErr)
+
+				if err == nil {
+					err = removeErr
+				}
+			}
 		}
 	}
 
-	return nil
+	return err
 }
 
 func (imagemanager *Imagemanager) removeOutdatedLayers() error {
