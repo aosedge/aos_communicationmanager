@@ -94,13 +94,16 @@ type Launcher struct {
 
 type InstanceInfo struct {
 	aostypes.InstanceIdent
-	UID int
+	UID       int
+	Timestamp time.Time
+	Cached    bool
 }
 
 // Storage storage interface.
 type Storage interface {
 	AddInstance(instanceInfo InstanceInfo) error
 	RemoveInstance(instanceIdent aostypes.InstanceIdent) error
+	SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error
 	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
 	GetInstances() ([]InstanceInfo, error)
 	SetDesiredInstances(instances json.RawMessage) error
@@ -937,6 +940,7 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 		if err := launcher.storage.AddInstance(InstanceInfo{
 			InstanceIdent: instanceInfo.InstanceIdent,
 			UID:           uid,
+			Timestamp:     time.Now(),
 		}); err != nil {
 			log.Errorf("Can't store uid: %v", err)
 		}
@@ -960,6 +964,13 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 	instanceInfo.StoragePath, instanceInfo.StatePath, err = launcher.storageStateProvider.Setup(stateStorageParams)
 	if err != nil {
 		_ = launcher.uidPool.RemoveID(uid)
+
+		return instanceInfo, aoserrors.Wrap(err)
+	}
+
+	// make sure that instance is not cached
+	if err := launcher.storage.SetInstanceCached(instanceInfo.InstanceIdent, false); err != nil {
+		log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Errorf("Can't mark instance as not cached: %v", err)
 
 		return instanceInfo, aoserrors.Wrap(err)
 	}
