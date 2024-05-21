@@ -36,7 +36,7 @@ import (
  **********************************************************************************************************************/
 
 const (
-	cgroupsPath  = "/sys/fs/cgroup"
+	cgroupsPath  = "/sys/fs/cgroup/system.slice/system-aos\\x2dservice.slice"
 	cpuUsageFile = "cpu.stat"
 	memUsageFile = "memory.current"
 )
