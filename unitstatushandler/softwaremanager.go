@@ -71,6 +71,7 @@ type softwareUpdate struct {
 
 type softwareManager struct {
 	sync.Mutex
+	runCond *sync.Cond
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
@@ -113,6 +114,8 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		CurrentState:    stateNoUpdate,
 	}
 
+	manager.runCond = sync.NewCond(&manager.Mutex)
+
 	if err = manager.loadState(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -142,11 +145,10 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 
 func (manager *softwareManager) close() (err error) {
 	manager.Lock()
-	defer manager.Unlock()
-
 	log.Debug("Close software manager")
-
+	manager.runCond.Broadcast()
 	close(manager.statusChannel)
+	manager.Unlock()
 
 	if err = manager.stateMachine.close(); err != nil {
 		return aoserrors.Wrap(err)
@@ -191,6 +193,9 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 }
 
 func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
+	manager.Lock()
+	defer manager.Unlock()
+
 	manager.InstanceStatuses = status.Instances
 
 	for _, errStatus := range status.ErrorServices {
@@ -207,6 +212,8 @@ func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 
 		manager.updateServiceStatusByID(errStatus.ID, errStatus.Status, errMsg)
 	}
+
+	manager.runCond.Broadcast()
 }
 
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
@@ -639,6 +646,9 @@ func (manager *softwareManager) readyToUpdate() {
 }
 
 func (manager *softwareManager) update(ctx context.Context) {
+	manager.Lock()
+	defer manager.Unlock()
+
 	var updateErr string
 
 	if manager.LayerStatuses == nil {
@@ -686,6 +696,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 	if errorStr := manager.runInstances(newServices); errorStr != "" && updateErr == "" {
 		updateErr = errorStr
 	}
+
+	if updateErr != "" {
+		return
+	}
+
+	manager.runCond.Wait()
 }
 
 func (manager *softwareManager) updateTimeout() {
@@ -697,6 +713,8 @@ func (manager *softwareManager) updateTimeout() {
 			log.Errorf("Can't cancel update: %s", err)
 		}
 	}
+
+	manager.runCond.Broadcast()
 }
 
 /***********************************************************************************************************************
