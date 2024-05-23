@@ -1117,6 +1117,10 @@ func TestSoftwareManager(t *testing.T) {
 						t.Errorf("Wrong new services: %v", instanceRunner.newServices)
 					}
 				}
+
+				if item.updateError == nil {
+					softwareManager.processRunStatus(RunInstancesStatus{})
+				}
 			}
 
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
@@ -1715,6 +1719,19 @@ func (statusHandler *testStatusHandler) updateServiceStatus(serviceInfo cloudpro
 		"status":  serviceInfo.Status,
 		"error":   serviceInfo.ErrorInfo,
 	}).Debug("Update service status")
+}
+
+func (statusHandler *testStatusHandler) setInstanceStatus(status []cloudprotocol.InstanceStatus) {
+	for _, instanceStatus := range status {
+		log.WithFields(log.Fields{
+			"serviceID":  instanceStatus.ServiceID,
+			"subjectID":  instanceStatus.SubjectID,
+			"instanceID": instanceStatus.Instance,
+			"aosVersion": instanceStatus.AosVersion,
+			"error":      instanceStatus.ErrorInfo,
+			"nodeID":     instanceStatus.NodeID,
+		}).Debug("Update instance status")
+	}
 }
 
 /***********************************************************************************************************************

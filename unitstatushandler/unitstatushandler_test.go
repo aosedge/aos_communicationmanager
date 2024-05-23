@@ -37,7 +37,7 @@ import (
 
 const (
 	waitStatusTimeout      = 5 * time.Second
-	waitRunInstanceTimeout = 1 * time.Second
+	waitRunInstanceTimeout = 5 * time.Second
 )
 
 /***********************************************************************************************************************
@@ -396,6 +396,14 @@ func TestUpdateLayers(t *testing.T) {
 		},
 	})
 
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
@@ -403,10 +411,6 @@ func TestUpdateLayers(t *testing.T) {
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
-	}
-
-	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
-		t.Errorf("Wait run instances error: %v", err)
 	}
 
 	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
@@ -465,16 +469,16 @@ func TestUpdateLayers(t *testing.T) {
 		},
 	})
 
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
-	}
-
-	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
-		t.Errorf("Wait run instances error: %v", err)
 	}
 }
 
@@ -548,6 +552,14 @@ func TestUpdateServices(t *testing.T) {
 		},
 	})
 
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
@@ -555,10 +567,6 @@ func TestUpdateServices(t *testing.T) {
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
-	}
-
-	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
-		t.Errorf("Wait run instances error: %v", err)
 	}
 
 	// failed update
@@ -619,16 +627,16 @@ func TestUpdateServices(t *testing.T) {
 		},
 	})
 
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
-	}
-
-	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
-		t.Errorf("Wait run instances error: %v", err)
 	}
 }
 
