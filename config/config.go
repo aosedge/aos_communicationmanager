@@ -147,7 +147,7 @@ func New(fileName string) (config *Config, err error) {
 			DownloadPartLimit:      100,
 		},
 		SMController: SMController{
-			NodesConnectionTimeout: aostypes.Duration{Duration: 60 * time.Second},
+			NodesConnectionTimeout: aostypes.Duration{Duration: 10 * time.Minute},
 			UpdateTTL:              aostypes.Duration{Duration: 30 * 24 * time.Hour},
 		},
 		UMController: UMController{UpdateTTL: aostypes.Duration{Duration: 30 * 24 * time.Hour}},
