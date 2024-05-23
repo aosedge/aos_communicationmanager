@@ -260,7 +260,7 @@ downloadServiceLoop:
 	for _, desiredService := range desiredServices {
 		for _, service := range allServices {
 			if desiredService.ID == service.ID && desiredService.AosVersion == service.AosVersion &&
-				service.Status == cloudprotocol.InstalledStatus {
+				service.Status != cloudprotocol.ErrorStatus {
 				if service.Cached {
 					update.RestoreServices = append(update.RestoreServices, desiredService)
 				}
