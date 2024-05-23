@@ -567,28 +567,28 @@ func (instance *Instance) updateInstanceStatus(status []cloudprotocol.InstanceSt
 	newStatuses := []cloudprotocol.InstanceStatus{}
 
 foundloop:
-	for _, instanceStauts := range status {
+	for _, instanceStatus := range status {
 		for i := range instance.instanceStatuses {
-			if instanceStauts.InstanceIdent == instance.instanceStatuses[i].InstanceIdent &&
-				instanceStauts.AosVersion == instance.instanceStatuses[i].AosVersion {
+			if instanceStatus.InstanceIdent == instance.instanceStatuses[i].InstanceIdent &&
+				instanceStatus.AosVersion == instance.instanceStatuses[i].AosVersion {
 				log.WithFields(log.Fields{
-					"serviceID":  instanceStauts.InstanceIdent.ServiceID,
-					"subjectID":  instanceStauts.InstanceIdent.ServiceID,
-					"instance":   instanceStauts.InstanceIdent.Instance,
-					"aosVersion": instanceStauts.AosVersion,
-					"runState":   instanceStauts.RunState,
-					"error":      instanceStauts.ErrorInfo,
+					"serviceID":  instanceStatus.InstanceIdent.ServiceID,
+					"subjectID":  instanceStatus.InstanceIdent.SubjectID,
+					"instance":   instanceStatus.InstanceIdent.Instance,
+					"aosVersion": instanceStatus.AosVersion,
+					"runState":   instanceStatus.RunState,
+					"error":      instanceStatus.ErrorInfo,
 				}).Debug("Update instance status")
 
-				instance.instanceStatuses[i].StateChecksum = instanceStauts.StateChecksum
-				instance.instanceStatuses[i].RunState = instanceStauts.RunState
-				instance.instanceStatuses[i].ErrorInfo = instanceStauts.ErrorInfo
+				instance.instanceStatuses[i].StateChecksum = instanceStatus.StateChecksum
+				instance.instanceStatuses[i].RunState = instanceStatus.RunState
+				instance.instanceStatuses[i].ErrorInfo = instanceStatus.ErrorInfo
 
 				continue foundloop
 			}
 		}
 
-		newStatuses = append(newStatuses, instanceStauts)
+		newStatuses = append(newStatuses, instanceStatus)
 	}
 
 	instance.instanceStatuses = append(instance.instanceStatuses, newStatuses...)
