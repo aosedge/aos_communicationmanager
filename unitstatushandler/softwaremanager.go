@@ -133,7 +133,6 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		{Name: eventStartUpdate, Src: []string{stateReadyToUpdate}, Dst: stateUpdating},
 		// updating state
 		{Name: eventFinishUpdate, Src: []string{stateUpdating}, Dst: stateNoUpdate},
-		{Name: eventCancel, Src: []string{stateUpdating}, Dst: stateNoUpdate},
 	}, manager, defaultTTL)
 
 	if err = manager.stateMachine.init(manager.TTLDate); err != nil {
