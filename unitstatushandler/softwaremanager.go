@@ -54,6 +54,7 @@ type softwareDownloader interface {
 type softwareStatusHandler interface {
 	updateLayerStatus(layerInfo cloudprotocol.LayerStatus)
 	updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus)
+	setInstanceStatus(status []cloudprotocol.InstanceStatus)
 }
 
 type softwareUpdate struct {
@@ -248,6 +249,8 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
+	} else {
+		log.Debug("No software update needed")
 	}
 
 	return nil
@@ -771,6 +774,8 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 			}
 		}
 
+		log.Debugf("Pending software update")
+
 		manager.pendingUpdate = update
 
 		// If current state can't be canceled, wait until it is finished
@@ -1240,6 +1245,36 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 }
 
 func (manager *softwareManager) runInstances(newServices []string) (runErr string) {
+	manager.InstanceStatuses = []cloudprotocol.InstanceStatus{}
+
+	for _, instance := range manager.CurrentUpdate.RunInstances {
+		var aosVersion uint64
+
+		for _, serviceInfo := range manager.CurrentUpdate.InstallServices {
+			if serviceInfo.ID == instance.ServiceID {
+				aosVersion = serviceInfo.AosVersion
+
+				break
+			}
+		}
+
+		ident := aostypes.InstanceIdent{
+			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
+		}
+
+		for i := uint64(0); i < instance.NumInstances; i++ {
+			ident.Instance = i
+
+			manager.InstanceStatuses = append(manager.InstanceStatuses, cloudprotocol.InstanceStatus{
+				InstanceIdent: ident,
+				AosVersion:    aosVersion,
+				RunState:      cloudprotocol.InstanceStateActivating,
+			})
+		}
+	}
+
+	manager.statusHandler.setInstanceStatus(manager.InstanceStatuses)
+
 	if err := manager.instanceRunner.RunInstances(manager.CurrentUpdate.RunInstances, newServices); err != nil {
 		return err.Error()
 	}

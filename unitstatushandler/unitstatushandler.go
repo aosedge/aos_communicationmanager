@@ -596,6 +596,13 @@ foundloop:
 	instance.statusChanged()
 }
 
+func (instance *Instance) setInstanceStatus(status []cloudprotocol.InstanceStatus) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	instance.instanceStatuses = status
+}
+
 func (instance *Instance) statusChanged() {
 	if instance.statusTimer != nil {
 		return
