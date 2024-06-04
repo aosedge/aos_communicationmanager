@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aoscloud/aos_common/aoserrors"
 	"github.com/aoscloud/aos_common/aostypes"
@@ -509,9 +510,9 @@ func (db *Database) RemoveLayer(digest string) (err error) {
 }
 
 // AddInstance adds instanace with uid.
-func (db *Database) AddInstance(instnceInfo launcher.InstanceInfo) error {
-	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?)",
-		instnceInfo.ServiceID, instnceInfo.SubjectID, instnceInfo.Instance, instnceInfo.UID)
+func (db *Database) AddInstance(instanceInfo launcher.InstanceInfo) error {
+	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?, ?, 0)",
+		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance, instanceInfo.UID, instanceInfo.Timestamp)
 }
 
 // GetInstanceUID gets uid by instanace ident.
@@ -548,7 +549,8 @@ func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
 	for rows.Next() {
 		var instance launcher.InstanceInfo
 
-		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.UID); err != nil {
+		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.UID,
+			&instance.Timestamp, &instance.Cached); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -562,6 +564,13 @@ func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
 func (db *Database) RemoveInstance(instance aostypes.InstanceIdent) error {
 	return db.executeQuery("DELETE FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
 		instance.ServiceID, instance.SubjectID, instance.Instance)
+}
+
+// SetInstanceCached sets cached status for the instance.
+func (db *Database) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
+	return db.executeQuery(
+		"UPDATE instances SET cached = ?, timestamp = ? WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
+		cached, time.Now().UTC(), instance.ServiceID, instance.SubjectID, instance.Instance)
 }
 
 // GetStorageStateInfo returns storage and state info by instance ident.
@@ -891,6 +900,8 @@ func (db *Database) createInstancesTable() (err error) {
                                                                 subjectId TEXT,
                                                                 instance INTEGER,
                                                                 uid integer,
+                                                                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                                cached INTEGER DEFAULT 0,
                                                                 PRIMARY KEY(serviceId, subjectId, instance))`)
 
 	return aoserrors.Wrap(err)
@@ -908,7 +919,6 @@ func (db *Database) createNetworkTable() (err error) {
                                                               vlanID INTEGER,
                                                               port BLOB,
                                                               PRIMARY KEY(serviceId, subjectId, instance))`)
-
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}

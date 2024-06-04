@@ -54,6 +54,7 @@ type softwareDownloader interface {
 type softwareStatusHandler interface {
 	updateLayerStatus(layerInfo cloudprotocol.LayerStatus)
 	updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus)
+	setInstanceStatus(status []cloudprotocol.InstanceStatus)
 }
 
 type softwareUpdate struct {
@@ -71,6 +72,7 @@ type softwareUpdate struct {
 
 type softwareManager struct {
 	sync.Mutex
+	runCond *sync.Cond
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
@@ -113,6 +115,8 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		CurrentState:    stateNoUpdate,
 	}
 
+	manager.runCond = sync.NewCond(&manager.Mutex)
+
 	if err = manager.loadState(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -130,7 +134,6 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		{Name: eventStartUpdate, Src: []string{stateReadyToUpdate}, Dst: stateUpdating},
 		// updating state
 		{Name: eventFinishUpdate, Src: []string{stateUpdating}, Dst: stateNoUpdate},
-		{Name: eventCancel, Src: []string{stateUpdating}, Dst: stateNoUpdate},
 	}, manager, defaultTTL)
 
 	if err = manager.stateMachine.init(manager.TTLDate); err != nil {
@@ -142,11 +145,10 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 
 func (manager *softwareManager) close() (err error) {
 	manager.Lock()
-	defer manager.Unlock()
-
 	log.Debug("Close software manager")
-
+	manager.runCond.Broadcast()
 	close(manager.statusChannel)
+	manager.Unlock()
 
 	if err = manager.stateMachine.close(); err != nil {
 		return aoserrors.Wrap(err)
@@ -191,6 +193,9 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 }
 
 func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
+	manager.Lock()
+	defer manager.Unlock()
+
 	manager.InstanceStatuses = status.Instances
 
 	for _, errStatus := range status.ErrorServices {
@@ -207,6 +212,8 @@ func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 
 		manager.updateServiceStatusByID(errStatus.ID, errStatus.Status, errMsg)
 	}
+
+	manager.runCond.Broadcast()
 }
 
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
@@ -242,6 +249,8 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
+	} else {
+		log.Debug("No software update needed")
 	}
 
 	return nil
@@ -254,7 +263,7 @@ downloadServiceLoop:
 	for _, desiredService := range desiredServices {
 		for _, service := range allServices {
 			if desiredService.ID == service.ID && desiredService.AosVersion == service.AosVersion &&
-				service.Status == cloudprotocol.InstalledStatus {
+				service.Status != cloudprotocol.ErrorStatus {
 				if service.Cached {
 					update.RestoreServices = append(update.RestoreServices, desiredService)
 				}
@@ -639,6 +648,9 @@ func (manager *softwareManager) readyToUpdate() {
 }
 
 func (manager *softwareManager) update(ctx context.Context) {
+	manager.Lock()
+	defer manager.Unlock()
+
 	var updateErr string
 
 	if manager.LayerStatuses == nil {
@@ -686,6 +698,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 	if errorStr := manager.runInstances(newServices); errorStr != "" && updateErr == "" {
 		updateErr = errorStr
 	}
+
+	if updateErr != "" {
+		return
+	}
+
+	manager.runCond.Wait()
 }
 
 func (manager *softwareManager) updateTimeout() {
@@ -697,6 +715,8 @@ func (manager *softwareManager) updateTimeout() {
 			log.Errorf("Can't cancel update: %s", err)
 		}
 	}
+
+	manager.runCond.Broadcast()
 }
 
 /***********************************************************************************************************************
@@ -753,6 +773,8 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 				return nil
 			}
 		}
+
+		log.Debugf("Pending software update")
 
 		manager.pendingUpdate = update
 
@@ -1223,6 +1245,36 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 }
 
 func (manager *softwareManager) runInstances(newServices []string) (runErr string) {
+	manager.InstanceStatuses = []cloudprotocol.InstanceStatus{}
+
+	for _, instance := range manager.CurrentUpdate.RunInstances {
+		var aosVersion uint64
+
+		for _, serviceInfo := range manager.CurrentUpdate.InstallServices {
+			if serviceInfo.ID == instance.ServiceID {
+				aosVersion = serviceInfo.AosVersion
+
+				break
+			}
+		}
+
+		ident := aostypes.InstanceIdent{
+			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
+		}
+
+		for i := uint64(0); i < instance.NumInstances; i++ {
+			ident.Instance = i
+
+			manager.InstanceStatuses = append(manager.InstanceStatuses, cloudprotocol.InstanceStatus{
+				InstanceIdent: ident,
+				AosVersion:    aosVersion,
+				RunState:      cloudprotocol.InstanceStateActivating,
+			})
+		}
+	}
+
+	manager.statusHandler.setInstanceStatus(manager.InstanceStatuses)
+
 	if err := manager.instanceRunner.RunInstances(manager.CurrentUpdate.RunInstances, newServices); err != nil {
 		return err.Error()
 	}

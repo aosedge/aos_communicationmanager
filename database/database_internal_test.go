@@ -887,6 +887,31 @@ func TestInstance(t *testing.T) {
 		t.Errorf("Incorrect result for get instances: %v, expected: %v", instances, expectedInstances)
 	}
 
+	expectedCachedInstanceIdent := aostypes.InstanceIdent{
+		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
+		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
+	}
+
+	if err := testDB.SetInstanceCached(expectedCachedInstanceIdent, true); err != nil {
+		t.Errorf("Can't set instance cached: %v", err)
+	}
+
+	instances, err = testDB.GetInstances()
+	if err != nil {
+		t.Errorf("Can't get all instances: %v", err)
+	}
+
+	for _, instance := range instances {
+		cached := instance.Cached
+		if instance.InstanceIdent == expectedCachedInstanceIdent {
+			if !cached {
+				t.Error("Instance expected to be cached")
+			}
+
+			break
+		}
+	}
+
 	if err := testDB.RemoveInstance(aostypes.InstanceIdent{
 		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
 		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,

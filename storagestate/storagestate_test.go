@@ -292,7 +292,7 @@ func TestSetupClean(t *testing.T) {
 			t.Fatalf("Can't cleanup storage state: %v", err)
 		}
 
-		if err = instance.Remove(testData.SetupParams.InstanceIdent.ServiceID); err != nil {
+		if err = instance.RemoveServiceInstance(testData.SetupParams.InstanceIdent); err != nil {
 			t.Fatalf("Can't remove storage state: %v", err)
 		}
 
@@ -368,7 +368,7 @@ func TestSetupClean(t *testing.T) {
 				t.Fatalf("Can't cleanup storage state: %v", err)
 			}
 
-			if err = instance.Remove(testData.SetupParams.InstanceIdent.ServiceID); err != nil {
+			if err = instance.RemoveServiceInstance(testData.SetupParams.InstanceIdent); err != nil {
 				t.Fatalf("Can't remove storage state: %v", err)
 			}
 		}
@@ -810,7 +810,7 @@ func TestNewStateCancel(t *testing.T) {
 		t.Fatalf("Can't cleanup storage state: %v", err)
 	}
 
-	if err = instance.Remove(setupParams.InstanceIdent.ServiceID); err != nil {
+	if err = instance.RemoveServiceInstance(setupParams.InstanceIdent); err != nil {
 		t.Fatalf("Can't remove storage state: %v", err)
 	}
 

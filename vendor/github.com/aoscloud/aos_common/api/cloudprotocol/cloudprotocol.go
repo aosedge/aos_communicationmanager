@@ -95,8 +95,10 @@ const (
 
 // Service instance states.
 const (
-	InstanceStateActive = "active"
-	InstanceStateFailed = "failed"
+	InstanceStateActivating = "activating"
+	InstanceStateActive     = "active"
+	InstanceStateInactive   = "inactive"
+	InstanceStateFailed     = "failed"
 )
 
 // Download target types.
