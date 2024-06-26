@@ -89,7 +89,7 @@ func TestNormalUpdate(t *testing.T) {
 
 	stream := normalUpdateStream{test: t, continueCh: make(chan bool)}
 
-	handler, stopCh, err := newUmHandler("testUM", &stream, eventChannel, pb.UmState_IDLE)
+	handler, stopCh, err := newUmHandler("testUM", &stream, eventChannel, pb.UpdateState_IDLE)
 	if err != nil {
 		t.Errorf("erro create handler %s", err)
 	}
@@ -111,9 +111,9 @@ func TestNormalUpdate(t *testing.T) {
 					break
 				}
 
-				if internalEvent.status.umState != pb.UmState_PREPARED.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_PREPARED.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_PREPARED.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_PREPARED.String())
 					break
 				}
 
@@ -129,9 +129,9 @@ func TestNormalUpdate(t *testing.T) {
 					break
 				}
 
-				if internalEvent.status.umState != pb.UmState_UPDATED.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_UPDATED.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_UPDATED.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_UPDATED.String())
 					break
 				}
 
@@ -147,9 +147,9 @@ func TestNormalUpdate(t *testing.T) {
 					break
 				}
 
-				if internalEvent.status.umState != pb.UmState_IDLE.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_IDLE.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_IDLE.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_IDLE.String())
 					break
 				}
 
@@ -171,7 +171,7 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 
 	stream := normalUpdateStream{test: t, continueCh: make(chan bool)}
 
-	handler, stopCh, err := newUmHandler("testUM2", &stream, eventChannel, pb.UmState_IDLE)
+	handler, stopCh, err := newUmHandler("testUM2", &stream, eventChannel, pb.UpdateState_IDLE)
 	if err != nil {
 		t.Errorf("error create handler %s", err)
 	}
@@ -188,9 +188,9 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 		case internalEvent := <-eventChannel:
 			switch stream.step {
 			case StepPrepare:
-				if internalEvent.status.umState != pb.UmState_PREPARED.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_PREPARED.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_PREPARED.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_PREPARED.String())
 					break
 				}
 
@@ -201,12 +201,12 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 				}
 
 			default:
-				log.Warn("Receive ", internalEvent.status.umState)
+				log.Warn("Receive ", internalEvent.status.updateStatus)
 			}
 
 		case <-stopCh:
 			if stream.step == StepRebootOnUpdate {
-				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UmState_UPDATED)
+				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UpdateState_UPDATED)
 				if err != nil {
 					t.Errorf("Can't create UM handler: %s", err)
 				}
@@ -221,7 +221,7 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 			}
 
 			if stream.step == StepRebootOnApply {
-				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UmState_IDLE)
+				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UpdateState_IDLE)
 				if err != nil {
 					t.Errorf("Can't create UM handler: %s", err)
 				}
@@ -246,7 +246,7 @@ func TestRevert(t *testing.T) {
 
 	stream := failureUpdateStream{test: t, continueCh: make(chan bool)}
 
-	handler, stopCh, err := newUmHandler("testUM3", &stream, eventChannel, pb.UmState_IDLE)
+	handler, stopCh, err := newUmHandler("testUM3", &stream, eventChannel, pb.UpdateState_IDLE)
 	if err != nil {
 		t.Errorf("error create handler %s", err)
 	}
@@ -263,9 +263,9 @@ func TestRevert(t *testing.T) {
 		case internalEvent := <-eventChannel:
 			switch stream.step {
 			case StepPrepare:
-				if internalEvent.status.umState != pb.UmState_PREPARED.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_PREPARED.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_PREPARED.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_PREPARED.String())
 					break
 				}
 
@@ -276,9 +276,9 @@ func TestRevert(t *testing.T) {
 				}
 
 			case StepUpdate:
-				if internalEvent.status.umState != pb.UmState_FAILED.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_FAILED.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_FAILED.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_FAILED.String())
 					break
 				}
 
@@ -289,9 +289,9 @@ func TestRevert(t *testing.T) {
 				}
 
 			case StepRevertUpdate:
-				if internalEvent.status.umState != pb.UmState_IDLE.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_IDLE.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_IDLE.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_IDLE.String())
 					break
 				}
 
@@ -313,7 +313,7 @@ func TestRevertWithReboot(t *testing.T) {
 
 	stream := failureUpdateStream{test: t, continueCh: make(chan bool)}
 
-	handler, stopCh, err := newUmHandler("testUM4", &stream, eventChannel, pb.UmState_IDLE)
+	handler, stopCh, err := newUmHandler("testUM4", &stream, eventChannel, pb.UpdateState_IDLE)
 	if err != nil {
 		t.Errorf("error create handler %s", err)
 	}
@@ -330,9 +330,9 @@ func TestRevertWithReboot(t *testing.T) {
 		case internalEvent := <-eventChannel:
 			switch stream.step {
 			case StepPrepare:
-				if internalEvent.status.umState != pb.UmState_PREPARED.String() {
-					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.umState,
-						pb.UmState_PREPARED.String())
+				if internalEvent.status.updateStatus != pb.UpdateState_PREPARED.String() {
+					t.Errorf("Unexpected UM update State  %s != %s", internalEvent.status.updateStatus,
+						pb.UpdateState_PREPARED.String())
 					break
 				}
 
@@ -343,12 +343,12 @@ func TestRevertWithReboot(t *testing.T) {
 				}
 
 			default:
-				log.Warn("Receive ", internalEvent.status.umState)
+				log.Warn("Receive ", internalEvent.status.updateStatus)
 			}
 
 		case <-stopCh:
 			if stream.step == StepRebootOnUpdate {
-				handler, stopCh, err = newUmHandler("testUM4", &stream, eventChannel, pb.UmState_FAILED)
+				handler, stopCh, err = newUmHandler("testUM4", &stream, eventChannel, pb.UpdateState_FAILED)
 				if err != nil {
 					t.Errorf("Can't create um handler: %s", err)
 				}
@@ -363,7 +363,7 @@ func TestRevertWithReboot(t *testing.T) {
 			}
 
 			if stream.step == StepRebootOnRevert {
-				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UmState_IDLE)
+				handler, stopCh, err = newUmHandler("testUM2", &stream, eventChannel, pb.UpdateState_IDLE)
 				if err != nil {
 					t.Errorf("Can't create um handler: %s", err)
 				}
@@ -422,7 +422,7 @@ func (stream *normalUpdateStream) Recv() (*pb.UpdateStatus, error) {
 
 	switch stream.step {
 	case StepPrepare:
-		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_PREPARED}
+		messageToSend = &pb.UpdateStatus{UpdateState: pb.UpdateState_PREPARED}
 
 	case StepRebootOnUpdate:
 		return nil, io.EOF
@@ -431,10 +431,10 @@ func (stream *normalUpdateStream) Recv() (*pb.UpdateStatus, error) {
 		return nil, io.EOF
 
 	case StepUpdate:
-		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_UPDATED}
+		messageToSend = &pb.UpdateStatus{UpdateState: pb.UpdateState_UPDATED}
 
 	case StepApplyUpdate:
-		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_IDLE}
+		messageToSend = &pb.UpdateStatus{UpdateState: pb.UpdateState_IDLE}
 
 	case StepFinish:
 		return nil, io.EOF
@@ -478,13 +478,13 @@ func (stream *failureUpdateStream) Recv() (*pb.UpdateStatus, error) {
 
 	switch stream.step {
 	case StepPrepare:
-		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_PREPARED}
+		messageToSend = &pb.UpdateStatus{UpdateState: pb.UpdateState_PREPARED}
 
 	case StepRebootOnUpdate:
 		return nil, io.EOF
 
 	case StepUpdate:
-		messageToSend = &pb.UpdateStatus{UmState: pb.UmState_FAILED}
+		messageToSend = &pb.UpdateStatus{UpdateState: pb.UpdateState_FAILED}
 
 	case StepRebootOnRevert:
 		return nil, io.EOF

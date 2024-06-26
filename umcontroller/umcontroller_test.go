@@ -160,7 +160,7 @@ func TestConnection(t *testing.T) {
 		{Id: "component2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	streamUM1, connUM1, err := createClientConnection("umID1", pb.UmState_IDLE, components)
+	streamUM1, connUM1, err := createClientConnection("umID1", pb.UpdateState_IDLE, components)
 	if err != nil {
 		t.Errorf("Error connect %s", err)
 	}
@@ -170,12 +170,12 @@ func TestConnection(t *testing.T) {
 		{Id: "component4", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	streamUM2, connUM2, err := createClientConnection("umID2", pb.UmState_IDLE, components2)
+	streamUM2, connUM2, err := createClientConnection("umID2", pb.UpdateState_IDLE, components2)
 	if err != nil {
 		t.Errorf("Error connect %s", err)
 	}
 
-	streamUM1Copy, connUM1Copy, err := createClientConnection("umID1", pb.UmState_IDLE, components)
+	streamUM1Copy, connUM1Copy, err := createClientConnection("umID1", pb.UpdateState_IDLE, components)
 	if err != nil {
 		t.Errorf("Error connect %s", err)
 	}
@@ -211,7 +211,7 @@ func TestConnection(t *testing.T) {
  **********************************************************************************************************************/
 
 func createClientConnection(
-	clientID string, state pb.UmState, components []*pb.SystemComponent,
+	clientID string, state pb.UpdateState, components []*pb.SystemComponent,
 ) (stream pb.UMService_RegisterUMClient, conn *grpc.ClientConn, err error) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -230,7 +230,7 @@ func createClientConnection(
 		return stream, nil, aoserrors.Wrap(err)
 	}
 
-	umMsg := &pb.UpdateStatus{UmId: clientID, UmState: state, Components: components}
+	umMsg := &pb.UpdateStatus{UmId: clientID, UpdateState: state, Components: components}
 
 	if err = stream.Send(umMsg); err != nil {
 		log.Errorf("Fail send update status message %s", err)
@@ -266,7 +266,7 @@ func TestFullUpdate(t *testing.T) {
 		{Id: "um1C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um1 := newTestUM(t, "testUM1", pb.UmState_IDLE, "init", um1Components)
+	um1 := newTestUM(t, "testUM1", pb.UpdateState_IDLE, "init", um1Components)
 	go um1.processMessages()
 
 	um2Components := []*pb.SystemComponent{
@@ -274,7 +274,7 @@ func TestFullUpdate(t *testing.T) {
 		{Id: "um2C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um2 := newTestUM(t, "testUM2", pb.UmState_IDLE, "init", um2Components)
+	um2 := newTestUM(t, "testUM2", pb.UpdateState_IDLE, "init", um2Components)
 	go um2.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -316,7 +316,7 @@ func TestFullUpdate(t *testing.T) {
 	um1.step = prepareStep
 	um1.continueChan <- true
 	<-um1.notifyTestChan // receive prepare
-	um1.sendState(pb.UmState_PREPARED)
+	um1.sendState(pb.UpdateState_PREPARED)
 
 	um2Components = append(um2Components,
 		&pb.SystemComponent{Id: "um2C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -327,17 +327,17 @@ func TestFullUpdate(t *testing.T) {
 	um2.step = prepareStep
 	um2.continueChan <- true
 	<-um2.notifyTestChan
-	um2.sendState(pb.UmState_PREPARED)
+	um2.sendState(pb.UpdateState_PREPARED)
 
 	um1.step = updateStep
 	um1.continueChan <- true
 	<-um1.notifyTestChan // um1 updated
-	um1.sendState(pb.UmState_UPDATED)
+	um1.sendState(pb.UpdateState_UPDATED)
 
 	um2.step = updateStep
 	um2.continueChan <- true
 	<-um2.notifyTestChan // um2 updated
-	um2.sendState(pb.UmState_UPDATED)
+	um2.sendState(pb.UpdateState_UPDATED)
 
 	um1Components = []*pb.SystemComponent{
 		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -348,7 +348,7 @@ func TestFullUpdate(t *testing.T) {
 	um1.step = applyStep
 	um1.continueChan <- true
 	<-um1.notifyTestChan // um1 apply
-	um1.sendState(pb.UmState_IDLE)
+	um1.sendState(pb.UpdateState_IDLE)
 
 	um2Components = []*pb.SystemComponent{
 		{Id: "um2C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
@@ -359,7 +359,7 @@ func TestFullUpdate(t *testing.T) {
 	um2.step = applyStep
 	um2.continueChan <- true
 	<-um2.notifyTestChan // um1 apply
-	um2.sendState(pb.UmState_IDLE)
+	um2.sendState(pb.UpdateState_IDLE)
 
 	time.Sleep(1 * time.Second)
 
@@ -426,7 +426,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{Id: "um3C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um3 := newTestUM(t, "testUM3", pb.UmState_IDLE, "init", um3Components)
+	um3 := newTestUM(t, "testUM3", pb.UpdateState_IDLE, "init", um3Components)
 	go um3.processMessages()
 
 	um4Components := []*pb.SystemComponent{
@@ -434,7 +434,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{Id: "um4C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um4 := newTestUM(t, "testUM4", pb.UmState_IDLE, "init", um4Components)
+	um4 := newTestUM(t, "testUM4", pb.UpdateState_IDLE, "init", um4Components)
 	go um4.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -477,7 +477,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um3.step = prepareStep
 	um3.continueChan <- true
 	<-um3.notifyTestChan // receive prepare
-	um3.sendState(pb.UmState_PREPARED)
+	um3.sendState(pb.UpdateState_PREPARED)
 
 	// prepare UM4
 	um4Components = append(um4Components,
@@ -489,7 +489,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um4.step = prepareStep
 	um4.continueChan <- true
 	<-um4.notifyTestChan
-	um4.sendState(pb.UmState_PREPARED)
+	um4.sendState(pb.UpdateState_PREPARED)
 
 	um3.step = updateStep
 	um3.continueChan <- true
@@ -500,7 +500,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um3.closeConnection()
 	<-um3.notifyTestChan
 
-	um3 = newTestUM(t, "testUM3", pb.UmState_UPDATED, applyStep, um3Components)
+	um3 = newTestUM(t, "testUM3", pb.UpdateState_UPDATED, applyStep, um3Components)
 	go um3.processMessages()
 
 	um4.step = updateStep
@@ -512,7 +512,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	<-um4.notifyTestChan
 
-	um4 = newTestUM(t, "testUM4", pb.UmState_UPDATED, applyStep, um4Components)
+	um4 = newTestUM(t, "testUM4", pb.UpdateState_UPDATED, applyStep, um4Components)
 	go um4.processMessages()
 
 	um3.step = applyStep
@@ -529,7 +529,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um3 = newTestUM(t, "testUM3", pb.UmState_IDLE, "init", um3Components)
+	um3 = newTestUM(t, "testUM3", pb.UpdateState_IDLE, "init", um3Components)
 	go um3.processMessages()
 
 	// um4  reboot
@@ -542,7 +542,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		{Id: "um4C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um4 = newTestUM(t, "testUM4", pb.UmState_IDLE, "init", um4Components)
+	um4 = newTestUM(t, "testUM4", pb.UpdateState_IDLE, "init", um4Components)
 	go um4.processMessages()
 
 	um3.step = finishStep
@@ -603,7 +603,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{Id: "um5C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um5 := newTestUM(t, "testUM5", pb.UmState_IDLE, "init", um5Components)
+	um5 := newTestUM(t, "testUM5", pb.UpdateState_IDLE, "init", um5Components)
 	go um5.processMessages()
 
 	um6Components := []*pb.SystemComponent{
@@ -611,7 +611,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{Id: "um6C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um6 := newTestUM(t, "testUM6", pb.UmState_IDLE, "init", um6Components)
+	um6 := newTestUM(t, "testUM6", pb.UpdateState_IDLE, "init", um6Components)
 	go um6.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -654,7 +654,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um5.step = prepareStep
 	um5.continueChan <- true
 	<-um5.notifyTestChan // receive prepare
-	um5.sendState(pb.UmState_PREPARED)
+	um5.sendState(pb.UpdateState_PREPARED)
 
 	// prepare UM6
 	um6Components = append(um6Components,
@@ -666,7 +666,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6.step = prepareStep
 	um6.continueChan <- true
 	<-um6.notifyTestChan
-	um6.sendState(pb.UmState_PREPARED)
+	um6.sendState(pb.UpdateState_PREPARED)
 
 	um5.step = updateStep
 	um5.continueChan <- true
@@ -690,10 +690,10 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um5 = newTestUM(t, "testUM5", pb.UmState_UPDATED, applyStep, um5Components)
+	um5 = newTestUM(t, "testUM5", pb.UpdateState_UPDATED, applyStep, um5Components)
 	go um5.processMessages()
 
-	um6 = newTestUM(t, "testUM6", pb.UmState_PREPARED, updateStep, um6Components)
+	um6 = newTestUM(t, "testUM6", pb.UpdateState_PREPARED, updateStep, um6Components)
 	go um6.processMessages()
 
 	um6.continueChan <- true
@@ -702,7 +702,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6.step = rebootStep
 	um6.closeConnection()
 
-	um6 = newTestUM(t, "testUM6", pb.UmState_UPDATED, applyStep, um6Components)
+	um6 = newTestUM(t, "testUM6", pb.UpdateState_UPDATED, applyStep, um6Components)
 	go um6.processMessages()
 
 	// um5 apply and full reboot
@@ -731,10 +731,10 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um5 = newTestUM(t, "testUM5", pb.UmState_IDLE, "init", um5Components)
+	um5 = newTestUM(t, "testUM5", pb.UpdateState_IDLE, "init", um5Components)
 	go um5.processMessages()
 
-	um6 = newTestUM(t, "testUM6", pb.UmState_UPDATED, applyStep, um6Components)
+	um6 = newTestUM(t, "testUM6", pb.UpdateState_UPDATED, applyStep, um6Components)
 	go um6.processMessages()
 
 	um6.step = rebootStep
@@ -746,7 +746,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		{Id: "um6C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um6 = newTestUM(t, "testUM6", pb.UmState_IDLE, "init", um6Components)
+	um6 = newTestUM(t, "testUM6", pb.UpdateState_IDLE, "init", um6Components)
 	go um6.processMessages()
 
 	um5.step = finishStep
@@ -805,7 +805,7 @@ func TestRevertOnPrepare(t *testing.T) {
 		{Id: "um7C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um7 := newTestUM(t, "testUM7", pb.UmState_IDLE, "init", um7Components)
+	um7 := newTestUM(t, "testUM7", pb.UpdateState_IDLE, "init", um7Components)
 	go um7.processMessages()
 
 	um8Components := []*pb.SystemComponent{
@@ -813,7 +813,7 @@ func TestRevertOnPrepare(t *testing.T) {
 		{Id: "um8C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um8 := newTestUM(t, "testUM8", pb.UmState_IDLE, "init", um8Components)
+	um8 := newTestUM(t, "testUM8", pb.UpdateState_IDLE, "init", um8Components)
 	go um8.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -855,7 +855,7 @@ func TestRevertOnPrepare(t *testing.T) {
 	um7.step = prepareStep
 	um7.continueChan <- true
 	<-um7.notifyTestChan // receive prepare
-	um7.sendState(pb.UmState_PREPARED)
+	um7.sendState(pb.UpdateState_PREPARED)
 
 	um8Components = append(um8Components,
 		&pb.SystemComponent{Id: "um8C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -866,17 +866,17 @@ func TestRevertOnPrepare(t *testing.T) {
 	um8.step = prepareStep
 	um8.continueChan <- true
 	<-um8.notifyTestChan
-	um8.sendState(pb.UmState_FAILED)
+	um8.sendState(pb.UpdateState_FAILED)
 
 	um7.step = revertStep
 	um7.continueChan <- true
 	<-um7.notifyTestChan // um7 revert received
-	um7.sendState(pb.UmState_IDLE)
+	um7.sendState(pb.UpdateState_IDLE)
 
 	um8.step = revertStep
 	um8.continueChan <- true
 	<-um8.notifyTestChan // um8 revert received
-	um8.sendState(pb.UmState_IDLE)
+	um8.sendState(pb.UpdateState_IDLE)
 
 	um7.step = finishStep
 	um8.step = finishStep
@@ -938,7 +938,7 @@ func TestRevertOnUpdate(t *testing.T) {
 		{Id: "um9C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um9 := newTestUM(t, "testUM9", pb.UmState_IDLE, "init", um9Components)
+	um9 := newTestUM(t, "testUM9", pb.UpdateState_IDLE, "init", um9Components)
 	go um9.processMessages()
 
 	um10Components := []*pb.SystemComponent{
@@ -946,7 +946,7 @@ func TestRevertOnUpdate(t *testing.T) {
 		{Id: "um10C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um10 := newTestUM(t, "testUM10", pb.UmState_IDLE, "init", um10Components)
+	um10 := newTestUM(t, "testUM10", pb.UpdateState_IDLE, "init", um10Components)
 	go um10.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -988,7 +988,7 @@ func TestRevertOnUpdate(t *testing.T) {
 	um9.step = prepareStep
 	um9.continueChan <- true
 	<-um9.notifyTestChan // receive prepare
-	um9.sendState(pb.UmState_PREPARED)
+	um9.sendState(pb.UpdateState_PREPARED)
 
 	um10Components = append(um10Components,
 		&pb.SystemComponent{Id: "um10C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -999,12 +999,12 @@ func TestRevertOnUpdate(t *testing.T) {
 	um10.step = prepareStep
 	um10.continueChan <- true
 	<-um10.notifyTestChan
-	um10.sendState(pb.UmState_PREPARED)
+	um10.sendState(pb.UpdateState_PREPARED)
 
 	um9.step = updateStep
 	um9.continueChan <- true
 	<-um9.notifyTestChan // um9 updated
-	um9.sendState(pb.UmState_UPDATED)
+	um9.sendState(pb.UpdateState_UPDATED)
 
 	um10Components = []*pb.SystemComponent{
 		{Id: "um10C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1017,7 +1017,7 @@ func TestRevertOnUpdate(t *testing.T) {
 	um10.step = updateStep
 	um10.continueChan <- true
 	<-um10.notifyTestChan // um10 updated
-	um10.sendState(pb.UmState_FAILED)
+	um10.sendState(pb.UpdateState_FAILED)
 
 	um9Components = []*pb.SystemComponent{
 		{Id: "um9C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1028,12 +1028,12 @@ func TestRevertOnUpdate(t *testing.T) {
 	um9.step = revertStep
 	um9.continueChan <- true
 	<-um9.notifyTestChan // um9 revert received
-	um9.sendState(pb.UmState_IDLE)
+	um9.sendState(pb.UpdateState_IDLE)
 
 	um10.step = revertStep
 	um10.continueChan <- true
 	<-um10.notifyTestChan // um10 revert received
-	um10.sendState(pb.UmState_IDLE)
+	um10.sendState(pb.UpdateState_IDLE)
 
 	um9.step = finishStep
 	um10.step = finishStep
@@ -1095,7 +1095,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 		{Id: "um11C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um11 := newTestUM(t, "testUM11", pb.UmState_IDLE, "init", um11Components)
+	um11 := newTestUM(t, "testUM11", pb.UpdateState_IDLE, "init", um11Components)
 	go um11.processMessages()
 
 	um12Components := []*pb.SystemComponent{
@@ -1103,7 +1103,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 		{Id: "um12C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um12 := newTestUM(t, "testUM12", pb.UmState_IDLE, "init", um12Components)
+	um12 := newTestUM(t, "testUM12", pb.UpdateState_IDLE, "init", um12Components)
 	go um12.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -1145,7 +1145,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um11.step = prepareStep
 	um11.continueChan <- true
 	<-um11.notifyTestChan // receive prepare
-	um11.sendState(pb.UmState_PREPARED)
+	um11.sendState(pb.UpdateState_PREPARED)
 
 	um12Components = append(um12Components,
 		&pb.SystemComponent{Id: "um12C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -1156,12 +1156,12 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um12.step = prepareStep
 	um12.continueChan <- true
 	<-um12.notifyTestChan
-	um12.sendState(pb.UmState_PREPARED)
+	um12.sendState(pb.UpdateState_PREPARED)
 
 	um11.step = updateStep
 	um11.continueChan <- true
 	<-um11.notifyTestChan // um11 updated
-	um11.sendState(pb.UmState_UPDATED)
+	um11.sendState(pb.UpdateState_UPDATED)
 
 	um12Components = []*pb.SystemComponent{
 		{Id: "um12C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1178,7 +1178,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um12.closeConnection()
 	<-um12.notifyTestChan
 
-	um12 = newTestUM(t, "testUM12", pb.UmState_FAILED, revertStep, um12Components)
+	um12 = newTestUM(t, "testUM12", pb.UpdateState_FAILED, revertStep, um12Components)
 	go um12.processMessages()
 
 	um11Components = []*pb.SystemComponent{
@@ -1190,12 +1190,12 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um11.step = revertStep
 	um11.continueChan <- true
 	<-um11.notifyTestChan // um11 revert received
-	um11.sendState(pb.UmState_IDLE)
+	um11.sendState(pb.UpdateState_IDLE)
 
 	um12.step = revertStep
 	um12.continueChan <- true
 	<-um12.notifyTestChan // um12 revert received
-	um12.sendState(pb.UmState_IDLE)
+	um12.sendState(pb.UpdateState_IDLE)
 
 	um11.step = finishStep
 	um12.step = finishStep
@@ -1257,7 +1257,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		{Id: "um13C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um13 := newTestUM(t, "testUM13", pb.UmState_IDLE, "init", um13Components)
+	um13 := newTestUM(t, "testUM13", pb.UpdateState_IDLE, "init", um13Components)
 	go um13.processMessages()
 
 	um14Components := []*pb.SystemComponent{
@@ -1265,7 +1265,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		{Id: "um14C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
 	}
 
-	um14 := newTestUM(t, "testUM14", pb.UmState_IDLE, "init", um14Components)
+	um14 := newTestUM(t, "testUM14", pb.UpdateState_IDLE, "init", um14Components)
 	go um14.processMessages()
 
 	componentDir, err := os.MkdirTemp("", "aosComponent_")
@@ -1307,7 +1307,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um13.step = prepareStep
 	um13.continueChan <- true
 	<-um13.notifyTestChan // receive prepare
-	um13.sendState(pb.UmState_PREPARED)
+	um13.sendState(pb.UpdateState_PREPARED)
 
 	um14Components = append(um14Components,
 		&pb.SystemComponent{Id: "um14C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
@@ -1318,12 +1318,12 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um14.step = prepareStep
 	um14.continueChan <- true
 	<-um14.notifyTestChan
-	um14.sendState(pb.UmState_PREPARED)
+	um14.sendState(pb.UpdateState_PREPARED)
 
 	um13.step = updateStep
 	um13.continueChan <- true
 	<-um13.notifyTestChan // um13 updated
-	um13.sendState(pb.UmState_UPDATED)
+	um13.sendState(pb.UpdateState_UPDATED)
 
 	um14Components = []*pb.SystemComponent{
 		{Id: "um14C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
@@ -1355,10 +1355,10 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um13 = newTestUM(t, "testUM13", pb.UmState_UPDATED, revertStep, um13Components)
+	um13 = newTestUM(t, "testUM13", pb.UpdateState_UPDATED, revertStep, um13Components)
 	go um13.processMessages()
 
-	um14 = newTestUM(t, "testUM14", pb.UmState_FAILED, revertStep, um14Components)
+	um14 = newTestUM(t, "testUM14", pb.UpdateState_FAILED, revertStep, um14Components)
 	go um14.processMessages()
 
 	um13Components = []*pb.SystemComponent{
@@ -1370,12 +1370,12 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um13.step = revertStep
 	um13.continueChan <- true
 	<-um13.notifyTestChan // um13 revert received
-	um13.sendState(pb.UmState_IDLE)
+	um13.sendState(pb.UpdateState_IDLE)
 
 	um14.step = revertStep
 	um14.continueChan <- true
 	<-um14.notifyTestChan // um14 revert received
-	um14.sendState(pb.UmState_IDLE)
+	um14.sendState(pb.UpdateState_IDLE)
 
 	um13.step = finishStep
 	um14.step = finishStep
@@ -1504,12 +1504,12 @@ func (context *testCryptoContext) DecryptAndValidate(
  * Private
  **********************************************************************************************************************/
 
-func newTestUM(t *testing.T, id string, umState pb.UmState, testState string, components []*pb.SystemComponent) (
+func newTestUM(t *testing.T, id string, updateStatus pb.UpdateState, testState string, components []*pb.SystemComponent) (
 	umTest *testUmConnection,
 ) {
 	t.Helper()
 
-	stream, conn, err := createClientConnection(id, umState, components)
+	stream, conn, err := createClientConnection(id, updateStatus, components)
 	if err != nil {
 		t.Errorf("Error connect %s", err)
 		return umTest
@@ -1533,8 +1533,8 @@ func (um *testUmConnection) setComponents(components []*pb.SystemComponent) {
 	um.components = components
 }
 
-func (um *testUmConnection) sendState(state pb.UmState) {
-	umMsg := &pb.UpdateStatus{UmId: um.umID, UmState: state, Components: um.components}
+func (um *testUmConnection) sendState(state pb.UpdateState) {
+	umMsg := &pb.UpdateStatus{UmId: um.umID, UpdateState: state, Components: um.components}
 
 	if err := um.stream.Send(umMsg); err != nil {
 		um.test.Errorf("Fail send update status message %s", err)

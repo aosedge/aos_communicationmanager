@@ -100,7 +100,7 @@ type umCtrlInternalMsg struct {
 }
 
 type umStatus struct {
-	umState       string
+	updateStatus  string
 	componsStatus []systemComponentStatus
 }
 
@@ -167,7 +167,7 @@ const (
 	evUpdateRequest       = "updateRequest"
 	evContinue            = "continue"
 	evUpdatePrepared      = "updatePrepared"
-	evUmStateUpdated      = "umStateUpdated"
+	evUpdateStatusUpdated = "updateStatusUpdated"
 	evSystemUpdated       = "systemUpdated"
 	evApplyComplete       = "applyComplete"
 
@@ -411,7 +411,7 @@ func (umCtrl *Controller) processInternalMessages() {
 				umCtrl.handleCloseConnection(internalMsg.umID)
 
 			case umStatusUpdate:
-				umCtrl.generateFSMEvent(evUmStateUpdated, internalMsg.umID, internalMsg.status)
+				umCtrl.generateFSMEvent(evUpdateStatusUpdated, internalMsg.umID, internalMsg.status)
 
 			default:
 				log.Error("Unsupported internal message ", internalMsg.requestType)
@@ -733,22 +733,22 @@ func (umCtrl *Controller) createStateMachine() (string, []fsm.EventDesc, map[str
 			{Name: evContinueApply, Src: []string{stateIdle}, Dst: stateStartApply},
 			{Name: evContinueRevert, Src: []string{stateIdle}, Dst: stateStartRevert},
 			// process prepare
-			{Name: evUmStateUpdated, Src: []string{statePrepareUpdate}, Dst: stateUpdateUmStatusOnPrepareUpdate},
+			{Name: evUpdateStatusUpdated, Src: []string{statePrepareUpdate}, Dst: stateUpdateUmStatusOnPrepareUpdate},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnPrepareUpdate}, Dst: statePrepareUpdate},
 			// process start update
 			{Name: evUpdatePrepared, Src: []string{statePrepareUpdate}, Dst: stateStartUpdate},
-			{Name: evUmStateUpdated, Src: []string{stateStartUpdate}, Dst: stateUpdateUmStatusOnStartUpdate},
+			{Name: evUpdateStatusUpdated, Src: []string{stateStartUpdate}, Dst: stateUpdateUmStatusOnStartUpdate},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnStartUpdate}, Dst: stateStartUpdate},
 			// process start apply
 			{Name: evSystemUpdated, Src: []string{stateStartUpdate}, Dst: stateStartApply},
-			{Name: evUmStateUpdated, Src: []string{stateStartApply}, Dst: stateUpdateUmStatusOnStartApply},
+			{Name: evUpdateStatusUpdated, Src: []string{stateStartApply}, Dst: stateUpdateUmStatusOnStartApply},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnStartApply}, Dst: stateStartApply},
 			{Name: evApplyComplete, Src: []string{stateStartApply}, Dst: stateIdle},
 			// process revert
 			{Name: evUpdateFailed, Src: []string{statePrepareUpdate}, Dst: stateStartRevert},
 			{Name: evUpdateFailed, Src: []string{stateStartUpdate}, Dst: stateStartRevert},
 			{Name: evUpdateFailed, Src: []string{stateStartApply}, Dst: stateStartRevert},
-			{Name: evUmStateUpdated, Src: []string{stateStartRevert}, Dst: stateUpdateUmStatusOnRevert},
+			{Name: evUpdateStatusUpdated, Src: []string{stateStartRevert}, Dst: stateUpdateUmStatusOnRevert},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnRevert}, Dst: stateStartRevert},
 			{Name: evSystemReverted, Src: []string{stateStartRevert}, Dst: stateIdle},
 
@@ -757,13 +757,13 @@ func (umCtrl *Controller) createStateMachine() (string, []fsm.EventDesc, map[str
 		fsm.Callbacks{
 			enterPrefix + stateIdle:                          umCtrl.processIdleState,
 			enterPrefix + statePrepareUpdate:                 umCtrl.processPrepareState,
-			enterPrefix + stateUpdateUmStatusOnPrepareUpdate: umCtrl.processUpdateUmState,
+			enterPrefix + stateUpdateUmStatusOnPrepareUpdate: umCtrl.processUpdateUpdateStatus,
 			enterPrefix + stateStartUpdate:                   umCtrl.processStartUpdateState,
-			enterPrefix + stateUpdateUmStatusOnStartUpdate:   umCtrl.processUpdateUmState,
+			enterPrefix + stateUpdateUmStatusOnStartUpdate:   umCtrl.processUpdateUpdateStatus,
 			enterPrefix + stateStartApply:                    umCtrl.processStartApplyState,
-			enterPrefix + stateUpdateUmStatusOnStartApply:    umCtrl.processUpdateUmState,
+			enterPrefix + stateUpdateUmStatusOnStartApply:    umCtrl.processUpdateUpdateStatus,
 			enterPrefix + stateStartRevert:                   umCtrl.processStartRevertState,
-			enterPrefix + stateUpdateUmStatusOnRevert:        umCtrl.processUpdateUmState,
+			enterPrefix + stateUpdateUmStatusOnRevert:        umCtrl.processUpdateUpdateStatus,
 			enterPrefix + stateFaultState:                    umCtrl.processFaultState,
 
 			beforePrefix + "event":          umCtrl.onEvent,
@@ -842,9 +842,9 @@ func (umCtrl *Controller) onEvent(ctx context.Context, e *fsm.Event) {
 }
 
 func (umCtrl *Controller) processIdleState(ctx context.Context, e *fsm.Event) {
-	umState := umCtrl.getCurrentUpdateState()
+	updateStatus := umCtrl.getCurrentUpdateState()
 
-	switch umState {
+	switch updateStatus {
 	case stateFaultState:
 		go umCtrl.generateFSMEvent(evContinueRevert)
 		return
@@ -968,8 +968,8 @@ func (umCtrl *Controller) processStartApplyState(ctx context.Context, e *fsm.Eve
 	go umCtrl.generateFSMEvent(evApplyComplete)
 }
 
-func (umCtrl *Controller) processUpdateUmState(ctx context.Context, e *fsm.Event) {
-	log.Debug("processUpdateUmState")
+func (umCtrl *Controller) processUpdateUpdateStatus(ctx context.Context, e *fsm.Event) {
+	log.Debug("processUpdateUpdateStatus")
 
 	umID, ok := e.Args[0].(string)
 	if !ok {
@@ -985,8 +985,8 @@ func (umCtrl *Controller) processUpdateUmState(ctx context.Context, e *fsm.Event
 
 	for i, v := range umCtrl.connections {
 		if v.umID == umID {
-			umCtrl.connections[i].state = status.umState
-			log.Debugf("UMid = %s  state= %s", umID, status.umState)
+			umCtrl.connections[i].state = status.updateStatus
+			log.Debugf("UMid = %s  state= %s", umID, status.updateStatus)
 
 			break
 		}
