@@ -313,7 +313,7 @@ func TestReceiveMessages(t *testing.T) {
 			expectedData: &cloudprotocol.DesiredStatus{
 				UnitConfig: json.RawMessage([]byte("\"config\"")),
 				Components: []cloudprotocol.ComponentInfo{
-					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "rootfs"},
+					{Version: "1.0.0", ComponentID: "rootfs"},
 				},
 				Layers: []cloudprotocol.LayerInfo{
 					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "l1", Digest: "digest"},

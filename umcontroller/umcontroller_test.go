@@ -286,16 +286,19 @@ func TestFullUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um1C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um1C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um2C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um2C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um2C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um2C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -446,16 +449,19 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um3C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um3C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um4C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um4C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um4C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um4C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -623,16 +629,19 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um5C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um5C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um6C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um6C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um6C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um6C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -825,16 +834,19 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um7C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um7C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um8C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um8C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um8C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um8C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -958,16 +970,19 @@ func TestRevertOnUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um9C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um9C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um10C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um10C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um10C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um10C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -1115,16 +1130,19 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um11C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um11C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um12C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um12C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um12C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um12C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -1277,16 +1295,19 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ID: "um13C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile1"), kilobyte*2),
+			ComponentID: "um13C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um14C1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile2"), kilobyte*2),
+			ComponentID: "um14C1", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ID: "um14C2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2"},
-			DecryptDataStruct: prepareDecryptDataStruct(path.Join(componentDir, "someFile3"), kilobyte*2),
+			ComponentID: "um14C2", Version: "2.0.0",
+			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
+			DecryptionInfo: prepareDecryptionInfo(),
 		},
 	}
 
@@ -1547,14 +1568,14 @@ func (um *testUmConnection) closeConnection() {
 	_ = um.stream.CloseSend()
 }
 
-func prepareDecryptDataStruct(filePath string, size uint64) cloudprotocol.DecryptDataStruct {
+func prepareDownloadInfo(filePath string, size uint64) cloudprotocol.DownloadInfo {
 	if err := generateFile(filePath, size); err != nil {
-		return cloudprotocol.DecryptDataStruct{}
+		return cloudprotocol.DownloadInfo{}
 	}
 
 	imageFileInfo, err := image.CreateFileInfo(context.Background(), filePath)
 	if err != nil {
-		return cloudprotocol.DecryptDataStruct{}
+		return cloudprotocol.DownloadInfo{}
 	}
 
 	url := url.URL{
@@ -1562,6 +1583,14 @@ func prepareDecryptDataStruct(filePath string, size uint64) cloudprotocol.Decryp
 		Path:   filePath,
 	}
 
+	return cloudprotocol.DownloadInfo{
+		URLs:   []string{url.String()},
+		Sha256: imageFileInfo.Sha256,
+		Size:   imageFileInfo.Size,
+	}
+}
+
+func prepareDecryptionInfo() cloudprotocol.DecryptionInfo {
 	recInfo := struct {
 		Serial string `json:"serial"`
 		Issuer []byte `json:"issuer"`
@@ -1570,19 +1599,12 @@ func prepareDecryptDataStruct(filePath string, size uint64) cloudprotocol.Decryp
 		Issuer: []byte("issuer"),
 	}
 
-	return cloudprotocol.DecryptDataStruct{
-		URLs:   []string{url.String()},
-		Sha256: imageFileInfo.Sha256,
-		Sha512: imageFileInfo.Sha512,
-		Size:   imageFileInfo.Size,
-		DecryptionInfo: &cloudprotocol.DecryptionInfo{
-			BlockAlg:     "AES256/CBC/pkcs7",
-			BlockIv:      []byte{},
-			BlockKey:     []byte{},
-			AsymAlg:      "RSA/PKCS1v1_5",
-			ReceiverInfo: &recInfo,
-		},
-		Signs: &cloudprotocol.Signs{},
+	return cloudprotocol.DecryptionInfo{
+		BlockAlg:     "AES256/CBC/pkcs7",
+		BlockIv:      []byte{},
+		BlockKey:     []byte{},
+		AsymAlg:      "RSA/PKCS1v1_5",
+		ReceiverInfo: &recInfo,
 	}
 }
 

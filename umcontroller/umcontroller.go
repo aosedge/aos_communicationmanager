@@ -72,14 +72,12 @@ type Controller struct {
 
 // SystemComponent information about system component update.
 type SystemComponent struct {
-	ID            string `json:"id"`
-	VendorVersion string `json:"vendorVersion"`
-	AosVersion    uint64 `json:"aosVersion"`
-	Annotations   string `json:"annotations,omitempty"`
-	URL           string `json:"url"`
-	Sha256        []byte `json:"sha256"`
-	Sha512        []byte `json:"sha512"`
-	Size          uint64 `json:"size"`
+	ID          string `json:"id"`
+	Version     string `json:"version"`
+	Annotations string `json:"annotations,omitempty"`
+	URL         string `json:"url"`
+	Sha256      []byte `json:"sha256"`
+	Size        uint64 `json:"size"`
 }
 
 type umConnection struct {
@@ -105,11 +103,10 @@ type umStatus struct {
 }
 
 type systemComponentStatus struct {
-	id            string
-	vendorVersion string
-	aosVersion    uint64
-	status        string
-	err           string
+	id      string
+	version string
+	status  string
+	err     string
 }
 
 type allConnectionMonitor struct {
@@ -304,8 +301,8 @@ func (umCtrl *Controller) UpdateComponents(
 
 		for _, component := range components {
 			componentStatus := systemComponentStatus{
-				id: component.ID, vendorVersion: component.VendorVersion,
-				aosVersion: component.AosVersion, status: cloudprotocol.DownloadedStatus,
+				id: component.ComponentID, version: component.Version,
+				status: cloudprotocol.DownloadedStatus,
 			}
 
 			encryptedFile, err := getFilePath(component.URLs[0])
@@ -336,8 +333,8 @@ func (umCtrl *Controller) UpdateComponents(
 				fcrypt.DecryptParams{
 					Chains:         chains,
 					Certs:          certs,
-					DecryptionInfo: component.DecryptionInfo,
-					Signs:          component.Signs,
+					DecryptionInfo: &component.DecryptionInfo,
+					// Signs:          component.Signs,
 				}); err != nil {
 				return umCtrl.currentComponents, aoserrors.Wrap(err)
 			}
@@ -353,9 +350,9 @@ func (umCtrl *Controller) UpdateComponents(
 			}
 
 			componentInfo := SystemComponent{
-				ID: component.ID, VendorVersion: component.VendorVersion,
-				AosVersion: component.AosVersion, Annotations: string(component.Annotations),
-				Sha256: fileInfo.Sha256, Sha512: fileInfo.Sha512, Size: fileInfo.Size,
+				ID: component.ComponentID, Version: component.Version,
+				Annotations: string(component.Annotations),
+				Sha256:      fileInfo.Sha256, Size: fileInfo.Size,
 				URL: url.String(),
 			}
 
@@ -523,12 +520,12 @@ func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemCo
 			toRemove := []int{}
 
 			for i, curStatus := range umCtrl.currentComponents {
-				if value.id == curStatus.ID {
+				if value.id == curStatus.ComponentID {
 					if curStatus.Status != cloudprotocol.InstalledStatus {
 						continue
 					}
 
-					if value.vendorVersion != curStatus.VendorVersion {
+					if value.version != curStatus.Version {
 						toRemove = append(toRemove, i)
 						continue
 					}
@@ -549,7 +546,7 @@ func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemCo
 
 func (umCtrl *Controller) updateComponentElement(component systemComponentStatus) {
 	for i, curElement := range umCtrl.currentComponents {
-		if curElement.ID == component.id && curElement.VendorVersion == component.vendorVersion {
+		if curElement.ComponentID == component.id && curElement.Version == component.version {
 			if curElement.Status == cloudprotocol.InstalledStatus && component.status != cloudprotocol.InstalledStatus {
 				break
 			}
@@ -567,10 +564,9 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 	}
 
 	newComponentStatus := cloudprotocol.ComponentStatus{
-		ID:            component.id,
-		VendorVersion: component.vendorVersion,
-		AosVersion:    component.aosVersion,
-		Status:        component.status,
+		ComponentID: component.id,
+		Version:     component.version,
+		Status:      component.status,
 	}
 
 	if component.err != "" {
@@ -1022,6 +1018,5 @@ func (umCtrl *Controller) updateComplete(ctx context.Context, e *fsm.Event) {
 }
 
 func (status systemComponentStatus) String() string {
-	return fmt.Sprintf("{id: %s, status: %s, vendorVersion: %s aosVersion: %d }",
-		status.id, status.status, status.vendorVersion, status.aosVersion)
+	return fmt.Sprintf("{id: %s, status: %s, version: %s }", status.id, status.status, status.version)
 }
