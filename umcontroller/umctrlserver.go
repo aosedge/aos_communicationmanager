@@ -126,9 +126,9 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 		return aoserrors.Wrap(err)
 	}
 
-	log.Debugf("Register UM id %s status %s", statusMsg.GetUmId(), statusMsg.GetUmState().String())
+	log.Debugf("Register UM id %s status %s", statusMsg.GetUmId(), statusMsg.GetUpdateState().String())
 
-	handler, ch, err := newUmHandler(statusMsg.GetUmId(), stream, server.controllerCh, statusMsg.GetUmState())
+	handler, ch, err := newUmHandler(statusMsg.GetUmId(), stream, server.controllerCh, statusMsg.GetUpdateState())
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -155,7 +155,7 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 }
 
 func getUmStatusFromUmMessage(msg *pb.UpdateStatus) (status umStatus) {
-	status.umState = msg.GetUmState().String()
+	status.updateStatus = msg.GetUpdateState().String()
 
 	for _, component := range msg.GetComponents() {
 		if component.GetId() == "" {
