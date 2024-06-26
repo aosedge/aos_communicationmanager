@@ -660,11 +660,9 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 
 	for _, component := range desiredStatus.Components {
 		log.WithFields(log.Fields{
-			"id":            component.ID,
-			"annotations":   string(component.Annotations),
-			"aosVersion":    component.AosVersion,
-			"vendorVersion": component.VendorVersion,
-			"description":   component.Description,
+			"id":          component.ComponentID,
+			"annotations": string(component.Annotations),
+			"version":     component.Version,
 		}).Debug("Component")
 	}
 

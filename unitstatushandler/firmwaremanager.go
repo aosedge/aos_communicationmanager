@@ -160,7 +160,7 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 
 	for _, component := range manager.CurrentUpdate.Components {
 		status.Components = append(status.Components, cloudprotocol.ComponentStatus{
-			ID: component.ID, AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
+			ComponentID: component.ComponentID, Version: component.Version,
 		})
 	}
 
@@ -192,8 +192,8 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 desiredLoop:
 	for _, desiredComponent := range desiredStatus.Components {
 		for _, installedComponent := range installedComponents {
-			if desiredComponent.ID == installedComponent.ID {
-				if desiredComponent.VendorVersion == installedComponent.VendorVersion &&
+			if desiredComponent.ComponentID == installedComponent.ComponentID {
+				if desiredComponent.Version == installedComponent.Version &&
 					installedComponent.Status == cloudprotocol.InstalledStatus {
 					continue desiredLoop
 				} else {
@@ -204,8 +204,8 @@ desiredLoop:
 		}
 
 		log.WithFields(log.Fields{
-			"id":            desiredComponent.ID,
-			"vendorVersion": desiredComponent.VendorVersion,
+			"id":      desiredComponent.ComponentID,
+			"version": desiredComponent.Version,
 		}).Error("Desired component not found")
 	}
 
@@ -400,25 +400,24 @@ func (manager *firmwareManager) download(ctx context.Context) {
 
 	for _, component := range manager.CurrentUpdate.Components {
 		log.WithFields(log.Fields{
-			"id":      component.ID,
-			"version": component.VendorVersion,
+			"id":      component.ComponentID,
+			"version": component.Version,
 		}).Debug("Download component")
 
-		request[component.ID] = downloader.PackageInfo{
+		request[component.ComponentID] = downloader.PackageInfo{
 			URLs:                component.URLs,
 			Sha256:              component.Sha256,
 			Sha512:              component.Sha512,
 			Size:                component.Size,
 			TargetType:          cloudprotocol.DownloadTargetComponent,
-			TargetID:            component.ID,
+			TargetID:            component.ComponentID,
 			TargetAosVersion:    component.AosVersion,
 			TargetVendorVersion: component.VendorVersion,
 		}
-		manager.ComponentStatuses[component.ID] = &cloudprotocol.ComponentStatus{
-			ID:            component.ID,
-			AosVersion:    component.AosVersion,
-			VendorVersion: component.VendorVersion,
-			Status:        cloudprotocol.DownloadingStatus,
+		manager.ComponentStatuses[component.ComponentID] = &cloudprotocol.ComponentStatus{
+			ComponentID: component.ComponentID,
+			Version:     component.Version,
+			Status:      cloudprotocol.DownloadingStatus,
 		}
 	}
 
@@ -436,16 +435,16 @@ func (manager *firmwareManager) download(ctx context.Context) {
 	for id, item := range manager.ComponentStatuses {
 		if item.ErrorInfo != nil {
 			log.WithFields(log.Fields{
-				"id":      item.ID,
-				"version": item.VendorVersion,
+				"id":      item.ComponentID,
+				"version": item.Version,
 			}).Errorf("Error downloading component: %s", item.ErrorInfo.Message)
 
 			continue
 		}
 
 		log.WithFields(log.Fields{
-			"id":      item.ID,
-			"version": item.VendorVersion,
+			"id":      item.ComponentID,
+			"version": item.Version,
 		}).Debug("Component successfully downloaded")
 
 		manager.updateComponentStatusByID(id, cloudprotocol.PendingStatus, "")
@@ -572,8 +571,8 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 		case componentsErr == "":
 			for _, status := range manager.ComponentStatuses {
 				log.WithFields(log.Fields{
-					"id":      status.ID,
-					"version": status.VendorVersion,
+					"id":      status.ComponentID,
+					"version": status.Version,
 				}).Info("Component successfully updated")
 			}
 
@@ -585,8 +584,8 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 				}
 
 				log.WithFields(log.Fields{
-					"id":      status.ID,
-					"version": status.VendorVersion,
+					"id":      status.ComponentID,
+					"version": status.Version,
 				}).Errorf("Error updating component: %v", status.ErrorInfo)
 			}
 		}
@@ -595,15 +594,15 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 	updateComponents := make([]cloudprotocol.ComponentInfo, 0, len(manager.CurrentUpdate.Components))
 
 	for _, component := range manager.CurrentUpdate.Components {
-		log.WithFields(log.Fields{"id": component.ID, "version": component.VendorVersion}).Debug("Update component")
+		log.WithFields(log.Fields{"id": component.ComponentID, "version": component.Version}).Debug("Update component")
 
-		manager.updateComponentStatusByID(component.ID, cloudprotocol.InstallingStatus, "")
+		manager.updateComponentStatusByID(component.ComponentID, cloudprotocol.InstallingStatus, "")
 
-		downloadInfo, ok := manager.DownloadResult[component.ID]
+		downloadInfo, ok := manager.DownloadResult[component.ComponentID]
 		if !ok {
 			err := aoserrors.New("update ID not found").Error()
 
-			manager.updateComponentStatusByID(component.ID, cloudprotocol.ErrorStatus, err)
+			manager.updateComponentStatusByID(component.ComponentID, cloudprotocol.ErrorStatus, err)
 
 			return err
 		}
@@ -734,7 +733,7 @@ func (manager *firmwareManager) asyncUpdate(
 
 		for id, status := range manager.ComponentStatuses {
 			for _, item := range updateResult {
-				if item.ID == status.ID && item.VendorVersion == status.VendorVersion {
+				if item.ComponentID == status.ComponentID && item.Version == status.Version {
 					if errorStr == "" {
 						if item.ErrorInfo != nil {
 							errorStr = item.ErrorInfo.Message

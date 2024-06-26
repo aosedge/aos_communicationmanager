@@ -360,8 +360,8 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 
 	for _, component := range updateStatus.Components {
 		pbStatus.Components = append(pbStatus.GetComponents(), &pb.ComponentInfo{
-			Id:         component.ID,
-			AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
+			ComponentId: component.ComponentID,
+			Version:     component.Version,
 		})
 	}
 

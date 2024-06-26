@@ -275,8 +275,8 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ID: "comp0", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
-			{ID: "comp2", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
+			{ComponentID: "comp0", Version: "2.0"},
+			{ComponentID: "comp2", Version: "2.0"},
 		},
 	})
 
@@ -312,7 +312,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ID: "comp1", VersionInfo: aostypes.VersionInfo{VendorVersion: "2.0"}},
+			{ComponentID: "comp1", Version: "2.0"},
 		},
 	})
 

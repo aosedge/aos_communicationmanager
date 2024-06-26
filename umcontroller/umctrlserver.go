@@ -158,16 +158,15 @@ func getUmStatusFromUmMessage(msg *pb.UpdateStatus) (status umStatus) {
 	status.updateStatus = msg.GetUpdateState().String()
 
 	for _, component := range msg.GetComponents() {
-		if component.GetId() == "" {
+		if component.GetComponentId() == "" {
 			continue
 		}
 
 		status.componsStatus = append(status.componsStatus, systemComponentStatus{
-			id:            component.GetId(),
-			vendorVersion: component.GetVendorVersion(),
-			aosVersion:    component.GetAosVersion(),
-			status:        strings.ToLower(component.GetStatus().String()),
-			err:           component.GetError(),
+			id:      component.GetComponentId(),
+			version: component.GetVersion(),
+			status:  strings.ToLower(component.GetState().String()),
+			err:     component.GetError().GetMessage(),
 		})
 	}
 
