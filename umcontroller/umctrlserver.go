@@ -126,15 +126,15 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 		return aoserrors.Wrap(err)
 	}
 
-	log.Debugf("Register UM id %s status %s", statusMsg.GetUmId(), statusMsg.GetUpdateState().String())
+	log.Debugf("Register UM id %s status %s", statusMsg.GetNodeId(), statusMsg.GetUpdateState().String())
 
-	handler, ch, err := newUmHandler(statusMsg.GetUmId(), stream, server.controllerCh, statusMsg.GetUpdateState())
+	handler, ch, err := newUmHandler(statusMsg.GetNodeId(), stream, server.controllerCh, statusMsg.GetUpdateState())
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	openConnectionMsg := umCtrlInternalMsg{
-		umID:        statusMsg.GetUmId(),
+		umID:        statusMsg.GetNodeId(),
 		handler:     handler,
 		requestType: openConnection,
 		status:      getUmStatusFromUmMessage(statusMsg),
@@ -146,7 +146,7 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 	<-ch
 
 	closeConnectionMsg := umCtrlInternalMsg{
-		umID:        statusMsg.GetUmId(),
+		umID:        statusMsg.GetNodeId(),
 		requestType: closeConnection,
 	}
 	server.controllerCh <- closeConnectionMsg
