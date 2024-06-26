@@ -230,7 +230,7 @@ func createClientConnection(
 		return stream, nil, aoserrors.Wrap(err)
 	}
 
-	umMsg := &pb.UpdateStatus{UmId: clientID, UpdateState: state, Components: components}
+	umMsg := &pb.UpdateStatus{NodeId: clientID, UpdateState: state, Components: components}
 
 	if err = stream.Send(umMsg); err != nil {
 		log.Errorf("Fail send update status message %s", err)
@@ -1534,7 +1534,7 @@ func (um *testUmConnection) setComponents(components []*pb.SystemComponent) {
 }
 
 func (um *testUmConnection) sendState(state pb.UpdateState) {
-	umMsg := &pb.UpdateStatus{UmId: um.umID, UpdateState: state, Components: um.components}
+	umMsg := &pb.UpdateStatus{NodeId: um.umID, UpdateState: state, Components: um.components}
 
 	if err := um.stream.Send(umMsg); err != nil {
 		um.test.Errorf("Fail send update status message %s", err)
