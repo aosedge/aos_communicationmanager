@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -48,11 +49,13 @@ import (
 
 // Controller update managers controller.
 type Controller struct {
-	storage      storage
-	server       *umCtrlServer
-	eventChannel chan umCtrlInternalMsg
-	stopChannel  chan bool
-	componentDir string
+	storage storage
+	server  *umCtrlServer
+
+	eventChannel    chan umCtrlInternalMsg
+	nodeInfoChannel <-chan *cloudprotocol.NodeInfo
+	stopChannel     chan bool
+	componentDir    string
 
 	decrypter Decrypter
 
@@ -65,7 +68,8 @@ type Controller struct {
 	operable          bool
 	updateFinishCond  *sync.Cond
 
-	updateError error
+	updateError   error
+	currentNodeID string
 
 	fileServer *fileserver.FileServer
 }
@@ -99,6 +103,7 @@ type umCtrlInternalMsg struct {
 
 type umStatus struct {
 	updateStatus  string
+	nodePriority  uint32
 	componsStatus []systemComponentStatus
 }
 
@@ -130,6 +135,14 @@ type CertificateProvider interface {
 // Decrypter interface to decrypt and validate image.
 type Decrypter interface {
 	DecryptAndValidate(encryptedFile, decryptedFile string, params fcrypt.DecryptParams) error
+}
+
+// NodeInfoProvider provides information about the nodes.
+type NodeInfoProvider interface {
+	GetNodeID() string
+	GetAllNodeIDs() (nodeIds []string, err error)
+	GetNodeInfo(nodeID string) (nodeInfo *cloudprotocol.NodeInfo, err error)
+	SubscribeNodeInfoChange() <-chan *cloudprotocol.NodeInfo
 }
 
 /***********************************************************************************************************************
@@ -199,13 +212,14 @@ const fileScheme = "file"
  **********************************************************************************************************************/
 
 // New creates new update managers controller.
-func New(config *config.Config, storage storage, certProvider CertificateProvider,
+func New(config *config.Config, storage storage, certProvider CertificateProvider, nodeInfoProvider NodeInfoProvider,
 	cryptocontext *cryptutils.CryptoContext, decrypter Decrypter, insecure bool) (
 	umCtrl *Controller, err error,
 ) {
 	umCtrl = &Controller{
 		storage:           storage,
 		eventChannel:      make(chan umCtrlInternalMsg),
+		nodeInfoChannel:   nodeInfoProvider.SubscribeNodeInfoChange(),
 		stopChannel:       make(chan bool),
 		componentDir:      config.ComponentsDir,
 		connectionMonitor: allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
@@ -223,11 +237,10 @@ func New(config *config.Config, storage storage, certProvider CertificateProvide
 		return nil, aoserrors.Wrap(err)
 	}
 
-	for _, client := range config.UMController.UMClients {
-		umCtrl.connections = append(umCtrl.connections, umConnection{
-			umID:          client.UMID,
-			isLocalClient: client.IsLocal, updatePriority: client.Priority, handler: nil,
-		})
+	umCtrl.currentNodeID = nodeInfoProvider.GetNodeID()
+
+	if err := umCtrl.createConnections(nodeInfoProvider); err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
 	sort.Slice(umCtrl.connections, func(i, j int) bool {
@@ -418,6 +431,9 @@ func (umCtrl *Controller) processInternalMessages() {
 				log.Error("Unsupported internal message ", internalMsg.requestType)
 			}
 
+		case nodeInfo := <-umCtrl.nodeInfoChannel:
+			umCtrl.handleNodeInfoChange(nodeInfo)
+
 		case <-umCtrl.stopChannel:
 			log.Debug("Close all connections")
 
@@ -453,6 +469,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 
 		umCtrl.connections[i].handler = handler
 		umCtrl.connections[i].state = handler.GetInitialState()
+		umCtrl.connections[i].updatePriority = status.nodePriority
 		umCtrl.connections[i].components = []string{}
 
 		for _, newComponent := range status.componsStatus {
@@ -488,15 +505,17 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		}
 	}
 
-	log.Debug("All connection to Ums established")
+	if umCtrl.fsm.Current() == stateInit {
+		log.Debug("All connection to Ums established")
 
-	umCtrl.connectionMonitor.stopConnectionTimer()
+		umCtrl.connectionMonitor.stopConnectionTimer()
 
-	if err := umCtrl.getUpdateComponentsFromStorage(); err != nil {
-		log.Error("Can't read update components from storage: ", err)
+		if err := umCtrl.getUpdateComponentsFromStorage(); err != nil {
+			log.Error("Can't read update components from storage: ", err)
+		}
+
+		umCtrl.generateFSMEvent(evAllClientsConnected)
 	}
-
-	umCtrl.generateFSMEvent(evAllClientsConnected)
 }
 
 func (umCtrl *Controller) handleCloseConnection(umID string) {
@@ -1019,6 +1038,74 @@ func (umCtrl *Controller) updateComplete(ctx context.Context, e *fsm.Event) {
 	log.Debug("Update finished")
 
 	umCtrl.cleanupCurrentComponentStatus()
+}
+
+func (umCtrl *Controller) createConnections(nodeInfoProvider NodeInfoProvider) error {
+	ids, err := nodeInfoProvider.GetAllNodeIDs()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, id := range ids {
+		nodeInfo, err := nodeInfoProvider.GetNodeInfo(id)
+		if err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		if nodeInfo.Status == "unprovisioned" {
+			continue
+		}
+
+		components, err := nodeInfo.GetAosComponents()
+		if err != nil {
+			log.WithFields(log.Fields{"err": err, "nodeID": nodeInfo.NodeID}).Error("Can't get aos components")
+
+			continue
+		}
+
+		if !slices.Contains(components, cloudprotocol.AosComponentUM) {
+			continue
+		}
+
+		umCtrl.connections = append(umCtrl.connections, umConnection{
+			umID:           nodeInfo.NodeID,
+			isLocalClient:  nodeInfo.NodeID == umCtrl.currentNodeID,
+			updatePriority: 1000,
+			handler:        nil,
+		})
+	}
+
+	return nil
+}
+
+func (umCtrl *Controller) handleNodeInfoChange(nodeInfo *cloudprotocol.NodeInfo) {
+	if nodeInfo.Status == "unprovisioned" {
+		return
+	}
+
+	components, err := nodeInfo.GetAosComponents()
+	if err != nil {
+		log.WithField("err", err).Error("Can't get aos components")
+
+		return
+	}
+
+	if !slices.Contains(components, cloudprotocol.AosComponentUM) {
+		return
+	}
+
+	connectionAdded := slices.ContainsFunc(umCtrl.connections, func(connection umConnection) bool {
+		return connection.umID == nodeInfo.NodeID
+	})
+
+	if connectionAdded {
+		return
+	}
+
+	umCtrl.connections = append(umCtrl.connections, umConnection{
+		umID:          nodeInfo.NodeID,
+		isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: 1000, handler: nil,
+	})
 }
 
 func (status systemComponentStatus) String() string {

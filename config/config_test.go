@@ -101,11 +101,6 @@ const testConfigContent = `{
 	"umController": {
 		"fileServerUrl":"localhost:8092",
 		"cmServerUrl": "localhost:8091",
-		"umClients": [{
-			"umId": "um",
-			"priority": 0,
-			"isLocal": true
-		}],
 		"updateTTL": "100h"
 	}
 }`
@@ -255,12 +250,9 @@ func TestGetAlertsConfig(t *testing.T) {
 }
 
 func TestUMControllerConfig(t *testing.T) {
-	umClient := config.UMClientConfig{UMID: "um", Priority: 0, IsLocal: true}
-
 	originalConfig := config.UMController{
 		FileServerURL: "localhost:8092",
 		CMServerURL:   "localhost:8091",
-		UMClients:     []config.UMClientConfig{umClient},
 		UpdateTTL:     aostypes.Duration{Duration: 100 * time.Hour},
 	}
 
