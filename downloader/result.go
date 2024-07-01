@@ -20,8 +20,8 @@ package downloader
 import (
 	"context"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/spaceallocator"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/spaceallocator"
 )
 
 /***********************************************************************************************************************

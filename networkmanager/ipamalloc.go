@@ -23,7 +23,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/apparentlymart/go-cidr/cidr"
 	log "github.com/sirupsen/logrus"
 )

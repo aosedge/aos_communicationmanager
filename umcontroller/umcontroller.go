@@ -29,17 +29,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/image"
-	"github.com/aoscloud/aos_common/spaceallocator"
-	"github.com/aoscloud/aos_common/utils/cryptutils"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/image"
+	"github.com/aosedge/aos_common/spaceallocator"
+	"github.com/aosedge/aos_common/utils/cryptutils"
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/fcrypt"
-	"github.com/aoscloud/aos_communicationmanager/fileserver"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/fcrypt"
+	"github.com/aosedge/aos_communicationmanager/fileserver"
 )
 
 /***********************************************************************************************************************

@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/amqphandler"
-	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/amqphandler"
+	"github.com/aosedge/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

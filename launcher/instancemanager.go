@@ -22,12 +22,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/utils/uidgidpool"
+	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/utils/uidgidpool"
 )
 
 /**********************************************************************************************************************
