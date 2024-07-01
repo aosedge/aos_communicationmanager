@@ -28,18 +28,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/apparentlymart/go-cidr/cidr"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/imagemanager"
-	"github.com/aoscloud/aos_communicationmanager/launcher"
-	"github.com/aoscloud/aos_communicationmanager/networkmanager"
-	"github.com/aoscloud/aos_communicationmanager/storagestate"
-	"github.com/aoscloud/aos_communicationmanager/unitstatushandler"
+	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/imagemanager"
+	"github.com/aosedge/aos_communicationmanager/launcher"
+	"github.com/aosedge/aos_communicationmanager/networkmanager"
+	"github.com/aosedge/aos_communicationmanager/storagestate"
+	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 )
 
 /***********************************************************************************************************************

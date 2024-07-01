@@ -25,18 +25,18 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/servicemanager/v3"
-	"github.com/aoscloud/aos_common/utils/pbconvert"
-	"github.com/aoscloud/aos_common/utils/syncstream"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	pb "github.com/aosedge/aos_common/api/servicemanager/v3"
+	"github.com/aosedge/aos_common/utils/pbconvert"
+	"github.com/aosedge/aos_common/utils/syncstream"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/aoscloud/aos_communicationmanager/launcher"
+	"github.com/aosedge/aos_communicationmanager/launcher"
 )
 
 /***********************************************************************************************************************

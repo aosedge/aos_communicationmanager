@@ -25,15 +25,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_common/utils/action"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/utils/action"
 	"github.com/looplab/fsm"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/cmserver"
-	"github.com/aoscloud/aos_communicationmanager/downloader"
+	"github.com/aosedge/aos_communicationmanager/cmserver"
+	"github.com/aosedge/aos_communicationmanager/downloader"
 )
 
 /***********************************************************************************************************************

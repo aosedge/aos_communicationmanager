@@ -23,10 +23,10 @@ import (
 	"path"
 	"testing"
 
-	"github.com/aoscloud/aos_common/aostypes"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/unitconfig"
+	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/unitconfig"
 
 	log "github.com/sirupsen/logrus"
 )

@@ -32,16 +32,16 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_common/image"
-	"github.com/aoscloud/aos_common/spaceallocator"
-	"github.com/aoscloud/aos_common/utils/fs"
-	"github.com/aoscloud/aos_common/utils/retryhelper"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/image"
+	"github.com/aosedge/aos_common/spaceallocator"
+	"github.com/aosedge/aos_common/utils/fs"
+	"github.com/aosedge/aos_common/utils/retryhelper"
 	"github.com/cavaliergopher/grab/v3"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

@@ -23,16 +23,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	pb "github.com/aoscloud/aos_common/api/communicationmanager/v2"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	pb "github.com/aosedge/aos_common/api/communicationmanager/v2"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/aoscloud/aos_communicationmanager/cmserver"
-	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/cmserver"
+	"github.com/aosedge/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

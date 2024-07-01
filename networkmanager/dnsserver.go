@@ -30,7 +30,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/jackpal/gateway"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"

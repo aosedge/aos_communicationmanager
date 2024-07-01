@@ -22,9 +22,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_communicationmanager/downloader"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_communicationmanager/downloader"
 	log "github.com/sirupsen/logrus"
 )
 
