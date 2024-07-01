@@ -29,17 +29,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_common/utils/fs"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/utils/fs"
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/sha3"
 
-	"github.com/aoscloud/aos_communicationmanager/amqphandler"
-	"github.com/aoscloud/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/amqphandler"
+	"github.com/aosedge/aos_communicationmanager/config"
 )
 
 /***********************************************************************************************************************

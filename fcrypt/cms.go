@@ -25,7 +25,7 @@ import (
 	"encoding/asn1"
 	"math/big"
 
-	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aoserrors"
 	log "github.com/sirupsen/logrus"
 )
 

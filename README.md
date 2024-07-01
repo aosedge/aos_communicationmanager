@@ -1,8 +1,8 @@
 # Aos Communication Manager
 
-[![CI](https://github.com/aoscloud/aos_communicationmanager/workflows/CI/badge.svg)](https://github.com/aoscloud/aos_communicationmanager/actions?query=workflow%3ACI)
-[![codecov](https://codecov.io/gh/aoscloud/aos_communicationmanager/branch/main/graph/badge.svg?token=oTxsU7fc1y)](https://codecov.io/gh/aoscloud/aos_communicationmanager)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=aoscloud_aos_communicationmanager&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=aoscloud_aos_communicationmanager)
+[![CI](https://github.com/aosedge/aos_communicationmanager/workflows/CI/badge.svg)](https://github.com/aosedge/aos_communicationmanager/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/aosedge/aos_communicationmanager/branch/main/graph/badge.svg?token=oTxsU7fc1y)](https://codecov.io/gh/aosedge/aos_communicationmanager)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=aosedge_aos_communicationmanager&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=aosedge_aos_communicationmanager)
 
 Aos Communication Manager (CM) is a part of Aos system which responsible for the following tasks:
 
@@ -11,7 +11,7 @@ Aos Communication Manager (CM) is a part of Aos system which responsible for the
 * monitor system resource usage;
 * serve Update Managers (UM's) and Service Managers (SM's).
 
-See architecture [document](https://docs.aoscloud.io/bin/view/Home/Architecture/Aos%20Core/Communication%20Manager%20%28CM%29/) for more details.
+See architecture [document](https://docs.aosedge.io/bin/view/Home/Architecture/Aos%20Core/Communication%20Manager%20%28CM%29/) for more details.
 
 ## Build
 
@@ -52,7 +52,7 @@ CM is configured through a configuration file. The file `aos_communicationmanage
 ./aos_communicationmanager -c aos_communicationmanager.cfg
 ```
 
-The configuration file has JSON format described [here](https://docs.aoscloud.io/bin/view/Home/Architecture/General/Data%20formats/Core%20component%20configurations/Communication%20Manager%20configuration/). Example configuration file could be found in `aos_communication.cfg`
+The configuration file has JSON format described [here](https://docs.aosedge.io/bin/view/Home/Architecture/General/Data%20formats/Core%20component%20configurations/Communication%20Manager%20configuration/). Example configuration file could be found in `aos_communication.cfg`
 
 To increase log level use option -v:
 
@@ -64,7 +64,7 @@ To increase log level use option -v:
 
 ## Required packages
 
-CM needs Aos Identity and Access Manager (IAM) to be running and configured (see aos_iamanager [readme](https://github.com/aoscloud/aos_iamanager/blob/main/README.md)) before start.
+CM needs Aos Identity and Access Manager (IAM) to be running and configured (see aos_iamanager [readme](https://github.com/aosedge/aos_iamanager/blob/main/README.md)) before start.
 
 ## Test required packages
 

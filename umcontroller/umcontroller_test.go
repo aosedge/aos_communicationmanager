@@ -34,15 +34,15 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
-	pb "github.com/aoscloud/aos_common/api/updatemanager/v1"
-	"github.com/aoscloud/aos_common/image"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
+	pb "github.com/aosedge/aos_common/api/updatemanager/v1"
+	"github.com/aosedge/aos_common/image"
 
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_communicationmanager/config"
-	"github.com/aoscloud/aos_communicationmanager/fcrypt"
-	"github.com/aoscloud/aos_communicationmanager/umcontroller"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/fcrypt"
+	"github.com/aosedge/aos_communicationmanager/umcontroller"
 )
 
 /***********************************************************************************************************************

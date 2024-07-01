@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/aoscloud/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aoserrors"
 )
 
 /**********************************************************************************************************************

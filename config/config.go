@@ -24,10 +24,10 @@ import (
 	"path"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/aostypes"
-	"github.com/aoscloud/aos_common/journalalerts"
-	"github.com/aoscloud/aos_common/resourcemonitor"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/journalalerts"
+	"github.com/aosedge/aos_common/resourcemonitor"
 )
 
 /***********************************************************************************************************************

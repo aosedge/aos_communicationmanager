@@ -36,10 +36,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aoscloud/aos_common/aoserrors"
-	"github.com/aoscloud/aos_common/api/cloudprotocol"
-	"github.com/aoscloud/aos_common/utils/contextreader"
-	"github.com/aoscloud/aos_common/utils/cryptutils"
+	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/utils/contextreader"
+	"github.com/aosedge/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
 )
 
