@@ -156,6 +156,7 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 
 func getUmStatusFromUmMessage(msg *pb.UpdateStatus) (status umStatus) {
 	status.updateStatus = msg.GetUpdateState().String()
+	status.nodePriority = msg.GetPriority()
 
 	for _, component := range msg.GetComponents() {
 		if component.GetComponentId() == "" {

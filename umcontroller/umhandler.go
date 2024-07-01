@@ -32,12 +32,13 @@ import (
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
+type closeReason int
 
 type umHandler struct {
 	umID                string
 	stream              pb.UMService_RegisterUMServer
 	messageChannel      chan umCtrlInternalMsg
-	closeChannel        chan bool
+	closeChannel        chan closeReason
 	FSM                 *fsm.FSM
 	initialUpdateStatus string
 }
@@ -49,6 +50,11 @@ type prepareRequest struct {
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
+
+const (
+	Reconnect closeReason = iota
+	ConnectionClose
+)
 
 const (
 	hStateIdle                = "Idle"
@@ -78,10 +84,10 @@ const (
 
 // NewUmHandler create update manager connection handler.
 func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
-	messageChannel chan umCtrlInternalMsg, state pb.UpdateState) (handler *umHandler, closeChannel chan bool, err error,
+	messageChannel chan umCtrlInternalMsg, state pb.UpdateState) (handler *umHandler, closeChannel chan closeReason, err error,
 ) {
 	handler = &umHandler{umID: id, stream: umStream, messageChannel: messageChannel}
-	handler.closeChannel = make(chan bool)
+	handler.closeChannel = make(chan closeReason)
 	handler.initialUpdateStatus = state.String()
 
 	initFsmState := hStateIdle
@@ -141,9 +147,9 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 }
 
 // Close close connection.
-func (handler *umHandler) Close() {
+func (handler *umHandler) Close(reason closeReason) {
 	log.Debug("Close umhandler with UMID = ", handler.umID)
-	handler.closeChannel <- true
+	handler.closeChannel <- reason
 }
 
 func (handler *umHandler) GetInitialState() (state string) {
@@ -181,7 +187,7 @@ func (handler *umHandler) StartRevert() (err error) {
  **********************************************************************************************************************/
 
 func (handler *umHandler) receiveData() {
-	defer func() { handler.closeChannel <- true }()
+	defer func() { handler.closeChannel <- ConnectionClose }()
 
 	for {
 		statusMsg, err := handler.stream.Recv()

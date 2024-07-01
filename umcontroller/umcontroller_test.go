@@ -80,6 +80,12 @@ type testUmConnection struct {
 
 type testCryptoContext struct{}
 
+type testNodeInfoProvider struct {
+	umcontroller.NodeInfoProvider
+	nodeInfo          []*cloudprotocol.NodeInfo
+	nodeInfoListeners []chan *cloudprotocol.NodeInfo
+}
+
 /***********************************************************************************************************************
  * Vars
  **********************************************************************************************************************/
@@ -98,6 +104,76 @@ func init() {
 	})
 	log.SetLevel(log.DebugLevel)
 	log.SetOutput(os.Stdout)
+}
+
+/***********************************************************************************************************************
+ * testNodeInfoProvider implementation
+ **********************************************************************************************************************/
+
+func NewTestNodeInfoProvider(nodeIds []string) *testNodeInfoProvider {
+	provider := &testNodeInfoProvider{
+		nodeInfo:          make([]*cloudprotocol.NodeInfo, 0),
+		nodeInfoListeners: make([]chan *cloudprotocol.NodeInfo, 0),
+	}
+
+	for _, nodeId := range nodeIds {
+		nodeInfo := &cloudprotocol.NodeInfo{
+			NodeID: nodeId,
+			Status: "provisioned",
+			Attrs: map[string]interface{}{
+				cloudprotocol.NodeAttrAosComponents: interface{}(cloudprotocol.AosComponentUM),
+			},
+		}
+		provider.nodeInfo = append(provider.nodeInfo, nodeInfo)
+	}
+
+	return provider
+}
+
+func (provider *testNodeInfoProvider) GetNodeID() string {
+	return "test"
+}
+
+func (provider *testNodeInfoProvider) GetAllNodeIDs() (nodesId []string, err error) {
+	result := make([]string, 0)
+
+	for _, nodeInfo := range provider.nodeInfo {
+		result = append(result, nodeInfo.NodeID)
+	}
+
+	return result, nil
+}
+
+func (provider *testNodeInfoProvider) GetNodeInfo(nodeID string) (nodeInfo *cloudprotocol.NodeInfo, err error) {
+	for _, nodeInfo := range provider.nodeInfo {
+		if nodeInfo.NodeID == nodeID {
+			return nodeInfo, nil
+		}
+	}
+
+	return nil, aoserrors.Errorf("not found")
+}
+
+func (provider *testNodeInfoProvider) SubscribeNodeInfoChange() <-chan *cloudprotocol.NodeInfo {
+	listener := make(chan *cloudprotocol.NodeInfo)
+	provider.nodeInfoListeners = append(provider.nodeInfoListeners, listener)
+
+	return listener
+}
+
+func (provider *testNodeInfoProvider) addNode(nodeID string) {
+	nodeInfo := &cloudprotocol.NodeInfo{
+		NodeID: nodeID,
+		Status: "provisioned",
+		Attrs: map[string]interface{}{
+			cloudprotocol.NodeAttrAosComponents: interface{}(cloudprotocol.AosComponentUM),
+		},
+	}
+	provider.nodeInfo = append(provider.nodeInfo, nodeInfo)
+
+	for _, listener := range provider.nodeInfoListeners {
+		listener <- nodeInfo
+	}
 }
 
 /***********************************************************************************************************************
@@ -141,15 +217,13 @@ func TestConnection(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8092",
-		UMClients: []config.UMClientConfig{
-			{UMID: "umID1", Priority: 10},
-			{UMID: "umID2", Priority: 0},
-		},
 	}
+
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"umID1"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &testStorage{}, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &testStorage{}, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
@@ -163,6 +237,8 @@ func TestConnection(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error connect %s", err)
 	}
+
+	nodeInfoProvider.addNode("umID2")
 
 	components2 := []*pb.ComponentStatus{
 		{ComponentId: "component3", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
@@ -244,18 +320,15 @@ func TestFullUpdate(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM1", Priority: 1},
-			{UMID: "testUM2", Priority: 10},
-		},
 	}
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM1", "testUM2"})
 
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -407,18 +480,14 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM3", Priority: 1},
-			{UMID: "testUM4", Priority: 10},
-		},
 	}
-
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM3", "testUM4"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -587,18 +656,14 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM5", Priority: 1},
-			{UMID: "testUM6", Priority: 10},
-		},
 	}
-
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM5", "testUM6"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -693,7 +758,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-finishChannel
 
 	umCtrl, err = umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -729,7 +794,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um6.notifyTestChan
 
 	umCtrl, err = umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -792,18 +857,14 @@ func TestRevertOnPrepare(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM7", Priority: 1},
-			{UMID: "testUM8", Priority: 10},
-		},
 	}
-
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM7", "testUM8"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -928,18 +989,14 @@ func TestRevertOnUpdate(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM9", Priority: 1},
-			{UMID: "testUM10", Priority: 10},
-		},
 	}
-
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM9", "testUM10"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1088,18 +1145,14 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM11", Priority: 1},
-			{UMID: "testUM12", Priority: 10},
-		},
 	}
-
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM11", "testUM12"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1253,18 +1306,15 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	umCtrlConfig := config.UMController{
 		CMServerURL:   "localhost:8091",
 		FileServerURL: "localhost:8093",
-		UMClients: []config.UMClientConfig{
-			{UMID: "testUM13", Priority: 1, IsLocal: true},
-			{UMID: "testUM14", Priority: 10},
-		},
 	}
 
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"testUM13", "testUM14"})
 	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
 
 	var updateStorage testStorage
 
 	umCtrl, err := umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
@@ -1370,7 +1420,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	// um14  reboot
 
 	umCtrl, err = umcontroller.New(
-		&smConfig, &updateStorage, nil, nil, &testCryptoContext{}, true)
+		&smConfig, &updateStorage, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
 	if err != nil {
 		t.Errorf("Can't create: UM controller %s", err)
 	}

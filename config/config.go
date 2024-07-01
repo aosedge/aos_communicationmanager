@@ -45,15 +45,7 @@ type Crypt struct {
 type UMController struct {
 	FileServerURL string            `json:"fileServerUrl"`
 	CMServerURL   string            `json:"cmServerUrl"`
-	UMClients     []UMClientConfig  `json:"umClients"`
 	UpdateTTL     aostypes.Duration `json:"updateTtl"`
-}
-
-// UMClientConfig update manager config.
-type UMClientConfig struct {
-	UMID     string `json:"umId"`
-	Priority uint32 `json:"priority"`
-	IsLocal  bool   `json:"isLocal,omitempty"`
 }
 
 // Monitoring configuration for system monitoring.
