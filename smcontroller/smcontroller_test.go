@@ -290,7 +290,7 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.CheckUnitConfig(aostypes.UnitConfig{
+		if err := controller.CheckUnitConfig(cloudprotocol.UnitConfig{
 			VendorVersion: newVersion,
 			Nodes: []aostypes.NodeUnitConfig{
 				{
@@ -319,7 +319,7 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.SetUnitConfig(aostypes.UnitConfig{
+		if err := controller.SetUnitConfig(cloudprotocol.UnitConfig{
 			VendorVersion: newVersion,
 			Nodes: []aostypes.NodeUnitConfig{
 				{
