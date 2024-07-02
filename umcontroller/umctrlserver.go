@@ -143,11 +143,12 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 	server.controllerCh <- openConnectionMsg
 
 	// wait for close
-	<-ch
+	reason := <-ch
 
 	closeConnectionMsg := umCtrlInternalMsg{
 		umID:        statusMsg.GetNodeId(),
 		requestType: closeConnection,
+		close:       reason,
 	}
 	server.controllerCh <- closeConnectionMsg
 

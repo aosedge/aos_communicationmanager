@@ -99,6 +99,7 @@ type umCtrlInternalMsg struct {
 	handler     *umHandler
 	requestType int
 	status      umStatus
+	close       closeReason
 }
 
 type umStatus struct {
@@ -422,7 +423,7 @@ func (umCtrl *Controller) processInternalMessages() {
 				umCtrl.handleNewConnection(internalMsg.umID, internalMsg.handler, internalMsg.status)
 
 			case closeConnection:
-				umCtrl.handleCloseConnection(internalMsg.umID)
+				umCtrl.handleCloseConnection(internalMsg.umID, internalMsg.close)
 
 			case umStatusUpdate:
 				umCtrl.generateFSMEvent(evUpdateStatusUpdated, internalMsg.umID, internalMsg.status)
@@ -464,7 +465,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 
 		if value.handler != nil {
 			log.Warn("Connection already available umID = ", umID)
-			value.handler.Close()
+			value.handler.Close(Reconnect)
 		}
 
 		umCtrl.connections[i].handler = handler
@@ -494,7 +495,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 
 	if !umIDfound {
 		log.Error("Unexpected new UM connection with ID = ", umID)
-		handler.Close()
+		handler.Close(ConnectionClose)
 
 		return
 	}
@@ -518,17 +519,19 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 	}
 }
 
-func (umCtrl *Controller) handleCloseConnection(umID string) {
+func (umCtrl *Controller) handleCloseConnection(umID string, reason closeReason) {
 	log.Debug("Close UM connection umid = ", umID)
 
 	for i, value := range umCtrl.connections {
 		if value.umID == umID {
-			umCtrl.connections[i].handler = nil
+			if reason == ConnectionClose {
+				umCtrl.connections[i].handler = nil
 
-			umCtrl.fsm.SetState(stateInit)
-			umCtrl.connectionMonitor.wg.Add(1)
+				umCtrl.fsm.SetState(stateInit)
+				umCtrl.connectionMonitor.wg.Add(1)
 
-			go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
+				go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
+			}
 
 			return
 		}
