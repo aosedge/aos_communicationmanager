@@ -146,7 +146,7 @@ type NodeManager interface {
 
 // ResourceManager provides node resources.
 type ResourceManager interface {
-	GetUnitConfiguration(nodeType string) aostypes.NodeUnitConfig
+	GetUnitConfiguration(nodeType string) cloudprotocol.NodeConfig
 }
 
 // StorageStateProvider instances storage state provider.
