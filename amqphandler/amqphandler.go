@@ -102,25 +102,25 @@ type ConnectionEventsConsumer interface {
  **********************************************************************************************************************/
 
 var messageMap = map[string]func() interface{}{ //nolint:gochecknoglobals
-	cloudprotocol.DesiredStatusType: func() interface{} {
+	cloudprotocol.DesiredStatusMessageType: func() interface{} {
 		return &cloudprotocol.DesiredStatus{}
 	},
-	cloudprotocol.RequestLogType: func() interface{} {
+	cloudprotocol.RequestLogMessageType: func() interface{} {
 		return &cloudprotocol.RequestLog{}
 	},
-	cloudprotocol.StateAcceptanceType: func() interface{} {
+	cloudprotocol.StateAcceptanceMessageType: func() interface{} {
 		return &cloudprotocol.StateAcceptance{}
 	},
-	cloudprotocol.UpdateStateType: func() interface{} {
+	cloudprotocol.UpdateStateMessageType: func() interface{} {
 		return &cloudprotocol.UpdateState{}
 	},
-	cloudprotocol.RenewCertsNotificationType: func() interface{} {
+	cloudprotocol.RenewCertsNotificationMessageType: func() interface{} {
 		return &cloudprotocol.RenewCertsNotification{}
 	},
-	cloudprotocol.IssuedUnitCertsType: func() interface{} {
+	cloudprotocol.IssuedUnitCertsMessageType: func() interface{} {
 		return &cloudprotocol.IssuedUnitCerts{}
 	},
-	cloudprotocol.OverrideEnvVarsType: func() interface{} {
+	cloudprotocol.OverrideEnvVarsMessageType: func() interface{} {
 		return &cloudprotocol.OverrideEnvVars{}
 	},
 }
@@ -133,11 +133,11 @@ var (
 )
 
 var importantMessages = []string{ //nolint:gochecknoglobals // used as const
-	cloudprotocol.DesiredStatusType, cloudprotocol.StateAcceptanceType,
-	cloudprotocol.RenewCertsNotificationType, cloudprotocol.IssuedUnitCertsType, cloudprotocol.OverrideEnvVarsType,
-	cloudprotocol.NewStateType, cloudprotocol.StateRequestType, cloudprotocol.UnitStatusType,
-	cloudprotocol.IssueUnitCertsType, cloudprotocol.InstallUnitCertsConfirmationType,
-	cloudprotocol.OverrideEnvVarsStatusType,
+	cloudprotocol.DesiredStatusMessageType, cloudprotocol.StateAcceptanceMessageType,
+	cloudprotocol.RenewCertsNotificationMessageType, cloudprotocol.IssuedUnitCertsMessageType, cloudprotocol.OverrideEnvVarsMessageType,
+	cloudprotocol.NewStateMessageType, cloudprotocol.StateRequestMessageType, cloudprotocol.UnitStatusMessageType,
+	cloudprotocol.IssueUnitCertsMessageType, cloudprotocol.InstallUnitCertsConfirmationMessageType,
+	cloudprotocol.OverrideEnvVarsStatusMessageType,
 }
 
 /***********************************************************************************************************************
@@ -234,7 +234,7 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.UnitStatusType, unitStatus, false)
+	return handler.scheduleMessage(cloudprotocol.UnitStatusMessageType, unitStatus, false)
 }
 
 // SendMonitoringData sends monitoring data.
@@ -242,7 +242,7 @@ func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.Moni
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.MonitoringDataType, monitoringData, false)
+	return handler.scheduleMessage(cloudprotocol.MonitoringMessageType, monitoringData, false)
 }
 
 // SendServiceNewState sends new state message.
@@ -250,7 +250,7 @@ func (handler *AmqpHandler) SendInstanceNewState(newState cloudprotocol.NewState
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.NewStateType, newState, false)
+	return handler.scheduleMessage(cloudprotocol.NewStateMessageType, newState, false)
 }
 
 // SendServiceStateRequest sends state request message.
@@ -258,7 +258,7 @@ func (handler *AmqpHandler) SendInstanceStateRequest(request cloudprotocol.State
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.StateRequestType, request, true)
+	return handler.scheduleMessage(cloudprotocol.StateRequestMessageType, request, true)
 }
 
 // SendLog sends system or service logs.
@@ -266,7 +266,7 @@ func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) error {
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.PushLogType, serviceLog, true)
+	return handler.scheduleMessage(cloudprotocol.PushLogMessageType, serviceLog, true)
 }
 
 // SendAlerts sends alerts message.
@@ -274,7 +274,7 @@ func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) error {
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.AlertsType, alerts, true)
+	return handler.scheduleMessage(cloudprotocol.AlertsMessageType, alerts, true)
 }
 
 // SendIssueUnitCerts sends request to issue new certificates.
@@ -283,7 +283,7 @@ func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCer
 	defer handler.Unlock()
 
 	return handler.scheduleMessage(
-		cloudprotocol.IssueUnitCertsType, cloudprotocol.IssueUnitCerts{Requests: requests}, true)
+		cloudprotocol.IssueUnitCertsMessageType, cloudprotocol.IssueUnitCerts{Requests: requests}, true)
 }
 
 // SendInstallCertsConfirmation sends install certificates confirmation.
@@ -292,7 +292,7 @@ func (handler *AmqpHandler) SendInstallCertsConfirmation(confirmations []cloudpr
 	defer handler.Unlock()
 
 	return handler.scheduleMessage(
-		cloudprotocol.InstallUnitCertsConfirmationType,
+		cloudprotocol.InstallUnitCertsConfirmationMessageType,
 		cloudprotocol.InstallUnitCertsConfirmation{Certificates: confirmations}, true)
 }
 
@@ -301,7 +301,7 @@ func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs cloudprotocol.Overrid
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.OverrideEnvVarsStatusType, envs, true)
+	return handler.scheduleMessage(cloudprotocol.OverrideEnvVarsStatusMessageType, envs, true)
 }
 
 // SubscribeForConnectionEvents subscribes for connection events.
