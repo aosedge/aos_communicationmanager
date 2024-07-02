@@ -20,6 +20,8 @@ package iamclient
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -27,11 +29,15 @@ import (
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	pb "github.com/aosedge/aos_common/api/iamanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
+	pbconvert "github.com/aosedge/aos_common/utils/pbconvert"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 )
@@ -40,7 +46,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const iamRequestTimeout = 30 * time.Second
+const (
+	iamRequestTimeout    = 30 * time.Second
+	iamReconnectInterval = 10 * time.Second
+)
 
 /***********************************************************************************************************************
  * Types
@@ -52,8 +61,7 @@ type Client struct {
 
 	sender Sender
 
-	nodeID string
-
+	nodeID   string
 	systemID string
 
 	publicConnection    *grpc.ClientConn
@@ -62,7 +70,9 @@ type Client struct {
 	identService        pb.IAMPublicIdentityServiceClient
 	certificateService  pb.IAMCertificateServiceClient
 
-	closeChannel chan struct{}
+	closeChannel      chan struct{}
+	nodeService       pb.IAMPublicNodesServiceClient
+	nodeInfoListeners []chan cloudprotocol.NodeInfo
 }
 
 // Sender provides API to send messages to the cloud.
@@ -91,8 +101,9 @@ func New(
 	}
 
 	localClient := &Client{
-		sender:       sender,
-		closeChannel: make(chan struct{}, 1),
+		sender:            sender,
+		closeChannel:      make(chan struct{}, 1),
+		nodeInfoListeners: make([]chan cloudprotocol.NodeInfo, 0),
 	}
 
 	defer func() {
@@ -108,6 +119,7 @@ func New(
 
 	localClient.publicService = pb.NewIAMPublicServiceClient(localClient.publicConnection)
 	localClient.identService = pb.NewIAMPublicIdentityServiceClient(localClient.publicConnection)
+	localClient.nodeService = pb.NewIAMPublicNodesServiceClient(localClient.publicConnection)
 
 	if localClient.protectedConnection, err = localClient.createProtectedConnection(
 		config, cryptocontext, insecure); err != nil {
@@ -119,12 +131,14 @@ func New(
 	log.Debug("Connected to IAM")
 
 	if localClient.nodeID, _, err = localClient.getNodeInfo(); err != nil {
-		return client, aoserrors.Wrap(err)
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if localClient.systemID, err = localClient.getSystemID(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
+
+	go localClient.connectPublicNodeService()
 
 	return localClient, nil
 }
@@ -137,6 +151,51 @@ func (client *Client) GetNodeID() string {
 // GetSystemID returns system ID.
 func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
+}
+
+// GetNodeInfo returns node info.
+func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInfo, err error) {
+	log.WithField("nodeID", nodeID).Debug("Get node info")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	request := &pb.GetNodeInfoRequest{NodeId: nodeID}
+
+	response, err := client.nodeService.GetNodeInfo(ctx, request)
+	if err != nil {
+		return cloudprotocol.NodeInfo{}, aoserrors.Wrap(err)
+	}
+
+	return pbconvert.NewNodeInfoFromPB(response), nil
+}
+
+// GetAllNodeIDs returns node ids.
+func (client *Client) GetAllNodeIDs() (nodeIDs []string, err error) {
+	log.Debug("Get all node ids")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.nodeService.GetAllNodeIDs(ctx, &emptypb.Empty{})
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return response.Ids, err
+}
+
+// SubscribeNodeInfoChange subscribes client on NodeInfoChange events
+func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
+	client.Lock()
+	defer client.Unlock()
+
+	log.Debug("Subscribe on node info change event")
+
+	ch := make(chan cloudprotocol.NodeInfo)
+	client.nodeInfoListeners = append(client.nodeInfoListeners, ch)
+
+	return ch
 }
 
 // RenewCertificatesNotification renew certificates notification.
@@ -257,6 +316,8 @@ func (client *Client) Close() (err error) {
 		client.protectedConnection.Close()
 	}
 
+	client.nodeInfoListeners = nil
+
 	log.Debug("Disconnected from IAM")
 
 	return nil
@@ -355,4 +416,72 @@ func (client *Client) getSystemID() (systemID string, err error) {
 	log.WithFields(log.Fields{"systemID": response.GetSystemId()}).Debug("Get system ID")
 
 	return response.GetSystemId(), nil
+}
+
+func (client *Client) processMessages(listener pb.IAMPublicNodesService_SubscribeNodeChangedClient) (err error) {
+	for {
+		nodeInfo, err := listener.Recv()
+		if err != nil {
+			if code, ok := status.FromError(err); ok {
+				if code.Code() == codes.Canceled {
+					log.Debug("IAM client connection closed")
+					return nil
+				}
+			}
+
+			return aoserrors.Wrap(err)
+		}
+
+		client.Lock()
+		for _, listener := range client.nodeInfoListeners {
+			listener <- pbconvert.NewNodeInfoFromPB(nodeInfo)
+		}
+		client.Unlock()
+	}
+}
+
+func (client *Client) connectPublicNodeService() {
+	listener, err := client.subscribeNodeInfoChange()
+
+	for {
+		if err != nil {
+			log.Errorf("Error register to IAM: %v", aoserrors.Wrap(err))
+		} else {
+			if err = client.processMessages(listener); err != nil {
+				if errors.Is(err, io.EOF) {
+					log.Debug("Connection is closed")
+				} else {
+					log.Errorf("Connection error: %v", aoserrors.Wrap(err))
+				}
+			}
+		}
+
+		log.Debugf("Reconnect to IAM in %v...", iamReconnectInterval)
+
+		select {
+		case <-client.closeChannel:
+			log.Debugf("Disconnected from IAM")
+
+			return
+
+		case <-time.After(iamReconnectInterval):
+			listener, err = client.subscribeNodeInfoChange()
+		}
+	}
+}
+
+func (client *Client) subscribeNodeInfoChange() (listener pb.IAMPublicNodesService_SubscribeNodeChangedClient, err error) {
+	client.Lock()
+	defer client.Unlock()
+
+	client.nodeService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
+
+	listener, err = client.nodeService.SubscribeNodeChanged(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		log.WithField("error", err).Error("Can't subscribe on NodeChange event")
+
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return listener, err
 }
