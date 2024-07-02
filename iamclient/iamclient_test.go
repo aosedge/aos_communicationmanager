@@ -37,6 +37,7 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/iamclient"
@@ -55,9 +56,18 @@ const (
  * Types
  **********************************************************************************************************************/
 
+type testIAMPublicNodesServiceServer struct {
+	pb.UnimplementedIAMPublicNodesServiceServer
+	nodeInfo chan *pb.NodeInfo
+
+	currentID       string
+	currentNodeName string
+}
+
 type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
 	pb.UnimplementedIAMPublicIdentityServiceServer
+	testIAMPublicNodesServiceServer
 
 	grpcServer *grpc.Server
 	systemID   string
@@ -331,6 +341,73 @@ func TestGetCertificates(t *testing.T) {
 	}
 }
 
+func TestGetNodeInfo(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	nodeInfo, err := client.GetNodeInfo(publicServer.currentID)
+	if err != nil {
+		t.Errorf("Error is not expected: %s", err)
+	}
+
+	if nodeInfo.NodeID != publicServer.currentID {
+		t.Errorf("Not expected NodeId: %s", nodeInfo.NodeID)
+	}
+
+	if nodeInfo.Name != publicServer.currentNodeName {
+		t.Errorf("Not expected NodeId: %s", nodeInfo.Name)
+	}
+}
+
+func TestSubscribeNodeInfoChange(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+
+	stream := client.SubscribeNodeInfoChange()
+
+	secondaryNodeInfo := pb.NodeInfo{NodeId: "secondary", NodeType: "secondary"}
+
+	publicServer.nodeInfo <- &secondaryNodeInfo
+
+	receivedNodeInfo := <-stream
+
+	defer client.Close()
+
+	if secondaryNodeInfo.GetNodeId() != receivedNodeInfo.NodeID {
+		t.Errorf("NodeInfo with not expected Id: %s", receivedNodeInfo.NodeID)
+	}
+	if secondaryNodeInfo.GetName() != receivedNodeInfo.Name {
+		t.Errorf("NodeInfo with not expected Name: %s", receivedNodeInfo.Name)
+	}
+}
+
 /*******************************************************************************
  * Private
  ******************************************************************************/
@@ -346,9 +423,11 @@ func newTestServer(
 	}
 
 	publicServer.grpcServer = grpc.NewServer()
+	publicServer.nodeInfo = make(chan *pb.NodeInfo)
 
 	pb.RegisterIAMPublicServiceServer(publicServer.grpcServer, publicServer)
 	pb.RegisterIAMPublicIdentityServiceServer(publicServer.grpcServer, publicServer)
+	pb.RegisterIAMPublicNodesServiceServer(publicServer.grpcServer, &publicServer.testIAMPublicNodesServiceServer)
 
 	go func() {
 		if err := publicServer.grpcServer.Serve(publicListener); err != nil {
@@ -463,6 +542,26 @@ func (server *testPublicServer) GetSystemInfo(
 
 func (server *testPublicServer) GetNodeInfo(context context.Context, req *empty.Empty) (*pb.NodeInfo, error) {
 	return &pb.NodeInfo{}, nil
+}
+
+func (server *testIAMPublicNodesServiceServer) GetAllNodeIDs(context context.Context, req *emptypb.Empty) (*pb.NodesID, error) {
+	return &pb.NodesID{}, nil
+}
+
+func (server *testIAMPublicNodesServiceServer) GetNodeInfo(context context.Context, req *pb.GetNodeInfoRequest) (*pb.NodeInfo, error) {
+	return &pb.NodeInfo{NodeId: server.currentID, Name: server.currentNodeName}, nil
+}
+
+func (server *testIAMPublicNodesServiceServer) SubscribeNodeChanged(empty *emptypb.Empty, stream pb.IAMPublicNodesService_SubscribeNodeChangedServer) error {
+	log.Error("testIAMPublicNodesServiceServer SubscribeNodeChanged")
+
+	nodeInfo := <-server.nodeInfo
+
+	return stream.Send(nodeInfo)
+}
+
+func (server *testIAMPublicNodesServiceServer) RegisterNode(pb.IAMPublicNodesService_RegisterNodeServer) error {
+	return nil
 }
 
 func (sender *testSender) SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error) {
