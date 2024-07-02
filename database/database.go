@@ -177,7 +177,7 @@ func (db *Database) GetJournalCursor() (cursor string, err error) {
 }
 
 // SetComponentsUpdateInfo store update data for update managers.
-func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComponent) (err error) {
+func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.ComponentStatus) (err error) {
 	dataJSON, err := json.Marshal(&updateInfo)
 	if err != nil {
 		return aoserrors.Wrap(err)
@@ -191,7 +191,7 @@ func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComp
 }
 
 // GetComponentsUpdateInfo returns update data for system components.
-func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemComponent, err error) {
+func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.ComponentStatus, err error) {
 	stmt, err := db.sql.Prepare("SELECT componentsUpdateInfo FROM config")
 	if err != nil {
 		return updateInfo, aoserrors.Wrap(err)

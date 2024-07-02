@@ -133,12 +133,12 @@ func TestCursor(t *testing.T) {
 }
 
 func TestComponentsUpdateInfo(t *testing.T) {
-	testData := []umcontroller.SystemComponent{
+	testData := []umcontroller.ComponentStatus{
 		{
-			ID: "component1", VendorVersion: "v1", AosVersion: 1,
-			Annotations: "Some annotation", URL: "url12", Sha512: []byte{1, 3, 90, 42},
+			ID: "component1", Version: "v1",
+			Annotations: "Some annotation", URL: "url12", Sha256: []byte{1, 3, 90, 42},
 		},
-		{ID: "component2", VendorVersion: "v1", AosVersion: 1, URL: "url12", Sha512: []byte{1, 3, 90, 42}},
+		{ID: "component2", Version: "v1", URL: "url12", Sha256: []byte{1, 3, 90, 42}},
 	}
 
 	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
@@ -154,7 +154,7 @@ func TestComponentsUpdateInfo(t *testing.T) {
 		t.Fatalf("Wrong update info value: %v", getUpdateInfo)
 	}
 
-	testData = []umcontroller.SystemComponent{}
+	testData = []umcontroller.ComponentStatus{}
 
 	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
 		t.Fatal("Can't set update manager's update info ", err)
@@ -246,7 +246,7 @@ func TestMultiThread(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < numIterations; i++ {
-			if err := testDB.SetComponentsUpdateInfo([]umcontroller.SystemComponent{{AosVersion: uint64(i)}}); err != nil {
+			if err := testDB.SetComponentsUpdateInfo([]umcontroller.ComponentStatus{{Version: strconv.Itoa(i)}}); err != nil {
 				t.Errorf("Can't set journal cursor: %s", err)
 			}
 		}

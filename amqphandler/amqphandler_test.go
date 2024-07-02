@@ -404,10 +404,10 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	componentSetupData := []cloudprotocol.ComponentStatus{
-		{ID: "rootfs", Status: "installed", VendorVersion: "1.0"},
-		{ID: "firmware", Status: "installed", VendorVersion: "5", AosVersion: 6},
+		{ComponentID: "rootfs", Status: "installed", Version: "1.0"},
+		{ComponentID: "firmware", Status: "installed", Version: "5.6"},
 		{
-			ID: "bootloader", Status: "error", VendorVersion: "100",
+			ComponentID: "bootloader", Status: "error", Version: "100",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "install error"},
 		},
 	}

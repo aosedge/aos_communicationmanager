@@ -70,8 +70,8 @@ type Controller struct {
 	fileServer *fileserver.FileServer
 }
 
-// SystemComponent information about system component update.
-type SystemComponent struct {
+// ComponentStatus information about system component update.
+type ComponentStatus struct {
 	ID          string `json:"id"`
 	Version     string `json:"version"`
 	Annotations string `json:"annotations,omitempty"`
@@ -87,7 +87,7 @@ type umConnection struct {
 	updatePriority uint32
 	state          string
 	components     []string
-	updatePackages []SystemComponent
+	updatePackages []ComponentStatus
 }
 
 type umCtrlInternalMsg struct {
@@ -118,8 +118,8 @@ type allConnectionMonitor struct {
 }
 
 type storage interface {
-	GetComponentsUpdateInfo() (updateInfo []SystemComponent, err error)
-	SetComponentsUpdateInfo(updateInfo []SystemComponent) (err error)
+	GetComponentsUpdateInfo() (updateInfo []ComponentStatus, err error)
+	SetComponentsUpdateInfo(updateInfo []ComponentStatus) (err error)
 }
 
 // CertificateProvider certificate and key provider interface.
@@ -297,7 +297,7 @@ func (umCtrl *Controller) UpdateComponents(
 			return umCtrl.currentComponents, nil
 		}
 
-		componentsUpdateInfo := []SystemComponent{}
+		componentsUpdateInfo := []ComponentStatus{}
 
 		for _, component := range components {
 			componentStatus := systemComponentStatus{
@@ -349,7 +349,7 @@ func (umCtrl *Controller) UpdateComponents(
 				Path:   decryptedFile,
 			}
 
-			componentInfo := SystemComponent{
+			componentInfo := ComponentStatus{
 				ID: component.ComponentID, Version: component.Version,
 				Annotations: string(component.Annotations),
 				Sha256:      fileInfo.Sha256, Size: fileInfo.Size,
@@ -621,7 +621,7 @@ func (umCtrl *Controller) getCurrentUpdateState() (state string) {
 
 func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 	for i := range umCtrl.connections {
-		umCtrl.connections[i].updatePackages = []SystemComponent{}
+		umCtrl.connections[i].updatePackages = []ComponentStatus{}
 	}
 
 	updateComponents, err := umCtrl.storage.GetComponentsUpdateInfo()
@@ -640,7 +640,7 @@ func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 	return aoserrors.Wrap(err)
 }
 
-func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo SystemComponent) (err error) {
+func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo ComponentStatus) (err error) {
 	for i := range umCtrl.connections {
 		for _, id := range umCtrl.connections[i].components {
 			if id == componentInfo.ID {
@@ -667,7 +667,7 @@ func (umCtrl *Controller) cleanupUpdateData() {
 			umCtrl.allocator.FreeSpace(updatePackage.Size)
 		}
 
-		umCtrl.connections[i].updatePackages = []SystemComponent{}
+		umCtrl.connections[i].updatePackages = []ComponentStatus{}
 	}
 
 	entries, err := os.ReadDir(umCtrl.componentDir)
@@ -702,7 +702,7 @@ func (umCtrl *Controller) cleanupUpdateData() {
 		return
 	}
 
-	if err := umCtrl.storage.SetComponentsUpdateInfo([]SystemComponent{}); err != nil {
+	if err := umCtrl.storage.SetComponentsUpdateInfo([]ComponentStatus{}); err != nil {
 		log.Error("Can't clean components update info ", err)
 	}
 }
