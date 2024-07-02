@@ -107,7 +107,7 @@ type testImageProvider struct {
 }
 
 type testResourceManager struct {
-	nodeResources map[string]aostypes.NodeUnitConfig
+	nodeResources map[string]cloudprotocol.NodeConfig
 }
 
 type testStorage struct {
@@ -445,7 +445,7 @@ func TestBalancing(t *testing.T) {
 	}
 
 	type testData struct {
-		nodeResources       map[string]aostypes.NodeUnitConfig
+		nodeResources       map[string]cloudprotocol.NodeConfig
 		serviceConfigs      map[string]aostypes.ServiceConfig
 		desiredInstances    []cloudprotocol.InstanceInfo
 		expectedRunRequests map[string]runRequest
@@ -456,7 +456,7 @@ func TestBalancing(t *testing.T) {
 		// Check node priority and runner: all service instances should be start on higher priority node according to
 		// supported runner
 		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
+			nodeResources: map[string]cloudprotocol.NodeConfig{
 				nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100},
 				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
 				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
@@ -544,7 +544,7 @@ func TestBalancing(t *testing.T) {
 		},
 		// Check labels: label low priority service to run on high priority node
 		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
+			nodeResources: map[string]cloudprotocol.NodeConfig{
 				nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100, Labels: []string{"label1"}},
 				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"}},
 				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
@@ -623,14 +623,14 @@ func TestBalancing(t *testing.T) {
 		},
 		// Check available resources
 		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
-				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Resources: []aostypes.ResourceInfo{
+			nodeResources: map[string]cloudprotocol.NodeConfig{
+				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Resources: []cloudprotocol.ResourceInfo{
 					{Name: "resource1"},
 					{Name: "resource3"},
 				}},
 				nodeTypeRemoteSM: {
 					NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"},
-					Resources: []aostypes.ResourceInfo{
+					Resources: []cloudprotocol.ResourceInfo{
 						{Name: "resource1"},
 						{Name: "resource2"},
 					},
@@ -711,17 +711,17 @@ func TestBalancing(t *testing.T) {
 		},
 		// Check available devices
 		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
-				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Devices: []aostypes.DeviceInfo{
+			nodeResources: map[string]cloudprotocol.NodeConfig{
+				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Devices: []cloudprotocol.DeviceInfo{
 					{Name: "dev1", SharedCount: 1},
 					{Name: "dev2", SharedCount: 2},
 					{Name: "dev3"},
 				}},
-				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Devices: []aostypes.DeviceInfo{
+				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Devices: []cloudprotocol.DeviceInfo{
 					{Name: "dev1", SharedCount: 1},
 					{Name: "dev2", SharedCount: 3},
 				}, Labels: []string{"label2"}},
-				nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0, Devices: []aostypes.DeviceInfo{
+				nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0, Devices: []cloudprotocol.DeviceInfo{
 					{Name: "dev1", SharedCount: 1},
 					{Name: "dev2", SharedCount: 2},
 				}},
@@ -892,7 +892,7 @@ func TestServiceRevert(t *testing.T) {
 		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
 		RemoteNode: false,
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{NodeType: nodeTypeLocalSM, Priority: 100}
+	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{NodeType: nodeTypeLocalSM, Priority: 100}
 
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
@@ -993,13 +993,13 @@ func TestStorageCleanup(t *testing.T) {
 		RemoteNode:    false,
 		RunnerFeature: []string{runnerRunc},
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{Priority: 100}
+	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{Priority: 100}
 
 	nodeManager.nodeInformation[nodeIDRunxSM] = launcher.NodeInfo{
 		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeRunxSM},
 		RemoteNode: true, RunnerFeature: []string{runnerRunx},
 	}
-	resourceManager.nodeResources[nodeTypeRunxSM] = aostypes.NodeUnitConfig{Priority: 0}
+	resourceManager.nodeResources[nodeTypeRunxSM] = cloudprotocol.NodeConfig{Priority: 0}
 
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
@@ -1149,9 +1149,9 @@ func TestRebalancing(t *testing.T) {
 		RemoteNode: false, RunnerFeature: []string{runnerRunc, "crun"},
 	}
 
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
+	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{
 		Priority: 100,
-		NodeType: nodeTypeLocalSM, Devices: []aostypes.DeviceInfo{
+		NodeType: nodeTypeLocalSM, Devices: []cloudprotocol.DeviceInfo{
 			{Name: "dev1", SharedCount: 1},
 		},
 	}
@@ -1166,13 +1166,13 @@ func TestRebalancing(t *testing.T) {
 		RemoteNode: true, RunnerFeature: []string{runnerRunc},
 	}
 
-	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
+	resourceManager.nodeResources[nodeTypeRemoteSM] = cloudprotocol.NodeConfig{
 		Priority: 50,
 		NodeType: nodeTypeRemoteSM,
-		Devices: []aostypes.DeviceInfo{
+		Devices: []cloudprotocol.DeviceInfo{
 			{Name: "dev1", SharedCount: 2},
 		},
-		Resources: []aostypes.ResourceInfo{{Name: "resource1"}},
+		Resources: []cloudprotocol.ResourceInfo{{Name: "resource1"}},
 	}
 
 	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
@@ -1402,7 +1402,7 @@ func TestRebalancingSameNodePriority(t *testing.T) {
 		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
 		RemoteNode: false,
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
+	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeLocalSM,
 		Labels:   []string{"label1"},
 	}
@@ -1411,7 +1411,7 @@ func TestRebalancingSameNodePriority(t *testing.T) {
 		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
 		RemoteNode: true,
 	}
-	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
+	resourceManager.nodeResources[nodeTypeRemoteSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeRemoteSM,
 		Labels:   []string{"label2"},
 	}
@@ -1638,7 +1638,7 @@ func TestRebalancingAfterRestart(t *testing.T) {
 		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
 		RemoteNode: false,
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
+	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeLocalSM,
 		Labels:   []string{"label1"},
 	}
@@ -1647,7 +1647,7 @@ func TestRebalancingAfterRestart(t *testing.T) {
 		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
 		RemoteNode: true,
 	}
-	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
+	resourceManager.nodeResources[nodeTypeRemoteSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeRemoteSM,
 		Labels:   []string{"label2"},
 	}
@@ -1918,13 +1918,13 @@ func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[s
 
 func newTestResourceManager() *testResourceManager {
 	resourceManager := &testResourceManager{
-		nodeResources: make(map[string]aostypes.NodeUnitConfig),
+		nodeResources: make(map[string]cloudprotocol.NodeConfig),
 	}
 
 	return resourceManager
 }
 
-func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string) aostypes.NodeUnitConfig {
+func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string) cloudprotocol.NodeConfig {
 	resource := resourceManager.nodeResources[nodeType]
 	resource.NodeType = nodeType
 

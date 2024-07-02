@@ -291,8 +291,8 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	go func() {
 		if err := controller.CheckUnitConfig(cloudprotocol.UnitConfig{
-			VendorVersion: newVersion,
-			Nodes: []aostypes.NodeUnitConfig{
+			Version: newVersion,
+			Nodes: []cloudprotocol.NodeConfig{
 				{
 					NodeType: nodeType,
 				},
@@ -321,7 +321,7 @@ func TestUnitConfigMessages(t *testing.T) {
 	go func() {
 		if err := controller.SetUnitConfig(cloudprotocol.UnitConfig{
 			VendorVersion: newVersion,
-			Nodes: []aostypes.NodeUnitConfig{
+			Nodes: []cloudprotocol.NodeConfig{
 				{
 					NodeType: nodeType,
 				},
