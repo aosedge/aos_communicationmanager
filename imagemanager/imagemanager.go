@@ -471,7 +471,7 @@ func (imagemanager *Imagemanager) RemoveService(serviceID string) error {
 func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
-	log.WithFields(log.Fields{"id": layerInfo.ID, "digest": layerInfo.Digest}).Debug("Install layer")
+	log.WithFields(log.Fields{"id": layerInfo.LayerID, "digest": layerInfo.Digest}).Debug("Install layer")
 
 	if layerInfo, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest); err == nil {
 		if layerInfo.Cached {
@@ -497,9 +497,9 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 			releaseAllocatedSpace(decryptedFile, space)
 
 			log.WithFields(log.Fields{
-				"id":         layerInfo.ID,
-				"aosVersion": layerInfo.AosVersion,
-				"imagePath":  decryptedFile,
+				"id":        layerInfo.LayerID,
+				"version":   layerInfo.Version,
+				"imagePath": decryptedFile,
 			}).Errorf("Can't install layer: %v", err)
 
 			return
@@ -519,7 +519,7 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 		fcrypt.DecryptParams{
 			Chains:         chains,
 			Certs:          certs,
-			DecryptionInfo: layerInfo.DecryptionInfo,
+			DecryptionInfo: &layerInfo.DecryptionInfo,
 			Signs:          layerInfo.Signs,
 		}); err != nil {
 		return aoserrors.Wrap(err)
@@ -537,13 +537,12 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 
 	if err := imagemanager.storage.AddLayer(LayerInfo{
 		LayerInfo: aostypes.LayerInfo{
-			VersionInfo: layerInfo.VersionInfo,
-			ID:          layerInfo.ID,
-			Digest:      layerInfo.Digest,
-			URL:         createLocalURL(decryptedFile),
-			Sha256:      fileInfo.Sha256,
-			Sha512:      fileInfo.Sha512,
-			Size:        fileInfo.Size,
+			Version: layerInfo.Version,
+			LayerID: layerInfo.LayerID,
+			Digest:  layerInfo.Digest,
+			URL:     createLocalURL(decryptedFile),
+			Sha256:  fileInfo.Sha256,
+			Size:    fileInfo.Size,
 		},
 		Path:      decryptedFile,
 		RemoteURL: remoteURL,

@@ -316,7 +316,7 @@ func TestReceiveMessages(t *testing.T) {
 					{Version: "1.0.0", ComponentID: "rootfs"},
 				},
 				Layers: []cloudprotocol.LayerInfo{
-					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "l1", Digest: "digest"},
+					{Version: "1.0", LayerID: "l1", Digest: "digest"},
 				},
 				Services: []cloudprotocol.ServiceInfo{
 					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "serv1", ProviderID: "p1"},

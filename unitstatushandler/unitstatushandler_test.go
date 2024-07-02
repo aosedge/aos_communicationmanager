@@ -382,16 +382,16 @@ func TestUpdateLayers(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer1", Digest: "digest1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+				LayerID: "layer1", Digest: "digest1", Version: "0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{1}},
 			},
 			{
-				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+				LayerID: "layer3", Digest: "digest3", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
 			},
 			{
-				ID: "layer4", Digest: "digest4", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
+				LayerID: "layer4", Digest: "digest4", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{4}},
 			},
 		},
 	})
@@ -455,16 +455,16 @@ func TestUpdateLayers(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+				LayerID: "layer3", Digest: "digest3", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
 			},
 			{
-				ID: "layer4", Digest: "digest4", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
+				LayerID: "layer4", Digest: "digest4", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{4}},
 			},
 			{
-				ID: "layer5", Digest: "digest5", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{5}},
+				LayerID: "layer5", Digest: "digest5", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{5}},
 			},
 		},
 	})
@@ -937,24 +937,24 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		},
 		Layers: []cloudprotocol.LayerInfo{
 			{
-				ID: "layer0", Digest: "digest0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer0"}, Sha256: []byte{0}},
+				LayerID: "layer0", Digest: "digest0", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"layer0"}, Sha256: []byte{0}},
 			},
 			{
-				ID: "layer1", Digest: "digest1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer1"}, Sha256: []byte{1}},
+				LayerID: "layer1", Digest: "digest1", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"layer1"}, Sha256: []byte{1}},
 			},
 			{
-				ID: "layer2", Digest: "digest2", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer2"}, Sha256: []byte{2}},
+				LayerID: "layer2", Digest: "digest2", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"layer2"}, Sha256: []byte{2}},
 			},
 			{
-				ID: "layer3", Digest: "digest3", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer3"}, Sha256: []byte{3}},
+				LayerID: "layer3", Digest: "digest3", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"layer3"}, Sha256: []byte{3}},
 			},
 			{
-				ID: "layer5", Digest: "digest5", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"layer5"}, Sha256: []byte{3}},
+				LayerID: "layer5", Digest: "digest5", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"layer5"}, Sha256: []byte{3}},
 			},
 		},
 	})

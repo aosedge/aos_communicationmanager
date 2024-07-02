@@ -2169,9 +2169,9 @@ func createServiceInfo(id string, gid uint32, url string) aostypes.ServiceInfo {
 
 func createLayerInfo(digest string, url string) aostypes.LayerInfo {
 	return aostypes.LayerInfo{
-		Digest:      digest,
-		VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-		URL:         url,
+		Digest:  digest,
+		Version: "1.0",
+		URL:     url,
 	}
 }
 

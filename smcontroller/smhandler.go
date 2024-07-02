@@ -214,16 +214,11 @@ func (handler *smHandler) runInstances(
 
 	for i, layerInfo := range layers {
 		pbRunInstances.Layers[i] = &pb.LayerInfo{
-			VersionInfo: &pb.VersionInfo{
-				AosVersion:    layerInfo.AosVersion,
-				VendorVersion: layerInfo.VendorVersion,
-				Description:   layerInfo.Description,
-			},
+			Version: layerInfo.Version,
 			Url:     layerInfo.URL,
-			LayerId: layerInfo.ID,
+			LayerId: layerInfo.LayerID,
 			Digest:  layerInfo.Digest,
 			Sha256:  layerInfo.Sha256,
-			Sha512:  layerInfo.Sha512,
 			Size:    layerInfo.Size,
 		}
 	}

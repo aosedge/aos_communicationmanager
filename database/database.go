@@ -470,8 +470,8 @@ func (db *Database) GetLayersInfo() ([]imagemanager.LayerInfo, error) {
 // GetLayerInfo returns layer info by ID.
 func (db *Database) GetLayerInfo(digest string) (layer imagemanager.LayerInfo, err error) {
 	if err = db.getDataFromQuery("SELECT * FROM layers WHERE digest = ?",
-		[]any{digest}, &layer.Digest, &layer.ID, &layer.AosVersion, &layer.VendorVersion, &layer.Description,
-		&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256, &layer.Sha512,
+		[]any{digest}, &layer.Digest, &layer.LayerID, &layer.Version,
+		&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256,
 		&layer.Cached); err != nil {
 		if errors.Is(err, errNotExist) {
 			return layer, imagemanager.ErrNotExist
@@ -485,9 +485,9 @@ func (db *Database) GetLayerInfo(digest string) (layer imagemanager.LayerInfo, e
 
 // AddLayer adds new layer.
 func (db *Database) AddLayer(layer imagemanager.LayerInfo) error {
-	return db.executeQuery("INSERT INTO layers values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		layer.Digest, layer.ID, layer.AosVersion, layer.VendorVersion, layer.Description, layer.URL, layer.RemoteURL,
-		layer.Path, layer.Size, layer.Timestamp, layer.Sha256, layer.Sha512, layer.Cached)
+	return db.executeQuery("INSERT INTO layers values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		layer.Digest, layer.LayerID, layer.Version, layer.URL, layer.RemoteURL,
+		layer.Path, layer.Size, layer.Timestamp, layer.Sha256, layer.Cached)
 }
 
 // SetLayerCached sets cached status for the layer.
@@ -878,16 +878,13 @@ func (db *Database) createLayersTable() (err error) {
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS layers (digest TEXT NOT NULL PRIMARY KEY,
                                                              layerId TEXT,
-                                                             aosVersion INTEGER,
-                                                             vendorVersion TEXT,
-                                                             description TEXT,
+                                                             version TEXT,
                                                              localURL   TEXT,
                                                              remoteURL  TEXT,
                                                              Path       TEXT,
                                                              Size       INTEGER,
                                                              Timestamp  TIMESTAMP,
                                                              sha256 BLOB,
-                                                             sha512 BLOB,
                                                              cached INTEGER)`)
 
 	return aoserrors.Wrap(err)
@@ -1057,8 +1054,8 @@ func (db *Database) getLayersFromQuery(
 		var layer imagemanager.LayerInfo
 
 		if err = rows.Scan(
-			&layer.Digest, &layer.ID, &layer.AosVersion, &layer.VendorVersion, &layer.Description,
-			&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256, &layer.Sha512,
+			&layer.Digest, &layer.LayerID, &layer.Version,
+			&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256,
 			&layer.Cached); err != nil {
 			return layers, aoserrors.Wrap(err)
 		}
