@@ -166,7 +166,7 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 
 	if len(manager.CurrentUpdate.UnitConfig) != 0 {
 		version, _ := manager.unitConfigUpdater.GetUnitConfigVersion(manager.CurrentUpdate.UnitConfig)
-		status.UnitConfig = &cloudprotocol.UnitConfigStatus{VendorVersion: version}
+		status.UnitConfig = &cloudprotocol.UnitConfigStatus{Version: version}
 	}
 
 	return status
@@ -373,11 +373,11 @@ func (manager *firmwareManager) download(ctx context.Context) {
 	manager.DownloadResult = nil
 
 	if len(manager.CurrentUpdate.UnitConfig) != 0 {
-		manager.UnitConfigStatus.VendorVersion = ""
+		manager.UnitConfigStatus.Version = ""
 
 		version, err := manager.unitConfigUpdater.GetUnitConfigVersion(manager.CurrentUpdate.UnitConfig)
 
-		manager.UnitConfigStatus.VendorVersion = version
+		manager.UnitConfigStatus.Version = version
 
 		if err != nil {
 			log.Errorf("Error getting unit config version: %s", err)

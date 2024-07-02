@@ -73,7 +73,7 @@ func (instance *Instance) GetStatus() (unitConfigInfo cloudprotocol.UnitConfigSt
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfigInfo.Version = instance.unitConfig.VendorVersion
+	unitConfigInfo.Version = instance.unitConfig.Version
 	unitConfigInfo.Status = cloudprotocol.InstalledStatus
 
 	if instance.unitConfigError != nil {

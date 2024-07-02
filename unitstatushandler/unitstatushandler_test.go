@@ -54,7 +54,7 @@ func TestSendInitialStatus(t *testing.T) {
 	expectedUnitStatus := cloudprotocol.UnitStatus{
 		UnitSubjects: []string{"subject1"},
 		UnitConfig: []cloudprotocol.UnitConfigStatus{
-			{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus},
+			{Version: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Components: []cloudprotocol.ComponentStatus{
 			{ComponentID: "comp0", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -152,7 +152,7 @@ func TestSendInitialStatus(t *testing.T) {
 
 func TestUpdateUnitConfig(t *testing.T) {
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
-		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.UnitConfigStatus{Version: "1.0", Status: cloudprotocol.InstalledStatus})
 	fotaUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	sotaUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
@@ -181,7 +181,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 	// success update
 
 	unitConfigUpdater.UnitConfigStatus = cloudprotocol.UnitConfigStatus{
-		VendorVersion: "1.1", Status: cloudprotocol.InstalledStatus,
+		Version: "1.1", Status: cloudprotocol.InstalledStatus,
 	}
 	expectedUnitStatus := cloudprotocol.UnitStatus{
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
@@ -209,7 +209,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 	unitConfigUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	unitConfigUpdater.UnitConfigStatus = cloudprotocol.UnitConfigStatus{
-		VendorVersion: "1.2", Status: cloudprotocol.ErrorStatus,
+		Version: "1.2", Status: cloudprotocol.ErrorStatus,
 		ErrorInfo: &cloudprotocol.ErrorInfo{Message: unitConfigUpdater.UpdateError.Error()},
 	}
 	expectedUnitStatus.UnitConfig = append(expectedUnitStatus.UnitConfig, unitConfigUpdater.UnitConfigStatus)
@@ -227,7 +227,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 
 func TestUpdateComponents(t *testing.T) {
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{
-		VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus,
+		Version: "1.0", Status: cloudprotocol.InstalledStatus,
 	})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater([]cloudprotocol.ComponentStatus{
 		{ComponentID: "comp0", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -338,7 +338,7 @@ func TestUpdateLayers(t *testing.T) {
 		}},
 	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
-		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.UnitConfigStatus{Version: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, layerStatuses)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
@@ -495,7 +495,7 @@ func TestUpdateServices(t *testing.T) {
 		}},
 	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
-		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.UnitConfigStatus{Version: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
@@ -642,7 +642,7 @@ func TestUpdateServices(t *testing.T) {
 
 func TestRunInstances(t *testing.T) {
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
-		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.UnitConfigStatus{Version: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
@@ -758,7 +758,7 @@ func TestRunInstances(t *testing.T) {
 
 func TestUpdateInstancesStatus(t *testing.T) {
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
-		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.UnitConfigStatus{Version: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
@@ -866,7 +866,7 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		}, Cached: true},
 	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
-		cloudprotocol.UnitConfigStatus{VendorVersion: "1.0", Status: cloudprotocol.InstalledStatus})
+		cloudprotocol.UnitConfigStatus{Version: "1.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, layerStatuses)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
