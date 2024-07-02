@@ -8,7 +8,7 @@ replace github.com/anexia-it/fsquota => github.com/aosedge/fsquota v0.0.0-202311
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20231017140541-3b893ed0421b
-	github.com/aosedge/aos_common v0.0.0-20240701123742-84e62a5773fc
+	github.com/aosedge/aos_common v0.0.0-20240704113917-4b7545c9918b
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
@@ -16,6 +16,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/go-tpm v0.9.0
 	github.com/google/uuid v1.4.0
+	github.com/hashicorp/go-version v1.6.0
 	github.com/jackpal/gateway v1.0.11
 	github.com/looplab/fsm v1.0.1
 	github.com/mattn/go-sqlite3 v1.14.18
@@ -40,7 +41,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.16.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f // indirect
 	github.com/moby/sys/mountinfo v0.7.1 // indirect

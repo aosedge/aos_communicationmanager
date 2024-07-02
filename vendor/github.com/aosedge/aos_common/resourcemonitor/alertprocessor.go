@@ -24,7 +24,21 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type alertCallback func(time time.Time, value uint64)
+/***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+const (
+	AlertStatusRaise    = "raise"
+	AlertStatusContinue = "continue"
+	AlertStatusFall     = "fall"
+)
+
+/***********************************************************************************************************************
+ * Private
+ **********************************************************************************************************************/
+
+type alertCallback func(time time.Time, value uint64, status string)
 
 // alertProcessor object for detection alerts.
 type alertProcessor struct {
@@ -32,8 +46,9 @@ type alertProcessor struct {
 	source            *uint64
 	callback          alertCallback
 	rule              aostypes.AlertRuleParam
-	thresholdTime     time.Time
-	thresholdDetected bool
+	highThresholdTime time.Time
+	lowThresholdTime  time.Time
+	alertCondition    bool
 }
 
 // createAlertProcessor creates alert processor based on configuration.
@@ -49,34 +64,85 @@ func createAlertProcessor(name string, source *uint64,
 func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 	value := *alert.source
 
-	if value >= alert.rule.MaxThreshold && alert.thresholdTime.IsZero() {
-		log.WithFields(log.Fields{
-			"name": alert.name, "maxThreshold": alert.rule.MaxThreshold, "value": value,
-		}).Debugf("Max threshold crossed")
+	if !alert.alertCondition {
+		alert.handleHighThreshold(currentTime, value)
+	} else {
+		alert.handleLowThreshold(currentTime, value)
+	}
+}
 
-		alert.thresholdTime = currentTime
+func (alert *alertProcessor) handleHighThreshold(currentTime time.Time, value uint64) {
+	if value >= alert.rule.High && alert.highThresholdTime.IsZero() {
+		log.WithFields(log.Fields{
+			"name":          alert.name,
+			"highThreshold": alert.rule.High,
+			"value":         value,
+			"currentTime":   currentTime.Format("Jan 2 15:04:05.000"),
+		}).Debugf("High threshold crossed")
+
+		alert.highThresholdTime = currentTime
 	}
 
-	if value < alert.rule.MinThreshold && !alert.thresholdTime.IsZero() {
-		log.WithFields(log.Fields{
-			"name": alert.name, "minThreshold": alert.rule.MinThreshold, "value": value,
-		}).Debugf("Min threshold crossed")
+	if value >= alert.rule.High && !alert.highThresholdTime.IsZero() &&
+		currentTime.Sub(alert.highThresholdTime) >= alert.rule.Timeout.Duration && !alert.alertCondition {
+		alert.alertCondition = true
+		alert.highThresholdTime = currentTime
+		alert.lowThresholdTime = time.Time{}
 
-		alert.thresholdTime = time.Time{}
-		alert.thresholdDetected = false
-	}
-
-	if !alert.thresholdTime.IsZero() &&
-		currentTime.Sub(alert.thresholdTime) >= alert.rule.MinTimeout.Duration &&
-		!alert.thresholdDetected {
 		log.WithFields(log.Fields{
 			"name":        alert.name,
 			"value":       value,
-			"currentTime": currentTime.Format("Jan 2 15:04:05"),
+			"status":      AlertStatusRaise,
+			"currentTime": currentTime.Format("Jan 2 15:04:05.000"),
 		}).Debugf("Resource alert")
 
-		alert.thresholdDetected = true
+		alert.callback(currentTime, value, AlertStatusRaise)
+	}
 
-		alert.callback(currentTime, value)
+	if value < alert.rule.High && !alert.highThresholdTime.IsZero() {
+		alert.highThresholdTime = time.Time{}
+	}
+}
+
+func (alert *alertProcessor) handleLowThreshold(currentTime time.Time, value uint64) {
+	if value <= alert.rule.Low && !alert.lowThresholdTime.IsZero() &&
+		currentTime.Sub(alert.lowThresholdTime) >= alert.rule.Timeout.Duration {
+		alert.alertCondition = false
+		alert.lowThresholdTime = currentTime
+		alert.highThresholdTime = time.Time{}
+
+		log.WithFields(log.Fields{
+			"name":        alert.name,
+			"value":       value,
+			"status":      AlertStatusFall,
+			"currentTime": currentTime.Format("Jan 2 15:04:05.000"),
+		}).Debugf("Resource alert")
+
+		alert.callback(currentTime, value, AlertStatusFall)
+	}
+
+	if currentTime.Sub(alert.highThresholdTime) >= alert.rule.Timeout.Duration && alert.alertCondition {
+		alert.highThresholdTime = currentTime
+
+		log.WithFields(log.Fields{
+			"name":        alert.name,
+			"value":       value,
+			"status":      AlertStatusContinue,
+			"currentTime": currentTime.Format("Jan 2 15:04:05.000"),
+		}).Debugf("Resource alert")
+
+		alert.callback(currentTime, value, AlertStatusContinue)
+	}
+
+	if value <= alert.rule.Low && alert.lowThresholdTime.IsZero() {
+		log.WithFields(log.Fields{
+			"name": alert.name, "lowThreshold": alert.rule.Low, "value": value,
+		}).Debugf("Low threshold crossed")
+
+		alert.lowThresholdTime = currentTime
+	}
+
+	if value > alert.rule.Low && !alert.lowThresholdTime.IsZero() {
+		alert.lowThresholdTime = time.Time{}
 	}
 }

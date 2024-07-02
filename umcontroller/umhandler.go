@@ -26,7 +26,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	pb "github.com/aosedge/aos_common/api/updatemanager/v1"
+	pb "github.com/aosedge/aos_common/api/updatemanager"
 )
 
 /***********************************************************************************************************************

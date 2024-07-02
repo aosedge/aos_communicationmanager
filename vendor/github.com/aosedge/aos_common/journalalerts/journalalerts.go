@@ -60,7 +60,7 @@ type AlertSender interface {
 
 // InstanceInfoProvider provides instance info.
 type InstanceInfoProvider interface {
-	GetInstanceInfoByID(instanceID string) (ident aostypes.InstanceIdent, aosVersion uint64, err error)
+	GetInstanceInfoByID(instanceID string) (ident aostypes.InstanceIdent, version string, err error)
 }
 
 // CursorStorage provides API to set and get journal cursor.
@@ -352,7 +352,7 @@ func (instance *JournalAlerts) getServiceInstanceAlert(
 		instanceID = strings.TrimPrefix(instanceID, aosServicePrefix)
 		instanceID = strings.TrimSuffix(instanceID, ".service")
 
-		instanceIdent, aosVersion, err := instance.instanceProvider.GetInstanceInfoByID(instanceID)
+		instanceIdent, version, err := instance.instanceProvider.GetInstanceInfoByID(instanceID)
 		if err != nil {
 			log.Errorf("Can't get instance info: %s", err)
 
@@ -360,9 +360,9 @@ func (instance *JournalAlerts) getServiceInstanceAlert(
 		}
 
 		return &cloudprotocol.ServiceInstanceAlert{
-			Message:       entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE],
-			InstanceIdent: instanceIdent,
-			AosVersion:    aosVersion,
+			Message:        entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE],
+			InstanceIdent:  instanceIdent,
+			ServiceVersion: version,
 		}
 	}
 

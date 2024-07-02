@@ -17,46 +17,52 @@
 
 package cloudprotocol
 
+import "github.com/aosedge/aos_common/aostypes"
+
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
 
-// ProtocolVersion specifies supported protocol version.
-const ProtocolVersion = 6
+// State message types.
+const (
+	StateAcceptanceMessageType = "stateAcceptance"
+	UpdateStateMessageType     = "updateState"
+	NewStateMessageType        = "newState"
+	StateRequestMessageType    = "stateRequest"
+)
 
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
-// ReceivedMessage structure for Aos incoming messages.
-type ReceivedMessage struct {
-	Header MessageHeader `json:"header"`
-	Data   []byte        `json:"data"`
-}
-
-// Message structure for AOS messages.
-type Message struct {
-	Header MessageHeader `json:"header"`
-	Data   interface{}   `json:"data"`
-}
-
-// MessageHeader message header.
-type MessageHeader struct {
-	Version     uint64 `json:"version"`
-	SystemID    string `json:"systemId"`
+// StateAcceptance state acceptance message.
+type StateAcceptance struct {
 	MessageType string `json:"messageType"`
+	aostypes.InstanceIdent
+	Checksum string `json:"checksum"`
+	Result   string `json:"result"`
+	Reason   string `json:"reason"`
 }
 
-// ErrorInfo error information.
-type ErrorInfo struct {
-	AosCode  int    `json:"aosCode"`
-	ExitCode int    `json:"exitCode"`
-	Message  string `json:"message,omitempty"`
+// UpdateState state update message.
+type UpdateState struct {
+	MessageType string `json:"messageType"`
+	aostypes.InstanceIdent
+	Checksum string `json:"stateChecksum"`
+	State    string `json:"state"`
 }
 
-// InstanceFilter instance filter structure.
-type InstanceFilter struct {
-	ServiceID *string `json:"serviceId,omitempty"`
-	SubjectID *string `json:"subjectId,omitempty"`
-	Instance  *uint64 `json:"instance,omitempty"`
+// NewState new state structure.
+type NewState struct {
+	MessageType string `json:"messageType"`
+	aostypes.InstanceIdent
+	Checksum string `json:"stateChecksum"`
+	State    string `json:"state"`
+}
+
+// StateRequest state request structure.
+type StateRequest struct {
+	MessageType string `json:"messageType"`
+	aostypes.InstanceIdent
+	Default bool `json:"default"`
 }
