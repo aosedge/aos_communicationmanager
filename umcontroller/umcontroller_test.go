@@ -36,7 +36,7 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
-	pb "github.com/aosedge/aos_common/api/updatemanager/v1"
+	pb "github.com/aosedge/aos_common/api/updatemanager"
 	"github.com/aosedge/aos_common/image"
 
 	"github.com/aosedge/aos_common/api/cloudprotocol"

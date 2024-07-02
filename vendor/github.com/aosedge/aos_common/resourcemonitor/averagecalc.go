@@ -18,39 +18,47 @@
 package resourcemonitor
 
 import (
-	"github.com/aosedge/aos_common/utils/xentop"
-	log "github.com/sirupsen/logrus"
+	"math"
 )
 
 /***********************************************************************************************************************
- * Types
+ * Structs
  **********************************************************************************************************************/
 
-type xenSystemUsage struct {
-	systemInfos map[string]xentop.SystemInfo
+type averageCalc struct {
+	sum         float64
+	count       uint64
+	windowCount uint64
 }
 
 /***********************************************************************************************************************
- * Public
+ * Private
  **********************************************************************************************************************/
 
-func (xen *xenSystemUsage) CacheSystemInfos() {
-	instanceInfos, err := xentop.GetSystemInfos()
-	if err != nil {
-		log.Errorf("Can't get system infos: %v", err)
-
-		return
-	}
-
-	xen.systemInfos = instanceInfos
+func newAverageCalc(windowCount uint64) *averageCalc {
+	return &averageCalc{windowCount: windowCount}
 }
 
-func (xen *xenSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
-	systemInfo, ok := xen.systemInfos[instanceID]
-	if ok {
-		instance.monitoringData.CPU = uint64(systemInfo.CPUFraction)
-		instance.monitoringData.RAM = uint64(systemInfo.Memory) * 1024 //nolint:mnd
+func (calc *averageCalc) calculate(value float64) float64 {
+	if calc.count < calc.windowCount {
+		calc.sum += value
+		calc.count++
+	} else {
+		calc.sum -= calc.sum / float64(calc.count)
+		calc.sum += value
 	}
 
-	return nil
+	return calc.getValue()
+}
+
+func (calc *averageCalc) getValue() float64 {
+	if calc.count == 0 {
+		return 0
+	}
+
+	return calc.sum / float64(calc.count)
+}
+
+func (calc *averageCalc) getIntValue() uint64 {
+	return uint64(math.Round(calc.getValue()))
 }

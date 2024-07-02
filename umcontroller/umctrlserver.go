@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	pb "github.com/aosedge/aos_common/api/updatemanager/v1"
+	pb "github.com/aosedge/aos_common/api/updatemanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
 
 	"github.com/aosedge/aos_communicationmanager/config"
