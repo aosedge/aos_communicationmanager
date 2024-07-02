@@ -101,11 +101,11 @@ func (handler *smHandler) getUnitConfigState() (vendorVersion string, err error)
 		return "", aoserrors.New("incorrect type")
 	}
 
-	if pbStatus.UnitConfigStatus.GetError() != "" {
-		return vendorVersion, aoserrors.New(pbStatus.UnitConfigStatus.GetError())
+	if pbStatus.UnitConfigStatus.GetError().GetMessage() != "" {
+		return vendorVersion, aoserrors.New(pbStatus.UnitConfigStatus.GetError().GetMessage())
 	}
 
-	return pbStatus.UnitConfigStatus.GetVendorVersion(), nil
+	return pbStatus.UnitConfigStatus.GetVersion(), nil
 }
 
 func (handler *smHandler) checkUnitConfigState(cfg cloudprotocol.NodeConfig, vendorVersion string) error {
@@ -124,8 +124,8 @@ func (handler *smHandler) checkUnitConfigState(cfg cloudprotocol.NodeConfig, ven
 		return aoserrors.New("incorrect type")
 	}
 
-	if pbStatus.UnitConfigStatus.GetError() != "" {
-		return aoserrors.New(pbStatus.UnitConfigStatus.GetError())
+	if pbStatus.UnitConfigStatus.GetError().GetMessage() != "" {
+		return aoserrors.New(pbStatus.UnitConfigStatus.GetError().GetMessage())
 	}
 
 	return nil
@@ -147,8 +147,8 @@ func (handler *smHandler) setUnitConfig(cfg cloudprotocol.NodeConfig, vendorVers
 		return aoserrors.New("incorrect type")
 	}
 
-	if pbStatus.UnitConfigStatus.GetError() != "" {
-		return aoserrors.New(pbStatus.UnitConfigStatus.GetError())
+	if pbStatus.UnitConfigStatus.GetError().GetMessage() != "" {
+		return aoserrors.New(pbStatus.UnitConfigStatus.GetError().GetMessage())
 	}
 
 	return nil

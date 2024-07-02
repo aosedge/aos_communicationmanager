@@ -373,7 +373,7 @@ func TestSendMessages(t *testing.T) {
 		getDataType func() interface{}
 	}
 
-	unitConfigData := []cloudprotocol.UnitConfigStatus{{VendorVersion: "1.0"}}
+	unitConfigData := []cloudprotocol.UnitConfigStatus{{Version: "1.0"}}
 
 	serviceSetupData := []cloudprotocol.ServiceStatus{
 		{ID: "service0", AosVersion: 1, Status: "running", ErrorInfo: nil},

@@ -127,7 +127,7 @@ func TestConnection(t *testing.T) {
 
 	statusFotaNotification := cmserver.UpdateFOTAStatus{
 		Components:   []cloudprotocol.ComponentStatus{{ComponentID: "1234", Version: "123.4321"}},
-		UnitConfig:   &cloudprotocol.UnitConfigStatus{VendorVersion: "bc_version"},
+		UnitConfig:   &cloudprotocol.UnitConfigStatus{Version: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
 
