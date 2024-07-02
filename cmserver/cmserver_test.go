@@ -126,7 +126,7 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusFotaNotification := cmserver.UpdateFOTAStatus{
-		Components:   []cloudprotocol.ComponentStatus{{ID: "1234", AosVersion: 123, VendorVersion: "4321"}},
+		Components:   []cloudprotocol.ComponentStatus{{ComponentID: "1234", Version: "123.4321"}},
 		UnitConfig:   &cloudprotocol.UnitConfigStatus{VendorVersion: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
@@ -151,16 +151,12 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Incorrect count of components")
 	}
 
-	if status.GetComponents()[0].GetId() != "1234" {
+	if status.GetComponents()[0].GetComponentId() != "1234" {
 		t.Error("Incorrect component id")
 	}
 
-	if status.GetComponents()[0].GetVendorVersion() != "4321" {
-		t.Error("Incorrect vendor version")
-	}
-
-	if status.GetComponents()[0].GetAosVersion() != 123 {
-		t.Error("Incorrect aos version")
+	if status.GetComponents()[0].GetVersion() != "123.4321" {
+		t.Error("Incorrect version")
 	}
 
 	if status.GetUnitConfig() == nil {

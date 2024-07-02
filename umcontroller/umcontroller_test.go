@@ -35,7 +35,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	"github.com/aosedge/aos_common/aostypes"
 	pb "github.com/aosedge/aos_common/api/updatemanager"
 	"github.com/aosedge/aos_common/image"
 
@@ -65,7 +64,7 @@ const (
 )
 
 type testStorage struct {
-	updateInfo []umcontroller.SystemComponent
+	updateInfo []umcontroller.ComponentStatus
 }
 
 type testUmConnection struct {
@@ -75,7 +74,7 @@ type testUmConnection struct {
 	step           string
 	test           *testing.T
 	umID           string
-	components     []*pb.SystemComponent
+	components     []*pb.ComponentStatus
 	conn           *grpc.ClientConn
 }
 
@@ -155,9 +154,9 @@ func TestConnection(t *testing.T) {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
 
-	components := []*pb.SystemComponent{
-		{Id: "component1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "component2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	components := []*pb.ComponentStatus{
+		{ComponentId: "component1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	streamUM1, connUM1, err := createClientConnection("umID1", pb.UpdateState_IDLE, components)
@@ -165,9 +164,9 @@ func TestConnection(t *testing.T) {
 		t.Errorf("Error connect %s", err)
 	}
 
-	components2 := []*pb.SystemComponent{
-		{Id: "component3", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "component4", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	components2 := []*pb.ComponentStatus{
+		{ComponentId: "component3", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component4", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	streamUM2, connUM2, err := createClientConnection("umID2", pb.UpdateState_IDLE, components2)
@@ -211,7 +210,7 @@ func TestConnection(t *testing.T) {
  **********************************************************************************************************************/
 
 func createClientConnection(
-	clientID string, state pb.UpdateState, components []*pb.SystemComponent,
+	clientID string, state pb.UpdateState, components []*pb.ComponentStatus,
 ) (stream pb.UMService_RegisterUMClient, conn *grpc.ClientConn, err error) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -261,17 +260,17 @@ func TestFullUpdate(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um1Components := []*pb.SystemComponent{
-		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um1C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um1Components := []*pb.ComponentStatus{
+		{ComponentId: "um1C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um1C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um1 := newTestUM(t, "testUM1", pb.UpdateState_IDLE, "init", um1Components)
 	go um1.processMessages()
 
-	um2Components := []*pb.SystemComponent{
-		{Id: "um2C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um2C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um2Components := []*pb.ComponentStatus{
+		{ComponentId: "um2C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um2C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um2 := newTestUM(t, "testUM2", pb.UpdateState_IDLE, "init", um2Components)
@@ -311,8 +310,8 @@ func TestFullUpdate(t *testing.T) {
 		finChan <- true
 	}(finishChannel)
 
-	um1Components = append(um1Components, &pb.SystemComponent{
-		Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING,
+	um1Components = append(um1Components, &pb.ComponentStatus{
+		ComponentId: "um1C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING,
 	})
 	um1.setComponents(um1Components)
 
@@ -322,9 +321,9 @@ func TestFullUpdate(t *testing.T) {
 	um1.sendState(pb.UpdateState_PREPARED)
 
 	um2Components = append(um2Components,
-		&pb.SystemComponent{Id: "um2C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um2C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um2Components = append(um2Components,
-		&pb.SystemComponent{Id: "um2C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um2C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um2.setComponents(um2Components)
 
 	um2.step = prepareStep
@@ -342,9 +341,9 @@ func TestFullUpdate(t *testing.T) {
 	<-um2.notifyTestChan // um2 updated
 	um2.sendState(pb.UpdateState_UPDATED)
 
-	um1Components = []*pb.SystemComponent{
-		{Id: "um1C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um1C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
+	um1Components = []*pb.ComponentStatus{
+		{ComponentId: "um1C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um1C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um1.setComponents(um1Components)
 
@@ -353,9 +352,9 @@ func TestFullUpdate(t *testing.T) {
 	<-um1.notifyTestChan // um1 apply
 	um1.sendState(pb.UpdateState_IDLE)
 
-	um2Components = []*pb.SystemComponent{
-		{Id: "um2C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um2C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
+	um2Components = []*pb.ComponentStatus{
+		{ComponentId: "um2C1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um2C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um2.setComponents(um2Components)
 
@@ -372,10 +371,10 @@ func TestFullUpdate(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um1C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um1C2", VendorVersion: "2", Status: "installed"},
-		{ID: "um2C1", VendorVersion: "2", Status: "installed"},
-		{ID: "um2C2", VendorVersion: "2", Status: "installed"},
+		{ComponentID: "um1C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um1C2", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um2C1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um2C2", Version: "2.0.0", Status: "installed"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -424,17 +423,17 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um3Components := []*pb.SystemComponent{
-		{Id: "um3C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um3C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um3Components := []*pb.ComponentStatus{
+		{ComponentId: "um3C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um3C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um3 := newTestUM(t, "testUM3", pb.UpdateState_IDLE, "init", um3Components)
 	go um3.processMessages()
 
-	um4Components := []*pb.SystemComponent{
-		{Id: "um4C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um4C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um4Components := []*pb.ComponentStatus{
+		{ComponentId: "um4C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um4C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um4 := newTestUM(t, "testUM4", pb.UpdateState_IDLE, "init", um4Components)
@@ -477,7 +476,7 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	// prepare UM3
 	um3Components = append(um3Components,
-		&pb.SystemComponent{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um3C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um3.setComponents(um3Components)
 
 	um3.step = prepareStep
@@ -487,9 +486,9 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	// prepare UM4
 	um4Components = append(um4Components,
-		&pb.SystemComponent{Id: "um4C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um4C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um4Components = append(um4Components,
-		&pb.SystemComponent{Id: "um4C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um4C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um4.setComponents(um4Components)
 
 	um4.step = prepareStep
@@ -530,9 +529,9 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um3.closeConnection()
 	<-um3.notifyTestChan
 
-	um3Components = []*pb.SystemComponent{
-		{Id: "um3C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um3C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
+	um3Components = []*pb.ComponentStatus{
+		{ComponentId: "um3C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um3C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um3 = newTestUM(t, "testUM3", pb.UpdateState_IDLE, "init", um3Components)
@@ -543,9 +542,9 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	um4.closeConnection()
 	<-um4.notifyTestChan
 
-	um4Components = []*pb.SystemComponent{
-		{Id: "um4C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um4C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
+	um4Components = []*pb.ComponentStatus{
+		{ComponentId: "um4C1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um4C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um4 = newTestUM(t, "testUM4", pb.UpdateState_IDLE, "init", um4Components)
@@ -557,10 +556,10 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um3C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um3C2", VendorVersion: "2", Status: "installed"},
-		{ID: "um4C1", VendorVersion: "2", Status: "installed"},
-		{ID: "um4C2", VendorVersion: "2", Status: "installed"},
+		{ComponentID: "um3C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um3C2", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um4C1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um4C2", Version: "2.0.0", Status: "installed"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -604,17 +603,17 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um5Components := []*pb.SystemComponent{
-		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um5C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um5Components := []*pb.ComponentStatus{
+		{ComponentId: "um5C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um5C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um5 := newTestUM(t, "testUM5", pb.UpdateState_IDLE, "init", um5Components)
 	go um5.processMessages()
 
-	um6Components := []*pb.SystemComponent{
-		{Id: "um6C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um6C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um6Components := []*pb.ComponentStatus{
+		{ComponentId: "um6C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um6C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um6 := newTestUM(t, "testUM6", pb.UpdateState_IDLE, "init", um6Components)
@@ -657,7 +656,7 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	// prepare UM5
 	um5Components = append(um5Components,
-		&pb.SystemComponent{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um5C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um5.setComponents(um5Components)
 
 	um5.step = prepareStep
@@ -667,9 +666,9 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	// prepare UM6
 	um6Components = append(um6Components,
-		&pb.SystemComponent{Id: "um6C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um6C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um6Components = append(um6Components,
-		&pb.SystemComponent{Id: "um6C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um6C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um6.setComponents(um6Components)
 
 	um6.step = prepareStep
@@ -735,9 +734,9 @@ func TestFullUpdateWithReboot(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um5Components = []*pb.SystemComponent{
-		{Id: "um5C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um5C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
+	um5Components = []*pb.ComponentStatus{
+		{ComponentId: "um5C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um5C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um5 = newTestUM(t, "testUM5", pb.UpdateState_IDLE, "init", um5Components)
@@ -750,9 +749,9 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6.closeConnection()
 	<-um6.notifyTestChan
 
-	um6Components = []*pb.SystemComponent{
-		{Id: "um6C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um6C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLED},
+	um6Components = []*pb.ComponentStatus{
+		{ComponentId: "um6C1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um6C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um6 = newTestUM(t, "testUM6", pb.UpdateState_IDLE, "init", um6Components)
@@ -762,10 +761,10 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6.step = finishStep
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um5C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um5C2", VendorVersion: "2", Status: "installed"},
-		{ID: "um6C1", VendorVersion: "2", Status: "installed"},
-		{ID: "um6C2", VendorVersion: "2", Status: "installed"},
+		{ComponentID: "um5C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um5C2", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um6C1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um6C2", Version: "2.0.0", Status: "installed"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -809,17 +808,17 @@ func TestRevertOnPrepare(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um7Components := []*pb.SystemComponent{
-		{Id: "um7C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um7C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um7Components := []*pb.ComponentStatus{
+		{ComponentId: "um7C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um7C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um7 := newTestUM(t, "testUM7", pb.UpdateState_IDLE, "init", um7Components)
 	go um7.processMessages()
 
-	um8Components := []*pb.SystemComponent{
-		{Id: "um8C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um8C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um8Components := []*pb.ComponentStatus{
+		{ComponentId: "um8C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um8C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um8 := newTestUM(t, "testUM8", pb.UpdateState_IDLE, "init", um8Components)
@@ -861,7 +860,7 @@ func TestRevertOnPrepare(t *testing.T) {
 	}()
 
 	um7Components = append(um7Components,
-		&pb.SystemComponent{Id: "um7C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um7C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um7.setComponents(um7Components)
 
 	um7.step = prepareStep
@@ -870,9 +869,9 @@ func TestRevertOnPrepare(t *testing.T) {
 	um7.sendState(pb.UpdateState_PREPARED)
 
 	um8Components = append(um8Components,
-		&pb.SystemComponent{Id: "um8C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um8C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um8Components = append(um8Components,
-		&pb.SystemComponent{Id: "um8C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR})
+		&pb.ComponentStatus{ComponentId: "um8C2", Version: "2.0.0", State: pb.ComponentState_ERROR})
 	um8.setComponents(um8Components)
 
 	um8.step = prepareStep
@@ -896,11 +895,11 @@ func TestRevertOnPrepare(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um7C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um7C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um8C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um8C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um8C2", VendorVersion: "2", Status: "error"},
+		{ComponentID: "um7C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um7C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um8C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um8C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um8C2", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -945,17 +944,17 @@ func TestRevertOnUpdate(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um9Components := []*pb.SystemComponent{
-		{Id: "um9C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um9C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um9Components := []*pb.ComponentStatus{
+		{ComponentId: "um9C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um9C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um9 := newTestUM(t, "testUM9", pb.UpdateState_IDLE, "init", um9Components)
 	go um9.processMessages()
 
-	um10Components := []*pb.SystemComponent{
-		{Id: "um10C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um10C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um10Components := []*pb.ComponentStatus{
+		{ComponentId: "um10C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um10 := newTestUM(t, "testUM10", pb.UpdateState_IDLE, "init", um10Components)
@@ -997,7 +996,7 @@ func TestRevertOnUpdate(t *testing.T) {
 	}()
 
 	um9Components = append(um9Components,
-		&pb.SystemComponent{Id: "um9C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um9C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um9.setComponents(um9Components)
 
 	um9.step = prepareStep
@@ -1006,9 +1005,9 @@ func TestRevertOnUpdate(t *testing.T) {
 	um9.sendState(pb.UpdateState_PREPARED)
 
 	um10Components = append(um10Components,
-		&pb.SystemComponent{Id: "um10C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um10C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um10Components = append(um10Components,
-		&pb.SystemComponent{Id: "um10C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um10C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um10.setComponents(um10Components)
 
 	um10.step = prepareStep
@@ -1021,11 +1020,11 @@ func TestRevertOnUpdate(t *testing.T) {
 	<-um9.notifyTestChan // um9 updated
 	um9.sendState(pb.UpdateState_UPDATED)
 
-	um10Components = []*pb.SystemComponent{
-		{Id: "um10C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um10C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um10C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING},
-		{Id: "um10C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR},
+	um10Components = []*pb.ComponentStatus{
+		{ComponentId: "um10C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING},
+		{ComponentId: "um10C2", Version: "2.0.0", State: pb.ComponentState_ERROR},
 	}
 	um10.setComponents(um10Components)
 
@@ -1034,9 +1033,9 @@ func TestRevertOnUpdate(t *testing.T) {
 	<-um10.notifyTestChan // um10 updated
 	um10.sendState(pb.UpdateState_FAILED)
 
-	um9Components = []*pb.SystemComponent{
-		{Id: "um9C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um9C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um9Components = []*pb.ComponentStatus{
+		{ComponentId: "um9C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um9C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um9.setComponents(um9Components)
 
@@ -1056,11 +1055,11 @@ func TestRevertOnUpdate(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um9C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um9C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um10C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um10C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um10C2", VendorVersion: "2", Status: "error"},
+		{ComponentID: "um9C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um9C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um10C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um10C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um10C2", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1105,17 +1104,17 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um11Components := []*pb.SystemComponent{
-		{Id: "um11C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um11C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um11Components := []*pb.ComponentStatus{
+		{ComponentId: "um11C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um11C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um11 := newTestUM(t, "testUM11", pb.UpdateState_IDLE, "init", um11Components)
 	go um11.processMessages()
 
-	um12Components := []*pb.SystemComponent{
-		{Id: "um12C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um12C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um12Components := []*pb.ComponentStatus{
+		{ComponentId: "um12C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um12 := newTestUM(t, "testUM12", pb.UpdateState_IDLE, "init", um12Components)
@@ -1157,7 +1156,7 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	}()
 
 	um11Components = append(um11Components,
-		&pb.SystemComponent{Id: "um11C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um11C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um11.setComponents(um11Components)
 
 	um11.step = prepareStep
@@ -1166,9 +1165,9 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um11.sendState(pb.UpdateState_PREPARED)
 
 	um12Components = append(um12Components,
-		&pb.SystemComponent{Id: "um12C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um12C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um12Components = append(um12Components,
-		&pb.SystemComponent{Id: "um12C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um12C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um12.setComponents(um12Components)
 
 	um12.step = prepareStep
@@ -1181,10 +1180,10 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	<-um11.notifyTestChan // um11 updated
 	um11.sendState(pb.UpdateState_UPDATED)
 
-	um12Components = []*pb.SystemComponent{
-		{Id: "um12C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um12C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um12C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR},
+	um12Components = []*pb.ComponentStatus{
+		{ComponentId: "um12C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C2", Version: "2.0.0", State: pb.ComponentState_ERROR},
 	}
 	um12.setComponents(um12Components)
 
@@ -1199,9 +1198,9 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um12 = newTestUM(t, "testUM12", pb.UpdateState_FAILED, revertStep, um12Components)
 	go um12.processMessages()
 
-	um11Components = []*pb.SystemComponent{
-		{Id: "um11C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um11C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um11Components = []*pb.ComponentStatus{
+		{ComponentId: "um11C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um11C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um11.setComponents(um11Components)
 
@@ -1221,11 +1220,11 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um11C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um11C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um12C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um12C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um12C2", VendorVersion: "2", Status: "error"},
+		{ComponentID: "um11C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um11C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um12C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um12C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um12C2", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1270,17 +1269,17 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 		t.Errorf("Can't create: UM controller %s", err)
 	}
 
-	um13Components := []*pb.SystemComponent{
-		{Id: "um13C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um13C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um13Components := []*pb.ComponentStatus{
+		{ComponentId: "um13C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um13C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um13 := newTestUM(t, "testUM13", pb.UpdateState_IDLE, "init", um13Components)
 	go um13.processMessages()
 
-	um14Components := []*pb.SystemComponent{
-		{Id: "um14C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um14C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um14Components := []*pb.ComponentStatus{
+		{ComponentId: "um14C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um14 := newTestUM(t, "testUM14", pb.UpdateState_IDLE, "init", um14Components)
@@ -1322,7 +1321,7 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	}()
 
 	um13Components = append(um13Components,
-		&pb.SystemComponent{Id: "um13C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um13C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um13.setComponents(um13Components)
 
 	um13.step = prepareStep
@@ -1331,9 +1330,9 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um13.sendState(pb.UpdateState_PREPARED)
 
 	um14Components = append(um14Components,
-		&pb.SystemComponent{Id: "um14C1", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um14C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um14Components = append(um14Components,
-		&pb.SystemComponent{Id: "um14C2", VendorVersion: "2", Status: pb.ComponentStatus_INSTALLING})
+		&pb.ComponentStatus{ComponentId: "um14C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
 	um14.setComponents(um14Components)
 
 	um14.step = prepareStep
@@ -1346,10 +1345,10 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	<-um13.notifyTestChan // um13 updated
 	um13.sendState(pb.UpdateState_UPDATED)
 
-	um14Components = []*pb.SystemComponent{
-		{Id: "um14C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um14C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um14C2", VendorVersion: "2", Status: pb.ComponentStatus_ERROR},
+	um14Components = []*pb.ComponentStatus{
+		{ComponentId: "um14C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C2", Version: "2.0.0", State: pb.ComponentState_ERROR},
 	}
 	um14.setComponents(um14Components)
 
@@ -1382,9 +1381,9 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um14 = newTestUM(t, "testUM14", pb.UpdateState_FAILED, revertStep, um14Components)
 	go um14.processMessages()
 
-	um13Components = []*pb.SystemComponent{
-		{Id: "um13C1", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
-		{Id: "um13C2", VendorVersion: "1", Status: pb.ComponentStatus_INSTALLED},
+	um13Components = []*pb.ComponentStatus{
+		{ComponentId: "um13C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um13C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um13.setComponents(um13Components)
 
@@ -1404,11 +1403,11 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	time.Sleep(time.Second)
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ID: "um13C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um13C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um14C1", VendorVersion: "1", Status: "installed"},
-		{ID: "um14C2", VendorVersion: "1", Status: "installed"},
-		{ID: "um14C2", VendorVersion: "2", Status: "error"},
+		{ComponentID: "um13C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um13C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um14C1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um14C2", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um14C2", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1437,11 +1436,11 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
-func (storage *testStorage) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemComponent, err error) {
+func (storage *testStorage) GetComponentsUpdateInfo() (updateInfo []umcontroller.ComponentStatus, err error) {
 	return storage.updateInfo, err
 }
 
-func (storage *testStorage) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComponent) (err error) {
+func (storage *testStorage) SetComponentsUpdateInfo(updateInfo []umcontroller.ComponentStatus) (err error) {
 	storage.updateInfo = updateInfo
 	return aoserrors.Wrap(err)
 }
@@ -1525,7 +1524,7 @@ func (context *testCryptoContext) DecryptAndValidate(
  * Private
  **********************************************************************************************************************/
 
-func newTestUM(t *testing.T, id string, updateStatus pb.UpdateState, testState string, components []*pb.SystemComponent) (
+func newTestUM(t *testing.T, id string, updateStatus pb.UpdateState, testState string, components []*pb.ComponentStatus) (
 	umTest *testUmConnection,
 ) {
 	t.Helper()
@@ -1550,7 +1549,7 @@ func newTestUM(t *testing.T, id string, updateStatus pb.UpdateState, testState s
 	return umTest
 }
 
-func (um *testUmConnection) setComponents(components []*pb.SystemComponent) {
+func (um *testUmConnection) setComponents(components []*pb.ComponentStatus) {
 	um.components = components
 }
 
