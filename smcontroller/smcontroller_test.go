@@ -964,9 +964,9 @@ func TestRunInstances(t *testing.T) {
 				}},
 				Layers: []*pb.LayerInfo{
 					{
-						VersionInfo: &pb.VersionInfo{AosVersion: 2, VendorVersion: "3", Description: "desc2"},
-						Url:         "url2", LayerId: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
-						Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+						Version: "3",
+						Url:     "url2", LayerId: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
+						Size: uint64(500),
 					},
 				},
 				Instances: []*pb.InstanceInfo{
@@ -984,9 +984,9 @@ func TestRunInstances(t *testing.T) {
 			Sha256: []byte{0, 0, 0, byte(100)}, Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
 		}}
 		sendLayers = []aostypes.LayerInfo{{
-			VersionInfo: aostypes.VersionInfo{AosVersion: 2, VendorVersion: "3", Description: "desc2"},
-			URL:         "url2", ID: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
-			Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+			Version: "3.0",
+			URL:     "url2", LayerID: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
+			Size: uint64(500),
 		}}
 		sendInstances = []aostypes.InstanceInfo{{
 			InstanceIdent:     aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: 1},

@@ -324,15 +324,15 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 
 	for _, layer := range updateStatus.InstallLayers {
 		pbStatus.InstallLayers = append(pbStatus.GetInstallLayers(), &pb.LayerInfo{
-			Id:         layer.ID,
-			AosVersion: layer.AosVersion, Digest: layer.Digest,
+			LayerId: layer.LayerID,
+			Version: layer.Version, Digest: layer.Digest,
 		})
 	}
 
 	for _, layer := range updateStatus.RemoveLayers {
 		pbStatus.RemoveLayers = append(pbStatus.GetRemoveLayers(), &pb.LayerInfo{
-			Id:         layer.ID,
-			AosVersion: layer.AosVersion, Digest: layer.Digest,
+			LayerId: layer.LayerID,
+			Version: layer.Version, Digest: layer.Digest,
 		})
 	}
 

@@ -86,13 +86,13 @@ func (instance *Instance) GetStatus() (unitConfigInfo cloudprotocol.UnitConfigSt
 
 // GetUnitConfigVersion returns unit config version.
 func (instance *Instance) GetUnitConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error) {
-	unitConfig := cloudprotocol.UnitConfig{VendorVersion: "unknown"}
+	unitConfig := cloudprotocol.UnitConfig{Version: "unknown"}
 
 	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
-		return unitConfig.VendorVersion, aoserrors.Wrap(err)
+		return unitConfig.Version, aoserrors.Wrap(err)
 	}
 
-	return unitConfig.VendorVersion, nil
+	return unitConfig.Version, nil
 }
 
 // CheckUnitConfig checks unit config.
@@ -100,10 +100,10 @@ func (instance *Instance) CheckUnitConfig(configJSON json.RawMessage) (vendorVer
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfig := cloudprotocol.UnitConfig{VendorVersion: "unknown"}
+	unitConfig := cloudprotocol.UnitConfig{Version: "unknown"}
 
 	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
-		return unitConfig.VendorVersion, aoserrors.Wrap(err)
+		return unitConfig.Version, aoserrors.Wrap(err)
 	}
 
 	if vendorVersion, err = instance.checkUnitConfig(unitConfig); err != nil {
@@ -128,13 +128,13 @@ func (instance *Instance) UpdateUnitConfig(configJSON json.RawMessage) (err erro
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfig := cloudprotocol.UnitConfig{VendorVersion: "unknown"}
+	unitConfig := cloudprotocol.UnitConfig{Version: "unknown"}
 
 	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if unitConfig.VendorVersion == instance.unitConfig.VendorVersion {
+	if unitConfig.Version == instance.unitConfig.Version {
 		return aoserrors.New("invalid vendor version")
 	}
 
@@ -177,13 +177,13 @@ func (instance *Instance) load() (err error) {
 }
 
 func (instance *Instance) checkUnitConfig(unitConfig cloudprotocol.UnitConfig) (vendorVersion string, err error) {
-	if unitConfig.VendorVersion == instance.unitConfig.VendorVersion {
-		return unitConfig.VendorVersion, ErrAlreadyInstalled
+	if unitConfig.Version == instance.unitConfig.Version {
+		return unitConfig.Version, ErrAlreadyInstalled
 	}
 
 	if err = instance.client.CheckUnitConfig(unitConfig); err != nil {
-		return unitConfig.VendorVersion, aoserrors.Wrap(err)
+		return unitConfig.Version, aoserrors.Wrap(err)
 	}
 
-	return unitConfig.VendorVersion, nil
+	return unitConfig.Version, nil
 }

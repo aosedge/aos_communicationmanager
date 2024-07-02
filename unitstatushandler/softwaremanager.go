@@ -878,9 +878,9 @@ func (manager *softwareManager) installLayers() (installErr string) {
 
 	handleError := func(layer cloudprotocol.LayerInfo, layerErr string) {
 		log.WithFields(log.Fields{
-			"digest":     layer.Digest,
-			"id":         layer.ID,
-			"aosVersion": layer.AosVersion,
+			"digest":  layer.Digest,
+			"id":      layer.LayerID,
+			"version": layer.Version,
 		}).Errorf("Can't install layer: %s", layerErr)
 
 		if isCancelError(layerErr) {
@@ -916,15 +916,15 @@ func (manager *softwareManager) installLayers() (installErr string) {
 			Path:   downloadInfo.FileName,
 		}
 
-		layer.DecryptDataStruct.URLs = []string{url.String()}
+		layer.DownloadInfo.URLs = []string{url.String()}
 
 		installLayers = append(installLayers, layer)
 	}
 
 	for _, layer := range installLayers {
 		log.WithFields(log.Fields{
-			"id":         layer.ID,
-			"aosVersion": layer.AosVersion,
+			"id":         layer.LayerID,
+			"aosVersion": layer.Version,
 			"digest":     layer.Digest,
 		}).Debug("Install layer")
 
@@ -941,8 +941,8 @@ func (manager *softwareManager) installLayers() (installErr string) {
 			}
 
 			log.WithFields(log.Fields{
-				"id":         layerInfo.ID,
-				"aosVersion": layerInfo.AosVersion,
+				"id":         layerInfo.LayerID,
+				"aosVersion": layerInfo.Version,
 				"digest":     layerInfo.Digest,
 			}).Info("Layer successfully installed")
 

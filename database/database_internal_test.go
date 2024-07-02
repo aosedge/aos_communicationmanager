@@ -410,13 +410,11 @@ func TestLayerStore(t *testing.T) {
 		{
 			layer: imagemanager.LayerInfo{
 				LayerInfo: aostypes.LayerInfo{
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion: 1,
-					},
-					ID:     "layer1",
-					Digest: "digest1",
-					URL:    "file:///path/layer1",
-					Size:   30,
+					Version: "1.0",
+					LayerID: "layer1",
+					Digest:  "digest1",
+					URL:     "file:///path/layer1",
+					Size:    30,
 				},
 				RemoteURL: "http://path/layer1", Path: "/path/layer1",
 				Timestamp: time.Now().UTC(), Cached: false,
@@ -426,13 +424,11 @@ func TestLayerStore(t *testing.T) {
 		{
 			layer: imagemanager.LayerInfo{
 				LayerInfo: aostypes.LayerInfo{
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion: 1,
-					},
-					ID:     "layer2",
-					Digest: "digest2",
-					URL:    "file:///path/layer2",
-					Size:   60,
+					Version: "1.0",
+					LayerID: "layer2",
+					Digest:  "digest2",
+					URL:     "file:///path/layer2",
+					Size:    60,
 				},
 				RemoteURL: "http://path/layer2",
 				Path:      "/path/layer2", Timestamp: time.Now().UTC(), Cached: true,
