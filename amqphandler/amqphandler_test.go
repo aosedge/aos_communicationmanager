@@ -240,21 +240,21 @@ func TestReceiveMessages(t *testing.T) {
 
 	testData := []testDataType{
 		{
-			messageType: cloudprotocol.StateAcceptanceType,
+			messageType: cloudprotocol.StateAcceptanceMessageType,
 			expectedData: &cloudprotocol.StateAcceptance{
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj0", Instance: 1},
 				Checksum:      "0123456890", Result: "accepted", Reason: "just because",
 			},
 		},
 		{
-			messageType: cloudprotocol.UpdateStateType,
+			messageType: cloudprotocol.UpdateStateMessageType,
 			expectedData: &cloudprotocol.UpdateState{
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 				Checksum:      "0993478847", State: "This is new state",
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestLogType,
+			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
 				LogID:   "someID",
 				LogType: cloudprotocol.ServiceLog,
@@ -265,7 +265,7 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestLogType,
+			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
 				LogID:   "someID",
 				LogType: cloudprotocol.CrashLog,
@@ -276,7 +276,7 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestLogType,
+			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
 				LogID:   "someID",
 				LogType: cloudprotocol.SystemLog,
@@ -286,7 +286,7 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.RenewCertsNotificationType,
+			messageType: cloudprotocol.RenewCertsNotificationMessageType,
 			expectedData: &cloudprotocol.RenewCertsNotification{
 				Certificates: []cloudprotocol.RenewCertData{
 					{Type: "online", Serial: "1234", ValidTill: testTime},
@@ -297,7 +297,7 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.IssuedUnitCertsType,
+			messageType: cloudprotocol.IssuedUnitCertsMessageType,
 			expectedData: &cloudprotocol.IssuedUnitCerts{
 				Certificates: []cloudprotocol.IssuedCertData{
 					{Type: "online", NodeID: "mainNode", CertificateChain: "123456"},
@@ -305,11 +305,11 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType:  cloudprotocol.OverrideEnvVarsType,
+			messageType:  cloudprotocol.OverrideEnvVarsMessageType,
 			expectedData: &cloudprotocol.OverrideEnvVars{OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{}},
 		},
 		{
-			messageType: cloudprotocol.DesiredStatusType,
+			messageType: cloudprotocol.DesiredStatusMessageType,
 			expectedData: &cloudprotocol.DesiredStatus{
 				UnitConfig: json.RawMessage([]byte("\"config\"")),
 				Components: []cloudprotocol.ComponentInfo{
@@ -536,7 +536,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.UnitStatusType,
+					MessageType: cloudprotocol.UnitStatusMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -560,7 +560,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.MonitoringDataType,
+					MessageType: cloudprotocol.MonitoringMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -581,7 +581,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.NewStateType,
+					MessageType: cloudprotocol.NewStateMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -604,7 +604,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.StateRequestType,
+					MessageType: cloudprotocol.StateRequestMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -623,7 +623,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.PushLogType,
+					MessageType: cloudprotocol.PushLogMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -645,7 +645,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.AlertsType,
+					MessageType: cloudprotocol.AlertsMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -661,7 +661,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.IssueUnitCertsType,
+					MessageType: cloudprotocol.IssueUnitCertsMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -677,7 +677,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.InstallUnitCertsConfirmationType,
+					MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -693,7 +693,7 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.OverrideEnvVarsStatusType,
+					MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType,
 					SystemID:    systemID,
 					Version:     cloudprotocol.ProtocolVersion,
 				},
@@ -935,7 +935,7 @@ func TestSendDisconnectMessages(t *testing.T) {
 				continue
 			}
 
-			if message.Header.MessageType != cloudprotocol.AlertsType {
+			if message.Header.MessageType != cloudprotocol.AlertsMessageType {
 				t.Errorf("Wrong message type: %s", message.Header.MessageType)
 			}
 
