@@ -108,7 +108,7 @@ func (handler *smHandler) getUnitConfigState() (vendorVersion string, err error)
 	return pbStatus.UnitConfigStatus.GetVendorVersion(), nil
 }
 
-func (handler *smHandler) checkUnitConfigState(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
+func (handler *smHandler) checkUnitConfigState(cfg cloudprotocol.NodeConfig, vendorVersion string) error {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), waitMessageTimeout)
 	defer cancelFunc()
 
@@ -131,7 +131,7 @@ func (handler *smHandler) checkUnitConfigState(cfg aostypes.NodeUnitConfig, vend
 	return nil
 }
 
-func (handler *smHandler) setUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
+func (handler *smHandler) setUnitConfig(cfg cloudprotocol.NodeConfig, vendorVersion string) error {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), waitMessageTimeout)
 	defer cancelFunc()
 
@@ -617,7 +617,7 @@ func (handler *smHandler) sendGetUnitConfigStatus() error {
 	return nil
 }
 
-func (handler *smHandler) sendCheckUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
+func (handler *smHandler) sendCheckUnitConfig(cfg cloudprotocol.NodeConfig, vendorVersion string) error {
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return aoserrors.Wrap(err)
@@ -632,7 +632,7 @@ func (handler *smHandler) sendCheckUnitConfig(cfg aostypes.NodeUnitConfig, vendo
 	return nil
 }
 
-func (handler *smHandler) sendSetUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
+func (handler *smHandler) sendSetUnitConfig(cfg cloudprotocol.NodeConfig, vendorVersion string) error {
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return aoserrors.Wrap(err)

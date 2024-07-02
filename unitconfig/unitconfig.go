@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	"github.com/aosedge/aos_common/aostypes"
 
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_communicationmanager/config"
@@ -114,14 +113,14 @@ func (instance *Instance) CheckUnitConfig(configJSON json.RawMessage) (vendorVer
 	return vendorVersion, nil
 }
 
-func (instance *Instance) GetUnitConfiguration(nodeType string) aostypes.NodeUnitConfig {
+func (instance *Instance) GetUnitConfiguration(nodeType string) cloudprotocol.NodeConfig {
 	for _, node := range instance.unitConfig.Nodes {
 		if node.NodeType == nodeType {
 			return node
 		}
 	}
 
-	return aostypes.NodeUnitConfig{}
+	return cloudprotocol.NodeConfig{}
 }
 
 // UpdateUnitConfig updates unit config.
