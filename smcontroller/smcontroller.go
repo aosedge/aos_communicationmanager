@@ -202,7 +202,7 @@ func (controller *Controller) CheckUnitConfig(unitConfig cloudprotocol.UnitConfi
 			}
 
 			if node.config.NodeType == nodeConfig.NodeType {
-				err := node.checkUnitConfigState(nodeConfig, unitConfig.VendorVersion)
+				err := node.checkUnitConfigState(nodeConfig, unitConfig.Version)
 				if err != nil {
 					return err
 				}
@@ -222,7 +222,7 @@ func (controller *Controller) SetUnitConfig(unitConfig cloudprotocol.UnitConfig)
 			}
 
 			if node.config.NodeType == nodeConfig.NodeType {
-				err := node.setUnitConfig(nodeConfig, unitConfig.VendorVersion)
+				err := node.setUnitConfig(nodeConfig, unitConfig.Version)
 				if err != nil {
 					return err
 				}

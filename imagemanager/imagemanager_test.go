@@ -1276,24 +1276,20 @@ func prepareLayerInfo(filePath, digest string, index int) (layerInfo cloudprotoc
 	}
 
 	installRequest := cloudprotocol.LayerInfo{
-		VersionInfo: aostypes.VersionInfo{
-			AosVersion: uint64(index), Description: "description" + strconv.Itoa(index),
-		},
-		ID:     "testLayer" + strconv.Itoa(index),
-		Digest: digest,
-		DecryptDataStruct: cloudprotocol.DecryptDataStruct{
+		Version: "v" + strconv.Itoa(index),
+		LayerID: "testLayer" + strconv.Itoa(index),
+		Digest:  digest,
+		DownloadInfo: cloudprotocol.DownloadInfo{
 			URLs:   []string{url.String()},
 			Sha256: imageFileInfo.Sha256,
-			Sha512: imageFileInfo.Sha512,
 			Size:   imageFileInfo.Size,
-			DecryptionInfo: &cloudprotocol.DecryptionInfo{
-				BlockAlg:     "AES256/CBC/pkcs7",
-				BlockIv:      []byte{},
-				BlockKey:     []byte{},
-				AsymAlg:      "RSA/PKCS1v1_5",
-				ReceiverInfo: &recInfo,
-			},
-			Signs: &cloudprotocol.Signs{},
+		},
+		DecryptionInfo: cloudprotocol.DecryptionInfo{
+			BlockAlg:     "AES256/CBC/pkcs7",
+			BlockIv:      []byte{},
+			BlockKey:     []byte{},
+			AsymAlg:      "RSA/PKCS1v1_5",
+			ReceiverInfo: &recInfo,
 		},
 	}
 
