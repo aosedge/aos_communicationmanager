@@ -194,7 +194,7 @@ func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error)
 }
 
 // CheckUnitConfig checks unit config for the node.
-func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) error {
+func (controller *Controller) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) error {
 	for _, nodeConfig := range unitConfig.Nodes {
 		for _, node := range controller.nodes {
 			if node == nil {
@@ -214,7 +214,7 @@ func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) er
 }
 
 // SetUnitConfig sets unit config for the node.
-func (controller *Controller) SetUnitConfig(unitConfig aostypes.UnitConfig) error {
+func (controller *Controller) SetUnitConfig(unitConfig cloudprotocol.UnitConfig) error {
 	for _, nodeConfig := range unitConfig.Nodes {
 		for _, node := range controller.nodes {
 			if node == nil {

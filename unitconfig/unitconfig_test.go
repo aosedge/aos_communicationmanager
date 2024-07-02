@@ -23,7 +23,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/unitconfig"
@@ -236,10 +235,10 @@ func TestUpdateUnitConfig(t *testing.T) {
  * testClient
  **********************************************************************************************************************/
 
-func (client *testClient) CheckUnitConfig(unitConfig aostypes.UnitConfig) (err error) {
+func (client *testClient) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error) {
 	return nil
 }
 
-func (client *testClient) SetUnitConfig(unitConfig aostypes.UnitConfig) (err error) {
+func (client *testClient) SetUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error) {
 	return nil
 }

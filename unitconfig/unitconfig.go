@@ -40,14 +40,14 @@ type Instance struct {
 
 	client          Client
 	unitConfigFile  string
-	unitConfig      aostypes.UnitConfig
+	unitConfig      cloudprotocol.UnitConfig
 	unitConfigError error
 }
 
 // Client client unit config interface.
 type Client interface {
-	CheckUnitConfig(unitConfig aostypes.UnitConfig) (err error)
-	SetUnitConfig(unitConfig aostypes.UnitConfig) (err error)
+	CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error)
+	SetUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error)
 }
 
 // ErrAlreadyInstalled error to detect that unit config with the same version already installed.
@@ -74,7 +74,7 @@ func (instance *Instance) GetStatus() (unitConfigInfo cloudprotocol.UnitConfigSt
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfigInfo.VendorVersion = instance.unitConfig.VendorVersion
+	unitConfigInfo.Version = instance.unitConfig.VendorVersion
 	unitConfigInfo.Status = cloudprotocol.InstalledStatus
 
 	if instance.unitConfigError != nil {
@@ -87,7 +87,7 @@ func (instance *Instance) GetStatus() (unitConfigInfo cloudprotocol.UnitConfigSt
 
 // GetUnitConfigVersion returns unit config version.
 func (instance *Instance) GetUnitConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error) {
-	unitConfig := aostypes.UnitConfig{VendorVersion: "unknown"}
+	unitConfig := cloudprotocol.UnitConfig{VendorVersion: "unknown"}
 
 	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
 		return unitConfig.VendorVersion, aoserrors.Wrap(err)
@@ -101,7 +101,7 @@ func (instance *Instance) CheckUnitConfig(configJSON json.RawMessage) (vendorVer
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfig := aostypes.UnitConfig{VendorVersion: "unknown"}
+	unitConfig := cloudprotocol.UnitConfig{VendorVersion: "unknown"}
 
 	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
 		return unitConfig.VendorVersion, aoserrors.Wrap(err)
@@ -129,7 +129,7 @@ func (instance *Instance) UpdateUnitConfig(configJSON json.RawMessage) (err erro
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfig := aostypes.UnitConfig{VendorVersion: "unknown"}
+	unitConfig := cloudprotocol.UnitConfig{VendorVersion: "unknown"}
 
 	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
 		return aoserrors.Wrap(err)
@@ -177,7 +177,7 @@ func (instance *Instance) load() (err error) {
 	return nil
 }
 
-func (instance *Instance) checkUnitConfig(unitConfig aostypes.UnitConfig) (vendorVersion string, err error) {
+func (instance *Instance) checkUnitConfig(unitConfig cloudprotocol.UnitConfig) (vendorVersion string, err error) {
 	if unitConfig.VendorVersion == instance.unitConfig.VendorVersion {
 		return unitConfig.VendorVersion, ErrAlreadyInstalled
 	}
