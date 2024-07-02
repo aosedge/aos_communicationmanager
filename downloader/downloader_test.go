@@ -984,7 +984,6 @@ func preparePackageInfo(host, fileName, targetType string) (packageInfo download
 	}
 
 	packageInfo.Sha256 = imageFileInfo.Sha256
-	packageInfo.Sha512 = imageFileInfo.Sha512
 	packageInfo.Size = imageFileInfo.Size
 	packageInfo.TargetType = targetType
 	packageInfo.TargetID = "targetID"

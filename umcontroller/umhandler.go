@@ -43,7 +43,7 @@ type umHandler struct {
 }
 
 type prepareRequest struct {
-	components []SystemComponent
+	components []ComponentStatus
 }
 
 /***********************************************************************************************************************
@@ -151,7 +151,7 @@ func (handler *umHandler) GetInitialState() (state string) {
 }
 
 // Close close connection.
-func (handler *umHandler) PrepareUpdate(prepareComponents []SystemComponent) (err error) {
+func (handler *umHandler) PrepareUpdate(prepareComponents []ComponentStatus) (err error) {
 	log.Debug("PrepareUpdate for UMID ", handler.umID)
 
 	request := prepareRequest{components: prepareComponents}

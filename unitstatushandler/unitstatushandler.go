@@ -449,7 +449,7 @@ func (descriptor *statusDescriptor) getVersion() (version string) {
 		return amqpStatus.VendorVersion
 
 	case *cloudprotocol.ComponentStatus:
-		return amqpStatus.VendorVersion
+		return amqpStatus.Version
 
 	case *cloudprotocol.LayerStatus:
 		return strconv.FormatUint(amqpStatus.AosVersion, 10)
@@ -485,9 +485,9 @@ func (instance *Instance) updateComponentStatus(componentInfo cloudprotocol.Comp
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"id":            componentInfo.ID,
+		"id":            componentInfo.ComponentID,
 		"status":        componentInfo.Status,
-		"vendorVersion": componentInfo.VendorVersion,
+		"vendorVersion": componentInfo.Version,
 		"error":         componentInfo.ErrorInfo,
 	}).Debug("Update component status")
 
@@ -496,10 +496,10 @@ func (instance *Instance) updateComponentStatus(componentInfo cloudprotocol.Comp
 }
 
 func (instance *Instance) processComponentStatus(componentInfo cloudprotocol.ComponentStatus) {
-	componentStatus, ok := instance.componentStatuses[componentInfo.ID]
+	componentStatus, ok := instance.componentStatuses[componentInfo.ComponentID]
 	if !ok {
 		componentStatus = &itemStatus{}
-		instance.componentStatuses[componentInfo.ID] = componentStatus
+		instance.componentStatuses[componentInfo.ComponentID] = componentStatus
 	}
 
 	instance.updateStatus(componentStatus, statusDescriptor{&componentInfo})

@@ -96,7 +96,7 @@ func TestNormalUpdate(t *testing.T) {
 
 	stream.step = StepPrepare
 
-	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion1", AosVersion: 1}}
+	components := []ComponentStatus{{URL: "file:///path/to/update", Version: "1.1.0"}}
 	if err := handler.PrepareUpdate(components); err != nil {
 		t.Errorf("Can't prepare components: %s", err)
 	}
@@ -178,7 +178,7 @@ func TestNormalUpdateWithReboot(t *testing.T) {
 
 	stream.step = StepPrepare
 
-	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion2", AosVersion: 1}}
+	components := []ComponentStatus{{URL: "file:///path/to/update", Version: "2.1.0"}}
 	if err := handler.PrepareUpdate(components); err != nil {
 		t.Errorf("Can't prepare components: %s", err)
 	}
@@ -253,7 +253,7 @@ func TestRevert(t *testing.T) {
 
 	stream.step = StepPrepare
 
-	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion3", AosVersion: 1}}
+	components := []ComponentStatus{{URL: "file:///path/to/update", Version: "2.1.0"}}
 	if err := handler.PrepareUpdate(components); err != nil {
 		t.Errorf("Can't prepare components: %s", err)
 	}
@@ -320,7 +320,7 @@ func TestRevertWithReboot(t *testing.T) {
 
 	stream.step = StepPrepare
 
-	components := []SystemComponent{{URL: "file:///path/to/update", VendorVersion: "vendorversion4", AosVersion: 1}}
+	components := []ComponentStatus{{URL: "file:///path/to/update", Version: "2.1.0"}}
 	if err := handler.PrepareUpdate(components); err != nil {
 		t.Errorf("Can't prepare components: %s", err)
 	}
