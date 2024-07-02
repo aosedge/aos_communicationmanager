@@ -350,9 +350,9 @@ func (instance *Instance) initCurrentStatus() error {
 
 	for _, status := range unitConfigStatuses {
 		log.WithFields(log.Fields{
-			"status":        status.Status,
-			"vendorVersion": status.VendorVersion,
-			"error":         status.ErrorInfo,
+			"status":  status.Status,
+			"version": status.Version,
+			"error":   status.ErrorInfo,
 		}).Debug("Initial unit config status")
 
 		instance.processUnitConfigStatus(status)
@@ -446,7 +446,7 @@ func (descriptor *statusDescriptor) getStatus() (status string) {
 func (descriptor *statusDescriptor) getVersion() (version string) {
 	switch amqpStatus := descriptor.amqpStatus.(type) {
 	case *cloudprotocol.UnitConfigStatus:
-		return amqpStatus.VendorVersion
+		return amqpStatus.Version
 
 	case *cloudprotocol.ComponentStatus:
 		return amqpStatus.Version
@@ -467,9 +467,9 @@ func (instance *Instance) updateUnitConfigStatus(unitConfigInfo cloudprotocol.Un
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"status":        unitConfigInfo.Status,
-		"vendorVersion": unitConfigInfo.VendorVersion,
-		"error":         unitConfigInfo.ErrorInfo,
+		"status":  unitConfigInfo.Status,
+		"version": unitConfigInfo.Version,
+		"error":   unitConfigInfo.ErrorInfo,
 	}).Debug("Update unit config status")
 
 	instance.processUnitConfigStatus(unitConfigInfo)

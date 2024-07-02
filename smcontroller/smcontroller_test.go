@@ -233,7 +233,7 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan    = make(chan struct{})
 		originalVersion = "version_1"
 		configStatus    = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_UnitConfigStatus{
-			UnitConfigStatus: &pb.UnitConfigStatus{VendorVersion: originalVersion},
+			UnitConfigStatus: &pb.UnitConfigStatus{Version: originalVersion},
 		}}
 		newVersion = "version_2"
 		unitConfig = fmt.Sprintf(`{"nodeType":"%s"}`, nodeType)
@@ -305,12 +305,12 @@ func TestUnitConfigMessages(t *testing.T) {
 	}()
 
 	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
+		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, Version: newVersion},
 	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	configStatus.GetUnitConfigStatus().VendorVersion = newVersion
+	configStatus.GetUnitConfigStatus().Version = newVersion
 
 	if err := smClient.stream.Send(configStatus); err != nil {
 		t.Errorf("Can't send unit config status")
@@ -320,7 +320,7 @@ func TestUnitConfigMessages(t *testing.T) {
 
 	go func() {
 		if err := controller.SetUnitConfig(cloudprotocol.UnitConfig{
-			VendorVersion: newVersion,
+			Version: newVersion,
 			Nodes: []cloudprotocol.NodeConfig{
 				{
 					NodeType: nodeType,
@@ -334,12 +334,12 @@ func TestUnitConfigMessages(t *testing.T) {
 	}()
 
 	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, VendorVersion: newVersion},
+		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, Version: newVersion},
 	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	configStatus.GetUnitConfigStatus().VendorVersion = newVersion
+	configStatus.GetUnitConfigStatus().Version = newVersion
 
 	if err := smClient.stream.Send(configStatus); err != nil {
 		t.Errorf("Can't send unit config status")
