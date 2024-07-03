@@ -413,12 +413,14 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	nodeConfiguration := []cloudprotocol.NodeInfo{
-		{NodeID: "main", NodeType: "mainType", SystemInfo: cloudprotocol.SystemInfo{
-			NumCPUs: 2, TotalRAM: 200,
-			Partitions: []cloudprotocol.PartitionInfo{
-				{Name: "p1", Types: []string{"t1"}, TotalSize: 200},
+		{
+			NodeID: "main", NodeType: "mainType", TotalRAM: 200,
+			CPUs: []cloudprotocol.CPUInfo{
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
 			},
-		}},
+			Partitions: []cloudprotocol.PartitionInfo{{Name: "p1", Types: []string{"t1"}, TotalSize: 200}},
+		},
 	}
 
 	nodeMonitoring := cloudprotocol.NodeMonitoringData{

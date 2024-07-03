@@ -357,11 +357,13 @@ func TestInitialStatus(t *testing.T) {
 		}}
 
 		nodeInfo := cloudprotocol.NodeInfo{
-			NodeID: id, NodeType: "nodeType", SystemInfo: cloudprotocol.SystemInfo{
-				NumCPUs: 1, TotalRAM: 100,
-				Partitions: []cloudprotocol.PartitionInfo{
-					{Name: "id", TotalSize: 200},
-				},
+			NodeID: id, NodeType: "nodeType",
+			TotalRAM: 100,
+			CPUs: []cloudprotocol.CPUInfo{
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
+			},
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "id", TotalSize: 200},
 			},
 		}
 
