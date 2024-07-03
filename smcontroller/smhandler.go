@@ -614,7 +614,7 @@ func (handler *smHandler) sendCheckUnitConfig(cfg cloudprotocol.NodeConfig, vend
 	}
 
 	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: string(configJSON), VendorVersion: vendorVersion},
+		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: string(configJSON), Version: vendorVersion},
 	}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -629,7 +629,7 @@ func (handler *smHandler) sendSetUnitConfig(cfg cloudprotocol.NodeConfig, vendor
 	}
 
 	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: string(configJSON), VendorVersion: vendorVersion},
+		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: string(configJSON), Version: vendorVersion},
 	}}); err != nil {
 		return aoserrors.Wrap(err)
 	}

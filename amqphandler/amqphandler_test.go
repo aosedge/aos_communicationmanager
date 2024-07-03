@@ -311,7 +311,7 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.DesiredStatusMessageType,
 			expectedData: &cloudprotocol.DesiredStatus{
-				UnitConfig: json.RawMessage([]byte("\"config\"")),
+				UnitConfig: &cloudprotocol.UnitConfig{},
 				Components: []cloudprotocol.ComponentInfo{
 					{Version: "1.0.0", ComponentID: "rootfs"},
 				},
