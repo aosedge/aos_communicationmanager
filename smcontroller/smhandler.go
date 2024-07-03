@@ -575,11 +575,8 @@ func (handler *smHandler) processOverrideEnvVarsStatus(envVarStatus *pb.Override
 
 		for j, varStatus := range item.GetVarsStatus() {
 			responseItem.Statuses[j] = cloudprotocol.EnvVarStatus{
-				ID: varStatus.GetVarId(),
-				Error: &cloudprotocol.ErrorInfo{
-					AosCode:  int(varStatus.GetError().GetAosCode()),
-					ExitCode: int(varStatus.GetError().GetExitCode()), Message: varStatus.GetError().GetMessage(),
-				},
+				ID:        varStatus.GetVarId(),
+				ErrorInfo: pbconvert.ErrorInfoFromPB(varStatus.GetError()),
 			}
 		}
 

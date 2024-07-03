@@ -499,7 +499,7 @@ func TestSendMessages(t *testing.T) {
 				InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
 				Statuses: []cloudprotocol.EnvVarStatus{
 					{ID: "1234"},
-					{ID: "345", Error: "some error"},
+					{ID: "345", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "some error"}},
 				},
 			},
 			{
