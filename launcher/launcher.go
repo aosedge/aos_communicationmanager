@@ -1032,7 +1032,7 @@ func (launcher *Launcher) getNodeByMonitoringData(nodes []*nodeStatus, alertType
 		nodesResources = append(nodesResources, freeNodeResources{
 			node:    node,
 			freeRAM: node.TotalRAM - monitoringData.RAM,
-			freeCPU: node.NumCPUs*100 - monitoringData.CPU,
+			freeCPU: uint64(len(node.CPUs)*100) - monitoringData.CPU,
 		})
 	}
 
