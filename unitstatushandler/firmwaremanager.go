@@ -405,14 +405,12 @@ func (manager *firmwareManager) download(ctx context.Context) {
 		}).Debug("Download component")
 
 		request[component.ComponentID] = downloader.PackageInfo{
-			URLs:                component.URLs,
-			Sha256:              component.Sha256,
-			Sha512:              component.Sha512,
-			Size:                component.Size,
-			TargetType:          cloudprotocol.DownloadTargetComponent,
-			TargetID:            component.ComponentID,
-			TargetAosVersion:    component.AosVersion,
-			TargetVendorVersion: component.VendorVersion,
+			URLs:          component.URLs,
+			Sha256:        component.Sha256,
+			Size:          component.Size,
+			TargetType:    cloudprotocol.DownloadTargetComponent,
+			TargetID:      component.ComponentID,
+			TargetVersion: component.Version,
 		}
 		manager.ComponentStatuses[component.ComponentID] = &cloudprotocol.ComponentStatus{
 			ComponentID: component.ComponentID,
