@@ -366,10 +366,10 @@ func (instance *Instance) initCurrentStatus() error {
 
 	for _, status := range componentStatuses {
 		log.WithFields(log.Fields{
-			"id":            status.ID,
-			"status":        status.Status,
-			"vendorVersion": status.VendorVersion,
-			"error":         status.ErrorInfo,
+			"id":      status.ComponentID,
+			"status":  status.Status,
+			"version": status.Version,
+			"error":   status.ErrorInfo,
 		}).Debug("Initial component status")
 
 		instance.processComponentStatus(status)
@@ -569,14 +569,14 @@ foundloop:
 	for _, instanceStatus := range status {
 		for i := range instance.instanceStatuses {
 			if instanceStatus.InstanceIdent == instance.instanceStatuses[i].InstanceIdent &&
-				instanceStatus.AosVersion == instance.instanceStatuses[i].AosVersion {
+				instanceStatus.Version == instance.instanceStatuses[i].Version {
 				log.WithFields(log.Fields{
-					"serviceID":  instanceStatus.InstanceIdent.ServiceID,
-					"subjectID":  instanceStatus.InstanceIdent.SubjectID,
-					"instance":   instanceStatus.InstanceIdent.Instance,
-					"aosVersion": instanceStatus.AosVersion,
-					"runState":   instanceStatus.RunState,
-					"error":      instanceStatus.ErrorInfo,
+					"serviceID": instanceStatus.InstanceIdent.ServiceID,
+					"subjectID": instanceStatus.InstanceIdent.SubjectID,
+					"instance":  instanceStatus.InstanceIdent.Instance,
+					"version":   instanceStatus.Version,
+					"runState":  instanceStatus.RunState,
+					"error":     instanceStatus.ErrorInfo,
 				}).Debug("Update instance status")
 
 				instance.instanceStatuses[i].StateChecksum = instanceStatus.StateChecksum
