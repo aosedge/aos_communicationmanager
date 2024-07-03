@@ -608,14 +608,14 @@ newServicesLoop:
 		}
 
 		errorService := cloudprotocol.ServiceStatus{
-			ID: newService, Status: cloudprotocol.ErrorStatus, ErrorInfo: &cloudprotocol.ErrorInfo{},
+			ServiceID: newService, Status: cloudprotocol.ErrorStatus, ErrorInfo: &cloudprotocol.ErrorInfo{},
 		}
 
 		service, err := launcher.imageProvider.GetServiceInfo(newService)
 		if err != nil {
 			errorService.ErrorInfo.Message = err.Error()
 		} else {
-			errorService.AosVersion = service.AosVersion
+			errorService.Version = service.Version
 			errorService.ErrorInfo.Message = "can't run any instances"
 		}
 

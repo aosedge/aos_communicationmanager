@@ -376,13 +376,13 @@ func TestSendMessages(t *testing.T) {
 	unitConfigData := []cloudprotocol.UnitConfigStatus{{Version: "1.0"}}
 
 	serviceSetupData := []cloudprotocol.ServiceStatus{
-		{ID: "service0", AosVersion: 1, Status: "running", ErrorInfo: nil},
+		{ServiceID: "service0", Version: "1.0", Status: "running", ErrorInfo: nil},
 		{
-			ID: "service1", AosVersion: 2, Status: "stopped",
+			ServiceID: "service1", Version: "2.0", Status: "stopped",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "crash"},
 		},
 		{
-			ID: "service2", AosVersion: 3, Status: "unknown",
+			ServiceID: "service2", Version: "3.0", Status: "unknown",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "unknown"},
 		},
 	}
@@ -390,7 +390,7 @@ func TestSendMessages(t *testing.T) {
 	instances := []cloudprotocol.InstanceStatus{
 		{
 			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-			AosVersion:    1, StateChecksum: "12345", RunState: "running", NodeID: "mainNode",
+			Version:       "1.0", StateChecksum: "12345", RunState: "running", NodeID: "mainNode",
 		},
 	}
 

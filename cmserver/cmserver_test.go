@@ -168,8 +168,8 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusNotification := cmserver.UpdateSOTAStatus{
-		InstallServices: []cloudprotocol.ServiceStatus{{ID: "s1", AosVersion: 42}},
-		RemoveServices:  []cloudprotocol.ServiceStatus{{ID: "s2", AosVersion: 42}},
+		InstallServices: []cloudprotocol.ServiceStatus{{ServiceID: "s1", Version: "42.0"}},
+		RemoveServices:  []cloudprotocol.ServiceStatus{{ServiceID: "s2", Version: "42.0"}},
 		InstallLayers:   []cloudprotocol.LayerStatus{{ID: "l1", Digest: "someSha", AosVersion: 42}},
 		RemoveLayers:    []cloudprotocol.LayerStatus{{ID: "l2", Digest: "someSha", AosVersion: 42}},
 		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
@@ -191,7 +191,7 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect state: ", status.GetState().String())
 	}
 
-	if sotaStatus.GetError() != "SOTA error" {
+	if sotaStatus.GetError().GetMessage() != "SOTA error" {
 		t.Error("Incorrect error message: ", status.GetError())
 	}
 
@@ -199,11 +199,11 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Incorrect count of services")
 	}
 
-	if sotaStatus.GetInstallServices()[0].GetId() != "s1" {
+	if sotaStatus.GetInstallServices()[0].GetServiceId() != "s1" {
 		t.Error("Incorrect service id")
 	}
 
-	if sotaStatus.GetInstallServices()[0].GetAosVersion() != 42 {
+	if sotaStatus.GetInstallServices()[0].GetVersion() != "42.0" {
 		t.Error("Incorrect service aos version")
 	}
 
@@ -211,7 +211,7 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Incorrect count of layers")
 	}
 
-	if sotaStatus.GetInstallLayers()[0].GetId() != "l1" {
+	if sotaStatus.GetInstallLayers()[0].GetLayerId() != "l1" {
 		t.Error("Incorrect layer id")
 	}
 
@@ -219,7 +219,7 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect layer digest")
 	}
 
-	if sotaStatus.GetInstallLayers()[0].GetAosVersion() != 42 {
+	if sotaStatus.GetInstallLayers()[0].GetVersion() != "42.0" {
 		t.Error("Incorrect layer aos version")
 	}
 

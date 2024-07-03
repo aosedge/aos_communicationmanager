@@ -245,9 +245,9 @@ func (imagemanager *Imagemanager) GetServicesStatus() ([]unitstatushandler.Servi
 	for i, service := range servicesInfo {
 		servicesStatus[i] = unitstatushandler.ServiceStatus{
 			ServiceStatus: cloudprotocol.ServiceStatus{
-				ID:         service.ID,
-				AosVersion: service.AosVersion,
-				Status:     cloudprotocol.InstalledStatus,
+				ServiceID: service.ServiceID,
+				Version:   service.Version,
+				Status:    cloudprotocol.InstalledStatus,
 			}, Cached: service.Cached,
 		}
 	}
