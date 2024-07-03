@@ -275,14 +275,11 @@ func TestServiceStore(t *testing.T) {
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
-					ID: "service1",
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion:    1,
-						VendorVersion: "1",
-					},
-					URL:  "file:///path/service1",
-					Size: 30,
-					GID:  1000,
+					ServiceID: "service1",
+					Version:   "1.1",
+					URL:       "file:///path/service1",
+					Size:      30,
+					GID:       1000,
 				},
 				RemoteURL: "http://path/service1",
 				Path:      "/path/service1", Timestamp: time.Now().UTC(), Cached: false, Config: aostypes.ServiceConfig{
@@ -301,14 +298,11 @@ func TestServiceStore(t *testing.T) {
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
-					ID: "service2",
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion:    1,
-						VendorVersion: "1",
-					},
-					URL:  "file:///path/service2",
-					Size: 60,
-					GID:  2000,
+					ServiceID: "service2",
+					Version:   "1.1",
+					URL:       "file:///path/service2",
+					Size:      60,
+					GID:       2000,
 				},
 				RemoteURL: "http://path/service2",
 				Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true, Config: aostypes.ServiceConfig{
@@ -328,14 +322,11 @@ func TestServiceStore(t *testing.T) {
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
-					ID: "service2",
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion:    2,
-						VendorVersion: "1",
-					},
-					URL:  "file:///path/service2/new",
-					Size: 20,
-					GID:  1000,
+					ServiceID: "service2",
+					Version:   "2.1",
+					URL:       "file:///path/service2/new",
+					Size:      20,
+					GID:       1000,
 				},
 				RemoteURL: "http://path/service2/new",
 				Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
@@ -351,16 +342,16 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Can't add service: %v", err)
 		}
 
-		service, err := testDB.GetServiceInfo(tCase.service.ID)
+		service, err := testDB.GetServiceInfo(tCase.service.ServiceID)
 		if err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
 		if !reflect.DeepEqual(service, tCase.service) {
-			t.Errorf("service %s doesn't match stored one", tCase.service.ID)
+			t.Errorf("service %s doesn't match stored one", tCase.service.ServiceID)
 		}
 
-		serviceVersions, err := testDB.GetServiceVersions(tCase.service.ID)
+		serviceVersions, err := testDB.GetServiceVersions(tCase.service.ServiceID)
 		if err != nil {
 			t.Errorf("Can't get service versions: %v", err)
 		}
@@ -378,11 +369,11 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Incorrect count of services: %v", len(services))
 		}
 
-		if err := testDB.SetServiceCached(tCase.service.ID, !tCase.service.Cached); err != nil {
+		if err := testDB.SetServiceCached(tCase.service.ServiceID, !tCase.service.Cached); err != nil {
 			t.Errorf("Can't set service cached: %v", err)
 		}
 
-		if service, err = testDB.GetServiceInfo(tCase.service.ID); err != nil {
+		if service, err = testDB.GetServiceInfo(tCase.service.ServiceID); err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
@@ -392,11 +383,11 @@ func TestServiceStore(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := testDB.RemoveService(tCase.service.ID, tCase.service.AosVersion); err != nil {
+		if err := testDB.RemoveService(tCase.service.ServiceID, tCase.service.Version); err != nil {
 			t.Errorf("Can't remove service: %v", err)
 		}
 
-		if _, err := testDB.GetServiceInfo(tCase.service.ID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
+		if _, err := testDB.GetServiceInfo(tCase.service.ServiceID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	}

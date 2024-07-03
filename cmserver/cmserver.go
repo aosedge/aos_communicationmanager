@@ -338,15 +338,15 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 
 	for _, service := range updateStatus.InstallServices {
 		pbStatus.InstallServices = append(pbStatus.GetInstallServices(), &pb.ServiceInfo{
-			Id:         service.ID,
-			AosVersion: service.AosVersion,
+			ServideId: service.ServiceID,
+			Version:   service.Version,
 		})
 	}
 
 	for _, service := range updateStatus.RemoveServices {
 		pbStatus.RemoveServices = append(pbStatus.GetRemoveServices(), &pb.ServiceInfo{
-			Id:         service.ID,
-			AosVersion: service.AosVersion,
+			ServideId: service.ServiceID,
+			Version:   service.Version,
 		})
 	}
 

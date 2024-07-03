@@ -813,7 +813,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 				instance.InstanceIdent, serviceInfo.ProviderID,
 				prepareNetworkParameters(instance, serviceInfo)); err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instance.Instance, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+					instance.Instance, serviceInfo, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
 			node.currentRunRequest.Instances[i] = instance
@@ -1223,7 +1223,7 @@ func (launcher *Launcher) addRunRequest(instance aostypes.InstanceInfo, service 
 	}
 
 	if isNewService {
-		log.WithFields(log.Fields{"serviceID": serviceInfo.ID, "node": node.NodeID}).Debug("Schedule service on node")
+		log.WithFields(log.Fields{"serviceID": serviceInfo.ServiceID, "node": node.NodeID}).Debug("Schedule service on node")
 
 		node.currentRunRequest.Services = append(node.currentRunRequest.Services, serviceInfo)
 	}
@@ -1269,7 +1269,7 @@ func (launcher *Launcher) removeServiceFromNode(serviceID string, node *nodeStat
 	i := 0
 
 	for _, service := range node.currentRunRequest.Services {
-		if service.ID != serviceID {
+		if service.ServiceID != serviceID {
 			node.currentRunRequest.Services[i] = service
 			i++
 		}
@@ -1318,7 +1318,7 @@ func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node 
 	layerLoop:
 		for _, currentDigest := range currentServiceInfo.Layers {
 			for _, service := range node.currentRunRequest.Services {
-				serviceInfo, err := launcher.imageProvider.GetServiceInfo(service.ID)
+				serviceInfo, err := launcher.imageProvider.GetServiceInfo(service.ServiceID)
 				if err != nil {
 					log.Errorf("Can't get service info: %v", err)
 
@@ -1338,7 +1338,7 @@ func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node 
 }
 
 func createInstanceStatusFromInfo(
-	serviceID, subjectID string, instanceIndex, serviceVersion uint64, runState, errorMsg string,
+	serviceID, subjectID string, instanceIndex uint64, serviceVersion string, runState, errorMsg string,
 ) cloudprotocol.InstanceStatus {
 	ident := aostypes.InstanceIdent{
 		ServiceID: serviceID, SubjectID: subjectID, Instance: instanceIndex,
@@ -1346,7 +1346,7 @@ func createInstanceStatusFromInfo(
 
 	instanceStatus := cloudprotocol.InstanceStatus{
 		InstanceIdent: ident,
-		AosVersion:    serviceVersion, RunState: runState,
+		Version:       serviceVersion, RunState: runState,
 	}
 
 	if errorMsg != "" {

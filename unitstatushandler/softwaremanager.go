@@ -262,7 +262,7 @@ func (manager *softwareManager) processDesiredServices(
 downloadServiceLoop:
 	for _, desiredService := range desiredServices {
 		for _, service := range allServices {
-			if desiredService.ID == service.ID && desiredService.AosVersion == service.AosVersion &&
+			if desiredService.ServiceID == service.ServiceID && desiredService.Version == service.Version &&
 				service.Status != cloudprotocol.ErrorStatus {
 				if service.Cached {
 					update.RestoreServices = append(update.RestoreServices, desiredService)
@@ -1039,15 +1039,15 @@ func (manager *softwareManager) installServices() (newServices []string, install
 
 	handleError := func(service cloudprotocol.ServiceInfo, serviceErr string) {
 		log.WithFields(log.Fields{
-			"id":         service.ID,
-			"aosVersion": service.AosVersion,
+			"id":      service.ServiceID,
+			"version": service.Version,
 		}).Errorf("Can't install service: %s", serviceErr)
 
 		if isCancelError(serviceErr) {
 			return
 		}
 
-		manager.updateStatusByID(service.ID, cloudprotocol.ErrorStatus, serviceErr)
+		manager.updateStatusByID(service.ServiceID, cloudprotocol.ErrorStatus, serviceErr)
 
 		mutex.Lock()
 		defer mutex.Unlock()
@@ -1060,7 +1060,7 @@ func (manager *softwareManager) installServices() (newServices []string, install
 	installServices := []cloudprotocol.ServiceInfo{}
 
 	for _, service := range manager.CurrentUpdate.InstallServices {
-		downloadInfo, ok := manager.DownloadResult[service.ID]
+		downloadInfo, ok := manager.DownloadResult[service.ServiceID]
 		if !ok {
 			handleError(service, aoserrors.New("can't get download result").Error())
 			continue
@@ -1076,23 +1076,23 @@ func (manager *softwareManager) installServices() (newServices []string, install
 			Path:   downloadInfo.FileName,
 		}
 
-		service.DecryptDataStruct.URLs = []string{url.String()}
+		service.DownloadInfo.URLs = []string{url.String()}
 
 		installServices = append(installServices, service)
 	}
 
 	for _, service := range installServices {
 		log.WithFields(log.Fields{
-			"id":         service.ID,
-			"aosVersion": service.AosVersion,
+			"id":      service.ServiceID,
+			"version": service.Version,
 		}).Debug("Install service")
 
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.InstallingStatus, "")
+		manager.updateServiceStatusByID(service.ServiceID, cloudprotocol.InstallingStatus, "")
 
 		// Create new variable to be captured by action function
 		serviceInfo := service
 
-		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) error {
+		manager.actionHandler.Execute(serviceInfo.ServiceID, func(serviceID string) error {
 			err := manager.softwareUpdater.InstallService(serviceInfo,
 				manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs)
 			if err != nil {
@@ -1101,13 +1101,13 @@ func (manager *softwareManager) installServices() (newServices []string, install
 			}
 
 			log.WithFields(log.Fields{
-				"id":         serviceInfo.ID,
-				"aosVersion": serviceInfo.AosVersion,
+				"id":         serviceInfo.ServiceID,
+				"aosVersion": serviceInfo.Version,
 			}).Info("Service successfully installed")
 
-			newServices = append(newServices, serviceInfo.ID)
+			newServices = append(newServices, serviceInfo.ServiceID)
 
-			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "")
+			manager.updateServiceStatusByID(serviceInfo.ServiceID, cloudprotocol.InstalledStatus, "")
 
 			return nil
 		})
@@ -1123,15 +1123,15 @@ func (manager *softwareManager) restoreServices() (restoreErr string) {
 
 	handleError := func(service cloudprotocol.ServiceInfo, serviceErr string) {
 		log.WithFields(log.Fields{
-			"id":         service.ID,
-			"aosVersion": service.AosVersion,
+			"id":         service.ServiceID,
+			"aosVersion": service.Version,
 		}).Errorf("Can't restore service: %s", serviceErr)
 
 		if isCancelError(serviceErr) {
 			return
 		}
 
-		manager.updateStatusByID(service.ID, cloudprotocol.ErrorStatus, serviceErr)
+		manager.updateStatusByID(service.ServiceID, cloudprotocol.ErrorStatus, serviceErr)
 
 		mutex.Lock()
 		defer mutex.Unlock()
@@ -1143,32 +1143,32 @@ func (manager *softwareManager) restoreServices() (restoreErr string) {
 
 	for _, service := range manager.CurrentUpdate.RestoreServices {
 		log.WithFields(log.Fields{
-			"id":         service.ID,
-			"aosVersion": service.AosVersion,
+			"id":         service.ServiceID,
+			"aosVersion": service.Version,
 		}).Debug("Restore service")
 
-		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceStatus{
-			ID:         service.ID,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.InstallingStatus,
+		manager.ServiceStatuses[service.ServiceID] = &cloudprotocol.ServiceStatus{
+			ServiceID: service.ServiceID,
+			Version:   service.Version,
+			Status:    cloudprotocol.InstallingStatus,
 		}
 
 		// Create new variable to be captured by action function
 		serviceInfo := service
 
-		manager.actionHandler.Execute(serviceInfo.ID, func(serviceID string) error {
-			if err := manager.softwareUpdater.RestoreService(serviceInfo.ID); err != nil {
+		manager.actionHandler.Execute(serviceInfo.ServiceID, func(serviceID string) error {
+			if err := manager.softwareUpdater.RestoreService(serviceInfo.ServiceID); err != nil {
 				handleError(serviceInfo, aoserrors.Wrap(err).Error())
 
 				return aoserrors.Wrap(err)
 			}
 
 			log.WithFields(log.Fields{
-				"id":         serviceInfo.ID,
-				"aosVersion": serviceInfo.AosVersion,
+				"id":      serviceInfo.ServiceID,
+				"version": serviceInfo.Version,
 			}).Info("Service successfully restored")
 
-			manager.updateServiceStatusByID(serviceInfo.ID, cloudprotocol.InstalledStatus, "")
+			manager.updateServiceStatusByID(serviceInfo.ServiceID, cloudprotocol.InstalledStatus, "")
 
 			return nil
 		})
@@ -1223,7 +1223,7 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 		serviceStatus := service
 
 		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) error {
-			if err := manager.softwareUpdater.RemoveService(serviceStatus.ID); err != nil {
+			if err := manager.softwareUpdater.RemoveService(serviceStatus.ServiceID); err != nil {
 				handleError(serviceStatus, err.Error())
 				return aoserrors.Wrap(err)
 			}
@@ -1248,11 +1248,11 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr strin
 	manager.InstanceStatuses = []cloudprotocol.InstanceStatus{}
 
 	for _, instance := range manager.CurrentUpdate.RunInstances {
-		var aosVersion uint64
+		var version string
 
 		for _, serviceInfo := range manager.CurrentUpdate.InstallServices {
-			if serviceInfo.ID == instance.ServiceID {
-				aosVersion = serviceInfo.AosVersion
+			if serviceInfo.ServiceID == instance.ServiceID {
+				version = serviceInfo.Version
 
 				break
 			}
@@ -1267,7 +1267,7 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr strin
 
 			manager.InstanceStatuses = append(manager.InstanceStatuses, cloudprotocol.InstanceStatus{
 				InstanceIdent: ident,
-				AosVersion:    aosVersion,
+				Version:       version,
 				RunState:      cloudprotocol.InstanceStateActivating,
 			})
 		}

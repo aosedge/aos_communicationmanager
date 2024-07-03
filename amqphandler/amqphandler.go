@@ -641,10 +641,8 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 
 	for _, service := range desiredStatus.Services {
 		log.WithFields(log.Fields{
-			"id":            service.ID,
-			"aosVersion":    service.AosVersion,
-			"vendorVersion": service.VendorVersion,
-			"description":   service.Description,
+			"id":      service.ServiceID,
+			"version": service.Version,
 		}).Debug("Service")
 	}
 

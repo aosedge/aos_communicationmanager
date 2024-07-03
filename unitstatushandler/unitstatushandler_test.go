@@ -538,16 +538,16 @@ func TestUpdateServices(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{0}},
+				ServiceID: "service0", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{0}},
 			},
 			{
-				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+				ServiceID: "service1", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{1}},
 			},
 			{
-				ID: "service3", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+				ServiceID: "service3", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
 			},
 		},
 	})
@@ -613,16 +613,16 @@ func TestUpdateServices(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{1}},
+				ServiceID: "service1", Version: "1.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{1}},
 			},
 			{
-				ID: "service3", VersionInfo: aostypes.VersionInfo{AosVersion: 2},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{3}},
+				ServiceID: "service3", Version: "2.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
 			},
 			{
-				ID: "service4", VersionInfo: aostypes.VersionInfo{AosVersion: 2},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{Sha256: []byte{4}},
+				ServiceID: "service4", Version: "2.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{4}},
 			},
 		},
 	})
@@ -915,24 +915,24 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Services: []cloudprotocol.ServiceInfo{
 			{
-				ID: "service0", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service0"}, Sha256: []byte{0}},
+				ServiceID: "service0", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"service0"}, Sha256: []byte{0}},
 			},
 			{
-				ID: "service1", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service1"}, Sha256: []byte{1}},
+				ServiceID: "service1", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"service1"}, Sha256: []byte{1}},
 			},
 			{
-				ID: "service2", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service2"}, Sha256: []byte{2}},
+				ServiceID: "service2", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"service2"}, Sha256: []byte{2}},
 			},
 			{
-				ID: "service3", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
+				ServiceID: "service3", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"service3"}, Sha256: []byte{3}},
 			},
 			{
-				ID: "service4", VersionInfo: aostypes.VersionInfo{AosVersion: 0},
-				DecryptDataStruct: cloudprotocol.DecryptDataStruct{URLs: []string{"service3"}, Sha256: []byte{3}},
+				ServiceID: "service4", Version: "0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{URLs: []string{"service3"}, Sha256: []byte{3}},
 			},
 		},
 		Layers: []cloudprotocol.LayerInfo{

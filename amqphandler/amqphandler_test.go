@@ -319,7 +319,7 @@ func TestReceiveMessages(t *testing.T) {
 					{Version: "1.0", LayerID: "l1", Digest: "digest"},
 				},
 				Services: []cloudprotocol.ServiceInfo{
-					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "serv1", ProviderID: "p1"},
+					{Version: "1.0", ServiceID: "serv1", ProviderID: "p1"},
 				},
 				Instances:    []cloudprotocol.InstanceInfo{{ServiceID: "s1", SubjectID: "subj1", NumInstances: 1}},
 				FOTASchedule: cloudprotocol.ScheduleRule{TTL: uint64(100), Type: "type"},
