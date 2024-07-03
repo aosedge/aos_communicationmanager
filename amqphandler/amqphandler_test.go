@@ -396,11 +396,11 @@ func TestSendMessages(t *testing.T) {
 
 	layersSetupData := []cloudprotocol.LayerStatus{
 		{
-			ID: "layer0", Digest: "sha256:0", Status: "failed", AosVersion: 1,
+			LayerID: "layer0", Digest: "sha256:0", Status: "failed", Version: "1.0",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "bad layer"},
 		},
-		{ID: "layer1", Digest: "sha256:1", Status: "installed", AosVersion: 2},
-		{ID: "layer2", Digest: "sha256:2", Status: "installed", AosVersion: 3},
+		{LayerID: "layer1", Digest: "sha256:1", Status: "installed", Version: "2.0"},
+		{LayerID: "layer2", Digest: "sha256:2", Status: "installed", Version: "3.0"},
 	}
 
 	componentSetupData := []cloudprotocol.ComponentStatus{

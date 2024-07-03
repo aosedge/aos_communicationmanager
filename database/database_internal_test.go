@@ -439,7 +439,7 @@ func TestLayerStore(t *testing.T) {
 		}
 
 		if !reflect.DeepEqual(layer, tCase.layer) {
-			t.Errorf("layer %s doesn't match stored one", tCase.layer.ID)
+			t.Errorf("layer %s doesn't match stored one", tCase.layer.LayerID)
 		}
 
 		layers, err := testDB.GetLayersInfo()
