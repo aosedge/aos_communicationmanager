@@ -62,9 +62,9 @@ func TestSendInitialStatus(t *testing.T) {
 			{ComponentID: "comp2", Version: "1.2", Status: cloudprotocol.InstalledStatus},
 		},
 		Layers: []cloudprotocol.LayerStatus{
-			{ID: "layer0", Digest: "digest0", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer1", Digest: "digest1", AosVersion: 2, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer2", Digest: "digest2", AosVersion: 3, Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer0", Digest: "digest0", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer1", Digest: "digest1", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer2", Digest: "digest2", Version: "3.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Services: []cloudprotocol.ServiceStatus{
 			{ServiceID: "service0", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -94,13 +94,13 @@ func TestSendInitialStatus(t *testing.T) {
 
 	initialLayers := []unitstatushandler.LayerStatus{
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer0", Digest: "digest0", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer0", Digest: "digest0", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer1", Digest: "digest1", AosVersion: 2, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer1", Digest: "digest1", Version: "2.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer2", Digest: "digest2", AosVersion: 3, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer2", Digest: "digest2", Version: "3.0", Status: cloudprotocol.InstalledStatus,
 		}},
 	}
 
@@ -328,13 +328,13 @@ func TestUpdateComponents(t *testing.T) {
 func TestUpdateLayers(t *testing.T) {
 	layerStatuses := []unitstatushandler.LayerStatus{
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer0", Digest: "digest0", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer1", Digest: "digest1", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer2", Digest: "digest2", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
@@ -370,11 +370,11 @@ func TestUpdateLayers(t *testing.T) {
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{},
 		Layers: []cloudprotocol.LayerStatus{
-			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer0", Digest: "digest0", Version: "0.0", Status: cloudprotocol.RemovedStatus},
+			{LayerID: "layer1", Digest: "digest1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer2", Digest: "digest2", Version: "0.0", Status: cloudprotocol.RemovedStatus},
+			{LayerID: "layer3", Digest: "digest3", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer4", Digest: "digest4", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Services: []cloudprotocol.ServiceStatus{},
 	}
@@ -415,19 +415,19 @@ func TestUpdateLayers(t *testing.T) {
 
 	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus,
+			LayerID: "layer0", Digest: "digest0", Version: "0.0", Status: cloudprotocol.RemovedStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer1", Digest: "digest1", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus,
+			LayerID: "layer2", Digest: "digest2", Version: "0.0", Status: cloudprotocol.RemovedStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer3", Digest: "digest3", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer4", Digest: "digest4", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 	}
 
@@ -439,13 +439,13 @@ func TestUpdateLayers(t *testing.T) {
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{},
 		Layers: []cloudprotocol.LayerStatus{
-			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.RemovedStatus},
-			{ID: "layer3", Digest: "digest3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer4", Digest: "digest4", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer0", Digest: "digest0", Version: "0.0", Status: cloudprotocol.RemovedStatus},
+			{LayerID: "layer1", Digest: "digest1", Version: "0.0", Status: cloudprotocol.RemovedStatus},
+			{LayerID: "layer2", Digest: "digest2", Version: "0.0", Status: cloudprotocol.RemovedStatus},
+			{LayerID: "layer3", Digest: "digest3", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer4", Digest: "digest4", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 			{
-				ID: "layer5", Digest: "digest5", AosVersion: 1, Status: cloudprotocol.ErrorStatus,
+				LayerID: "layer5", Digest: "digest5", Version: "1.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 		},
@@ -850,19 +850,19 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	}
 	layerStatuses := []unitstatushandler.LayerStatus{
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer0", Digest: "digest0", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer1", Digest: "digest1", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer2", Digest: "digest2", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer4", Digest: "digest4", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer4", Digest: "digest4", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}, Cached: true},
 		{LayerStatus: cloudprotocol.LayerStatus{
-			ID: "layer5", Digest: "digest5", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			LayerID: "layer5", Digest: "digest5", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}, Cached: true},
 	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
@@ -897,11 +897,11 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{},
 		Layers: []cloudprotocol.LayerStatus{
-			{ID: "layer0", Digest: "digest0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer1", Digest: "digest1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer2", Digest: "digest2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer3", Digest: "digest3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "layer5", Digest: "digest5", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer0", Digest: "digest0", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer1", Digest: "digest1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer2", Digest: "digest2", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer3", Digest: "digest3", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{LayerID: "layer5", Digest: "digest5", Version: "0.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Services: []cloudprotocol.ServiceStatus{
 			{ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus},

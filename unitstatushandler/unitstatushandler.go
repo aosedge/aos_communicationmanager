@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -409,11 +408,11 @@ func (instance *Instance) initCurrentStatus() error {
 		}
 
 		log.WithFields(log.Fields{
-			"id":         status.ID,
-			"digest":     status.Digest,
-			"status":     status.Status,
-			"aosVersion": status.AosVersion,
-			"error":      status.ErrorInfo,
+			"id":      status.LayerID,
+			"digest":  status.Digest,
+			"status":  status.Status,
+			"version": status.Version,
+			"error":   status.ErrorInfo,
 		}).Debug("Initial layer status")
 
 		instance.processLayerStatus(status)
@@ -452,7 +451,7 @@ func (descriptor *statusDescriptor) getVersion() (version string) {
 		return amqpStatus.Version
 
 	case *cloudprotocol.LayerStatus:
-		return strconv.FormatUint(amqpStatus.AosVersion, 10)
+		return amqpStatus.Version
 
 	case *cloudprotocol.ServiceStatus:
 		return amqpStatus.Version
@@ -510,11 +509,11 @@ func (instance *Instance) updateLayerStatus(layerInfo cloudprotocol.LayerStatus)
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"id":         layerInfo.ID,
-		"digest":     layerInfo.Digest,
-		"status":     layerInfo.Status,
-		"aosVersion": layerInfo.AosVersion,
-		"error":      layerInfo.ErrorInfo,
+		"id":      layerInfo.LayerID,
+		"digest":  layerInfo.Digest,
+		"status":  layerInfo.Status,
+		"version": layerInfo.Version,
+		"error":   layerInfo.ErrorInfo,
 	}).Debug("Update layer status")
 
 	if _, ok := instance.layerStatuses[layerInfo.Digest]; !ok {

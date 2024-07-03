@@ -269,10 +269,10 @@ func (imagemanager *Imagemanager) GetLayersStatus() ([]unitstatushandler.LayerSt
 	for i, layer := range layersInfo {
 		layersStatus[i] = unitstatushandler.LayerStatus{
 			LayerStatus: cloudprotocol.LayerStatus{
-				ID:         layer.ID,
-				AosVersion: layer.AosVersion,
-				Digest:     layer.Digest,
-				Status:     cloudprotocol.InstalledStatus,
+				LayerID: layer.LayerID,
+				Version: layer.Version,
+				Digest:  layer.Digest,
+				Status:  cloudprotocol.InstalledStatus,
 			}, Cached: layer.Cached,
 		}
 	}
