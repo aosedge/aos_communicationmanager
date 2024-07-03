@@ -352,7 +352,7 @@ func TestInitialStatus(t *testing.T) {
 	for i, id := range cfg.SMController.NodeIDs {
 		instances := []cloudprotocol.InstanceStatus{{
 			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
-			AosVersion:    1, StateChecksum: magicSum, RunState: "running",
+			Version:       "1.0", StateChecksum: magicSum, RunState: "running",
 			NodeID: id,
 		}}
 
@@ -1868,7 +1868,7 @@ func (nodeManager *testNodeManager) RunInstances(nodeID string,
 	for i, instance := range instances {
 		successStatus.Instances[i] = cloudprotocol.InstanceStatus{
 			InstanceIdent: instance.InstanceIdent,
-			AosVersion:    1,
+			Version:       "1.0",
 			RunState:      cloudprotocol.InstanceStateActive, NodeID: nodeID,
 		}
 	}
@@ -2181,7 +2181,7 @@ func createInstanceStatus(ident aostypes.InstanceIdent, nodeID string, err error
 	status := cloudprotocol.InstanceStatus{
 		InstanceIdent: ident,
 		RunState:      cloudprotocol.InstanceStateActive,
-		AosVersion:    1,
+		Version:       "1.0",
 		NodeID:        nodeID,
 	}
 

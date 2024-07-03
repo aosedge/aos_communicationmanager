@@ -720,14 +720,14 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 		if err != nil {
-			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
+			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, "0.0",
 				cloudprotocol.InstanceStateFailed, err.Error()))
 
 			continue
 		}
 
 		if serviceInfo.Cached {
-			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
+			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, "0.0",
 				cloudprotocol.InstanceStateFailed, "service deleted"))
 
 			continue
@@ -737,7 +737,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		if err != nil {
 			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
 			continue
@@ -747,7 +747,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		if err != nil {
 			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
 			continue
@@ -759,7 +759,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			nodeForInstance, err := launcher.getNodesByDevices(nodes, serviceInfo.Config.Devices)
 			if err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 
 				continue
 			}
@@ -767,14 +767,14 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			instanceInfo, err := launcher.prepareInstanceStartInfo(serviceInfo, instance, instanceIndex)
 			if err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
 			node := launcher.getMostPriorityNode(nodeForInstance, serviceInfo)
 
 			if err = launcher.allocateDevices(node, serviceInfo.Config.Devices); err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instanceIndex, serviceInfo.AosVersion, cloudprotocol.InstanceStateFailed, err.Error()))
+					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 
 				continue
 			}
@@ -799,7 +799,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 		for i, instance := range node.currentRunRequest.Instances {
 			serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 			if err != nil {
-				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, 0,
+				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, "0.0",
 					cloudprotocol.InstanceStateFailed, err.Error()))
 
 				continue
@@ -813,7 +813,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 				instance.InstanceIdent, serviceInfo.ProviderID,
 				prepareNetworkParameters(instance, serviceInfo)); err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
-					instance.Instance, serviceInfo, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
+					instance.Instance, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
 			node.currentRunRequest.Instances[i] = instance
