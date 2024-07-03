@@ -28,6 +28,7 @@ import (
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/api/common"
 	pb "github.com/aosedge/aos_common/api/servicemanager"
 	"github.com/aosedge/aos_common/utils/pbconvert"
 	"github.com/aosedge/aos_common/utils/syncstream"
@@ -276,7 +277,7 @@ func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (e
 	}).Debug("Get instance log")
 
 	request := &pb.InstanceLogRequest{
-		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
+		LogId: logRequest.LogID, InstanceFilter: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
 	}
 
 	if logRequest.Filter.From != nil {
@@ -307,7 +308,7 @@ func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLo
 	}).Debug("Get instance crash log")
 
 	request := &pb.InstanceCrashLogRequest{
-		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
+		LogId: logRequest.LogID, InstanceFilter: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
 	}
 
 	if logRequest.Filter.From != nil {
@@ -336,8 +337,8 @@ func (handler *smHandler) overrideEnvVars(envVars cloudprotocol.OverrideEnvVars)
 
 	for i, item := range envVars.OverrideEnvVars {
 		requestItem := &pb.OverrideInstanceEnvVar{
-			Instance: pbconvert.InstanceFilterToPB(item.InstanceFilter),
-			Vars:     make([]*pb.EnvVarInfo, len(item.EnvVars)),
+			InstanceFilter: pbconvert.InstanceFilterToPB(item.InstanceFilter),
+			Vars:           make([]*pb.EnvVarInfo, len(item.EnvVars)),
 		}
 
 		for j, envVar := range item.EnvVars {
@@ -475,22 +476,20 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 
 	case *pb.Alert_ResourceValidateAlert:
 		resourceValidate := cloudprotocol.ResourceValidateAlert{
-			ResourcesErrors: make([]cloudprotocol.ResourceValidateError, len(data.ResourceValidateAlert.GetErrors())),
-			NodeID:          handler.config.NodeID,
+			Errors: make([]cloudprotocol.ErrorInfo, len(data.ResourceValidateAlert.GetErrors())),
+			NodeID: handler.config.NodeID,
+			Name:   data.ResourceValidateAlert.Name,
 		}
 
-		for i, resourceError := range data.ResourceValidateAlert.GetErrors() {
-			resourceValidate.ResourcesErrors[i] = cloudprotocol.ResourceValidateError{
-				Name:   resourceError.GetName(),
-				Errors: resourceError.GetErrorMsg(),
-			}
+		for i, error := range data.ResourceValidateAlert.GetErrors() {
+			resourceValidate.Errors[i] = *pbconvert.ErrorInfoFromPB(error)
 		}
 
 		alertItem.Payload = resourceValidate
 
 	case *pb.Alert_DeviceAllocateAlert:
 		alertItem.Payload = cloudprotocol.DeviceAllocateAlert{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.DeviceAllocateAlert.GetInstance()),
+			InstanceIdent: pbconvert.InstanceIdentFromPB(data.DeviceAllocateAlert.GetInstance()),
 			Device:        data.DeviceAllocateAlert.GetDevice(),
 			Message:       data.DeviceAllocateAlert.GetMessage(),
 			NodeID:        handler.config.NodeID,
@@ -511,16 +510,16 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 
 	case *pb.Alert_InstanceQuotaAlert:
 		alertItem.Payload = cloudprotocol.InstanceQuotaAlert{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.InstanceQuotaAlert.GetInstance()),
+			InstanceIdent: pbconvert.InstanceIdentFromPB(data.InstanceQuotaAlert.GetInstance()),
 			Parameter:     data.InstanceQuotaAlert.GetParameter(),
 			Value:         data.InstanceQuotaAlert.GetValue(),
 		}
 
 	case *pb.Alert_InstanceAlert:
 		alertItem.Payload = cloudprotocol.ServiceInstanceAlert{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.InstanceAlert.GetInstance()),
-			AosVersion:    data.InstanceAlert.GetAosVersion(),
-			Message:       data.InstanceAlert.GetMessage(),
+			InstanceIdent:  pbconvert.InstanceIdentFromPB(data.InstanceAlert.GetInstance()),
+			ServiceVersion: data.InstanceAlert.GetServiceVersion(),
+			Message:        data.InstanceAlert.GetMessage(),
 		}
 
 	default:
@@ -545,7 +544,9 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 		Part:       data.GetPart(),
 		Content:    data.GetData(),
 		ErrorInfo: &cloudprotocol.ErrorInfo{
-			Message: data.GetError(),
+			AosCode:  int(data.GetError().AosCode),
+			ExitCode: int(data.GetError().ExitCode),
+			Message:  data.GetError().Message,
 		},
 	}); err != nil {
 		log.Errorf("Can't send log: %v", err)
@@ -567,13 +568,19 @@ func (handler *smHandler) processOverrideEnvVarsStatus(envVarStatus *pb.Override
 
 	for i, item := range envVarStatus.GetEnvVarsStatus() {
 		responseItem := cloudprotocol.EnvVarsInstanceStatus{
-			InstanceFilter: cloudprotocol.NewInstanceFilter(item.GetInstance().GetServiceId(),
-				item.GetInstance().GetSubjectId(), item.GetInstance().GetInstance()),
+			InstanceFilter: cloudprotocol.NewInstanceFilter(item.GetInstanceFilter().GetServiceId(),
+				item.GetInstanceFilter().GetSubjectId(), item.GetInstanceFilter().GetInstance()),
 			Statuses: make([]cloudprotocol.EnvVarStatus, len(item.GetVarsStatus())),
 		}
 
 		for j, varStatus := range item.GetVarsStatus() {
-			responseItem.Statuses[j] = cloudprotocol.EnvVarStatus{ID: varStatus.GetVarId(), Error: varStatus.GetError()}
+			responseItem.Statuses[j] = cloudprotocol.EnvVarStatus{
+				ID: varStatus.GetVarId(),
+				Error: &cloudprotocol.ErrorInfo{
+					AosCode:  int(varStatus.GetError().GetAosCode()),
+					ExitCode: int(varStatus.GetError().GetExitCode()), Message: varStatus.GetError().GetMessage(),
+				},
+			}
 		}
 
 		response[i] = responseItem
@@ -668,25 +675,24 @@ func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus, nodeID string) []clo
 
 	for i, status := range pbStatuses {
 		instancesStatus[i] = cloudprotocol.InstanceStatus{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(status.GetInstance()),
-			NodeID:        nodeID,
-			AosVersion:    status.GetAosVersion(),
-			RunState:      status.GetRunState(),
-			ErrorInfo:     errorInfoFromPB(status.GetErrorInfo()),
+			InstanceIdent:  pbconvert.InstanceIdentFromPB(status.GetInstance()),
+			NodeID:         nodeID,
+			ServiceVersion: status.GetServiceVersion(),
+			RunState:       status.GetRunState(),
+			ErrorInfo:      errorInfoFromPB(status.GetErrorInfo()),
 		}
 	}
 
 	return instancesStatus
 }
 
-func errorInfoFromPB(pbError *pb.ErrorInfo) *cloudprotocol.ErrorInfo {
+func errorInfoFromPB(pbError *common.ErrorInfo) *cloudprotocol.ErrorInfo {
 	if pbError == nil {
 		return nil
 	}
 
 	return &cloudprotocol.ErrorInfo{
-		AosCode:  int(pbError.GetAosCode()),
-		ExitCode: int(pbError.GetExitCode()), Message: pbError.GetMessage(),
+		AosCode: int(pbError.GetAosCode()), ExitCode: int(pbError.GetExitCode()), Message: pbError.GetMessage(),
 	}
 }
 
