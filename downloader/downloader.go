@@ -514,7 +514,6 @@ func (downloader *Downloader) downloadPackage(result *downloadResult) (err error
 
 			if err = image.CheckFileInfo(result.ctx, result.downloadFileName, image.FileInfo{
 				Sha256: result.packageInfo.Sha256,
-				Sha512: result.packageInfo.Sha512,
 				Size:   result.packageInfo.Size,
 			}); err != nil {
 				if removeErr := os.RemoveAll(result.downloadFileName); removeErr != nil {
