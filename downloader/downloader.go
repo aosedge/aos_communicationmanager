@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -648,15 +647,13 @@ func (downloader *Downloader) prepareDownloadAlert(
 	return cloudprotocol.AlertItem{
 		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
 		Payload: cloudprotocol.DownloadAlert{
-			TargetType:          result.packageInfo.TargetType,
-			TargetID:            result.packageInfo.TargetID,
-			TargetAosVersion:    result.packageInfo.TargetAosVersion,
-			TargetVendorVersion: result.packageInfo.TargetVendorVersion,
-			Progress:            fmt.Sprintf("%.2f%%", resp.Progress()*100),
-			URL:                 resp.Request.HTTPRequest.URL.String(),
-			DownloadedBytes:     bytefmt.ByteSize(uint64(resp.BytesComplete())),
-			TotalBytes:          bytefmt.ByteSize(uint64(resp.Size())),
-			Message:             msg,
+			TargetType:      result.packageInfo.TargetType,
+			TargetID:        result.packageInfo.TargetID,
+			Version:         result.packageInfo.TargetVersion,
+			URL:             resp.Request.HTTPRequest.URL.String(),
+			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
+			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
+			Message:         msg,
 		},
 	}
 }

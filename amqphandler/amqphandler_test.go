@@ -474,20 +474,22 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	alertsData := cloudprotocol.Alerts{
-		cloudprotocol.AlertItem{
-			Timestamp: time.Now().UTC(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   map[string]interface{}{"Message": "System error", "nodeId": "mainNode"},
-		},
-		cloudprotocol.AlertItem{
-			Timestamp: time.Now().UTC(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   map[string]interface{}{"Message": "Service crashed", "nodeId": "mainNode"},
-		},
-		cloudprotocol.AlertItem{
-			Timestamp: time.Now().UTC(),
-			Tag:       cloudprotocol.AlertTagResourceValidate,
-			Payload:   map[string]interface{}{"Parameter": "cpu", "Value": float64(100), "nodeId": "mainNode"},
+		Items: []cloudprotocol.AlertItem{
+			{
+				Timestamp: time.Now().UTC(),
+				Tag:       cloudprotocol.AlertTagSystemError,
+				Payload:   map[string]interface{}{"Message": "System error", "nodeId": "mainNode"},
+			},
+			{
+				Timestamp: time.Now().UTC(),
+				Tag:       cloudprotocol.AlertTagSystemError,
+				Payload:   map[string]interface{}{"Message": "Service crashed", "nodeId": "mainNode"},
+			},
+			{
+				Timestamp: time.Now().UTC(),
+				Tag:       cloudprotocol.AlertTagResourceValidate,
+				Payload:   map[string]interface{}{"Parameter": "cpu", "Value": float64(100), "nodeId": "mainNode"},
+			},
 		},
 	}
 
