@@ -960,7 +960,7 @@ func TestServiceRevert(t *testing.T) {
 			}, "", errors.New("layer does't exist")), //nolint:goerr113
 		},
 		ErrorServices: []cloudprotocol.ServiceStatus{
-			{ID: service2, AosVersion: 1, Status: cloudprotocol.ErrorStatus},
+			{ServiceID: service2, Version: "1.0", Status: cloudprotocol.ErrorStatus},
 		},
 	}
 

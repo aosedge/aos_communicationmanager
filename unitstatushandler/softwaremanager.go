@@ -179,13 +179,13 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 
 	for _, service := range manager.CurrentUpdate.InstallServices {
 		status.InstallServices = append(status.InstallServices, cloudprotocol.ServiceStatus{
-			ID: service.ID, AosVersion: service.AosVersion,
+			ServiceID: service.ServiceID, Version: service.Version,
 		})
 	}
 
 	for _, service := range manager.CurrentUpdate.RemoveServices {
 		status.RemoveServices = append(status.RemoveServices, cloudprotocol.ServiceStatus{
-			ID: service.ID, AosVersion: service.AosVersion,
+			ServiceID: service.ServiceID, Version: service.Version,
 		})
 	}
 
@@ -205,12 +205,12 @@ func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
 			errMsg = errStatus.ErrorInfo.Message
 		}
 
-		if _, ok := manager.ServiceStatuses[errStatus.ID]; !ok {
+		if _, ok := manager.ServiceStatuses[errStatus.ServiceID]; !ok {
 			status := errStatus
-			manager.ServiceStatuses[errStatus.ID] = &status
+			manager.ServiceStatuses[errStatus.ServiceID] = &status
 		}
 
-		manager.updateServiceStatusByID(errStatus.ID, errStatus.Status, errMsg)
+		manager.updateServiceStatusByID(errStatus.ServiceID, errStatus.Status, errMsg)
 	}
 
 	manager.runCond.Broadcast()
@@ -286,7 +286,7 @@ removeServiceLoop:
 		}
 
 		for _, desiredService := range desiredServices {
-			if service.ID == desiredService.ID {
+			if service.ServiceID == desiredService.ServiceID {
 				continue removeServiceLoop
 			}
 		}
@@ -551,15 +551,15 @@ func (manager *softwareManager) download(ctx context.Context) {
 		} else if serviceStatus, ok := manager.ServiceStatuses[id]; ok {
 			if serviceStatus.Status == cloudprotocol.ErrorStatus {
 				log.WithFields(log.Fields{
-					"id":      serviceStatus.ID,
-					"version": serviceStatus.AosVersion,
+					"id":      serviceStatus.ServiceID,
+					"version": serviceStatus.Version,
 				}).Errorf("Error downloading service: %v", serviceStatus.ErrorInfo)
 				continue
 			}
 
 			log.WithFields(log.Fields{
-				"id":      serviceStatus.ID,
-				"version": serviceStatus.AosVersion,
+				"id":      serviceStatus.ServiceID,
+				"version": serviceStatus.Version,
 			}).Debug("Service successfully downloaded")
 
 			manager.updateServiceStatusByID(id, cloudprotocol.PendingStatus, "")
@@ -592,24 +592,23 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]dow
 
 	for _, service := range manager.CurrentUpdate.InstallServices {
 		log.WithFields(log.Fields{
-			"id":      service.ID,
-			"version": service.AosVersion,
+			"id":      service.ServiceID,
+			"version": service.Version,
 		}).Debug("Download service")
 
-		request[service.ID] = downloader.PackageInfo{
+		request[service.ServiceID] = downloader.PackageInfo{
 			URLs:                service.URLs,
 			Sha256:              service.Sha256,
-			Sha512:              service.Sha512,
 			Size:                service.Size,
 			TargetType:          cloudprotocol.DownloadTargetService,
-			TargetID:            service.ID,
+			TargetID:            service.ServiceID,
 			TargetAosVersion:    service.AosVersion,
 			TargetVendorVersion: service.VendorVersion,
 		}
-		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceStatus{
-			ID:         service.ID,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.DownloadingStatus,
+		manager.ServiceStatuses[service.ServiceID] = &cloudprotocol.ServiceStatus{
+			ServiceID: service.ServiceID,
+			Version:   service.Version,
+			Status:    cloudprotocol.DownloadingStatus,
 		}
 	}
 
@@ -1184,15 +1183,15 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 
 	handleError := func(service cloudprotocol.ServiceStatus, serviceErr string) {
 		log.WithFields(log.Fields{
-			"id":         service.ID,
-			"aosVersion": service.AosVersion,
+			"id":      service.ServiceID,
+			"version": service.Version,
 		}).Errorf("Can't install service: %s", serviceErr)
 
 		if isCancelError(serviceErr) {
 			return
 		}
 
-		manager.updateStatusByID(service.ID, cloudprotocol.ErrorStatus, serviceErr)
+		manager.updateStatusByID(service.ServiceID, cloudprotocol.ErrorStatus, serviceErr)
 
 		mutex.Lock()
 		defer mutex.Unlock()
@@ -1204,36 +1203,36 @@ func (manager *softwareManager) removeServices() (removeErr string) {
 
 	for _, service := range manager.CurrentUpdate.RemoveServices {
 		log.WithFields(log.Fields{
-			"id":         service.ID,
-			"aosVersion": service.AosVersion,
+			"id":         service.ServiceID,
+			"aosVersion": service.Version,
 		}).Debug("Remove service")
 
 		// Create status for remove layers. For install layer it is created in download function.
 		manager.statusMutex.Lock()
-		manager.ServiceStatuses[service.ID] = &cloudprotocol.ServiceStatus{
-			ID:         service.ID,
-			AosVersion: service.AosVersion,
-			Status:     cloudprotocol.RemovingStatus,
+		manager.ServiceStatuses[service.ServiceID] = &cloudprotocol.ServiceStatus{
+			ServiceID: service.ServiceID,
+			Version:   service.Version,
+			Status:    cloudprotocol.RemovingStatus,
 		}
 		manager.statusMutex.Unlock()
 
-		manager.updateServiceStatusByID(service.ID, cloudprotocol.RemovingStatus, "")
+		manager.updateServiceStatusByID(service.ServiceID, cloudprotocol.RemovingStatus, "")
 
 		// Create new variable to be captured by action function
 		serviceStatus := service
 
-		manager.actionHandler.Execute(serviceStatus.ID, func(serviceID string) error {
+		manager.actionHandler.Execute(serviceStatus.ServiceID, func(serviceID string) error {
 			if err := manager.softwareUpdater.RemoveService(serviceStatus.ServiceID); err != nil {
 				handleError(serviceStatus, err.Error())
 				return aoserrors.Wrap(err)
 			}
 
 			log.WithFields(log.Fields{
-				"id":         serviceStatus.ID,
-				"aosVersion": serviceStatus.AosVersion,
+				"id":         serviceStatus.ServiceID,
+				"aosVersion": serviceStatus.Version,
 			}).Info("Service successfully removed")
 
-			manager.updateServiceStatusByID(serviceStatus.ID, cloudprotocol.RemovedStatus, "")
+			manager.updateServiceStatusByID(serviceStatus.ServiceID, cloudprotocol.RemovedStatus, "")
 
 			return nil
 		})

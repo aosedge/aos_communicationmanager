@@ -384,15 +384,15 @@ func (instance *Instance) initCurrentStatus() error {
 	}
 
 	for _, status := range serviceStatuses {
-		if _, ok := instance.serviceStatuses[status.ID]; !ok {
-			instance.serviceStatuses[status.ID] = &itemStatus{}
+		if _, ok := instance.serviceStatuses[status.ServiceID]; !ok {
+			instance.serviceStatuses[status.ServiceID] = &itemStatus{}
 		}
 
 		log.WithFields(log.Fields{
-			"id":         status.ID,
-			"status":     status.Status,
-			"aosVersion": status.AosVersion,
-			"error":      status.ErrorInfo,
+			"id":      status.ServiceID,
+			"status":  status.Status,
+			"version": status.Version,
+			"error":   status.ErrorInfo,
 		}).Debug("Initial service status")
 
 		instance.processServiceStatus(status)
@@ -455,7 +455,7 @@ func (descriptor *statusDescriptor) getVersion() (version string) {
 		return strconv.FormatUint(amqpStatus.AosVersion, 10)
 
 	case *cloudprotocol.ServiceStatus:
-		return strconv.FormatUint(amqpStatus.AosVersion, 10)
+		return amqpStatus.Version
 
 	default:
 		return ""
@@ -540,10 +540,10 @@ func (instance *Instance) updateServiceStatus(serviceInfo cloudprotocol.ServiceS
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"id":         serviceInfo.ID,
-		"status":     serviceInfo.Status,
-		"aosVersion": serviceInfo.AosVersion,
-		"error":      serviceInfo.ErrorInfo,
+		"id":      serviceInfo.ServiceID,
+		"status":  serviceInfo.Status,
+		"version": serviceInfo.Version,
+		"error":   serviceInfo.ErrorInfo,
 	}).Debug("Update service status")
 
 	instance.processServiceStatus(serviceInfo)
@@ -551,10 +551,10 @@ func (instance *Instance) updateServiceStatus(serviceInfo cloudprotocol.ServiceS
 }
 
 func (instance *Instance) processServiceStatus(serviceInfo cloudprotocol.ServiceStatus) {
-	serviceStatus, ok := instance.serviceStatuses[serviceInfo.ID]
+	serviceStatus, ok := instance.serviceStatuses[serviceInfo.ServiceID]
 	if !ok {
 		serviceStatus = &itemStatus{}
-		instance.serviceStatuses[serviceInfo.ID] = serviceStatus
+		instance.serviceStatuses[serviceInfo.ServiceID] = serviceStatus
 	}
 
 	instance.updateStatus(serviceStatus, statusDescriptor{&serviceInfo})

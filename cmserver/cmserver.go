@@ -318,7 +318,7 @@ func (server *CMServer) notifyAllClients(notification *pb.SchedulerNotifications
 func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSOTAStatus) {
 	pbStatus = new(pb.UpdateSOTAStatus)
 
-	pbStatus.Error = updateStatus.Error
+	pbStatus.Error.Message = updateStatus.Error
 
 	pbStatus.State = updateStatus.State.getPbState()
 
@@ -355,7 +355,7 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 
 func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFOTAStatus) {
 	pbStatus = new(pb.UpdateFOTAStatus)
-	pbStatus.Error = updateStatus.Error
+	pbStatus.Error.Message = updateStatus.Error
 	pbStatus.State = updateStatus.State.getPbState()
 
 	for _, component := range updateStatus.Components {
@@ -366,7 +366,7 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 	}
 
 	if updateStatus.UnitConfig != nil {
-		pbStatus.UnitConfig = &pb.UnitConfigInfo{VendorVersion: updateStatus.UnitConfig.VendorVersion}
+		pbStatus.UnitConfig = &pb.UnitConfigInfo{Version: updateStatus.UnitConfig.Version}
 	}
 
 	return pbStatus
