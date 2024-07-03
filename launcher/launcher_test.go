@@ -218,10 +218,10 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 
 	// add a service to the storage
 	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service1][0].ServiceInfo.ID = service1
+	testStorage.services[service1][0].ServiceInfo.ServiceID = service1
 
 	testStorage.services[service2] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service2][0].ServiceInfo.ID = service2
+	testStorage.services[service2][0].ServiceInfo.ServiceID = service2
 
 	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
 		testStateStorage, newTestNetworkManager(""))
@@ -277,7 +277,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 	// add a service to the storage
 	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service1][0].ServiceInfo.ID = service1
+	testStorage.services[service1][0].ServiceInfo.ServiceID = service1
 
 	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, testImageManager, &testResourceManager{},
 		testStateStorage, newTestNetworkManager(""))
@@ -2160,10 +2160,10 @@ func (network *testNetworkManager) RestartDNSServer() error {
 
 func createServiceInfo(id string, gid uint32, url string) aostypes.ServiceInfo {
 	return aostypes.ServiceInfo{
-		ID:          id,
-		VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-		URL:         url,
-		GID:         gid,
+		ServiceID: id,
+		Version:   "1.0",
+		URL:       url,
+		GID:       gid,
 	}
 }
 

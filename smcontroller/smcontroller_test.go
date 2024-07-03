@@ -958,9 +958,9 @@ func TestRunInstances(t *testing.T) {
 		expectedRunInstances = &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_RunInstances{
 			RunInstances: &pb.RunInstances{
 				Services: []*pb.ServiceInfo{{
-					VersionInfo: &pb.VersionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
-					Url:         "url1", ServiceId: "s1", ProviderId: "p1", Gid: 600,
-					Sha256: []byte{0, 0, 0, byte(100)}, Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+					Version: "1.1",
+					Url:     "url1", ServiceId: "s1", ProviderId: "p1", Gid: 600,
+					Sha256: []byte{0, 0, 0, byte(100)}, Size: uint64(500),
 				}},
 				Layers: []*pb.LayerInfo{
 					{
@@ -979,9 +979,9 @@ func TestRunInstances(t *testing.T) {
 			},
 		}}
 		sendServices = []aostypes.ServiceInfo{{
-			VersionInfo: aostypes.VersionInfo{AosVersion: 1, VendorVersion: "1", Description: "desc"},
-			ID:          "s1", ProviderID: "p1", URL: "url1", GID: 600,
-			Sha256: []byte{0, 0, 0, byte(100)}, Sha512: []byte{byte(200), 0, 0, 0}, Size: uint64(500),
+			Version:   "1.1",
+			ServiceID: "s1", ProviderID: "p1", URL: "url1", GID: 600,
+			Sha256: []byte{0, 0, 0, byte(100)}, Size: uint64(500),
 		}}
 		sendLayers = []aostypes.LayerInfo{{
 			Version: "3.0",

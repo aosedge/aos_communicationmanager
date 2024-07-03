@@ -197,17 +197,12 @@ func (handler *smHandler) runInstances(
 
 	for i, serviceInfo := range services {
 		pbRunInstances.Services[i] = &pb.ServiceInfo{
-			VersionInfo: &pb.VersionInfo{
-				AosVersion:    serviceInfo.AosVersion,
-				VendorVersion: serviceInfo.VendorVersion,
-				Description:   serviceInfo.Description,
-			},
+			Version:    serviceInfo.Version,
 			Url:        serviceInfo.URL,
-			ServiceId:  serviceInfo.ID,
+			ServiceId:  serviceInfo.ServiceID,
 			ProviderId: serviceInfo.ProviderID,
 			Gid:        serviceInfo.GID,
 			Sha256:     serviceInfo.Sha256,
-			Sha512:     serviceInfo.Sha512,
 			Size:       serviceInfo.Size,
 		}
 	}
