@@ -78,14 +78,12 @@ type DownloadInfo struct {
 
 // PackageInfo struct contains package info data.
 type PackageInfo struct {
-	URLs                []string
-	Sha256              []byte
-	Sha512              []byte
-	Size                uint64
-	TargetType          string
-	TargetID            string
-	TargetAosVersion    uint64
-	TargetVendorVersion string
+	URLs          []string
+	Sha256        []byte
+	Size          uint64
+	TargetType    string
+	TargetID      string
+	TargetVersion string
 }
 
 // Storage provides API to add, remove, update or access download info data.

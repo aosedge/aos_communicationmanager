@@ -987,8 +987,7 @@ func preparePackageInfo(host, fileName, targetType string) (packageInfo download
 	packageInfo.Size = imageFileInfo.Size
 	packageInfo.TargetType = targetType
 	packageInfo.TargetID = "targetID"
-	packageInfo.TargetAosVersion = 1
-	packageInfo.TargetVendorVersion = "vendorVersion1"
+	packageInfo.TargetVersion = "1.0"
 
 	return packageInfo
 }

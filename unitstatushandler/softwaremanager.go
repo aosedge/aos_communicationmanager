@@ -597,13 +597,12 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]dow
 		}).Debug("Download service")
 
 		request[service.ServiceID] = downloader.PackageInfo{
-			URLs:                service.URLs,
-			Sha256:              service.Sha256,
-			Size:                service.Size,
-			TargetType:          cloudprotocol.DownloadTargetService,
-			TargetID:            service.ServiceID,
-			TargetAosVersion:    service.AosVersion,
-			TargetVendorVersion: service.VendorVersion,
+			URLs:          service.URLs,
+			Sha256:        service.Sha256,
+			Size:          service.Size,
+			TargetType:    cloudprotocol.DownloadTargetService,
+			TargetID:      service.ServiceID,
+			TargetVersion: service.Version,
 		}
 		manager.ServiceStatuses[service.ServiceID] = &cloudprotocol.ServiceStatus{
 			ServiceID: service.ServiceID,
@@ -620,14 +619,12 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]dow
 		}).Debug("Download layer")
 
 		request[layer.Digest] = downloader.PackageInfo{
-			URLs:                layer.URLs,
-			Sha256:              layer.Sha256,
-			Sha512:              layer.Sha512,
-			Size:                layer.Size,
-			TargetType:          cloudprotocol.DownloadTargetLayer,
-			TargetID:            layer.Digest,
-			TargetAosVersion:    layer.AosVersion,
-			TargetVendorVersion: layer.VendorVersion,
+			URLs:          layer.URLs,
+			Sha256:        layer.Sha256,
+			Size:          layer.Size,
+			TargetType:    cloudprotocol.DownloadTargetLayer,
+			TargetID:      layer.Digest,
+			TargetVersion: layer.Version,
 		}
 		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerStatus{
 			LayerID: layer.LayerID,
