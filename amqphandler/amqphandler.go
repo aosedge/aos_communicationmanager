@@ -635,7 +635,7 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 
 	log.Debug("Decrypted data:")
 
-	if len(desiredStatus.UnitConfig) != 0 {
+	if desiredStatus.UnitConfig != nil {
 		log.Debugf("UnitConfig: %s", desiredStatus.UnitConfig)
 	}
 

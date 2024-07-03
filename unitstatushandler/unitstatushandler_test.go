@@ -18,7 +18,6 @@
 package unitstatushandler_test
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -192,7 +191,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 
 	unitConfigUpdater.UpdateVersion = "1.1"
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{UnitConfig: json.RawMessage("{}")})
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{UnitConfig: &cloudprotocol.UnitConfig{}})
 
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
@@ -214,7 +213,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 	}
 	expectedUnitStatus.UnitConfig = append(expectedUnitStatus.UnitConfig, unitConfigUpdater.UnitConfigStatus)
 
-	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{UnitConfig: json.RawMessage("{}")})
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{UnitConfig: &cloudprotocol.UnitConfig{}})
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)

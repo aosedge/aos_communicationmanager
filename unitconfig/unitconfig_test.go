@@ -114,8 +114,8 @@ func TestValidGetStatus(t *testing.T) {
 		t.Errorf("Wrong unit config status: %s", info.Status)
 	}
 
-	if info.VendorVersion != "1.0.0" {
-		t.Errorf("Wrong unit config version: %s", info.VendorVersion)
+	if info.Version != "1.0.0" {
+		t.Errorf("Wrong unit config version: %s", info.Version)
 	}
 
 	nodeUnitConfig := unitConfig.GetUnitConfiguration("type1")

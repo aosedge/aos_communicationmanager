@@ -163,7 +163,7 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Unit Config is nil")
 	}
 
-	if status.GetUnitConfig().GetVendorVersion() != "bc_version" {
+	if status.GetUnitConfig().GetVersion() != "bc_version" {
 		t.Error("Incorrect unit config version")
 	}
 
