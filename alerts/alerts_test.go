@@ -97,7 +97,7 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 
 		alertsHandler.SendAlert(alertItem)
 
-		expectedAlerts = append(expectedAlerts, alertItem)
+		expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
 	}
 
 	for i := 2; i < numMessages; i++ {
@@ -145,7 +145,7 @@ func TestAlertsDuplicationMessages(t *testing.T) {
 		Payload:   cloudprotocol.SystemAlert{Message: randomString(32)},
 	}
 
-	expectedAlerts = append(expectedAlerts, alertItem)
+	expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
 
 	for i := 0; i < 2; i++ {
 		alertsHandler.SendAlert(alertItem)
@@ -189,7 +189,7 @@ func TestAlertsOfflineMessages(t *testing.T) {
 			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
 		}
 
-		expectedAlerts = append(expectedAlerts, alertItem)
+		expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
 
 		alertsHandler.SendAlert(alertItem)
 	}
@@ -220,7 +220,7 @@ func TestAlertsOfflineMessages(t *testing.T) {
 			t.Fatalf("Wait alerts error: %v", err)
 		}
 
-		receivedAlerts = append(receivedAlerts, alerts...)
+		receivedAlerts.Items = append(receivedAlerts.Items, alerts.Items...)
 	}
 
 	if !reflect.DeepEqual(receivedAlerts, expectedAlerts) {
@@ -267,7 +267,7 @@ func (sender *testSender) waitResult(timeout time.Duration) (cloudprotocol.Alert
 			return alerts, nil
 
 		case <-time.After(timeout):
-			return nil, errTimeout
+			return cloudprotocol.Alerts{}, errTimeout
 		}
 	}
 }

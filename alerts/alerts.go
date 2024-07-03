@@ -194,8 +194,8 @@ func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) (bufferIsFull boo
 	instance.Lock()
 	defer instance.Unlock()
 
-	if len(instance.currentAlerts) != 0 &&
-		reflect.DeepEqual(instance.currentAlerts[len(instance.currentAlerts)-1].Payload, item.Payload) {
+	if len(instance.currentAlerts.Items) != 0 &&
+		reflect.DeepEqual(instance.currentAlerts.Items[len(instance.currentAlerts.Items)-1].Payload, item.Payload) {
 		instance.duplicatedAlerts++
 		return
 	}
@@ -206,7 +206,7 @@ func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) (bufferIsFull boo
 	}
 
 	instance.alertsSize += len(data)
-	instance.currentAlerts = append(instance.currentAlerts, item)
+	instance.currentAlerts.Items = append(instance.currentAlerts.Items, item)
 
 	return instance.alertsSize >= instance.config.MaxMessageSize
 }
@@ -233,7 +233,7 @@ func (instance *Alerts) prepareAlertsPackage() {
 		log.Warn("Skip sending alerts due to channel is full")
 	}
 
-	instance.currentAlerts = []cloudprotocol.AlertItem{}
+	instance.currentAlerts.Items = []cloudprotocol.AlertItem{}
 	instance.skippedAlerts = 0
 	instance.duplicatedAlerts = 0
 	instance.alertsSize = 0
