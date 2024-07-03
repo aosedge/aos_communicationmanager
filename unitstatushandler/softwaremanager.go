@@ -167,13 +167,13 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 
 	for _, layer := range manager.CurrentUpdate.InstallLayers {
 		status.InstallLayers = append(status.InstallLayers, cloudprotocol.LayerStatus{
-			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion,
+			LayerID: layer.LayerID, Digest: layer.Digest, Version: layer.Version,
 		})
 	}
 
 	for _, layer := range manager.CurrentUpdate.RemoveLayers {
 		status.RemoveLayers = append(status.RemoveLayers, cloudprotocol.LayerStatus{
-			ID: layer.ID, Digest: layer.Digest, AosVersion: layer.AosVersion,
+			LayerID: layer.LayerID, Digest: layer.Digest, Version: layer.Version,
 		})
 	}
 
@@ -533,18 +533,18 @@ func (manager *softwareManager) download(ctx context.Context) {
 		if layerStatus, ok := manager.LayerStatuses[id]; ok {
 			if layerStatus.Status == cloudprotocol.ErrorStatus {
 				log.WithFields(log.Fields{
-					"id":      layerStatus.ID,
+					"id":      layerStatus.LayerID,
 					"digest":  layerStatus.Digest,
-					"version": layerStatus.AosVersion,
+					"version": layerStatus.Version,
 				}).Errorf("Error downloading layer: %v", layerStatus.ErrorInfo)
 
 				continue
 			}
 
 			log.WithFields(log.Fields{
-				"id":      layerStatus.ID,
+				"id":      layerStatus.LayerID,
 				"digest":  layerStatus.Digest,
-				"version": layerStatus.AosVersion,
+				"version": layerStatus.Version,
 			}).Debug("Layer successfully downloaded")
 
 			manager.updateLayerStatusByID(id, cloudprotocol.PendingStatus, "")
@@ -614,9 +614,9 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]dow
 
 	for _, layer := range manager.CurrentUpdate.InstallLayers {
 		log.WithFields(log.Fields{
-			"id":      layer.ID,
+			"id":      layer.LayerID,
 			"digest":  layer.Digest,
-			"version": layer.AosVersion,
+			"version": layer.Version,
 		}).Debug("Download layer")
 
 		request[layer.Digest] = downloader.PackageInfo{
@@ -630,10 +630,10 @@ func (manager *softwareManager) prepareDownloadRequest() (request map[string]dow
 			TargetVendorVersion: layer.VendorVersion,
 		}
 		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerStatus{
-			ID:         layer.ID,
-			AosVersion: layer.AosVersion,
-			Digest:     layer.Digest,
-			Status:     cloudprotocol.DownloadingStatus,
+			LayerID: layer.LayerID,
+			Version: layer.Version,
+			Digest:  layer.Digest,
+			Status:  cloudprotocol.DownloadingStatus,
 		}
 	}
 
@@ -974,8 +974,8 @@ func (manager *softwareManager) processRemoveRestorLayers(
 	handleError := func(layer cloudprotocol.LayerStatus, layerErr string) {
 		log.WithFields(log.Fields{
 			"digest":     layer.Digest,
-			"id":         layer.ID,
-			"aosVersion": layer.AosVersion,
+			"id":         layer.LayerID,
+			"aosVersion": layer.Version,
 		}).Errorf("Can't %s layer: %s", operationStr, layerErr)
 
 		if isCancelError(layerErr) {
@@ -994,16 +994,16 @@ func (manager *softwareManager) processRemoveRestorLayers(
 
 	for _, layer := range layers {
 		log.WithFields(log.Fields{
-			"id":         layer.ID,
-			"aosVersion": layer.AosVersion,
+			"id":         layer.LayerID,
+			"aosVersion": layer.Version,
 			"digest":     layer.Digest,
 		}).Debugf("%s layer", operationStr)
 
 		manager.statusMutex.Lock()
 		manager.LayerStatuses[layer.Digest] = &cloudprotocol.LayerStatus{
-			ID:         layer.ID,
-			AosVersion: layer.AosVersion,
-			Digest:     layer.Digest,
+			LayerID: layer.LayerID,
+			Version: layer.Version,
+			Digest:  layer.Digest,
 		}
 		manager.statusMutex.Unlock()
 
@@ -1017,8 +1017,8 @@ func (manager *softwareManager) processRemoveRestorLayers(
 			}
 
 			log.WithFields(log.Fields{
-				"id":         layerInfo.ID,
-				"aosVersion": layerInfo.AosVersion,
+				"id":         layerInfo.LayerID,
+				"aosVersion": layerInfo.Version,
 				"digest":     layerInfo.Digest,
 			}).Infof("Layer successfully %sd", operationStr)
 

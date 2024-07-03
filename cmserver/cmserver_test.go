@@ -170,8 +170,8 @@ func TestConnection(t *testing.T) {
 	statusNotification := cmserver.UpdateSOTAStatus{
 		InstallServices: []cloudprotocol.ServiceStatus{{ServiceID: "s1", Version: "42.0"}},
 		RemoveServices:  []cloudprotocol.ServiceStatus{{ServiceID: "s2", Version: "42.0"}},
-		InstallLayers:   []cloudprotocol.LayerStatus{{ID: "l1", Digest: "someSha", AosVersion: 42}},
-		RemoveLayers:    []cloudprotocol.LayerStatus{{ID: "l2", Digest: "someSha", AosVersion: 42}},
+		InstallLayers:   []cloudprotocol.LayerStatus{{LayerID: "l1", Digest: "someSha", Version: "42.0"}},
+		RemoveLayers:    []cloudprotocol.LayerStatus{{LayerID: "l2", Digest: "someSha", Version: "42.0"}},
 		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
 	}
 

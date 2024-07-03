@@ -648,11 +648,9 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 
 	for _, layer := range desiredStatus.Layers {
 		log.WithFields(log.Fields{
-			"id":            layer.ID,
-			"digest":        layer.Digest,
-			"aosVersion":    layer.AosVersion,
-			"vendorVersion": layer.VendorVersion,
-			"description":   layer.Description,
+			"id":      layer.LayerID,
+			"digest":  layer.Digest,
+			"version": layer.Version,
 		}).Debug("Layer")
 	}
 
