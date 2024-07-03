@@ -453,16 +453,6 @@ func (server *testProtectedServer) FinishProvisioning(
 	return rsp, nil
 }
 
-func (server *testProtectedServer) Clear(context context.Context, req *pb.ClearRequest) (rsp *empty.Empty, err error) {
-	return rsp, nil
-}
-
-func (server *testProtectedServer) SetOwner(
-	context context.Context, req *pb.SetOwnerRequest,
-) (rsp *empty.Empty, err error) {
-	return rsp, nil
-}
-
 func (server *testPublicServer) GetSystemInfo(
 	context context.Context, req *empty.Empty,
 ) (rsp *pb.SystemInfo, err error) {
