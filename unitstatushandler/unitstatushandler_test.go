@@ -67,26 +67,26 @@ func TestSendInitialStatus(t *testing.T) {
 			{ID: "layer2", Digest: "digest2", AosVersion: 3, Status: cloudprotocol.InstalledStatus},
 		},
 		Services: []cloudprotocol.ServiceStatus{
-			{ID: "service0", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "service2", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service0", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
 	}
 
 	initialServices := []unitstatushandler.ServiceStatus{
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service0", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service0", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service2", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service2", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{
 			ServiceStatus: cloudprotocol.ServiceStatus{
-				ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+				ServiceID: "service3", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 			},
 			Cached: true,
 		},
@@ -485,13 +485,13 @@ func TestUpdateLayers(t *testing.T) {
 func TestUpdateServices(t *testing.T) {
 	serviceStatuses := []unitstatushandler.ServiceStatus{
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service1", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service2", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
@@ -528,10 +528,10 @@ func TestUpdateServices(t *testing.T) {
 		Components: []cloudprotocol.ComponentStatus{},
 		Layers:     []cloudprotocol.LayerStatus{},
 		Services: []cloudprotocol.ServiceStatus{
-			{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "service2", Status: cloudprotocol.RemovedStatus},
-			{ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service2", Status: cloudprotocol.RemovedStatus},
+			{ServiceID: "service3", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
 	}
 
@@ -573,16 +573,16 @@ func TestUpdateServices(t *testing.T) {
 
 	softwareUpdater.AllServices = []unitstatushandler.ServiceStatus{
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service2", AosVersion: 0, Status: cloudprotocol.RemovedStatus,
+			ServiceID: "service2", Version: "0.0", Status: cloudprotocol.RemovedStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service3", Version: "1.0", Status: cloudprotocol.InstalledStatus,
 		}},
 	}
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
@@ -593,18 +593,18 @@ func TestUpdateServices(t *testing.T) {
 		Layers:     []cloudprotocol.LayerStatus{},
 		Services: []cloudprotocol.ServiceStatus{
 			{
-				ID: "service0", AosVersion: 0, Status: cloudprotocol.ErrorStatus,
+				ServiceID: "service0", Version: "0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
-			{ID: "service1", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
-			{ID: "service2", Status: cloudprotocol.RemovedStatus},
-			{ID: "service3", AosVersion: 1, Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service2", Status: cloudprotocol.RemovedStatus},
+			{ServiceID: "service3", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 			{
-				ID: "service3", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
+				ServiceID: "service3", Version: "2.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 			{
-				ID: "service4", AosVersion: 2, Status: cloudprotocol.ErrorStatus,
+				ServiceID: "service4", Version: "2.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 		},
@@ -836,16 +836,16 @@ func TestUpdateInstancesStatus(t *testing.T) {
 func TestUpdateCachedSOTA(t *testing.T) {
 	serviceStatuses := []unitstatushandler.ServiceStatus{
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service1", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service2", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}},
 		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ID: "service4", AosVersion: 0, Status: cloudprotocol.InstalledStatus,
+			ServiceID: "service4", Version: "0.0", Status: cloudprotocol.InstalledStatus,
 		}, Cached: true},
 	}
 	layerStatuses := []unitstatushandler.LayerStatus{
@@ -904,11 +904,11 @@ func TestUpdateCachedSOTA(t *testing.T) {
 			{ID: "layer5", Digest: "digest5", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
 		},
 		Services: []cloudprotocol.ServiceStatus{
-			{ID: "service0", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "service1", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "service2", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "service3", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
-			{ID: "service4", AosVersion: 0, Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service2", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service3", Version: "0.0", Status: cloudprotocol.InstalledStatus},
+			{ServiceID: "service4", Version: "0.0", Status: cloudprotocol.InstalledStatus},
 		},
 	}
 
