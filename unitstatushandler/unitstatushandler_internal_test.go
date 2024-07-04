@@ -1727,7 +1727,7 @@ func (statusHandler *testStatusHandler) setInstanceStatus(status []cloudprotocol
 			"serviceID":  instanceStatus.ServiceID,
 			"subjectID":  instanceStatus.SubjectID,
 			"instanceID": instanceStatus.Instance,
-			"version":    instanceStatus.Version,
+			"version":    instanceStatus.ServiceVersion,
 			"error":      instanceStatus.ErrorInfo,
 			"nodeID":     instanceStatus.NodeID,
 		}).Debug("Update instance status")

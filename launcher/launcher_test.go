@@ -351,8 +351,8 @@ func TestInitialStatus(t *testing.T) {
 
 	for i, id := range cfg.SMController.NodeIDs {
 		instances := []cloudprotocol.InstanceStatus{{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
-			Version:       "1.0", StateChecksum: magicSum, RunState: "running",
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
+			ServiceVersion: "1.0", StateChecksum: magicSum, RunState: "running",
 			NodeID: id,
 		}}
 
@@ -1867,9 +1867,9 @@ func (nodeManager *testNodeManager) RunInstances(nodeID string,
 
 	for i, instance := range instances {
 		successStatus.Instances[i] = cloudprotocol.InstanceStatus{
-			InstanceIdent: instance.InstanceIdent,
-			Version:       "1.0",
-			RunState:      cloudprotocol.InstanceStateActive, NodeID: nodeID,
+			InstanceIdent:  instance.InstanceIdent,
+			ServiceVersion: "1.0",
+			RunState:       cloudprotocol.InstanceStateActive, NodeID: nodeID,
 		}
 	}
 
@@ -2179,10 +2179,10 @@ func createLayerInfo(digest string, url string) aostypes.LayerInfo {
 
 func createInstanceStatus(ident aostypes.InstanceIdent, nodeID string, err error) cloudprotocol.InstanceStatus {
 	status := cloudprotocol.InstanceStatus{
-		InstanceIdent: ident,
-		RunState:      cloudprotocol.InstanceStateActive,
-		Version:       "1.0",
-		NodeID:        nodeID,
+		InstanceIdent:  ident,
+		RunState:       cloudprotocol.InstanceStateActive,
+		ServiceVersion: "1.0",
+		NodeID:         nodeID,
 	}
 
 	if err != nil {
