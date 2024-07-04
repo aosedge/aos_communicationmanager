@@ -300,8 +300,12 @@ func (umCtrl *Controller) UpdateComponents(
 		componentsUpdateInfo := []ComponentStatus{}
 
 		for _, component := range components {
+			if component.ComponentID == nil {
+				continue
+			}
+
 			componentStatus := systemComponentStatus{
-				id: component.ComponentID, version: component.Version,
+				id: *component.ComponentID, version: component.Version,
 				status: cloudprotocol.DownloadedStatus,
 			}
 
@@ -350,7 +354,7 @@ func (umCtrl *Controller) UpdateComponents(
 			}
 
 			componentInfo := ComponentStatus{
-				ID: component.ComponentID, Version: component.Version,
+				ID: *component.ComponentID, Version: component.Version,
 				Annotations: string(component.Annotations),
 				Sha256:      fileInfo.Sha256, Size: fileInfo.Size,
 				URL: url.String(),

@@ -159,9 +159,11 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 	}
 
 	for _, component := range manager.CurrentUpdate.Components {
-		status.Components = append(status.Components, cloudprotocol.ComponentStatus{
-			ComponentID: component.ComponentID, Version: component.Version,
-		})
+		if component.ComponentID != nil {
+			status.Components = append(status.Components, cloudprotocol.ComponentStatus{
+				ComponentID: *component.ComponentID, Version: component.Version,
+			})
+		}
 	}
 
 	if len(manager.CurrentUpdate.UnitConfig) != 0 {
@@ -191,8 +193,12 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 
 desiredLoop:
 	for _, desiredComponent := range desiredStatus.Components {
+		if desiredComponent.ComponentID == nil {
+			continue
+		}
+
 		for _, installedComponent := range installedComponents {
-			if desiredComponent.ComponentID == installedComponent.ComponentID {
+			if *desiredComponent.ComponentID == installedComponent.ComponentID {
 				if desiredComponent.Version == installedComponent.Version &&
 					installedComponent.Status == cloudprotocol.InstalledStatus {
 					continue desiredLoop
@@ -399,21 +405,25 @@ func (manager *firmwareManager) download(ctx context.Context) {
 	request := make(map[string]downloader.PackageInfo)
 
 	for _, component := range manager.CurrentUpdate.Components {
+		if component.ComponentID == nil {
+			continue
+		}
+
 		log.WithFields(log.Fields{
 			"id":      component.ComponentID,
 			"version": component.Version,
 		}).Debug("Download component")
 
-		request[component.ComponentID] = downloader.PackageInfo{
+		request[*component.ComponentID] = downloader.PackageInfo{
 			URLs:          component.URLs,
 			Sha256:        component.Sha256,
 			Size:          component.Size,
 			TargetType:    cloudprotocol.DownloadTargetComponent,
-			TargetID:      component.ComponentID,
+			TargetID:      *component.ComponentID,
 			TargetVersion: component.Version,
 		}
-		manager.ComponentStatuses[component.ComponentID] = &cloudprotocol.ComponentStatus{
-			ComponentID: component.ComponentID,
+		manager.ComponentStatuses[*component.ComponentID] = &cloudprotocol.ComponentStatus{
+			ComponentID: *component.ComponentID,
 			Version:     component.Version,
 			Status:      cloudprotocol.DownloadingStatus,
 		}
@@ -592,15 +602,19 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 	updateComponents := make([]cloudprotocol.ComponentInfo, 0, len(manager.CurrentUpdate.Components))
 
 	for _, component := range manager.CurrentUpdate.Components {
+		if component.ComponentID == nil {
+			continue
+		}
+
 		log.WithFields(log.Fields{"id": component.ComponentID, "version": component.Version}).Debug("Update component")
 
-		manager.updateComponentStatusByID(component.ComponentID, cloudprotocol.InstallingStatus, "")
+		manager.updateComponentStatusByID(*component.ComponentID, cloudprotocol.InstallingStatus, "")
 
-		downloadInfo, ok := manager.DownloadResult[component.ComponentID]
+		downloadInfo, ok := manager.DownloadResult[*component.ComponentID]
 		if !ok {
 			err := aoserrors.New("update ID not found").Error()
 
-			manager.updateComponentStatusByID(component.ComponentID, cloudprotocol.ErrorStatus, err)
+			manager.updateComponentStatusByID(*component.ComponentID, cloudprotocol.ErrorStatus, err)
 
 			return err
 		}
