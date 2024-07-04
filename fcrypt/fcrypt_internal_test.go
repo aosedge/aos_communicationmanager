@@ -96,7 +96,7 @@ type testUpgradeCertificate struct {
 
 type testUpgradeFileInfo struct {
 	FileData []byte
-	Signs    *cloudprotocol.Signs
+	Signs    cloudprotocol.Signs
 }
 
 // UpgradeMetadata upgrade metadata.
@@ -842,7 +842,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 		Data: []testUpgradeFileInfo{
 			{
 				FileData: []byte("test"),
-				Signs: &cloudprotocol.Signs{
+				Signs: cloudprotocol.Signs{
 					ChainName:        "8D28D60220B8D08826E283B531A0B1D75359C5EE",
 					Alg:              "RSA/SHA256",
 					Value:            signValue,
