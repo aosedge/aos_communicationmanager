@@ -217,6 +217,7 @@ func TestMain(m *testing.M) {
 
 func TestReceiveMessages(t *testing.T) {
 	cryptoContext := &testCryptoContext{}
+	rootfs := "rootfs"
 
 	amqpHandler, err := amqphandler.New()
 	if err != nil {
@@ -313,7 +314,7 @@ func TestReceiveMessages(t *testing.T) {
 			expectedData: &cloudprotocol.DesiredStatus{
 				UnitConfig: &cloudprotocol.UnitConfig{},
 				Components: []cloudprotocol.ComponentInfo{
-					{Version: "1.0.0", ComponentID: "rootfs"},
+					{Version: "1.0.0", ComponentID: &rootfs},
 				},
 				Layers: []cloudprotocol.LayerInfo{
 					{Version: "1.0", LayerID: "l1", Digest: "digest"},

@@ -285,17 +285,17 @@ func TestFullUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um1C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um1C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um2C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um2C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um2C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um2C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -448,17 +448,17 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um3C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um3C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um4C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um4C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um4C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um4C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -628,17 +628,17 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um5C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um5C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um6C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um6C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um6C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um6C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -833,17 +833,17 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um7C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um7C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um8C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um8C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um8C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um8C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -969,17 +969,17 @@ func TestRevertOnUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um9C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um9C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um10C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um10C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um10C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um10C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -1129,17 +1129,17 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um11C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um11C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um12C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um12C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um12C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um12C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -1294,17 +1294,17 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: "um13C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um13C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um14C1", Version: "2.0.0",
+			ComponentID: convertToComponentID("um14C1"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: "um14C2", Version: "2.0.0",
+			ComponentID: convertToComponentID("um14C2"), Version: "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -1614,4 +1614,8 @@ func generateFile(fileName string, size uint64) (err error) {
 	}
 
 	return nil
+}
+
+func convertToComponentID(id string) *string {
+	return &id
 }
