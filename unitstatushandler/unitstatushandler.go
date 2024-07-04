@@ -569,12 +569,12 @@ foundloop:
 	for _, instanceStatus := range status {
 		for i := range instance.instanceStatuses {
 			if instanceStatus.InstanceIdent == instance.instanceStatuses[i].InstanceIdent &&
-				instanceStatus.Version == instance.instanceStatuses[i].Version {
+				instanceStatus.ServiceVersion == instance.instanceStatuses[i].ServiceVersion {
 				log.WithFields(log.Fields{
 					"serviceID": instanceStatus.InstanceIdent.ServiceID,
 					"subjectID": instanceStatus.InstanceIdent.SubjectID,
 					"instance":  instanceStatus.InstanceIdent.Instance,
-					"version":   instanceStatus.Version,
+					"version":   instanceStatus.ServiceVersion,
 					"runState":  instanceStatus.RunState,
 					"error":     instanceStatus.ErrorInfo,
 				}).Debug("Update instance status")

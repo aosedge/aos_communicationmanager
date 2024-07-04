@@ -661,10 +661,10 @@ func TestRunInstances(t *testing.T) {
 
 	initialInstancesStatus := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, ServiceVersion: "1.0",
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, ServiceVersion: "1.0",
 		},
 	}
 
@@ -710,19 +710,19 @@ func TestRunInstances(t *testing.T) {
 
 	updatedInstancesStatus := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, ServiceVersion: "1.0",
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, ServiceVersion: "1.0",
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 2}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 2}, ServiceVersion: "1.0",
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj2", Instance: 0}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj2", Instance: 0}, ServiceVersion: "1.0",
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj1", Instance: 0}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj1", Instance: 0}, ServiceVersion: "1.0",
 		},
 	}
 
@@ -778,13 +778,13 @@ func TestUpdateInstancesStatus(t *testing.T) {
 	if err := statusHandler.ProcessRunStatus(
 		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, Version: "1.0",
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, ServiceVersion: "1.0",
 			},
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, Version: "1.0",
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, ServiceVersion: "1.0",
 			},
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, Version: "1.0",
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, ServiceVersion: "1.0",
 			},
 		}}); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
@@ -798,14 +798,14 @@ func TestUpdateInstancesStatus(t *testing.T) {
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Instances: []cloudprotocol.InstanceStatus{
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, Version: "1.0",
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, ServiceVersion: "1.0",
 				RunState: "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 			},
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, Version: "1.0",
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1}, ServiceVersion: "1.0",
 			},
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, Version: "1.0",
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, ServiceVersion: "1.0",
 				StateChecksum: "newState",
 			},
 		},
@@ -813,11 +813,11 @@ func TestUpdateInstancesStatus(t *testing.T) {
 
 	statusHandler.ProcessUpdateInstanceStatus([]cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0}, ServiceVersion: "1.0",
 			RunState: "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 		},
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, Version: "1.0",
+			InstanceIdent: aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1}, ServiceVersion: "1.0",
 			StateChecksum: "newState",
 		},
 	})
