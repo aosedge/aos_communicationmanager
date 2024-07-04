@@ -126,7 +126,13 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusFotaNotification := cmserver.UpdateFOTAStatus{
-		Components:   []cloudprotocol.ComponentStatus{{ComponentID: "1234", Version: "123.4321"}},
+		Components: []cloudprotocol.ComponentStatus{
+			{
+				ComponentID:   "testComponent",
+				ComponentType: "testType",
+				Version:       "2.0.0",
+			},
+		},
 		UnitConfig:   &cloudprotocol.UnitConfigStatus{Version: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
@@ -151,11 +157,15 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Incorrect count of components")
 	}
 
-	if status.GetComponents()[0].GetComponentId() != "1234" {
+	if status.GetComponents()[0].GetComponentId() != "testComponent" {
 		t.Error("Incorrect component id")
 	}
 
-	if status.GetComponents()[0].GetVersion() != "123.4321" {
+	if status.GetComponents()[0].GetComponentType() != "testType" {
+		t.Error("Incorrect component type")
+	}
+
+	if status.GetComponents()[0].GetVersion() != "2.0.0" {
 		t.Error("Incorrect version")
 	}
 
@@ -168,11 +178,13 @@ func TestConnection(t *testing.T) {
 	}
 
 	statusNotification := cmserver.UpdateSOTAStatus{
-		InstallServices: []cloudprotocol.ServiceStatus{{ServiceID: "s1", Version: "42.0"}},
-		RemoveServices:  []cloudprotocol.ServiceStatus{{ServiceID: "s2", Version: "42.0"}},
-		InstallLayers:   []cloudprotocol.LayerStatus{{LayerID: "l1", Digest: "someSha", Version: "42.0"}},
-		RemoveLayers:    []cloudprotocol.LayerStatus{{LayerID: "l2", Digest: "someSha", Version: "42.0"}},
-		UpdateStatus:    cmserver.UpdateStatus{State: cmserver.Downloading, Error: "SOTA error"},
+		InstallServices: []cloudprotocol.ServiceStatus{{ServiceID: "s1", Version: "1.0.0"}},
+		RemoveServices:  []cloudprotocol.ServiceStatus{{ServiceID: "s2", Version: "2.0.0"}},
+		InstallLayers:   []cloudprotocol.LayerStatus{{LayerID: "l1", Digest: "someSha", Version: "3.0.0"}},
+		RemoveLayers:    []cloudprotocol.LayerStatus{{LayerID: "l2", Digest: "someSha", Version: "4.0.0"}},
+		UpdateStatus: cmserver.UpdateStatus{State: cmserver.Downloading, Error: &cloudprotocol.ErrorInfo{
+			Message: "SOTA error",
+		}},
 	}
 
 	unitStatusHandler.sotaChannel <- statusNotification
@@ -191,7 +203,7 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect state: ", status.GetState().String())
 	}
 
-	if sotaStatus.GetError().GetMessage() != "SOTA error" {
+	if sotaStatus.GetError().Message != "SOTA error" {
 		t.Error("Incorrect error message: ", status.GetError())
 	}
 
@@ -203,7 +215,7 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect service id")
 	}
 
-	if sotaStatus.GetInstallServices()[0].GetVersion() != "42.0" {
+	if sotaStatus.GetInstallServices()[0].GetVersion() != "1.0.0" {
 		t.Error("Incorrect service aos version")
 	}
 
@@ -219,7 +231,7 @@ func TestConnection(t *testing.T) {
 		t.Error("Incorrect layer digest")
 	}
 
-	if sotaStatus.GetInstallLayers()[0].GetVersion() != "42.0" {
+	if sotaStatus.GetInstallLayers()[0].GetVersion() != "3.0.0" {
 		t.Error("Incorrect layer aos version")
 	}
 
