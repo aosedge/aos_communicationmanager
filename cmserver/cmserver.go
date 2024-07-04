@@ -68,12 +68,12 @@ type UpdateStatus struct {
 // UpdateFOTAStatus FOTA update status for update scheduler service.
 type UpdateFOTAStatus struct {
 	Components []cloudprotocol.ComponentStatus
-	UnitConfig *cloudprotocol.UnitConfigStatus
 	UpdateStatus
 }
 
 // UpdateSOTAStatus SOTA update status for update scheduler service.
 type UpdateSOTAStatus struct {
+	UnitConfig      *cloudprotocol.UnitConfigStatus
 	InstallServices []cloudprotocol.ServiceStatus
 	RemoveServices  []cloudprotocol.ServiceStatus
 	InstallLayers   []cloudprotocol.LayerStatus
@@ -186,7 +186,7 @@ func (server *CMServer) Close() {
 	server.stopChannel <- true
 }
 
-// SubscribeNotifications sunscribes on SOTA FOTA packages status changes.
+// SubscribeNotifications subscribes on SOTA FOTA packages status changes.
 func (server *CMServer) SubscribeNotifications(
 	req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer,
 ) (err error) {
@@ -322,6 +322,10 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 		State: updateStatus.State.getPbState(),
 	}
 
+	if updateStatus.UnitConfig != nil {
+		pbStatus.UnitConfig = &pb.UnitConfigInfo{Version: updateStatus.UnitConfig.Version}
+	}
+
 	for _, layer := range updateStatus.InstallLayers {
 		pbStatus.InstallLayers = append(pbStatus.GetInstallLayers(), &pb.LayerInfo{
 			LayerId: layer.LayerID,
@@ -367,10 +371,6 @@ func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFO
 			ComponentType: component.ComponentType,
 			Version:       component.Version,
 		})
-	}
-
-	if updateStatus.UnitConfig != nil {
-		pbStatus.UnitConfig = &pb.UnitConfigInfo{Version: updateStatus.UnitConfig.Version}
 	}
 
 	return pbStatus
