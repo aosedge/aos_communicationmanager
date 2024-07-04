@@ -337,8 +337,8 @@ func (umCtrl *Controller) UpdateComponents(
 				fcrypt.DecryptParams{
 					Chains:         chains,
 					Certs:          certs,
-					DecryptionInfo: &component.DecryptionInfo,
-					// Signs:          component.Signs,
+					DecryptionInfo: component.DecryptionInfo,
+					Signs:          component.Signs,
 				}); err != nil {
 				return umCtrl.currentComponents, aoserrors.Wrap(err)
 			}
