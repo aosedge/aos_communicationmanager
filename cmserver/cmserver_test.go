@@ -133,7 +133,6 @@ func TestConnection(t *testing.T) {
 				Version:       "2.0.0",
 			},
 		},
-		UnitConfig:   &cloudprotocol.UnitConfigStatus{Version: "bc_version"},
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 	}
 
@@ -144,40 +143,33 @@ func TestConnection(t *testing.T) {
 		t.Fatalf("Can't receive notification: %s", err)
 	}
 
-	status := notification.GetFotaStatus()
-	if status == nil {
+	fotaStatus := notification.GetFotaStatus()
+	if fotaStatus == nil {
 		t.Fatalf("No FOTA status")
 	}
 
-	if status.GetState() != pb.UpdateState_READY_TO_UPDATE {
-		t.Error("Incorrect state: ", status.GetState().String())
+	if fotaStatus.GetState() != pb.UpdateState_READY_TO_UPDATE {
+		t.Error("Incorrect state: ", fotaStatus.GetState().String())
 	}
 
-	if len(status.GetComponents()) != 1 {
+	if len(fotaStatus.GetComponents()) != 1 {
 		t.Fatal("Incorrect count of components")
 	}
 
-	if status.GetComponents()[0].GetComponentId() != "testComponent" {
+	if fotaStatus.GetComponents()[0].GetComponentId() != "testComponent" {
 		t.Error("Incorrect component id")
 	}
 
-	if status.GetComponents()[0].GetComponentType() != "testType" {
+	if fotaStatus.GetComponents()[0].GetComponentType() != "testType" {
 		t.Error("Incorrect component type")
 	}
 
-	if status.GetComponents()[0].GetVersion() != "2.0.0" {
+	if fotaStatus.GetComponents()[0].GetVersion() != "2.0.0" {
 		t.Error("Incorrect version")
 	}
 
-	if status.GetUnitConfig() == nil {
-		t.Fatal("Unit Config is nil")
-	}
-
-	if status.GetUnitConfig().GetVersion() != "bc_version" {
-		t.Error("Incorrect unit config version")
-	}
-
 	statusNotification := cmserver.UpdateSOTAStatus{
+		UnitConfig:      &cloudprotocol.UnitConfigStatus{Version: "bc_version"},
 		InstallServices: []cloudprotocol.ServiceStatus{{ServiceID: "s1", Version: "1.0.0"}},
 		RemoveServices:  []cloudprotocol.ServiceStatus{{ServiceID: "s2", Version: "2.0.0"}},
 		InstallLayers:   []cloudprotocol.LayerStatus{{LayerID: "l1", Digest: "someSha", Version: "3.0.0"}},
@@ -200,11 +192,19 @@ func TestConnection(t *testing.T) {
 	}
 
 	if sotaStatus.GetState() != pb.UpdateState_DOWNLOADING {
-		t.Error("Incorrect state: ", status.GetState().String())
+		t.Error("Incorrect state: ", sotaStatus.GetState().String())
 	}
 
-	if sotaStatus.GetError().Message != "SOTA error" {
-		t.Error("Incorrect error message: ", status.GetError())
+	if sotaStatus.GetError().GetMessage() != "SOTA error" {
+		t.Error("Incorrect error message: ", sotaStatus.GetError())
+	}
+
+	if sotaStatus.GetUnitConfig() == nil {
+		t.Fatal("Unit Config is nil")
+	}
+
+	if sotaStatus.GetUnitConfig().GetVersion() != "bc_version" {
+		t.Error("Incorrect unit config version")
 	}
 
 	if len(sotaStatus.GetInstallServices()) != 1 {
