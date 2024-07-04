@@ -1345,8 +1345,7 @@ func createInstanceStatusFromInfo(
 	}
 
 	instanceStatus := cloudprotocol.InstanceStatus{
-		InstanceIdent: ident,
-		Version:       serviceVersion, RunState: runState,
+		InstanceIdent: ident, ServiceVersion: serviceVersion, RunState: runState,
 	}
 
 	if errorMsg != "" {

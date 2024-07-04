@@ -1262,9 +1262,9 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr strin
 			ident.Instance = i
 
 			manager.InstanceStatuses = append(manager.InstanceStatuses, cloudprotocol.InstanceStatus{
-				InstanceIdent: ident,
-				Version:       version,
-				RunState:      cloudprotocol.InstanceStateActivating,
+				InstanceIdent:  ident,
+				ServiceVersion: version,
+				RunState:       cloudprotocol.InstanceStateActivating,
 			})
 		}
 	}
