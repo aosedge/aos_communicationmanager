@@ -92,6 +92,15 @@ type UnitConfig struct {
 	Nodes         []NodeConfig `json:"nodes"`
 }
 
+// Signs message signature.
+type Signs struct {
+	ChainName        string   `json:"chainName"`
+	Alg              string   `json:"alg"`
+	Value            []byte   `json:"value"`
+	TrustedTimestamp string   `json:"trustedTimestamp"`
+	OcspValues       []string `json:"ocspValues"`
+}
+
 // DecryptionInfo update decryption info.
 type DecryptionInfo struct {
 	BlockAlg     string `json:"blockAlg"`
@@ -124,6 +133,7 @@ type ServiceInfo struct {
 	Version    string `json:"version"`
 	DownloadInfo
 	DecryptionInfo DecryptionInfo `json:"decryptionInfo"`
+	Signs          Signs          `json:"signs"`
 }
 
 // LayerInfo decrypted layer info.
@@ -133,6 +143,7 @@ type LayerInfo struct {
 	Version string `json:"version"`
 	DownloadInfo
 	DecryptionInfo DecryptionInfo `json:"decryptionInfo"`
+	Signs          Signs          `json:"signs"`
 }
 
 // ComponentInfo decrypted component info.
@@ -143,6 +154,7 @@ type ComponentInfo struct {
 	Annotations   json.RawMessage `json:"annotations,omitempty"`
 	DownloadInfo
 	DecryptionInfo DecryptionInfo `json:"decryptionInfo"`
+	Signs          Signs          `json:"signs"`
 }
 
 // InstanceInfo decrypted desired instance runtime info.
