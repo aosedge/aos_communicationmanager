@@ -256,12 +256,12 @@ func TestFirmwareManager(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID:  "comp1",
+			ComponentID:  convertToComponentID("comp1"),
 			Version:      "1.0",
 			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{1}},
 		},
 		{
-			ComponentID:  "comp2",
+			ComponentID:  convertToComponentID("comp2"),
 			Version:      "2.0",
 			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{2}},
 		},
@@ -269,12 +269,12 @@ func TestFirmwareManager(t *testing.T) {
 
 	otherUpdateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID:  "comp3",
+			ComponentID:  convertToComponentID("comp3"),
 			Version:      "3.0",
 			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
 		},
 		{
-			ComponentID:  "comp4",
+			ComponentID:  convertToComponentID("comp4"),
 			Version:      "4.0",
 			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{4}},
 		},
@@ -305,8 +305,8 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID: {},
-				updateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID: {},
+				*updateComponents[1].ComponentID: {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -328,8 +328,8 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID: {Error: "download error"},
-				updateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID: {Error: "download error"},
+				*updateComponents[1].ComponentID: {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -348,8 +348,8 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID: {},
-				updateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID: {},
+				*updateComponents[1].ComponentID: {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -377,8 +377,8 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 			},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID: {},
-				updateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID: {},
+				*updateComponents[1].ComponentID: {},
 			},
 			downloadTime: 1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
@@ -395,16 +395,16 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState:  stateReadyToUpdate,
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 				DownloadResult: map[string]*downloadResult{
-					updateComponents[0].ComponentID: {},
-					updateComponents[1].ComponentID: {},
+					*updateComponents[0].ComponentID: {},
+					*updateComponents[1].ComponentID: {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
-					updateComponents[0].ComponentID: {
-						ComponentID: updateComponents[0].ComponentID,
+					*updateComponents[0].ComponentID: {
+						ComponentID: *updateComponents[0].ComponentID,
 						Version:     updateComponents[0].Version,
 					},
-					updateComponents[1].ComponentID: {
-						ComponentID: updateComponents[1].ComponentID,
+					*updateComponents[1].ComponentID: {
+						ComponentID: *updateComponents[1].ComponentID,
 						Version:     updateComponents[1].Version,
 					},
 				},
@@ -426,16 +426,16 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState:  stateUpdating,
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 				DownloadResult: map[string]*downloadResult{
-					updateComponents[0].ComponentID: {},
-					updateComponents[1].ComponentID: {},
+					*updateComponents[0].ComponentID: {},
+					*updateComponents[1].ComponentID: {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
-					updateComponents[0].ComponentID: {
-						ComponentID: updateComponents[0].ComponentID,
+					*updateComponents[0].ComponentID: {
+						ComponentID: *updateComponents[0].ComponentID,
 						Version:     updateComponents[0].Version,
 					},
-					updateComponents[1].ComponentID: {
-						ComponentID: updateComponents[1].ComponentID,
+					*updateComponents[1].ComponentID: {
+						ComponentID: *updateComponents[1].ComponentID,
 						Version:     updateComponents[1].Version,
 					},
 				},
@@ -459,16 +459,16 @@ func TestFirmwareManager(t *testing.T) {
 					Components: updateComponents,
 				},
 				DownloadResult: map[string]*downloadResult{
-					updateComponents[0].ComponentID: {},
-					updateComponents[1].ComponentID: {},
+					*updateComponents[0].ComponentID: {},
+					*updateComponents[1].ComponentID: {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
-					updateComponents[0].ComponentID: {
-						ComponentID: updateComponents[0].ComponentID,
+					*updateComponents[0].ComponentID: {
+						ComponentID: *updateComponents[0].ComponentID,
 						Version:     updateComponents[0].Version,
 					},
-					updateComponents[1].ComponentID: {
-						ComponentID: updateComponents[1].ComponentID,
+					*updateComponents[1].ComponentID: {
+						ComponentID: *updateComponents[1].ComponentID,
 						Version:     updateComponents[1].Version,
 					},
 				},
@@ -495,8 +495,8 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState:  stateDownloading,
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 				DownloadResult: map[string]*downloadResult{
-					updateComponents[0].ComponentID: {},
-					updateComponents[1].ComponentID: {},
+					*updateComponents[0].ComponentID: {},
+					*updateComponents[1].ComponentID: {},
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
@@ -508,10 +508,10 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID:      {},
-				updateComponents[1].ComponentID:      {},
-				otherUpdateComponents[0].ComponentID: {},
-				otherUpdateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID:      {},
+				*updateComponents[1].ComponentID:      {},
+				*otherUpdateComponents[0].ComponentID: {},
+				*otherUpdateComponents[1].ComponentID: {},
 			},
 			downloadTime: 1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
@@ -547,8 +547,8 @@ func TestFirmwareManager(t *testing.T) {
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
 			},
 			downloadResult: map[string]*downloadResult{
-				otherUpdateComponents[0].ComponentID: {},
-				otherUpdateComponents[1].ComponentID: {},
+				*otherUpdateComponents[0].ComponentID: {},
+				*otherUpdateComponents[1].ComponentID: {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ComponentID: "comp3", Version: "3.0", Status: cloudprotocol.InstalledStatus},
@@ -568,17 +568,17 @@ func TestFirmwareManager(t *testing.T) {
 					Components: updateComponents,
 				},
 				DownloadResult: map[string]*downloadResult{
-					updateComponents[0].ComponentID: {},
-					updateComponents[1].ComponentID: {},
+					*updateComponents[0].ComponentID: {},
+					*updateComponents[1].ComponentID: {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
-					updateComponents[0].ComponentID: {
-						ComponentID: updateComponents[0].ComponentID,
+					*updateComponents[0].ComponentID: {
+						ComponentID: *updateComponents[0].ComponentID,
 						Version:     updateComponents[0].Version,
 						Status:      cloudprotocol.InstallingStatus,
 					},
-					updateComponents[1].ComponentID: {
-						ComponentID: updateComponents[1].ComponentID,
+					*updateComponents[1].ComponentID: {
+						ComponentID: *updateComponents[1].ComponentID,
 						Version:     updateComponents[1].Version,
 						Status:      cloudprotocol.InstallingStatus,
 					},
@@ -593,8 +593,8 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
-				otherUpdateComponents[0].ComponentID: {},
-				otherUpdateComponents[1].ComponentID: {},
+				*otherUpdateComponents[0].ComponentID: {},
+				*otherUpdateComponents[1].ComponentID: {},
 			},
 			downloadTime: 1 * time.Second,
 			updateTime:   1 * time.Second,
@@ -647,8 +647,8 @@ func TestFirmwareManager(t *testing.T) {
 				Components: updateComponents,
 			},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID: {},
-				updateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID: {},
+				*updateComponents[1].ComponentID: {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
@@ -676,8 +676,8 @@ func TestFirmwareManager(t *testing.T) {
 				Components: updateComponents,
 			},
 			downloadResult: map[string]*downloadResult{
-				updateComponents[0].ComponentID: {},
-				updateComponents[1].ComponentID: {},
+				*updateComponents[0].ComponentID: {},
+				*updateComponents[1].ComponentID: {},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
@@ -1872,4 +1872,8 @@ func waitForSOTAUpdateStatus(
 	case <-time.After(waitStatusTimeout):
 		return aoserrors.Errorf("wait for SOTA %s status timeout", expectedStatus.State)
 	}
+}
+
+func convertToComponentID(id string) *string {
+	return &id
 }

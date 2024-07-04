@@ -274,8 +274,8 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ComponentID: "comp0", Version: "2.0"},
-			{ComponentID: "comp2", Version: "2.0"},
+			{ComponentID: convertToComponentID("comp0"), Version: "2.0"},
+			{ComponentID: convertToComponentID("comp2"), Version: "2.0"},
 		},
 	})
 
@@ -311,7 +311,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ComponentID: "comp1", Version: "2.0"},
+			{ComponentID: convertToComponentID("comp1"), Version: "2.0"},
 		},
 	})
 
@@ -1066,4 +1066,8 @@ func handleUpdateStatus(handler *unitstatushandler.Instance) {
 			}
 		}
 	}
+}
+
+func convertToComponentID(id string) *string {
+	return &id
 }
