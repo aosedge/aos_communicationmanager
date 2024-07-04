@@ -529,7 +529,7 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 		fcrypt.DecryptParams{
 			Chains:         chains,
 			Certs:          certs,
-			DecryptionInfo: &layerInfo.DecryptionInfo,
+			DecryptionInfo: layerInfo.DecryptionInfo,
 			Signs:          layerInfo.Signs,
 		}); err != nil {
 		return aoserrors.Wrap(err)

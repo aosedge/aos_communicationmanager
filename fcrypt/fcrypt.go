@@ -112,7 +112,7 @@ type SignContext struct {
 type SignContextInterface interface {
 	AddCertificate(fingerprint string, asn1Bytes []byte) (err error)
 	AddCertificateChain(name string, fingerprints []string) (err error)
-	VerifySign(ctx context.Context, f *os.File, sign *cloudprotocol.Signs) (err error)
+	VerifySign(ctx context.Context, f *os.File, sign cloudprotocol.Signs) (err error)
 }
 
 // CertificateProvider interface to get certificate.
@@ -134,8 +134,8 @@ type certificateChainInfo struct {
 type DecryptParams struct {
 	Chains         []cloudprotocol.CertificateChain
 	Certs          []cloudprotocol.Certificate
-	DecryptionInfo *cloudprotocol.DecryptionInfo
-	Signs          *cloudprotocol.Signs
+	DecryptionInfo cloudprotocol.DecryptionInfo
+	Signs          cloudprotocol.Signs
 }
 
 /***********************************************************************************************************************
@@ -393,7 +393,7 @@ func (signContext *SignContext) AddCertificateChain(name string, fingerprints []
 
 // VerifySign verifies signature.
 func (signContext *SignContext) VerifySign(
-	ctx context.Context, f *os.File, sign *cloudprotocol.Signs,
+	ctx context.Context, f *os.File, sign cloudprotocol.Signs,
 ) (err error) {
 	if len(signContext.signCertificateChains) == 0 || len(signContext.signCertificates) == 0 {
 		return aoserrors.New("sign context not initialized (no certificates)")
