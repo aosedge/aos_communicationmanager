@@ -529,7 +529,7 @@ func TestUpdateServices(t *testing.T) {
 		Services: []cloudprotocol.ServiceStatus{
 			{ServiceID: "service0", Version: "0.0", Status: cloudprotocol.InstalledStatus},
 			{ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-			{ServiceID: "service2", Status: cloudprotocol.RemovedStatus},
+			{ServiceID: "service2", Version: "0.0", Status: cloudprotocol.RemovedStatus},
 			{ServiceID: "service3", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 		},
 	}
@@ -596,7 +596,7 @@ func TestUpdateServices(t *testing.T) {
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 			{ServiceID: "service1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-			{ServiceID: "service2", Status: cloudprotocol.RemovedStatus},
+			{ServiceID: "service2", Version: "0.0", Status: cloudprotocol.RemovedStatus},
 			{ServiceID: "service3", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 			{
 				ServiceID: "service3", Version: "2.0", Status: cloudprotocol.ErrorStatus,

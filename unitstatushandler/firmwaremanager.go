@@ -180,10 +180,18 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 
 	update := &firmwareUpdate{
 		Schedule:   desiredStatus.FOTASchedule,
-		UnitConfig: desiredStatus.UnitConfig,
 		Components: make([]cloudprotocol.ComponentInfo, 0),
 		CertChains: desiredStatus.CertificateChains,
 		Certs:      desiredStatus.Certificates,
+	}
+
+	if desiredStatus.UnitConfig != nil {
+		unitConfig, err := json.Marshal(desiredStatus.UnitConfig)
+		if err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		update.UnitConfig = unitConfig
 	}
 
 	installedComponents, err := manager.firmwareUpdater.GetStatus()
@@ -410,7 +418,7 @@ func (manager *firmwareManager) download(ctx context.Context) {
 		}
 
 		log.WithFields(log.Fields{
-			"id":      component.ComponentID,
+			"id":      *component.ComponentID,
 			"version": component.Version,
 		}).Debug("Download component")
 
