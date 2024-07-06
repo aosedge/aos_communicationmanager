@@ -54,10 +54,9 @@ type StatusSender interface {
 
 // UnitConfigUpdater updates unit configuration.
 type UnitConfigUpdater interface {
-	GetStatus() (unitConfigInfo cloudprotocol.UnitConfigStatus, err error)
-	GetUnitConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error)
-	CheckUnitConfig(configJSON json.RawMessage) (vendorVersion string, err error)
-	UpdateUnitConfig(configJSON json.RawMessage) (err error)
+	GetStatus() (cloudprotocol.UnitConfigStatus, error)
+	CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) error
+	UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) error
 }
 
 // FirmwareUpdater updates system components.
@@ -175,13 +174,13 @@ func New(
 
 	groupDownloader := newGroupDownloader(downloader)
 
-	if instance.firmwareManager, err = newFirmwareManager(instance, groupDownloader, firmwareUpdater, unitConfigUpdater,
-		storage, instanceRunner, cfg.UMController.UpdateTTL.Duration); err != nil {
+	if instance.firmwareManager, err = newFirmwareManager(instance, groupDownloader, firmwareUpdater,
+		storage, cfg.UMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, softwareUpdater, instanceRunner,
-		storage, cfg.SMController.UpdateTTL.Duration); err != nil {
+	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, unitConfigUpdater, softwareUpdater,
+		instanceRunner, storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -342,7 +341,7 @@ func (instance *Instance) initCurrentStatus() error {
 
 	// Get initial unit config info
 
-	unitConfigStatuses, err := instance.firmwareManager.getUnitConfigStatuses()
+	unitConfigStatuses, err := instance.softwareManager.getUnitConfigStatuses()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
