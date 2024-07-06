@@ -60,7 +60,6 @@ type TestSender struct {
 
 type TestUnitConfigUpdater struct {
 	UnitConfigStatus cloudprotocol.UnitConfigStatus
-	UpdateVersion    string
 	UpdateError      error
 }
 
@@ -249,7 +248,6 @@ func TestFirmwareManager(t *testing.T) {
 		downloadResult          map[string]*downloadResult
 		updateTime              time.Duration
 		updateComponentStatuses []cloudprotocol.ComponentStatus
-		unitConfigError         error
 		triggerUpdate           bool
 		updateWaitStatuses      []cmserver.UpdateStatus
 	}
@@ -281,8 +279,8 @@ func TestFirmwareManager(t *testing.T) {
 	}
 
 	updateTimeSlots := []cloudprotocol.TimeSlot{{
-		Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-		Finish: aostypes.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
+		Start: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+		End:   aostypes.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
 	}}
 
 	updateTimetable := []cloudprotocol.TimetableEntry{
@@ -336,7 +334,8 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"},
+				{State: cmserver.Downloading},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "download error"}},
 			},
 		},
 		{
@@ -362,7 +361,7 @@ func TestFirmwareManager(t *testing.T) {
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating},
-				{State: cmserver.NoUpdate, Error: "update error"},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "update error"}},
 			},
 		},
 		{
@@ -386,7 +385,9 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
 			},
 		},
 		{
@@ -418,7 +419,10 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
-			updateWaitStatuses: []cmserver.UpdateStatus{{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID: "continue update on updating state",
@@ -448,7 +452,9 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
-			updateWaitStatuses: []cmserver.UpdateStatus{{State: cmserver.NoUpdate}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID: "same update on ready to update state",
@@ -486,8 +492,11 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
 				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
 			},
-			triggerUpdate:      true,
-			updateWaitStatuses: []cmserver.UpdateStatus{{State: cmserver.Updating}, {State: cmserver.NoUpdate}},
+			triggerUpdate: true,
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
 		},
 		{
 			testID: "new update on downloading state",
@@ -519,7 +528,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp4", Version: "4.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.NoUpdate, Error: context.Canceled.Error()},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: context.Canceled.Error()}},
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating},
@@ -555,7 +564,7 @@ func TestFirmwareManager(t *testing.T) {
 				{ComponentID: "comp4", Version: "4.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.NoUpdate, Error: context.Canceled.Error()},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: context.Canceled.Error()}},
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
 			},
@@ -613,26 +622,6 @@ func TestFirmwareManager(t *testing.T) {
 			},
 		},
 		{
-			testID:        "update unit config",
-			initStatus:    &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus: &cloudprotocol.DesiredStatus{UnitConfig: &cloudprotocol.UnitConfig{}},
-			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading},
-				{State: cmserver.ReadyToUpdate},
-				{State: cmserver.Updating},
-				{State: cmserver.NoUpdate},
-			},
-		},
-		{
-			testID:          "error unit config",
-			initStatus:      &cmserver.UpdateStatus{State: cmserver.NoUpdate},
-			desiredStatus:   &cloudprotocol.DesiredStatus{UnitConfig: &cloudprotocol.UnitConfig{}},
-			unitConfigError: aoserrors.New("unit config error"),
-			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "unit config error"},
-			},
-		},
-		{
 			testID:     "timetable update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
@@ -682,13 +671,14 @@ func TestFirmwareManager(t *testing.T) {
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
-				{State: cmserver.NoUpdate, Error: "update timeout"},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{
+					Message: "update timeout",
+				}},
 			},
 		},
 	}
 
 	firmwareUpdater := NewTestFirmwareUpdater(nil)
-	unitConfigUpdater := NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{})
 	firmwareDownloader := newTestGroupDownloader()
 	testStorage := NewTestStorage()
 
@@ -701,7 +691,6 @@ func TestFirmwareManager(t *testing.T) {
 		firmwareUpdater.InitComponentsInfo = item.initComponentStatuses
 		firmwareUpdater.UpdateComponentsInfo = item.updateComponentStatuses
 		firmwareUpdater.UpdateTime = item.updateTime
-		unitConfigUpdater.UpdateError = item.unitConfigError
 
 		if err := testStorage.saveFirmwareState(item.initState); err != nil {
 			t.Errorf("Can't save init state: %s", err)
@@ -710,8 +699,8 @@ func TestFirmwareManager(t *testing.T) {
 
 		// Create firmware manager
 
-		firmwareManager, err := newFirmwareManager(newTestStatusHandler(), firmwareDownloader,
-			firmwareUpdater, unitConfigUpdater, testStorage, &TestInstanceRunner{}, 30*time.Second)
+		firmwareManager, err := newFirmwareManager(newTestStatusHandler(), firmwareDownloader, firmwareUpdater,
+			testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create firmware manager: %s", err)
 			continue
@@ -806,8 +795,8 @@ func TestSoftwareManager(t *testing.T) {
 	}
 
 	updateTimeSlots := []cloudprotocol.TimeSlot{{
-		Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-		Finish: aostypes.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
+		Start: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+		End:   aostypes.Time{Time: time.Date(0, 1, 1, 23, 59, 59, 999999, time.Local)},
 	}}
 
 	updateTimetable := []cloudprotocol.TimetableEntry{
@@ -909,7 +898,7 @@ func TestSoftwareManager(t *testing.T) {
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
-				{State: cmserver.ReadyToUpdate, Error: "download error"},
+				{State: cmserver.ReadyToUpdate, Error: &cloudprotocol.ErrorInfo{Message: "download error"}},
 				{State: cmserver.Updating},
 				{State: cmserver.NoUpdate},
 			},
@@ -921,11 +910,16 @@ func TestSoftwareManager(t *testing.T) {
 				Layers: updateLayers, Services: updateServices,
 			},
 			downloadResult: map[string]*downloadResult{
-				updateLayers[0].Digest: {Error: "download error"}, updateLayers[1].Digest: {Error: "download error"},
-				updateServices[0].ServiceID: {Error: "download error"}, updateServices[1].ServiceID: {Error: "download error"},
+				updateLayers[0].Digest:      {Error: "download error"},
+				updateLayers[1].Digest:      {Error: "download error"},
+				updateServices[0].ServiceID: {Error: "download error"},
+				updateServices[1].ServiceID: {Error: "download error"},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading}, {State: cmserver.NoUpdate, Error: "download error"},
+				{State: cmserver.Downloading}, {
+					State: cmserver.NoUpdate,
+					Error: &cloudprotocol.ErrorInfo{Message: "download error"},
+				},
 			},
 		},
 		{
@@ -943,7 +937,7 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating},
-				{State: cmserver.NoUpdate, Error: "update error"},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "update error"}},
 			},
 		},
 		{
@@ -960,7 +954,9 @@ func TestSoftwareManager(t *testing.T) {
 				updateServices[0].ServiceID: {}, updateServices[1].ServiceID: {},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.ReadyToUpdate}, {State: cmserver.Updating}, {State: cmserver.NoUpdate},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
 			},
 		},
 		{
@@ -1002,7 +998,35 @@ func TestSoftwareManager(t *testing.T) {
 				},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Updating}, {State: cmserver.NoUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+		},
+		{
+			testID:     "update unit config",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DesiredStatus{UnitConfig: &cloudprotocol.UnitConfig{
+				Version: "1.0.0",
+			}},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+		},
+		{
+			testID:     "error unit config",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DesiredStatus{UnitConfig: &cloudprotocol.UnitConfig{
+				Version: "1.0.0",
+			}},
+			updateError: aoserrors.New("unit config error"),
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "unit config error"}},
 			},
 		},
 		{
@@ -1043,11 +1067,12 @@ func TestSoftwareManager(t *testing.T) {
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
-				{State: cmserver.NoUpdate, Error: "update timeout"},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "update timeout"}},
 			},
 		},
 	}
 
+	unitConfigUpdater := NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{})
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := NewTestInstanceRunner()
 	softwareDownloader := newTestGroupDownloader()
@@ -1062,6 +1087,7 @@ func TestSoftwareManager(t *testing.T) {
 		softwareUpdater.AllServices = item.initServices
 		softwareUpdater.AllLayers = item.initLayers
 		softwareUpdater.UpdateError = item.updateError
+		unitConfigUpdater.UpdateError = item.updateError
 
 		if err := testStorage.saveSoftwareState(item.initState); err != nil {
 			t.Errorf("Can't save init state: %s", err)
@@ -1070,8 +1096,8 @@ func TestSoftwareManager(t *testing.T) {
 
 		// Create software manager
 
-		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, softwareUpdater,
-			instanceRunner, testStorage, 30*time.Second)
+		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, unitConfigUpdater,
+			softwareUpdater, instanceRunner, testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create software manager: %s", err)
 			continue
@@ -1118,9 +1144,7 @@ func TestSoftwareManager(t *testing.T) {
 					}
 				}
 
-				if item.updateError == nil {
-					softwareManager.processRunStatus(RunInstancesStatus{})
-				}
+				softwareManager.processRunStatus(RunInstancesStatus{})
 			}
 
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
@@ -1171,8 +1195,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1184,26 +1208,26 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 2, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 			},
-			err: "finish value should contain only time",
+			err: "end value should contain only time",
 		},
 		{
 			timetable: []cloudprotocol.TimetableEntry{
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 			},
-			err: "start value should be before finish value",
+			err: "start value should be before end value",
 		},
 		{
 			fromDate: time.Date(1, 1, 1, 0, 0, 0, 0, time.Local),
@@ -1211,8 +1235,8 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1225,32 +1249,32 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1263,48 +1287,48 @@ func TestTimeTable(t *testing.T) {
 				{
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 14, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 2, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 16, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 18, 0, 0, 0, time.Local)},
 						},
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 20, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 22, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 3, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 4, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 12, 0, 0, 0, time.Local)},
 						},
 					},
 				},
 				{
 					DayOfWeek: 5, TimeSlots: []cloudprotocol.TimeSlot{
 						{
-							Start:  aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
-							Finish: aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 8, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)},
 						},
 					},
 				},
@@ -1433,23 +1457,19 @@ func (sender *TestSender) SubscribeForConnectionEvents(consumer amqphandler.Conn
  * TestUnitConfigUpdater
  **********************************************************************************************************************/
 
-func NewTestUnitConfigUpdater(unitConfigInfo cloudprotocol.UnitConfigStatus) (updater *TestUnitConfigUpdater) {
-	return &TestUnitConfigUpdater{UnitConfigStatus: unitConfigInfo}
+func NewTestUnitConfigUpdater(unitConfigsStatus cloudprotocol.UnitConfigStatus) *TestUnitConfigUpdater {
+	return &TestUnitConfigUpdater{UnitConfigStatus: unitConfigsStatus}
 }
 
-func (updater *TestUnitConfigUpdater) GetStatus() (info cloudprotocol.UnitConfigStatus, err error) {
+func (updater *TestUnitConfigUpdater) GetStatus() (cloudprotocol.UnitConfigStatus, error) {
 	return updater.UnitConfigStatus, nil
 }
 
-func (updater *TestUnitConfigUpdater) GetUnitConfigVersion(configJSON json.RawMessage) (version string, err error) {
-	return updater.UpdateVersion, updater.UpdateError
+func (updater *TestUnitConfigUpdater) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) error {
+	return updater.UpdateError
 }
 
-func (updater *TestUnitConfigUpdater) CheckUnitConfig(configJSON json.RawMessage) (version string, err error) {
-	return updater.UpdateVersion, updater.UpdateError
-}
-
-func (updater *TestUnitConfigUpdater) UpdateUnitConfig(configJSON json.RawMessage) (err error) {
+func (updater *TestUnitConfigUpdater) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error) {
 	return updater.UpdateError
 }
 
@@ -1830,13 +1850,17 @@ func compareStatuses(expectedStatus, comparedStatus cmserver.UpdateStatus) (err 
 		return aoserrors.Errorf("wrong state: %s", comparedStatus.State)
 	}
 
-	if comparedStatus.Error == "" && expectedStatus.Error != "" ||
-		comparedStatus.Error != "" && expectedStatus.Error == "" {
-		return aoserrors.Errorf("wrong error: %s", comparedStatus.Error)
+	if expectedStatus.Error == nil && comparedStatus.Error == nil {
+		return nil
 	}
 
-	if !strings.Contains(comparedStatus.Error, expectedStatus.Error) {
-		return aoserrors.Errorf("wrong error: %s", comparedStatus.Error)
+	if comparedStatus.Error == nil && expectedStatus.Error != nil ||
+		comparedStatus.Error != nil && expectedStatus.Error == nil {
+		return aoserrors.Errorf("wrong error: %s", comparedStatus.Error.Message)
+	}
+
+	if !strings.Contains(comparedStatus.Error.Message, expectedStatus.Error.Message) {
+		return aoserrors.Errorf("wrong error: %s", comparedStatus.Error.Message)
 	}
 
 	return nil

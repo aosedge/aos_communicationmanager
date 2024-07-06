@@ -20,8 +20,6 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/url"
 	"reflect"
 	"strings"
@@ -35,7 +33,6 @@ import (
 
 	"github.com/aosedge/aos_communicationmanager/cmserver"
 	"github.com/aosedge/aos_communicationmanager/downloader"
-	"github.com/aosedge/aos_communicationmanager/unitconfig"
 )
 
 /***********************************************************************************************************************
@@ -54,12 +51,10 @@ type firmwareDownloader interface {
 
 type firmwareStatusHandler interface {
 	updateComponentStatus(componentInfo cloudprotocol.ComponentStatus)
-	updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus)
 }
 
 type firmwareUpdate struct {
 	Schedule   cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
-	UnitConfig json.RawMessage                  `json:"unitConfig,omitempty"`
 	Components []cloudprotocol.ComponentInfo    `json:"components,omitempty"`
 	CertChains []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
 	Certs      []cloudprotocol.Certificate      `json:"certs,omitempty"`
@@ -70,19 +65,16 @@ type firmwareManager struct {
 
 	statusChannel chan cmserver.UpdateFOTAStatus
 
-	downloader        firmwareDownloader
-	statusHandler     firmwareStatusHandler
-	firmwareUpdater   FirmwareUpdater
-	unitConfigUpdater UnitConfigUpdater
-	storage           Storage
-	runner            InstanceRunner
+	downloader      firmwareDownloader
+	statusHandler   firmwareStatusHandler
+	firmwareUpdater FirmwareUpdater
+	storage         Storage
 
 	stateMachine  *updateStateMachine
 	statusMutex   sync.RWMutex
 	pendingUpdate *firmwareUpdate
 
 	ComponentStatuses map[string]*cloudprotocol.ComponentStatus `json:"componentStatuses,omitempty"`
-	UnitConfigStatus  cloudprotocol.UnitConfigStatus            `json:"unitConfigStatus,omitempty"`
 	CurrentUpdate     *firmwareUpdate                           `json:"currentUpdate,omitempty"`
 	DownloadResult    map[string]*downloadResult                `json:"downloadResult,omitempty"`
 	CurrentState      string                                    `json:"currentState,omitempty"`
@@ -95,18 +87,15 @@ type firmwareManager struct {
  **********************************************************************************************************************/
 
 func newFirmwareManager(statusHandler firmwareStatusHandler, downloader firmwareDownloader,
-	firmwareUpdater FirmwareUpdater, unitConfigUpdater UnitConfigUpdater,
-	storage Storage, runner InstanceRunner, defaultTTL time.Duration,
+	firmwareUpdater FirmwareUpdater, storage Storage, defaultTTL time.Duration,
 ) (manager *firmwareManager, err error) {
 	manager = &firmwareManager{
-		statusChannel:     make(chan cmserver.UpdateFOTAStatus, 1),
-		downloader:        downloader,
-		statusHandler:     statusHandler,
-		firmwareUpdater:   firmwareUpdater,
-		unitConfigUpdater: unitConfigUpdater,
-		storage:           storage,
-		runner:            runner,
-		CurrentState:      stateNoUpdate,
+		statusChannel:   make(chan cmserver.UpdateFOTAStatus, 1),
+		downloader:      downloader,
+		statusHandler:   statusHandler,
+		firmwareUpdater: firmwareUpdater,
+		storage:         storage,
+		CurrentState:    stateNoUpdate,
 	}
 
 	if err = manager.loadState(); err != nil {
@@ -152,7 +141,10 @@ func (manager *firmwareManager) close() (err error) {
 
 func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTAStatus) {
 	status.State = convertState(manager.CurrentState)
-	status.Error = manager.UpdateErr
+
+	if manager.UpdateErr != "" {
+		status.Error = &cloudprotocol.ErrorInfo{Message: manager.UpdateErr}
+	}
 
 	if status.State == cmserver.NoUpdate || manager.CurrentUpdate == nil {
 		return status
@@ -166,11 +158,6 @@ func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTASt
 		}
 	}
 
-	if len(manager.CurrentUpdate.UnitConfig) != 0 {
-		version, _ := manager.unitConfigUpdater.GetUnitConfigVersion(manager.CurrentUpdate.UnitConfig)
-		status.UnitConfig = &cloudprotocol.UnitConfigStatus{Version: version}
-	}
-
 	return status
 }
 
@@ -178,9 +165,10 @@ func (manager *firmwareManager) processDesiredStatus(desiredStatus cloudprotocol
 	manager.Lock()
 	defer manager.Unlock()
 
+	log.Debug("Process desired FOTA")
+
 	update := &firmwareUpdate{
 		Schedule:   desiredStatus.FOTASchedule,
-		UnitConfig: desiredStatus.UnitConfig,
 		Components: make([]cloudprotocol.ComponentInfo, 0),
 		CertChains: desiredStatus.CertificateChains,
 		Certs:      desiredStatus.Certificates,
@@ -215,10 +203,12 @@ desiredLoop:
 		}).Error("Desired component not found")
 	}
 
-	if len(update.UnitConfig) != 0 || len(update.Components) != 0 {
+	if len(update.Components) != 0 {
 		if err = manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
+	} else {
+		log.Debug("No FOTA update required")
 	}
 
 	return nil
@@ -270,31 +260,6 @@ func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.C
 	return status, nil
 }
 
-func (manager *firmwareManager) getUnitConfigStatuses() (status []cloudprotocol.UnitConfigStatus, err error) {
-	manager.Lock()
-	defer manager.Unlock()
-
-	manager.statusMutex.RLock()
-	defer manager.statusMutex.RUnlock()
-
-	info, err := manager.unitConfigUpdater.GetStatus()
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	status = append(status, info)
-
-	// Append currently processing info
-
-	if manager.CurrentState == stateNoUpdate || len(manager.CurrentUpdate.UnitConfig) == 0 {
-		return status, nil
-	}
-
-	status = append(status, manager.UnitConfigStatus)
-
-	return status, nil
-}
-
 /***********************************************************************************************************************
  * Implementer
  **********************************************************************************************************************/
@@ -304,12 +269,6 @@ func (manager *firmwareManager) stateChanged(event, state string, updateErr stri
 		for id, status := range manager.ComponentStatuses {
 			if status.Status != cloudprotocol.ErrorStatus {
 				manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus, updateErr)
-			}
-		}
-
-		if len(manager.CurrentUpdate.UnitConfig) != 0 {
-			if manager.UnitConfigStatus.Status != cloudprotocol.ErrorStatus {
-				manager.updateUnitConfigStatus(cloudprotocol.ErrorStatus, updateErr)
 			}
 		}
 	}
@@ -377,27 +336,6 @@ func (manager *firmwareManager) download(ctx context.Context) {
 	}()
 
 	manager.DownloadResult = nil
-
-	if len(manager.CurrentUpdate.UnitConfig) != 0 {
-		manager.UnitConfigStatus.Version = ""
-
-		version, err := manager.unitConfigUpdater.GetUnitConfigVersion(manager.CurrentUpdate.UnitConfig)
-
-		manager.UnitConfigStatus.Version = version
-
-		if err != nil {
-			log.Errorf("Error getting unit config version: %s", err)
-
-			downloadErr = aoserrors.Wrap(err).Error()
-			manager.updateUnitConfigStatus(cloudprotocol.ErrorStatus, downloadErr)
-
-			return
-		}
-
-		log.WithFields(log.Fields{"version": version}).Debug("Get unit config version")
-
-		manager.updateUnitConfigStatus(cloudprotocol.PendingStatus, "")
-	}
 
 	manager.statusMutex.Lock()
 
@@ -481,18 +419,6 @@ func (manager *firmwareManager) update(ctx context.Context) {
 			return
 		}
 	}
-
-	if len(manager.CurrentUpdate.UnitConfig) != 0 {
-		if err := manager.updateUnitConfig(ctx); err != "" {
-			updateErr = err
-			return
-		}
-
-		if err := manager.runner.RestartInstances(); err != nil {
-			updateErr = err.Error()
-			return
-		}
-	}
 }
 
 func (manager *firmwareManager) updateTimeout() {
@@ -539,8 +465,7 @@ func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 		}
 
 	default:
-		if reflect.DeepEqual(update.Components, manager.CurrentUpdate.Components) &&
-			unitConfigsEqual(update.UnitConfig, manager.CurrentUpdate.UnitConfig) {
+		if reflect.DeepEqual(update.Components, manager.CurrentUpdate.Components) {
 			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
 				return nil
 			}
@@ -588,7 +513,7 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 			for id, status := range manager.ComponentStatuses {
 				if status.Status != cloudprotocol.ErrorStatus {
 					manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus,
-						fmt.Sprintf("update aborted due to error: %s", componentsErr))
+						"update aborted due to error: "+componentsErr)
 				}
 
 				log.WithFields(log.Fields{
@@ -697,38 +622,6 @@ func (manager *firmwareManager) saveState() (err error) {
 	return nil
 }
 
-func (manager *firmwareManager) updateUnitConfig(ctx context.Context) (unitConfigErr string) {
-	log.Debug("Update unit config")
-
-	defer func() {
-		if unitConfigErr != "" {
-			manager.updateUnitConfigStatus(cloudprotocol.ErrorStatus, unitConfigErr)
-		}
-	}()
-
-	if _, err := manager.unitConfigUpdater.CheckUnitConfig(manager.CurrentUpdate.UnitConfig); err != nil {
-		if errors.Is(err, unitconfig.ErrAlreadyInstalled) {
-			log.Error("Unit config already installed")
-
-			manager.updateUnitConfigStatus(cloudprotocol.InstalledStatus, "")
-
-			return ""
-		}
-
-		return aoserrors.Wrap(err).Error()
-	}
-
-	manager.updateUnitConfigStatus(cloudprotocol.InstallingStatus, "")
-
-	if err := manager.unitConfigUpdater.UpdateUnitConfig(manager.CurrentUpdate.UnitConfig); err != nil {
-		return aoserrors.Wrap(err).Error()
-	}
-
-	manager.updateUnitConfigStatus(cloudprotocol.InstalledStatus, "")
-
-	return ""
-}
-
 func (manager *firmwareManager) asyncUpdate(
 	updateComponents []cloudprotocol.ComponentInfo,
 ) (channel <-chan string) {
@@ -761,39 +654,4 @@ func (manager *firmwareManager) asyncUpdate(
 	}()
 
 	return finishChannel
-}
-
-func (manager *firmwareManager) updateUnitConfigStatus(status, errorStr string) {
-	manager.statusMutex.Lock()
-	defer manager.statusMutex.Unlock()
-
-	manager.UnitConfigStatus.Status = status
-
-	if errorStr != "" {
-		manager.UnitConfigStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: errorStr}
-	}
-
-	manager.statusHandler.updateUnitConfigStatus(manager.UnitConfigStatus)
-}
-
-func unitConfigsEqual(config1, config2 json.RawMessage) (equal bool) {
-	var configData1, configData2 interface{}
-
-	if config1 == nil && config2 == nil {
-		return true
-	}
-
-	if (config1 == nil && config2 != nil) || (config1 != nil && config2 == nil) {
-		return false
-	}
-
-	if err := json.Unmarshal(config1, &configData1); err != nil {
-		log.Errorf("Can't marshal unit config: %s", err)
-	}
-
-	if err := json.Unmarshal(config2, &configData2); err != nil {
-		log.Errorf("Can't marshal unit config: %s", err)
-	}
-
-	return reflect.DeepEqual(configData1, configData2)
 }
