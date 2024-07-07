@@ -37,7 +37,7 @@ type downloadResult struct {
 	Error    string `json:"error"`
 }
 
-type statusNotifier func(id string, status string, componentErr string)
+type statusNotifier func(id string, status string, componentErr *cloudprotocol.ErrorInfo)
 
 type groupDownloader struct {
 	Downloader
@@ -59,7 +59,7 @@ func (downloader *groupDownloader) download(ctx context.Context, request map[str
 	for id := range request {
 		result[id] = &downloadResult{}
 
-		updateStatus(id, cloudprotocol.DownloadingStatus, "")
+		updateStatus(id, cloudprotocol.DownloadingStatus, nil)
 	}
 
 	downloadCtx, cancelFunc := context.WithCancel(ctx)
@@ -70,7 +70,7 @@ func (downloader *groupDownloader) download(ctx context.Context, request map[str
 	handleError := func(id string, err error) {
 		if errorStr := aoserrors.Wrap(err).Error(); !isCancelError(errorStr) {
 			result[id].Error = errorStr
-			updateStatus(id, cloudprotocol.ErrorStatus, errorStr)
+			updateStatus(id, cloudprotocol.ErrorStatus, &cloudprotocol.ErrorInfo{Message: errorStr})
 		}
 
 		if !continueOnError {
@@ -102,7 +102,7 @@ func (downloader *groupDownloader) download(ctx context.Context, request map[str
 				return
 			}
 
-			updateStatus(id, cloudprotocol.DownloadedStatus, "")
+			updateStatus(id, cloudprotocol.DownloadedStatus, nil)
 		}(id)
 	}
 
@@ -115,7 +115,7 @@ func (downloader *groupDownloader) download(ctx context.Context, request map[str
 		for id, item := range result {
 			if item.Error == "" {
 				item.Error = aoserrors.Wrap(downloadCtx.Err()).Error()
-				updateStatus(id, cloudprotocol.ErrorStatus, item.Error)
+				updateStatus(id, cloudprotocol.ErrorStatus, &cloudprotocol.ErrorInfo{Message: item.Error})
 			}
 		}
 	}
@@ -143,14 +143,14 @@ func (downloader *groupDownloader) releaseDownloadedSoftware() error {
 	return nil
 }
 
-func getDownloadError(result map[string]*downloadResult) (downloadErr string) {
+func getDownloadError(result map[string]*downloadResult) error {
 	for _, item := range result {
 		if item.Error != "" && !isCancelError(item.Error) {
-			return item.Error
+			return aoserrors.New(item.Error)
 		}
 	}
 
-	return ""
+	return nil
 }
 
 func isCancelError(errString string) (result bool) {
