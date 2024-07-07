@@ -223,7 +223,7 @@ func TestGroupDownloader(t *testing.T) {
 		}
 
 		result := testGroupDownloader.download(ctx, item.request, item.continueOnError,
-			func(id string, status string, componentErr string) {
+			func(id string, status string, componentErr *cloudprotocol.ErrorInfo) {
 				log.WithFields(log.Fields{
 					"id": id, "status": status, "error": componentErr,
 				}).Debug("Component download status")
@@ -1648,12 +1648,12 @@ func (downloader *testGroupDownloader) download(
 	ctx context.Context, request map[string]downloader.PackageInfo, continueOnError bool, updateStatus statusNotifier,
 ) (result map[string]*downloadResult) {
 	for id := range request {
-		updateStatus(id, cloudprotocol.DownloadingStatus, "")
+		updateStatus(id, cloudprotocol.DownloadingStatus, nil)
 	}
 
 	select {
 	case <-time.After(downloader.downloadTime):
-		if getDownloadError(downloader.result) != "" && !continueOnError {
+		if getDownloadError(downloader.result) != nil && !continueOnError {
 			for id := range request {
 				if downloader.result[id].Error == "" {
 					downloader.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
@@ -1667,9 +1667,10 @@ func (downloader *testGroupDownloader) download(
 			}
 
 			if downloader.result[id].Error != "" {
-				updateStatus(id, cloudprotocol.ErrorStatus, downloader.result[id].Error)
+				updateStatus(id, cloudprotocol.ErrorStatus,
+					&cloudprotocol.ErrorInfo{Message: downloader.result[id].Error})
 			} else {
-				updateStatus(id, cloudprotocol.DownloadedStatus, "")
+				updateStatus(id, cloudprotocol.DownloadedStatus, nil)
 			}
 		}
 
@@ -1678,7 +1679,7 @@ func (downloader *testGroupDownloader) download(
 	case <-ctx.Done():
 		for id := range request {
 			downloader.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
-			updateStatus(id, cloudprotocol.ErrorStatus, downloader.result[id].Error)
+			updateStatus(id, cloudprotocol.ErrorStatus, &cloudprotocol.ErrorInfo{Message: downloader.result[id].Error})
 		}
 
 		return result
