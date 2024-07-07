@@ -20,9 +20,9 @@ package unitstatushandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -78,7 +78,7 @@ type firmwareManager struct {
 	CurrentUpdate     *firmwareUpdate                           `json:"currentUpdate,omitempty"`
 	DownloadResult    map[string]*downloadResult                `json:"downloadResult,omitempty"`
 	CurrentState      string                                    `json:"currentState,omitempty"`
-	UpdateErr         string                                    `json:"updateErr,omitempty"`
+	UpdateErr         *cloudprotocol.ErrorInfo                  `json:"updateErr,omitempty"`
 	TTLDate           time.Time                                 `json:"ttlDate,omitempty"`
 }
 
@@ -141,10 +141,7 @@ func (manager *firmwareManager) close() (err error) {
 
 func (manager *firmwareManager) getCurrentStatus() (status cmserver.UpdateFOTAStatus) {
 	status.State = convertState(manager.CurrentState)
-
-	if manager.UpdateErr != "" {
-		status.Error = &cloudprotocol.ErrorInfo{Message: manager.UpdateErr}
-	}
+	status.Error = manager.UpdateErr
 
 	if status.State == cmserver.NoUpdate || manager.CurrentUpdate == nil {
 		return status
@@ -220,7 +217,7 @@ func (manager *firmwareManager) startUpdate() (err error) {
 
 	log.Debug("Start firmware update")
 
-	if err = manager.stateMachine.sendEvent(eventStartUpdate, ""); err != nil {
+	if err = manager.stateMachine.sendEvent(eventStartUpdate, nil); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -264,31 +261,37 @@ func (manager *firmwareManager) getComponentStatuses() (status []cloudprotocol.C
  * Implementer
  **********************************************************************************************************************/
 
-func (manager *firmwareManager) stateChanged(event, state string, updateErr string) {
+func (manager *firmwareManager) stateChanged(event, state string, updateErr error) {
+	var errorInfo *cloudprotocol.ErrorInfo
+
+	if updateErr != nil {
+		errorInfo = &cloudprotocol.ErrorInfo{Message: updateErr.Error()}
+	}
+
 	if event == eventCancel {
 		for id, status := range manager.ComponentStatuses {
 			if status.Status != cloudprotocol.ErrorStatus {
-				manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus, updateErr)
+				manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus, errorInfo)
 			}
 		}
 	}
 
 	manager.CurrentState = state
-	manager.UpdateErr = updateErr
+	manager.UpdateErr = errorInfo
 
 	log.WithFields(log.Fields{
 		"state": state,
 		"event": event,
 	}).Debug("Firmware manager state changed")
 
-	if updateErr != "" {
-		log.Errorf("Firmware update error: %s", updateErr)
+	if updateErr != nil {
+		log.Errorf("Firmware update error: %v", updateErr)
 	}
 
 	manager.sendCurrentStatus()
 
 	if err := manager.saveState(); err != nil {
-		log.Errorf("Can't save current firmware manager state: %s", err)
+		log.Errorf("Can't save current firmware manager state: %v", err)
 	}
 }
 
@@ -313,24 +316,24 @@ func (manager *firmwareManager) noUpdate() {
 
 			if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
 				time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
-				log.Errorf("Can't start new firmware update: %s", err)
+				log.Errorf("Can't start new firmware update: %v", err)
 			}
 		}()
 	}
 }
 
 func (manager *firmwareManager) download(ctx context.Context) {
-	var downloadErr string
+	var downloadErr error
 
 	defer func() {
 		go func() {
 			manager.Lock()
 			defer manager.Unlock()
 
-			if downloadErr != "" {
+			if downloadErr != nil {
 				manager.stateMachine.finishOperation(ctx, eventCancel, downloadErr)
 			} else {
-				manager.stateMachine.finishOperation(ctx, eventFinishDownload, "")
+				manager.stateMachine.finishOperation(ctx, eventFinishDownload, nil)
 			}
 		}()
 	}()
@@ -393,7 +396,7 @@ func (manager *firmwareManager) download(ctx context.Context) {
 			"version": item.Version,
 		}).Debug("Component successfully downloaded")
 
-		manager.updateComponentStatusByID(id, cloudprotocol.PendingStatus, "")
+		manager.updateComponentStatusByID(id, cloudprotocol.PendingStatus, nil)
 	}
 }
 
@@ -402,7 +405,7 @@ func (manager *firmwareManager) readyToUpdate() {
 }
 
 func (manager *firmwareManager) update(ctx context.Context) {
-	var updateErr string
+	var updateErr error
 
 	defer func() {
 		go func() {
@@ -414,9 +417,8 @@ func (manager *firmwareManager) update(ctx context.Context) {
 	}()
 
 	if len(manager.CurrentUpdate.Components) != 0 {
-		if err := manager.updateComponents(ctx); err != "" {
+		if err := manager.updateComponents(ctx); err != nil {
 			updateErr = err
-			return
 		}
 	}
 }
@@ -426,8 +428,8 @@ func (manager *firmwareManager) updateTimeout() {
 	defer manager.Unlock()
 
 	if manager.stateMachine.canTransit(eventCancel) {
-		if err := manager.stateMachine.sendEvent(eventCancel, aoserrors.New("update timeout").Error()); err != nil {
-			log.Errorf("Can't cancel update: %s", err)
+		if err := manager.stateMachine.sendEvent(eventCancel, aoserrors.New("update timeout")); err != nil {
+			log.Errorf("Can't cancel update: %v", err)
 		}
 	}
 }
@@ -488,7 +490,7 @@ func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 			return nil
 		}
 
-		if err = manager.stateMachine.sendEvent(eventCancel, aoserrors.Wrap(context.Canceled).Error()); err != nil {
+		if err = manager.stateMachine.sendEvent(eventCancel, aoserrors.Wrap(context.Canceled)); err != nil {
 			return aoserrors.Wrap(err)
 		}
 	}
@@ -496,12 +498,12 @@ func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 	return nil
 }
 
-func (manager *firmwareManager) updateComponents(ctx context.Context) (componentsErr string) {
+func (manager *firmwareManager) updateComponents(ctx context.Context) (componentsErr error) {
 	defer func() {
 		switch {
-		case strings.Contains(componentsErr, context.Canceled.Error()):
+		case errors.Is(ctx.Err(), context.Canceled):
 
-		case componentsErr == "":
+		case componentsErr == nil:
 			for _, status := range manager.ComponentStatuses {
 				log.WithFields(log.Fields{
 					"id":      status.ComponentID,
@@ -512,14 +514,15 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 		default:
 			for id, status := range manager.ComponentStatuses {
 				if status.Status != cloudprotocol.ErrorStatus {
-					manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus,
-						"update aborted due to error: "+componentsErr)
+					manager.updateComponentStatusByID(id, cloudprotocol.ErrorStatus, &cloudprotocol.ErrorInfo{
+						Message: "update aborted due to error: " + componentsErr.Error(),
+					})
 				}
 
 				log.WithFields(log.Fields{
 					"id":      status.ComponentID,
 					"version": status.Version,
-				}).Errorf("Error updating component: %v", status.ErrorInfo)
+				}).Errorf("Error updating component: %s", status.ErrorInfo.Message)
 			}
 		}
 	}()
@@ -533,13 +536,14 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 
 		log.WithFields(log.Fields{"id": component.ComponentID, "version": component.Version}).Debug("Update component")
 
-		manager.updateComponentStatusByID(*component.ComponentID, cloudprotocol.InstallingStatus, "")
+		manager.updateComponentStatusByID(*component.ComponentID, cloudprotocol.InstallingStatus, nil)
 
 		downloadInfo, ok := manager.DownloadResult[*component.ComponentID]
 		if !ok {
-			err := aoserrors.New("update ID not found").Error()
+			err := aoserrors.New("update ID not found")
 
-			manager.updateComponentStatusByID(*component.ComponentID, cloudprotocol.ErrorStatus, err)
+			manager.updateComponentStatusByID(*component.ComponentID, cloudprotocol.ErrorStatus,
+				&cloudprotocol.ErrorInfo{Message: err.Error()})
 
 			return err
 		}
@@ -555,17 +559,15 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 	}
 
 	select {
-	case errStr := <-manager.asyncUpdate(updateComponents):
-		return errStr
+	case err := <-manager.asyncUpdate(updateComponents):
+		return err
 
 	case <-ctx.Done():
-		errStr := ""
-
 		if err := ctx.Err(); err != nil {
-			errStr = err.Error()
+			return err
 		}
 
-		return errStr
+		return nil
 	}
 }
 
@@ -573,7 +575,7 @@ func (manager *firmwareManager) sendCurrentStatus() {
 	manager.statusChannel <- manager.getCurrentStatus()
 }
 
-func (manager *firmwareManager) updateComponentStatusByID(id, status, componentErr string) {
+func (manager *firmwareManager) updateComponentStatusByID(id, status string, componentErr *cloudprotocol.ErrorInfo) {
 	manager.statusMutex.Lock()
 	defer manager.statusMutex.Unlock()
 
@@ -584,10 +586,7 @@ func (manager *firmwareManager) updateComponentStatusByID(id, status, componentE
 	}
 
 	info.Status = status
-
-	if componentErr != "" {
-		info.ErrorInfo = &cloudprotocol.ErrorInfo{Message: componentErr}
-	}
+	info.ErrorInfo = componentErr
 
 	manager.statusHandler.updateComponentStatus(*info)
 }
@@ -622,35 +621,33 @@ func (manager *firmwareManager) saveState() (err error) {
 	return nil
 }
 
-func (manager *firmwareManager) asyncUpdate(
-	updateComponents []cloudprotocol.ComponentInfo,
-) (channel <-chan string) {
-	finishChannel := make(chan string, 1)
+func (manager *firmwareManager) asyncUpdate(updateComponents []cloudprotocol.ComponentInfo) (channel <-chan error) {
+	finishChannel := make(chan error, 1)
 
-	go func() (errorStr string) {
-		defer func() { finishChannel <- errorStr }()
+	go func() {
+		var err error
 
-		updateResult, err := manager.firmwareUpdater.UpdateComponents(
+		updateResult, updateErr := manager.firmwareUpdater.UpdateComponents(
 			updateComponents, manager.CurrentUpdate.CertChains, manager.CurrentUpdate.Certs)
-		if err != nil {
-			errorStr = aoserrors.Wrap(err).Error()
+		if updateErr != nil {
+			err = aoserrors.Wrap(updateErr)
 		}
 
 		for id, status := range manager.ComponentStatuses {
 			for _, item := range updateResult {
 				if item.ComponentID == status.ComponentID && item.Version == status.Version {
-					if errorStr == "" {
+					if err == nil {
 						if item.ErrorInfo != nil {
-							errorStr = item.ErrorInfo.Message
+							err = aoserrors.New(item.ErrorInfo.Message)
 						}
 					}
 
-					manager.updateComponentStatusByID(id, item.Status, errorStr)
+					manager.updateComponentStatusByID(id, item.Status, item.ErrorInfo)
 				}
 			}
 		}
 
-		return errorStr
+		finishChannel <- err
 	}()
 
 	return finishChannel
