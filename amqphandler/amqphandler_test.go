@@ -243,6 +243,7 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.StateAcceptanceMessageType,
 			expectedData: &cloudprotocol.StateAcceptance{
+				MessageType:   cloudprotocol.StateAcceptanceMessageType,
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj0", Instance: 1},
 				Checksum:      "0123456890", Result: "accepted", Reason: "just because",
 			},
@@ -250,6 +251,7 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.UpdateStateMessageType,
 			expectedData: &cloudprotocol.UpdateState{
+				MessageType:   cloudprotocol.UpdateStateMessageType,
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 				Checksum:      "0993478847", State: "This is new state",
 			},
@@ -257,8 +259,9 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
-				LogID:   "someID",
-				LogType: cloudprotocol.ServiceLog,
+				MessageType: cloudprotocol.RequestLogMessageType,
+				LogID:       "someID",
+				LogType:     cloudprotocol.ServiceLog,
 				Filter: cloudprotocol.LogFilter{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service2", "", -1),
 					From:           nil, Till: nil,
@@ -268,8 +271,9 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
-				LogID:   "someID",
-				LogType: cloudprotocol.CrashLog,
+				MessageType: cloudprotocol.RequestLogMessageType,
+				LogID:       "someID",
+				LogType:     cloudprotocol.CrashLog,
 				Filter: cloudprotocol.LogFilter{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service3", "", -1),
 					From:           nil, Till: nil,
@@ -279,8 +283,9 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
-				LogID:   "someID",
-				LogType: cloudprotocol.SystemLog,
+				MessageType: cloudprotocol.RequestLogMessageType,
+				LogID:       "someID",
+				LogType:     cloudprotocol.SystemLog,
 				Filter: cloudprotocol.LogFilter{
 					From: nil, Till: nil,
 				},
@@ -289,6 +294,7 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.RenewCertsNotificationMessageType,
 			expectedData: &cloudprotocol.RenewCertsNotification{
+				MessageType: cloudprotocol.RenewCertsNotificationMessageType,
 				Certificates: []cloudprotocol.RenewCertData{
 					{Type: "online", Serial: "1234", ValidTill: testTime},
 				},
@@ -300,19 +306,24 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.IssuedUnitCertsMessageType,
 			expectedData: &cloudprotocol.IssuedUnitCerts{
+				MessageType: cloudprotocol.IssuedUnitCertsMessageType,
 				Certificates: []cloudprotocol.IssuedCertData{
 					{Type: "online", NodeID: "mainNode", CertificateChain: "123456"},
 				},
 			},
 		},
 		{
-			messageType:  cloudprotocol.OverrideEnvVarsMessageType,
-			expectedData: &cloudprotocol.OverrideEnvVars{OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{}},
+			messageType: cloudprotocol.OverrideEnvVarsMessageType,
+			expectedData: &cloudprotocol.OverrideEnvVars{
+				MessageType:     cloudprotocol.OverrideEnvVarsMessageType,
+				OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{},
+			},
 		},
 		{
 			messageType: cloudprotocol.DesiredStatusMessageType,
 			expectedData: &cloudprotocol.DesiredStatus{
-				UnitConfig: &cloudprotocol.UnitConfig{},
+				MessageType: cloudprotocol.DesiredStatusMessageType,
+				UnitConfig:  &cloudprotocol.UnitConfig{},
 				Components: []cloudprotocol.ComponentInfo{
 					{Version: "1.0.0", ComponentID: &rootfs},
 				},
@@ -461,20 +472,23 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	monitoringData := cloudprotocol.Monitoring{
-		Nodes: []cloudprotocol.NodeMonitoringData{nodeMonitoring},
+		MessageType: cloudprotocol.MonitoringMessageType,
+		Nodes:       []cloudprotocol.NodeMonitoringData{nodeMonitoring},
 	}
 
 	pushServiceLogData := cloudprotocol.PushLog{
-		LogID:      "log0",
-		PartsCount: 2,
-		Part:       1,
-		Content:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		MessageType: cloudprotocol.PushLogMessageType,
+		LogID:       "log0",
+		PartsCount:  2,
+		Part:        1,
+		Content:     []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		ErrorInfo: &cloudprotocol.ErrorInfo{
 			Message: "Error",
 		},
 	}
 
 	alertsData := cloudprotocol.Alerts{
+		MessageType: cloudprotocol.AlertsMessageType,
 		Items: []cloudprotocol.AlertItem{
 			{
 				Timestamp: time.Now().UTC(),
@@ -495,6 +509,7 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	overrideEnvStatus := cloudprotocol.OverrideEnvVarsStatus{
+		MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType,
 		OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
 			{
 				InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
@@ -513,6 +528,7 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	issueCerts := cloudprotocol.IssueUnitCerts{
+		MessageType: cloudprotocol.IssueUnitCertsMessageType,
 		Requests: []cloudprotocol.IssueCertData{
 			{Type: "online", Csr: "This is online CSR", NodeID: "mainNode"},
 			{Type: "offline", Csr: "This is offline CSR", NodeID: "mainNode"},
@@ -520,6 +536,7 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	installCertsConfirmation := cloudprotocol.InstallUnitCertsConfirmation{
+		MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType,
 		Certificates: []cloudprotocol.InstallCertData{
 			{Type: "online", Serial: "1234", Status: "ok", Description: "This is online cert", NodeID: "mainNode"},
 			{Type: "offline", Serial: "1234", Status: "ok", Description: "This is offline cert", NodeID: "mainNode"},
@@ -546,6 +563,7 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.UnitStatus{
+					MessageType:  cloudprotocol.UnitStatusMessageType,
 					UnitConfig:   unitConfigData,
 					Components:   componentSetupData,
 					Layers:       layersSetupData,
@@ -556,7 +574,7 @@ func TestSendMessages(t *testing.T) {
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.UnitStatus{}
+				return &cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType}
 			},
 		},
 		{
@@ -572,7 +590,7 @@ func TestSendMessages(t *testing.T) {
 				Data: &monitoringData,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.Monitoring{}
+				return &cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}
 			},
 		},
 		{
@@ -593,16 +611,18 @@ func TestSendMessages(t *testing.T) {
 				Data: &cloudprotocol.NewState{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 					Checksum:      "12345679", State: "This is state",
+					MessageType: cloudprotocol.NewStateMessageType,
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.NewState{}
+				return &cloudprotocol.NewState{MessageType: cloudprotocol.NewStateMessageType}
 			},
 		},
 		{
 			call: func() error {
 				return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(
 					cloudprotocol.StateRequest{
+						MessageType:   cloudprotocol.StateRequestMessageType,
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 						Default:       true,
 					}))
@@ -614,12 +634,13 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.StateRequest{
+					MessageType:   cloudprotocol.StateRequestMessageType,
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 					Default:       true,
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.StateRequest{}
+				return &cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType}
 			},
 		},
 		{
@@ -633,15 +654,16 @@ func TestSendMessages(t *testing.T) {
 					Version:     cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.PushLog{
-					LogID:      pushServiceLogData.LogID,
-					PartsCount: pushServiceLogData.PartsCount,
-					Part:       pushServiceLogData.Part,
-					Content:    pushServiceLogData.Content,
-					ErrorInfo:  pushServiceLogData.ErrorInfo,
+					MessageType: cloudprotocol.PushLogMessageType,
+					LogID:       pushServiceLogData.LogID,
+					PartsCount:  pushServiceLogData.PartsCount,
+					Part:        pushServiceLogData.Part,
+					Content:     pushServiceLogData.Content,
+					ErrorInfo:   pushServiceLogData.ErrorInfo,
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.PushLog{}
+				return &cloudprotocol.PushLog{MessageType: cloudprotocol.PushLogMessageType}
 			},
 		},
 		{
@@ -657,7 +679,7 @@ func TestSendMessages(t *testing.T) {
 				Data: &alertsData,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.Alerts{}
+				return &cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}
 			},
 		},
 		{
@@ -673,7 +695,7 @@ func TestSendMessages(t *testing.T) {
 				Data: &issueCerts,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.IssueUnitCerts{}
+				return &cloudprotocol.IssueUnitCerts{MessageType: cloudprotocol.IssueUnitCertsMessageType}
 			},
 		},
 		{
@@ -689,7 +711,7 @@ func TestSendMessages(t *testing.T) {
 				Data: &installCertsConfirmation,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.InstallUnitCertsConfirmation{}
+				return &cloudprotocol.InstallUnitCertsConfirmation{MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType}
 			},
 		},
 		{
@@ -705,7 +727,7 @@ func TestSendMessages(t *testing.T) {
 				Data: &overrideEnvStatus,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.OverrideEnvVarsStatus{}
+				return &cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}
 			},
 		},
 	}
@@ -845,22 +867,22 @@ func TestSendMultipleMessages(t *testing.T) {
 
 	testData := []func() error{
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{}))
+			return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType}))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendMonitoringData(cloudprotocol.Monitoring{}))
+			return aoserrors.Wrap(amqpHandler.SendMonitoringData(cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendInstanceNewState(cloudprotocol.NewState{}))
+			return aoserrors.Wrap(amqpHandler.SendInstanceNewState(cloudprotocol.NewState{MessageType: cloudprotocol.NewStateMessageType}))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{}))
+			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType}))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendLog(cloudprotocol.PushLog{}))
+			return aoserrors.Wrap(amqpHandler.SendLog(cloudprotocol.PushLog{MessageType: cloudprotocol.PushLogMessageType}))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendAlerts(cloudprotocol.Alerts{}))
+			return aoserrors.Wrap(amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}))
 		},
 		func() error {
 			return aoserrors.Wrap(amqpHandler.SendIssueUnitCerts(nil))
@@ -869,7 +891,7 @@ func TestSendMultipleMessages(t *testing.T) {
 			return aoserrors.Wrap(amqpHandler.SendInstallCertsConfirmation(nil))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(cloudprotocol.OverrideEnvVarsStatus{}))
+			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}))
 		},
 	}
 
@@ -904,23 +926,23 @@ func TestSendDisconnectMessages(t *testing.T) {
 	defer amqpHandler.Close()
 
 	// Send unimportant message
-
-	if err := amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{}); !errors.Is(err, amqphandler.ErrNotConnected) {
+	err = amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType})
+	if !errors.Is(err, amqphandler.ErrNotConnected) {
 		t.Errorf("Wrong error type: %v", err)
 	}
 
 	// Send number important messages equals to send channel size - should be accepted without error
 
 	for i := 0; i < sendQueueSize; i++ {
-		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{}); err != nil {
+		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}); err != nil {
 			t.Errorf("Can't send important message: %v", err)
 		}
 	}
 
 	// Next important message should fail due to send channel size
 
-	if err := amqpHandler.SendInstanceStateRequest(
-		cloudprotocol.StateRequest{}); !errors.Is(err, amqphandler.ErrSendChannelFull) {
+	err = amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType})
+	if !errors.Is(err, amqphandler.ErrSendChannelFull) {
 		t.Errorf("Wrong error type: %v", err)
 	}
 
@@ -967,7 +989,7 @@ func (context *testCryptoContext) DecryptMetadata(input []byte) (output []byte, 
 		return output, aoserrors.Wrap(err)
 	}
 
-	return output, nil
+	return input, nil
 }
 
 func newConnectionEventsConsumer() *testConnectionEventsConsumer {
