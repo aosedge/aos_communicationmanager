@@ -28,7 +28,9 @@ import (
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
-	pb "github.com/aosedge/aos_common/api/servicemanager"
+
+	pbcommon "github.com/aosedge/aos_common/api/common"
+	pbsm "github.com/aosedge/aos_common/api/servicemanager"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -57,10 +59,10 @@ const messageTimeout = 5 * time.Second
 
 type testSMClient struct {
 	connection              *grpc.ClientConn
-	pbClient                pb.SMServiceClient
-	stream                  pb.SMService_RegisterSMClient
-	sendMessageChannel      chan *pb.SMOutgoingMessages
-	receivedMessagesChannel chan *pb.SMIncomingMessages
+	pbClient                pbsm.SMServiceClient
+	stream                  pbsm.SMService_RegisterSMClient
+	sendMessageChannel      chan *pbsm.SMOutgoingMessages
+	receivedMessagesChannel chan *pbsm.SMIncomingMessages
 	cancelFunction          context.CancelFunc
 }
 
@@ -73,7 +75,7 @@ type testAlertSender struct {
 }
 
 type testMonitoringSender struct {
-	messageChannel chan cloudprotocol.NodeMonitoringData
+	messageChannel chan aostypes.NodeMonitoring
 }
 
 /***********************************************************************************************************************
@@ -96,42 +98,19 @@ func init() {
 
 func TestSMInstancesStatusNotifications(t *testing.T) {
 	var (
-		nodeID   = "mainSM"
-		nodeType = "mainSMType"
-		config   = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		nodeConfig = &pb.NodeConfiguration{
-			NodeId: nodeID, NodeType: nodeType, RemoteNode: true,
-			RunnerFeatures: []string{"runc"}, NumCpus: 1, TotalRam: 100,
-			Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		expectedNodeConfiguration = launcher.NodeInfo{
-			NodeInfo: cloudprotocol.NodeInfo{
-				NodeID: nodeID, NodeType: nodeType,
-				SystemInfo: cloudprotocol.SystemInfo{
-					NumCPUs: 1, TotalRAM: 100,
-					Partitions: []cloudprotocol.PartitionInfo{
-						{Name: "services", Types: []string{"t1"}, TotalSize: 50},
-					},
-				},
-			},
-			RemoteNode:    true,
-			RunnerFeature: []string{"runc"},
-		}
-		sendRuntimeStatus = &pb.RunInstancesStatus{
-			Instances: []*pb.InstanceStatus{
+		nodeID            = "mainSM"
+		nodeType          = "mainSMType"
+		config            = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+		sendRuntimeStatus = &pbsm.RunInstancesStatus{
+			Instances: []*pbsm.InstanceStatus{
 				{
-					Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-					AosVersion: 1, RunState: "running",
+					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
+					ServiceVersion: "1.0.0", RunState: "running",
 				},
 				{
-					Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-					AosVersion: 1, RunState: "fail",
-					ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
+					ServiceVersion: "1.0.0", RunState: "fail",
+					ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
 		}
@@ -139,29 +118,33 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			NodeID: nodeID, NodeType: nodeType,
 			Instances: []cloudprotocol.InstanceStatus{
 				{
-					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-					AosVersion:    1, RunState: "running", NodeID: nodeID,
+					InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+					ServiceVersion: "1.0.0", RunState: "running", NodeID: nodeID,
 				},
 				{
-					InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-					AosVersion:    1, RunState: "fail", NodeID: nodeID,
+					InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
+					ServiceVersion: "1.0.0", RunState: "fail", NodeID: nodeID,
 					ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
 		}
 
-		sendUpdateStatus = &pb.SMOutgoingMessages{
-			SMOutgoingMessage: &pb.SMOutgoingMessages_UpdateInstancesStatus{
-				UpdateInstancesStatus: &pb.UpdateInstancesStatus{
-					Instances: []*pb.InstanceStatus{
+		sendUpdateStatus = &pbsm.SMOutgoingMessages{
+			SMOutgoingMessage: &pbsm.SMOutgoingMessages_UpdateInstancesStatus{
+				UpdateInstancesStatus: &pbsm.UpdateInstancesStatus{
+					Instances: []*pbsm.InstanceStatus{
 						{
-							Instance:   &pb.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-							AosVersion: 1, RunState: "running",
+							Instance: &pbcommon.InstanceIdent{
+								ServiceId: "serv1", SubjectId: "subj1", Instance: 1,
+							},
+							ServiceVersion: "1.0.0", RunState: "running",
 						},
 						{
-							Instance:   &pb.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-							AosVersion: 1, RunState: "fail",
-							ErrorInfo: &pb.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+							Instance: &pbcommon.InstanceIdent{
+								ServiceId: "serv2", SubjectId: "subj2", Instance: 1,
+							},
+							ServiceVersion: "1.0.0", RunState: "fail",
+							ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 						},
 					},
 				},
@@ -169,12 +152,12 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		}
 		expectedUpdateState = []cloudprotocol.InstanceStatus{
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-				AosVersion:    1, RunState: "running", NodeID: nodeID,
+				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
+				ServiceVersion: "1.0.0", RunState: "running", NodeID: nodeID,
 			},
 			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-				AosVersion:    1, RunState: "fail", NodeID: nodeID,
+				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
+				ServiceVersion: "1.0.0", RunState: "fail", NodeID: nodeID,
 				ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 			},
 		}
@@ -186,7 +169,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, sendRuntimeStatus)
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, sendRuntimeStatus)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -196,15 +179,6 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 	if err := waitMessage(
 		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
 		t.Errorf("Incorrect runtime status notification: %v", err)
-	}
-
-	cfg, err := controller.GetNodeConfiguration(nodeID)
-	if err != nil {
-		t.Errorf("Can't get node configuration: %v", err)
-	}
-
-	if !reflect.DeepEqual(cfg, expectedNodeConfiguration) {
-		t.Error("Incorrect node configuration")
 	}
 
 	smClient.sendMessageChannel <- sendUpdateStatus
@@ -217,26 +191,17 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 func TestUnitConfigMessages(t *testing.T) {
 	var (
-		nodeID        = "mainSM"
-		nodeType      = "mainType"
-		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, NodeType: nodeType, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		testWaitChan    = make(chan struct{})
-		originalVersion = "version_1"
-		configStatus    = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_UnitConfigStatus{
-			UnitConfigStatus: &pb.UnitConfigStatus{Version: originalVersion},
+		nodeID           = "mainSM"
+		nodeType         = "mainType"
+		messageSender    = newTestMessageSender()
+		config           = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+		testWaitChan     = make(chan struct{})
+		originalVersion  = "1.0.0"
+		nodeConfigStatus = &pbsm.SMOutgoingMessages{SMOutgoingMessage: &pbsm.SMOutgoingMessages_NodeConfigStatus{
+			NodeConfigStatus: &pbsm.NodeConfigStatus{Version: originalVersion},
 		}}
-		newVersion = "version_2"
-		unitConfig = fmt.Sprintf(`{"nodeType":"%s"}`, nodeType)
+		newVersion = "2.0.0"
+		nodeConfig = fmt.Sprintf(`{"nodeId":"%s","nodeType":"%s"}`, nodeID, nodeType)
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
@@ -245,46 +210,40 @@ func TestUnitConfigMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
 
-	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, NodeType: nodeType, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{ConnectionStatus: &pbsm.ConnectionStatus{}},
 	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
 	go func() {
-		version, err := controller.GetUnitConfigStatus(nodeID)
+		version, err := controller.GetNodeConfigStatus(nodeID)
 		if err != nil {
-			t.Errorf("Can't get unit config status: %v", err)
+			t.Errorf("Can't get node config status: %v", err)
 		}
 
 		if version != originalVersion {
-			t.Error("Incorrect unit config version")
+			t.Error("Incorrect node config version")
 		}
 
 		testWaitChan <- struct{}{}
 	}()
 
 	if err := smClient.waitMessage(
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}},
+		&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_GetNodeConfigStatus{}},
 		messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	if err := smClient.stream.Send(configStatus); err != nil {
-		t.Errorf("Can't send unit config status: %v", err)
+	if err := smClient.stream.Send(nodeConfigStatus); err != nil {
+		t.Errorf("Can't send node config status: %v", err)
 	}
 
 	<-testWaitChan
@@ -304,15 +263,17 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: unitConfig, Version: newVersion},
-	}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_CheckNodeConfig{
+			CheckNodeConfig: &pbsm.CheckNodeConfig{NodeConfig: nodeConfig, Version: newVersion},
+		},
+	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	configStatus.GetUnitConfigStatus().Version = newVersion
+	nodeConfigStatus.GetNodeConfigStatus().Version = newVersion
 
-	if err := smClient.stream.Send(configStatus); err != nil {
+	if err := smClient.stream.Send(nodeConfigStatus); err != nil {
 		t.Errorf("Can't send unit config status")
 	}
 
@@ -333,16 +294,18 @@ func TestUnitConfigMessages(t *testing.T) {
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: unitConfig, Version: newVersion},
-	}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_SetNodeConfig{
+			SetNodeConfig: &pbsm.SetNodeConfig{NodeConfig: nodeConfig, Version: newVersion},
+		},
+	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	configStatus.GetUnitConfigStatus().Version = newVersion
+	nodeConfigStatus.GetNodeConfigStatus().Version = newVersion
 
-	if err := smClient.stream.Send(configStatus); err != nil {
-		t.Errorf("Can't send unit config status")
+	if err := smClient.stream.Send(nodeConfigStatus); err != nil {
+		t.Errorf("Can't send node config status")
 	}
 
 	<-testWaitChan
@@ -351,18 +314,10 @@ func TestUnitConfigMessages(t *testing.T) {
 func TestSMAlertNotifications(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
+		nodeType      = "mainSMType"
 		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		alertSender = newTestAlertSender()
+		config        = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+		alertSender   = newTestAlertSender()
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, alertSender, nil, nil, nil, true)
@@ -371,7 +326,7 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, nil)
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -380,7 +335,7 @@ func TestSMAlertNotifications(t *testing.T) {
 
 	// Test alert notifications
 	type testAlert struct {
-		sendAlert     *pb.Alert
+		sendAlert     *pbsm.Alert
 		expectedAlert cloudprotocol.AlertItem
 	}
 
@@ -390,9 +345,11 @@ func TestSMAlertNotifications(t *testing.T) {
 				Tag:     cloudprotocol.AlertTagSystemError,
 				Payload: cloudprotocol.SystemAlert{Message: "SystemAlertMessage", NodeID: nodeID},
 			},
-			sendAlert: &pb.Alert{
-				Tag:     cloudprotocol.AlertTagSystemError,
-				Payload: &pb.Alert_SystemAlert{SystemAlert: &pb.SystemAlert{Message: "SystemAlertMessage"}},
+			sendAlert: &pbsm.Alert{
+				Tag: cloudprotocol.AlertTagSystemError,
+				Payload: &pbsm.Alert_SystemAlert{
+					SystemAlert: &pbsm.SystemAlert{Message: "SystemAlertMessage"},
+				},
 			},
 		},
 		{
@@ -400,29 +357,33 @@ func TestSMAlertNotifications(t *testing.T) {
 				Tag:     cloudprotocol.AlertTagAosCore,
 				Payload: cloudprotocol.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage", NodeID: nodeID},
 			},
-			sendAlert: &pb.Alert{
-				Tag:     cloudprotocol.AlertTagAosCore,
-				Payload: &pb.Alert_CoreAlert{CoreAlert: &pb.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage"}},
+			sendAlert: &pbsm.Alert{
+				Tag: cloudprotocol.AlertTagAosCore,
+				Payload: &pbsm.Alert_CoreAlert{
+					CoreAlert: &pbsm.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage"},
+				},
 			},
 		},
 		{
 			expectedAlert: cloudprotocol.AlertItem{
 				Tag: cloudprotocol.AlertTagResourceValidate,
 				Payload: cloudprotocol.ResourceValidateAlert{
-					ResourcesErrors: []cloudprotocol.ResourceValidateError{
-						{Name: "someName1", Errors: []string{"error1", "error2"}},
-						{Name: "someName2", Errors: []string{"error3", "error4"}},
-					},
 					NodeID: nodeID,
+					Name:   "someName",
+					Errors: []cloudprotocol.ErrorInfo{
+						{AosCode: 200, Message: "error1"},
+						{AosCode: 300, Message: "error2"},
+					},
 				},
 			},
-			sendAlert: &pb.Alert{
+			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagResourceValidate,
-				Payload: &pb.Alert_ResourceValidateAlert{
-					ResourceValidateAlert: &pb.ResourceValidateAlert{
-						Errors: []*pb.ResourceValidateErrors{
-							{Name: "someName1", ErrorMsg: []string{"error1", "error2"}},
-							{Name: "someName2", ErrorMsg: []string{"error3", "error4"}},
+				Payload: &pbsm.Alert_ResourceValidateAlert{
+					ResourceValidateAlert: &pbsm.ResourceValidateAlert{
+						Name: "someName",
+						Errors: []*pbcommon.ErrorInfo{
+							{AosCode: 200, Message: "error1"},
+							{AosCode: 300, Message: "error2"},
 						},
 					},
 				},
@@ -437,11 +398,11 @@ func TestSMAlertNotifications(t *testing.T) {
 					NodeID: nodeID,
 				},
 			},
-			sendAlert: &pb.Alert{
+			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagDeviceAllocate,
-				Payload: &pb.Alert_DeviceAllocateAlert{
-					DeviceAllocateAlert: &pb.DeviceAllocateAlert{
-						Instance: &pb.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
+				Payload: &pbsm.Alert_DeviceAllocateAlert{
+					DeviceAllocateAlert: &pbsm.DeviceAllocateAlert{
+						Instance: &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
 						Device:   "someDevice", Message: "someMessage",
 					},
 				},
@@ -452,10 +413,10 @@ func TestSMAlertNotifications(t *testing.T) {
 				Tag:     cloudprotocol.AlertTagSystemQuota,
 				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "cpu", Value: 42, NodeID: nodeID},
 			},
-			sendAlert: &pb.Alert{
+			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagSystemQuota,
-				Payload: &pb.Alert_SystemQuotaAlert{
-					SystemQuotaAlert: &pb.SystemQuotaAlert{Parameter: "cpu", Value: 42},
+				Payload: &pbsm.Alert_SystemQuotaAlert{
+					SystemQuotaAlert: &pbsm.SystemQuotaAlert{Parameter: "cpu", Value: 42},
 				},
 			},
 		},
@@ -464,10 +425,10 @@ func TestSMAlertNotifications(t *testing.T) {
 				Tag:     cloudprotocol.AlertTagSystemQuota,
 				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "ram", Value: 99, NodeID: nodeID},
 			},
-			sendAlert: &pb.Alert{
+			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagSystemQuota,
-				Payload: &pb.Alert_SystemQuotaAlert{
-					SystemQuotaAlert: &pb.SystemQuotaAlert{Parameter: "ram", Value: 99},
+				Payload: &pbsm.Alert_SystemQuotaAlert{
+					SystemQuotaAlert: &pbsm.SystemQuotaAlert{Parameter: "ram", Value: 99},
 				},
 			},
 		},
@@ -479,11 +440,11 @@ func TestSMAlertNotifications(t *testing.T) {
 					Parameter:     "param1", Value: 42,
 				},
 			},
-			sendAlert: &pb.Alert{
+			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagInstanceQuota,
-				Payload: &pb.Alert_InstanceQuotaAlert{
-					InstanceQuotaAlert: &pb.InstanceQuotaAlert{
-						Instance:  &pb.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
+				Payload: &pbsm.Alert_InstanceQuotaAlert{
+					InstanceQuotaAlert: &pbsm.InstanceQuotaAlert{
+						Instance:  &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
 						Parameter: "param1", Value: 42,
 					},
 				},
@@ -494,15 +455,15 @@ func TestSMAlertNotifications(t *testing.T) {
 				Tag: cloudprotocol.AlertTagServiceInstance,
 				Payload: cloudprotocol.ServiceInstanceAlert{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
-					Message:       "ServiceInstanceAlert", AosVersion: 42,
+					Message:       "ServiceInstanceAlert", ServiceVersion: "42.0.0",
 				},
 			},
-			sendAlert: &pb.Alert{
+			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagServiceInstance,
-				Payload: &pb.Alert_InstanceAlert{
-					InstanceAlert: &pb.InstanceAlert{
-						Instance: &pb.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
-						Message:  "ServiceInstanceAlert", AosVersion: 42,
+				Payload: &pbsm.Alert_InstanceAlert{
+					InstanceAlert: &pbsm.InstanceAlert{
+						Instance: &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
+						Message:  "ServiceInstanceAlert", ServiceVersion: "42.0.0",
 					},
 				},
 			},
@@ -514,8 +475,8 @@ func TestSMAlertNotifications(t *testing.T) {
 		testAlert.expectedAlert.Timestamp = currentTime
 		testAlert.sendAlert.Timestamp = timestamppb.New(currentTime)
 
-		smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
-			SMOutgoingMessage: &pb.SMOutgoingMessages_Alert{Alert: testAlert.sendAlert},
+		smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
+			SMOutgoingMessage: &pbsm.SMOutgoingMessages_Alert{Alert: testAlert.sendAlert},
 		}
 
 		if err := waitMessage(alertSender.messageChannel, testAlert.expectedAlert, messageTimeout); err != nil {
@@ -537,18 +498,10 @@ func TestSMAlertNotifications(t *testing.T) {
 
 func TestSMMonitoringNotifications(t *testing.T) {
 	var (
-		nodeID        = "mainSM"
-		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
+		nodeID           = "mainSM"
+		nodeType         = "mainSMType"
+		messageSender    = newTestMessageSender()
+		config           = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
 		monitoringSender = newTestMonitoringSender()
 	)
 
@@ -558,7 +511,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, nil)
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -566,69 +519,79 @@ func TestSMMonitoringNotifications(t *testing.T) {
 	defer smClient.close()
 
 	type testMonitoringElement struct {
-		expectedMonitoring cloudprotocol.NodeMonitoringData
-		sendMonitoring     *pb.NodeMonitoring
+		expectedMonitoring aostypes.NodeMonitoring
+		sendMonitoring     *pbsm.InstantMonitoring
 	}
+
+	now := time.Now().UTC()
 
 	testMonitoringData := []testMonitoringElement{
 		{
-			expectedMonitoring: cloudprotocol.NodeMonitoringData{
+			expectedMonitoring: aostypes.NodeMonitoring{
 				NodeID: nodeID,
-				MonitoringData: cloudprotocol.MonitoringData{
+				NodeData: aostypes.MonitoringData{
 					RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
-					Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp: now,
 				},
-				ServiceInstances: []cloudprotocol.InstanceMonitoringData{},
+				InstancesData: []aostypes.InstanceMonitoring{},
 			},
-			sendMonitoring: &pb.NodeMonitoring{
-				MonitoringData: &pb.MonitoringData{
+			sendMonitoring: &pbsm.InstantMonitoring{
+				NodeMonitoring: &pbsm.MonitoringData{
 					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
-					Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp: timestamppb.New(now),
 				},
 			},
 		},
 		{
-			expectedMonitoring: cloudprotocol.NodeMonitoringData{
+			expectedMonitoring: aostypes.NodeMonitoring{
 				NodeID: nodeID,
-				MonitoringData: cloudprotocol.MonitoringData{
+				NodeData: aostypes.MonitoringData{
 					RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
-					Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp: now,
 				},
-				ServiceInstances: []cloudprotocol.InstanceMonitoringData{
+				InstancesData: []aostypes.InstanceMonitoring{
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
-						MonitoringData: cloudprotocol.MonitoringData{
+						MonitoringData: aostypes.MonitoringData{
 							RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 0,
-							Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Timestamp: now,
 						},
 					},
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
-						MonitoringData: cloudprotocol.MonitoringData{
+						MonitoringData: aostypes.MonitoringData{
 							RAM: 20, CPU: 30, InTraffic: 50, OutTraffic: 10,
-							Disk: []cloudprotocol.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Disk:      []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Timestamp: now,
 						},
 					},
 				},
 			},
-			sendMonitoring: &pb.NodeMonitoring{
-				MonitoringData: &pb.MonitoringData{
+			sendMonitoring: &pbsm.InstantMonitoring{
+				NodeMonitoring: &pbsm.MonitoringData{
 					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
-					Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp: timestamppb.New(now),
 				},
-				InstanceMonitoring: []*pb.InstanceMonitoring{
+				InstancesMonitoring: []*pbsm.InstanceMonitoring{
 					{
-						Instance: &pb.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
-						MonitoringData: &pb.MonitoringData{
+						Instance: &pbcommon.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
+						MonitoringData: &pbsm.MonitoringData{
 							Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 0,
-							Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Timestamp: timestamppb.New(now),
 						},
 					},
 					{
-						Instance: &pb.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
-						MonitoringData: &pb.MonitoringData{
+						Instance: &pbcommon.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
+						MonitoringData: &pbsm.MonitoringData{
 							Ram: 20, Cpu: 30, InTraffic: 50, OutTraffic: 10,
-							Disk: []*pb.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Disk:      []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Timestamp: timestamppb.New(now),
 						},
 					},
 				},
@@ -637,13 +600,11 @@ func TestSMMonitoringNotifications(t *testing.T) {
 	}
 
 	for _, testMonitoring := range testMonitoringData {
-		currentTime := time.Now().UTC()
-		testMonitoring.expectedMonitoring.Timestamp = currentTime
-		testMonitoring.sendMonitoring.Timestamp = timestamppb.New(currentTime)
-
-		smClient.sendMessageChannel <- &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_NodeMonitoring{
-			NodeMonitoring: testMonitoring.sendMonitoring,
-		}}
+		smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
+			SMOutgoingMessage: &pbsm.SMOutgoingMessages_InstantMonitoring{
+				InstantMonitoring: testMonitoring.sendMonitoring,
+			},
+		}
 
 		if err := waitMessage(
 			monitoringSender.messageChannel, testMonitoring.expectedMonitoring, messageTimeout); err != nil {
@@ -655,18 +616,10 @@ func TestSMMonitoringNotifications(t *testing.T) {
 func TestLogMessages(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
+		nodeType      = "mainSMType"
 		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		currentTime = time.Now().UTC()
+		config        = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+		currentTime   = time.Now().UTC()
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
@@ -675,28 +628,24 @@ func TestLogMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
 
-	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pbsm.ConnectionStatus{},
+		},
 	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
 	type testLogRequest struct {
 		sendLogRequest     cloudprotocol.RequestLog
-		expectedLogRequest *pb.SMIncomingMessages
+		expectedLogRequest *pbsm.SMIncomingMessages
 	}
 
 	testRequests := []testLogRequest{
@@ -708,8 +657,8 @@ func TestLogMessages(t *testing.T) {
 					From: &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
-				SystemLogRequest: &pb.SystemLogRequest{LogId: "sysLogID1", From: timestamppb.New(currentTime)},
+			expectedLogRequest: &pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_SystemLogRequest{
+				SystemLogRequest: &pbsm.SystemLogRequest{LogId: "sysLogID1", From: timestamppb.New(currentTime)},
 			}},
 		},
 		{
@@ -720,8 +669,8 @@ func TestLogMessages(t *testing.T) {
 					Till: &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SystemLogRequest{
-				SystemLogRequest: &pb.SystemLogRequest{LogId: "sysLogID2", Till: timestamppb.New(currentTime)},
+			expectedLogRequest: &pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_SystemLogRequest{
+				SystemLogRequest: &pbsm.SystemLogRequest{LogId: "sysLogID2", Till: timestamppb.New(currentTime)},
 			}},
 		},
 		{
@@ -733,12 +682,14 @@ func TestLogMessages(t *testing.T) {
 					From:           &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
-				InstanceLogRequest: &pb.InstanceLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
-					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
+			expectedLogRequest: &pbsm.SMIncomingMessages{
+				SMIncomingMessage: &pbsm.SMIncomingMessages_InstanceLogRequest{
+					InstanceLogRequest: &pbsm.InstanceLogRequest{
+						InstanceFilter: &pbsm.InstanceFilter{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
+						LogId:          "serviceLogID1", From: timestamppb.New(currentTime),
+					},
 				},
-			}},
+			},
 		},
 		{
 			sendLogRequest: cloudprotocol.RequestLog{
@@ -749,12 +700,14 @@ func TestLogMessages(t *testing.T) {
 					Till:           &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
-				InstanceLogRequest: &pb.InstanceLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
-					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+			expectedLogRequest: &pbsm.SMIncomingMessages{
+				SMIncomingMessage: &pbsm.SMIncomingMessages_InstanceLogRequest{
+					InstanceLogRequest: &pbsm.InstanceLogRequest{
+						InstanceFilter: &pbsm.InstanceFilter{ServiceId: "ser2", SubjectId: "", Instance: -1},
+						LogId:          "serviceLogID1", Till: timestamppb.New(currentTime),
+					},
 				},
-			}},
+			},
 		},
 		{
 			sendLogRequest: cloudprotocol.RequestLog{
@@ -765,12 +718,14 @@ func TestLogMessages(t *testing.T) {
 					Till:           &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceLogRequest{
-				InstanceLogRequest: &pb.InstanceLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "", SubjectId: "", Instance: -1},
-					LogId:    "serviceLogID2", Till: timestamppb.New(currentTime),
+			expectedLogRequest: &pbsm.SMIncomingMessages{
+				SMIncomingMessage: &pbsm.SMIncomingMessages_InstanceLogRequest{
+					InstanceLogRequest: &pbsm.InstanceLogRequest{
+						InstanceFilter: &pbsm.InstanceFilter{ServiceId: "", SubjectId: "", Instance: -1},
+						LogId:          "serviceLogID2", Till: timestamppb.New(currentTime),
+					},
 				},
-			}},
+			},
 		},
 		{
 			sendLogRequest: cloudprotocol.RequestLog{
@@ -781,12 +736,14 @@ func TestLogMessages(t *testing.T) {
 					From:           &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
-				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
-					LogId:    "serviceLogID1", From: timestamppb.New(currentTime),
+			expectedLogRequest: &pbsm.SMIncomingMessages{
+				SMIncomingMessage: &pbsm.SMIncomingMessages_InstanceCrashLogRequest{
+					InstanceCrashLogRequest: &pbsm.InstanceCrashLogRequest{
+						InstanceFilter: &pbsm.InstanceFilter{ServiceId: "ser1", SubjectId: "s1", Instance: -1},
+						LogId:          "serviceLogID1", From: timestamppb.New(currentTime),
+					},
 				},
-			}},
+			},
 		},
 		{
 			sendLogRequest: cloudprotocol.RequestLog{
@@ -797,12 +754,14 @@ func TestLogMessages(t *testing.T) {
 					Till:           &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
-				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "ser2", SubjectId: "", Instance: -1},
-					LogId:    "serviceLogID1", Till: timestamppb.New(currentTime),
+			expectedLogRequest: &pbsm.SMIncomingMessages{
+				SMIncomingMessage: &pbsm.SMIncomingMessages_InstanceCrashLogRequest{
+					InstanceCrashLogRequest: &pbsm.InstanceCrashLogRequest{
+						InstanceFilter: &pbsm.InstanceFilter{ServiceId: "ser2", SubjectId: "", Instance: -1},
+						LogId:          "serviceLogID1", Till: timestamppb.New(currentTime),
+					},
 				},
-			}},
+			},
 		},
 		{
 			sendLogRequest: cloudprotocol.RequestLog{
@@ -813,12 +772,14 @@ func TestLogMessages(t *testing.T) {
 					Till:           &currentTime,
 				},
 			},
-			expectedLogRequest: &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_InstanceCrashLogRequest{
-				InstanceCrashLogRequest: &pb.InstanceCrashLogRequest{
-					Instance: &pb.InstanceIdent{ServiceId: "", SubjectId: "", Instance: -1},
-					LogId:    "serviceLogID2", Till: timestamppb.New(currentTime),
+			expectedLogRequest: &pbsm.SMIncomingMessages{
+				SMIncomingMessage: &pbsm.SMIncomingMessages_InstanceCrashLogRequest{
+					InstanceCrashLogRequest: &pbsm.InstanceCrashLogRequest{
+						InstanceFilter: &pbsm.InstanceFilter{ServiceId: "", SubjectId: "", Instance: -1},
+						LogId:          "serviceLogID2", Till: timestamppb.New(currentTime),
+					},
 				},
-			}},
+			},
 		},
 	}
 
@@ -839,9 +800,12 @@ func TestLogMessages(t *testing.T) {
 		},
 	}
 
-	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
-		SMOutgoingMessage: &pb.SMOutgoingMessages_Log{
-			Log: &pb.LogData{LogId: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"), Error: "this is error"},
+	smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
+		SMOutgoingMessage: &pbsm.SMOutgoingMessages_Log{
+			Log: &pbsm.LogData{
+				LogId: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"),
+				Error: &pbcommon.ErrorInfo{Message: "this is error"},
+			},
 		},
 	}
 
@@ -853,49 +817,48 @@ func TestLogMessages(t *testing.T) {
 func TestOverrideEnvVars(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
+		nodeType      = "mainSMType"
 		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		currentTime = time.Now().UTC()
-		envVars     = cloudprotocol.OverrideEnvVars{
-			OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{
+		config        = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+		currentTime   = time.Now().UTC()
+		envVars       = cloudprotocol.OverrideEnvVars{
+			Items: []cloudprotocol.EnvVarsInstanceInfo{
 				{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
-					EnvVars: []cloudprotocol.EnvVarInfo{
-						{ID: "id0", Variable: "var0", TTL: &currentTime},
+					Variables: []cloudprotocol.EnvVarInfo{
+						{Name: "var0", Value: "val0", TTL: &currentTime},
 					},
 				},
 			},
 		}
-		expectedPbEnvVarRequest = &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_OverrideEnvVars{
-			OverrideEnvVars: &pb.OverrideEnvVars{
-				EnvVars: []*pb.OverrideInstanceEnvVar{{Instance: &pb.InstanceIdent{
-					ServiceId: "service0",
-					SubjectId: "subject0", Instance: -1,
-				}, Vars: []*pb.EnvVarInfo{{VarId: "id0", Variable: "var0", Ttl: timestamppb.New(currentTime)}}}},
+		expectedPbEnvVarRequest = &pbsm.SMIncomingMessages{
+			SMIncomingMessage: &pbsm.SMIncomingMessages_OverrideEnvVars{
+				OverrideEnvVars: &pbsm.OverrideEnvVars{
+					EnvVars: []*pbsm.OverrideInstanceEnvVar{{InstanceFilter: &pbsm.InstanceFilter{
+						ServiceId: "service0",
+						SubjectId: "subject0", Instance: -1,
+					}, Variables: []*pbsm.EnvVarInfo{{Name: "var0", Value: "val0", Ttl: timestamppb.New(currentTime)}}}},
+				},
 			},
-		}}
-		pbEnvVarStatus = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_OverrideEnvVarStatus{
-			OverrideEnvVarStatus: &pb.OverrideEnvVarStatus{EnvVarsStatus: []*pb.EnvVarInstanceStatus{
-				{Instance: &pb.InstanceIdent{
+		}
+		pbEnvVarStatus = &pbsm.SMOutgoingMessages{SMOutgoingMessage: &pbsm.SMOutgoingMessages_OverrideEnvVarStatus{
+			OverrideEnvVarStatus: &pbsm.OverrideEnvVarStatus{EnvVarsStatus: []*pbsm.EnvVarInstanceStatus{
+				{InstanceFilter: &pbsm.InstanceFilter{
 					ServiceId: "service0",
 					SubjectId: "subject0", Instance: -1,
-				}, VarsStatus: []*pb.EnvVarStatus{{VarId: "id0", Error: "someError"}}},
+				}, Statuses: []*pbsm.EnvVarStatus{{Name: "var0", Error: &pbcommon.ErrorInfo{
+					Message: "someError",
+				}}}},
 			}},
 		}}
 		expectedEnvVarStatus = cloudprotocol.OverrideEnvVarsStatus{
-			OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
+			Statuses: []cloudprotocol.EnvVarsInstanceStatus{
 				{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
-					Statuses:       []cloudprotocol.EnvVarStatus{{ID: "id0", Error: "someError"}},
+					Statuses: []cloudprotocol.EnvVarStatus{{
+						Name:      "var0",
+						ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
+					}},
 				},
 			},
 		}
@@ -907,22 +870,18 @@ func TestOverrideEnvVars(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
 
-	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pbsm.ConnectionStatus{},
+		},
 	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -943,48 +902,44 @@ func TestOverrideEnvVars(t *testing.T) {
 
 func TestRunInstances(t *testing.T) {
 	var (
-		nodeID        = "mainSM"
-		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
-		expectedRunInstances = &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_RunInstances{
-			RunInstances: &pb.RunInstances{
-				Services: []*pb.ServiceInfo{{
-					Version: "1.1",
+		nodeID               = "mainSM"
+		nodeType             = "mainSMType"
+		messageSender        = newTestMessageSender()
+		config               = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+		expectedRunInstances = &pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_RunInstances{
+			RunInstances: &pbsm.RunInstances{
+				Services: []*pbsm.ServiceInfo{{
+					Version: "1.1.0",
 					Url:     "url1", ServiceId: "s1", ProviderId: "p1", Gid: 600,
 					Sha256: []byte{0, 0, 0, byte(100)}, Size: uint64(500),
 				}},
-				Layers: []*pb.LayerInfo{
+				Layers: []*pbsm.LayerInfo{
 					{
-						Version: "3",
+						Version: "3.0.0",
 						Url:     "url2", LayerId: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
 						Size: uint64(500),
 					},
 				},
-				Instances: []*pb.InstanceInfo{
+				Instances: []*pbsm.InstanceInfo{
 					{
-						Instance:          &pb.InstanceIdent{ServiceId: "s1", SubjectId: "subj1", Instance: 1},
-						NetworkParameters: &pb.NetworkParameters{Ip: "172.17.0.3", Subnet: "172.17.0.0/16", VlanId: 1},
-						Uid:               500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
+						Instance: &pbcommon.InstanceIdent{
+							ServiceId: "s1", SubjectId: "subj1", Instance: 1,
+						},
+						NetworkParameters: &pbsm.NetworkParameters{
+							Ip: "172.17.0.3", Subnet: "172.17.0.0/16", VlanId: 1,
+						},
+						Uid: 500, Priority: 1, StoragePath: "storage1", StatePath: "state1",
 					},
 				},
 			},
 		}}
 		sendServices = []aostypes.ServiceInfo{{
-			Version:   "1.1",
+			Version:   "1.1.0",
 			ServiceID: "s1", ProviderID: "p1", URL: "url1", GID: 600,
 			Sha256: []byte{0, 0, 0, byte(100)}, Size: uint64(500),
 		}}
 		sendLayers = []aostypes.LayerInfo{{
-			Version: "3.0",
+			Version: "3.0.0",
 			URL:     "url2", LayerID: "l1", Digest: "digest1", Sha256: []byte{0, 0, 0, byte(100)},
 			Size: uint64(500),
 		}}
@@ -1001,7 +956,7 @@ func TestRunInstances(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, &pbsm.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1009,14 +964,16 @@ func TestRunInstances(t *testing.T) {
 	defer smClient.close()
 
 	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+		NodeID: nodeID, NodeType: nodeType, Instances: make([]cloudprotocol.InstanceStatus, 0),
 	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pbsm.ConnectionStatus{},
+		},
+	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -1032,17 +989,9 @@ func TestRunInstances(t *testing.T) {
 func TestUpdateNetwork(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
+		nodeType      = "mainSMType"
 		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
+		config        = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
 	)
 
 	networkParameters := []aostypes.NetworkParameters{
@@ -1060,9 +1009,9 @@ func TestUpdateNetwork(t *testing.T) {
 		},
 	}
 
-	expectedUpdatesNetwork := &pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_UpdateNetworks{
-		UpdateNetworks: &pb.UpdateNetworks{
-			Networks: []*pb.NetworkParameters{
+	expectedUpdatesNetwork := &pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_UpdateNetworks{
+		UpdateNetworks: &pbsm.UpdateNetworks{
+			Networks: []*pbsm.NetworkParameters{
 				{
 					Subnet:    "172.17.0.0/16",
 					Ip:        "172.17.0.1",
@@ -1085,22 +1034,18 @@ func TestUpdateNetwork(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
 
-	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pbsm.ConnectionStatus{},
+		},
 	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
@@ -1116,18 +1061,9 @@ func TestUpdateNetwork(t *testing.T) {
 func TestSyncClock(t *testing.T) {
 	var (
 		nodeID        = "mainSM"
+		nodeType      = "mainSMType"
 		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
+		config        = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
@@ -1136,21 +1072,23 @@ func TestSyncClock(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pbsm.ConnectionStatus{},
+		},
+	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	smClient.sendMessageChannel <- &pb.SMOutgoingMessages{
-		SMOutgoingMessage: &pb.SMOutgoingMessages_ClockSyncRequest{},
+	smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
+		SMOutgoingMessage: &pbsm.SMOutgoingMessages_ClockSyncRequest{},
 	}
 
 	select {
@@ -1158,7 +1096,7 @@ func TestSyncClock(t *testing.T) {
 		t.Fatalf("Wait message error: %v", err)
 
 	case message := <-smClient.receivedMessagesChannel:
-		clockSync, ok := message.GetSMIncomingMessage().(*pb.SMIncomingMessages_ClockSync)
+		clockSync, ok := message.GetSMIncomingMessage().(*pbsm.SMIncomingMessages_ClockSync)
 		if !ok {
 			t.Fatalf("Incorrect message type: %v", message)
 		}
@@ -1169,66 +1107,62 @@ func TestSyncClock(t *testing.T) {
 	}
 }
 
-func TestGetNodeMonitoringData(t *testing.T) {
+func TestGetAverageMonitoring(t *testing.T) {
 	var (
-		nodeID        = "mainSM"
-		messageSender = newTestMessageSender()
-		nodeConfig    = &pb.NodeConfiguration{
-			NodeId: nodeID, RemoteNode: true, RunnerFeatures: []string{"runc"}, NumCpus: 1,
-			TotalRam: 100, Partitions: []*pb.Partition{{Name: "services", Types: []string{"t1"}, TotalSize: 50}},
-		}
-		config = config.Config{
-			SMController: config.SMController{
-				CMServerURL: cmServerURL,
-				NodeIDs:     []string{nodeID},
-			},
-		}
+		nodeID             = "mainSM"
+		nodeType           = "mainSMType"
+		messageSender      = newTestMessageSender()
+		config             = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
 		testWaitChan       = make(chan struct{})
 		currentTime        = time.Now().UTC()
-		expectedMonitoring = cloudprotocol.NodeMonitoringData{
-			NodeID:    nodeID,
-			Timestamp: currentTime,
-			MonitoringData: cloudprotocol.MonitoringData{
+		expectedMonitoring = aostypes.NodeMonitoring{
+			NodeID: nodeID,
+			NodeData: aostypes.MonitoringData{
 				RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
-				Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				Timestamp: currentTime,
 			},
-			ServiceInstances: []cloudprotocol.InstanceMonitoringData{
+			InstancesData: []aostypes.InstanceMonitoring{
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
-					MonitoringData: cloudprotocol.MonitoringData{
+					MonitoringData: aostypes.MonitoringData{
 						RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 0,
-						Disk: []cloudprotocol.PartitionUsage{{Name: "p1", UsedSize: 100}},
+						Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+						Timestamp: currentTime,
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
-					MonitoringData: cloudprotocol.MonitoringData{
+					MonitoringData: aostypes.MonitoringData{
 						RAM: 20, CPU: 30, InTraffic: 50, OutTraffic: 10,
-						Disk: []cloudprotocol.PartitionUsage{{Name: "p2", UsedSize: 50}},
+						Disk:      []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
+						Timestamp: currentTime,
 					},
 				},
 			},
 		}
-		sendMonitoring = &pb.SMOutgoingMessages{SMOutgoingMessage: &pb.SMOutgoingMessages_NodeMonitoring{
-			NodeMonitoring: &pb.NodeMonitoring{
-				Timestamp: timestamppb.New(currentTime),
-				MonitoringData: &pb.MonitoringData{
+		sendMonitoring = &pbsm.SMOutgoingMessages{SMOutgoingMessage: &pbsm.SMOutgoingMessages_AverageMonitoring{
+			AverageMonitoring: &pbsm.AverageMonitoring{
+				NodeMonitoring: &pbsm.MonitoringData{
 					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
-					Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp: timestamppb.New(currentTime),
 				},
-				InstanceMonitoring: []*pb.InstanceMonitoring{
+				InstancesMonitoring: []*pbsm.InstanceMonitoring{
 					{
-						Instance: &pb.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
-						MonitoringData: &pb.MonitoringData{
+						Instance: &pbcommon.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
+						MonitoringData: &pbsm.MonitoringData{
 							Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 0,
-							Disk: []*pb.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Timestamp: timestamppb.New(currentTime),
 						},
 					},
 					{
-						Instance: &pb.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
-						MonitoringData: &pb.MonitoringData{
+						Instance: &pbcommon.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
+						MonitoringData: &pbsm.MonitoringData{
 							Ram: 20, Cpu: 30, InTraffic: 50, OutTraffic: 10,
-							Disk: []*pb.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Disk:      []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Timestamp: timestamppb.New(currentTime),
 						},
 					},
 				},
@@ -1242,42 +1176,36 @@ func TestGetNodeMonitoringData(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, &pb.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
 
-	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, Instances: make([]cloudprotocol.InstanceStatus, 0),
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+			ConnectionStatus: &pbsm.ConnectionStatus{},
+		},
 	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{},
-	}}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
 	go func() {
-		data, err := controller.GetNodeMonitoringData(nodeID)
+		data, err := controller.GetAverageMonitoring(nodeID)
 		if err != nil {
-			t.Errorf("Can't get node monitoring data: %v", err)
+			t.Errorf("Can't get average node monitoring: %v", err)
 		}
 
 		if !reflect.DeepEqual(data, expectedMonitoring) {
-			log.Debug("Exp: ", expectedMonitoring)
-			log.Debug("Rec: ", data)
 			t.Errorf("Incorrect monitoring data")
 		}
 
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{
-		SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{},
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_GetAverageMonitoring{},
 	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -1290,15 +1218,12 @@ func TestGetNodeMonitoringData(t *testing.T) {
 }
 
 func TestConnectionStatus(t *testing.T) {
-	nodeID := "mainSM"
-	messageSender := newTestMessageSender()
-	nodeConfig := &pb.NodeConfiguration{NodeId: nodeID}
-	config := config.Config{
-		SMController: config.SMController{
-			CMServerURL: cmServerURL,
-			NodeIDs:     []string{nodeID},
-		},
-	}
+	var (
+		nodeID        = "mainSM"
+		nodeType      = "mainSMType"
+		messageSender = newTestMessageSender()
+		config        = config.Config{SMController: config.SMController{CMServerURL: cmServerURL}}
+	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
 	if err != nil {
@@ -1308,7 +1233,7 @@ func TestConnectionStatus(t *testing.T) {
 
 	controller.CloudConnected()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeConfig, nil)
+	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1317,8 +1242,8 @@ func TestConnectionStatus(t *testing.T) {
 
 	// check receive correct connection status on registration
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{CloudStatus: pb.ConnectionEnum_CONNECTED},
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pbsm.ConnectionStatus{CloudStatus: pbsm.ConnectionEnum_CONNECTED},
 	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -1327,8 +1252,8 @@ func TestConnectionStatus(t *testing.T) {
 
 	controller.CloudDisconnected()
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{CloudStatus: pb.ConnectionEnum_DISCONNECTED},
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pbsm.ConnectionStatus{CloudStatus: pbsm.ConnectionEnum_DISCONNECTED},
 	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -1337,8 +1262,8 @@ func TestConnectionStatus(t *testing.T) {
 
 	controller.CloudConnected()
 
-	if err := smClient.waitMessage(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pb.ConnectionStatus{CloudStatus: pb.ConnectionEnum_CONNECTED},
+	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
+		ConnectionStatus: &pbsm.ConnectionStatus{CloudStatus: pbsm.ConnectionEnum_CONNECTED},
 	}}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -1357,11 +1282,11 @@ func (sender *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
 }
 
 func newTestMonitoringSender() *testMonitoringSender {
-	return &testMonitoringSender{messageChannel: make(chan cloudprotocol.NodeMonitoringData, 1)}
+	return &testMonitoringSender{messageChannel: make(chan aostypes.NodeMonitoring, 1)}
 }
 
-func (sender *testMonitoringSender) SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData) {
-	sender.messageChannel <- monitoringData
+func (sender *testMonitoringSender) SendNodeMonitoring(monitoring aostypes.NodeMonitoring) {
+	sender.messageChannel <- monitoring
 }
 
 func newTestMessageSender() *testMessageSender {
@@ -1407,11 +1332,11 @@ func waitMessage[T any](messageChannel <-chan T, expectedMsg interface{}, timeou
 }
 
 func newTestSMClient(
-	url string, config *pb.NodeConfiguration, runStatus *pb.RunInstancesStatus,
+	url string, nodeID, nodeType string, runStatus *pbsm.RunInstancesStatus,
 ) (client *testSMClient, err error) {
 	client = &testSMClient{
-		sendMessageChannel:      make(chan *pb.SMOutgoingMessages, 10),
-		receivedMessagesChannel: make(chan *pb.SMIncomingMessages, 10),
+		sendMessageChannel:      make(chan *pbsm.SMOutgoingMessages, 10),
+		receivedMessagesChannel: make(chan *pbsm.SMIncomingMessages, 10),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1422,23 +1347,25 @@ func newTestSMClient(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	client.pbClient = pb.NewSMServiceClient(client.connection)
+	client.pbClient = pbsm.NewSMServiceClient(client.connection)
 
-	if client.stream, err = pb.NewSMServiceClient(client.connection).RegisterSM(context.Background()); err != nil {
+	if client.stream, err = pbsm.NewSMServiceClient(client.connection).RegisterSM(context.Background()); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	if err := client.stream.Send(
-		&pb.SMOutgoingMessages{
-			SMOutgoingMessage: &pb.SMOutgoingMessages_NodeConfiguration{NodeConfiguration: config},
+		&pbsm.SMOutgoingMessages{
+			SMOutgoingMessage: &pbsm.SMOutgoingMessages_RegisterSm{RegisterSm: &pbsm.RegisterSM{
+				NodeId: nodeID, NodeType: nodeType,
+			}},
 		}); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	if runStatus != nil {
 		if err := client.stream.Send(
-			&pb.SMOutgoingMessages{
-				SMOutgoingMessage: &pb.SMOutgoingMessages_RunInstancesStatus{RunInstancesStatus: runStatus},
+			&pbsm.SMOutgoingMessages{
+				SMOutgoingMessage: &pbsm.SMOutgoingMessages_RunInstancesStatus{RunInstancesStatus: runStatus},
 			}); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
@@ -1493,7 +1420,7 @@ func (client *testSMClient) processSendMessages(ctx context.Context) {
 	}
 }
 
-func (client *testSMClient) waitMessage(expectedMsg *pb.SMIncomingMessages, timeout time.Duration) error {
+func (client *testSMClient) waitMessage(expectedMsg *pbsm.SMIncomingMessages, timeout time.Duration) error {
 	select {
 	case <-time.After(timeout):
 		return aoserrors.New("wait message timeout")
