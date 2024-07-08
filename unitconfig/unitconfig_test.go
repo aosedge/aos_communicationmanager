@@ -36,8 +36,8 @@ import (
 
 const validTestUnitConfig = `
  {
-	 "formatVersion": 1,
-	 "vendorVersion": "1.0.0",
+	 "formatVersion": "1",
+	 "version": "1.0.0",
 	 "nodes": [
 		{
 			"nodeType" : "type1"
@@ -118,7 +118,7 @@ func TestValidGetStatus(t *testing.T) {
 		t.Errorf("Wrong unit config version: %s", info.Version)
 	}
 
-	nodeUnitConfig := unitConfig.GetUnitConfiguration("type1")
+	nodeUnitConfig := unitConfig.GetUnitConfig("id1", "type1")
 
 	if nodeUnitConfig.NodeType != "type1" {
 		t.Error("Unexpected node type")
@@ -162,63 +162,51 @@ func TestCheckUnitConfig(t *testing.T) {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
 
-	validUnitConfig := `
-	{
-		"formatVersion": 1,
-		"vendorVersion": "2.0.0"
-	}`
-
-	vendorVersion, err := unitConfig.CheckUnitConfig(json.RawMessage(validUnitConfig))
-	if err != nil {
-		t.Errorf("Check unit config error: %s", err)
+	validUnitConfig := cloudprotocol.UnitConfig{
+		FormatVersion: "1",
+		Version:       "2.0.0",
 	}
 
-	if vendorVersion != "2.0.0" {
-		t.Errorf("Wrong unit config version: %s", vendorVersion)
+	if err := unitConfig.CheckUnitConfig(validUnitConfig); err != nil {
+		t.Errorf("Check unit config error: %v", err)
 	}
 
-	invalidUnitConfig := `
-	{
-		"formatVersion": 1,
-		"vendorVersion": "1.0.0"
-	}`
+	invalidUnitConfig := cloudprotocol.UnitConfig{
+		FormatVersion: "1",
+		Version:       "1.0.0",
+	}
 
-	if vendorVersion, err = unitConfig.CheckUnitConfig(json.RawMessage(invalidUnitConfig)); err == nil {
+	if err := unitConfig.CheckUnitConfig(invalidUnitConfig); err == nil {
 		t.Error("Error expected")
-	}
-
-	if vendorVersion != "1.0.0" {
-		t.Errorf("Wrong unit config version: %s", vendorVersion)
 	}
 }
 
 func TestUpdateUnitConfig(t *testing.T) {
 	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
-		t.Fatalf("Can't create unit config file: %s", err)
+		t.Fatalf("Can't create unit config file: %v", err)
 	}
 
 	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
 	if err != nil {
-		t.Fatalf("Can't create unit config instance: %s", err)
+		t.Fatalf("Can't create unit config instance: %v", err)
 	}
 
-	newUnitConfig := `
-	{
-		"formatVersion": 1,
-		"vendorVersion": "2.0.0"
-	}`
-
-	if err = unitConfig.UpdateUnitConfig(json.RawMessage(newUnitConfig)); err != nil {
-		t.Fatalf("Can't update unit config: %s", err)
+	newUnitConfig := cloudprotocol.UnitConfig{
+		FormatVersion: "1",
+		Version:       "2.0.0",
 	}
 
-	vendorVersion, err := unitConfig.GetUnitConfigVersion(json.RawMessage(newUnitConfig))
+	if err = unitConfig.UpdateUnitConfig(newUnitConfig); err != nil {
+		t.Fatalf("Can't update unit config: %v", err)
+	}
+
+	status, err := unitConfig.GetStatus()
 	if err != nil {
-		t.Errorf("Get unit config version error: %s", err)
+		t.Errorf("Get unit config status error: %v", err)
 	}
 
-	if vendorVersion != "2.0.0" {
-		t.Errorf("Wrong unit config version: %s", vendorVersion)
+	if status.Version != "2.0.0" {
+		t.Errorf("Wrong unit config version: %s", status.Version)
 	}
 
 	readUnitConfig, err := os.ReadFile(path.Join(tmpDir, "aos_unit.cfg"))
@@ -226,7 +214,12 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Fatalf("Can't read unit config file: %s", err)
 	}
 
-	if string(readUnitConfig) != newUnitConfig {
+	newUnitConfigJSON, err := json.Marshal(newUnitConfig)
+	if err != nil {
+		t.Fatalf("Can't marshal new unit config: %s", err)
+	}
+
+	if string(readUnitConfig) != string(newUnitConfigJSON) {
 		t.Errorf("Read wrong unit config: %s", readUnitConfig)
 	}
 }
