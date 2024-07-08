@@ -19,6 +19,7 @@ package amqphandler_test
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"math/rand"
@@ -184,6 +185,8 @@ func sendCloudMessage(msgType string, message interface{}) error {
 
 	log.WithFields(log.Fields{"message": string(dataJSON)}).Debug("Send message")
 
+	encryptedData := []byte(base64.StdEncoding.EncodeToString(dataJSON))
+
 	return aoserrors.Wrap(testClient.channel.Publish(
 		"",
 		outQueueName,
@@ -191,7 +194,7 @@ func sendCloudMessage(msgType string, message interface{}) error {
 		false,
 		amqp.Publishing{
 			ContentType: "text/plain",
-			Body:        dataJSON,
+			Body:        encryptedData,
 		}))
 }
 
@@ -984,12 +987,12 @@ func (context *testCryptoContext) GetTLSConfig() (config *tls.Config, err error)
 }
 
 func (context *testCryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
-	output, err = json.Marshal(context.currentMessage)
+	output, err = base64.StdEncoding.DecodeString(string(input))
 	if err != nil {
 		return output, aoserrors.Wrap(err)
 	}
 
-	return input, nil
+	return output, nil
 }
 
 func newConnectionEventsConsumer() *testConnectionEventsConsumer {
