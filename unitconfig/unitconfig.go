@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/aosedge/aos_common/aoserrors"
+	semver "github.com/hashicorp/go-version"
 
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_communicationmanager/config"
@@ -63,7 +64,9 @@ func New(cfg *config.Config, client Client) (instance *Instance, err error) {
 		unitConfigFile: cfg.UnitConfigFile,
 	}
 
-	_ = instance.load()
+	if err := instance.load(); err != nil {
+		instance.unitConfigError = err
+	}
 
 	return instance, nil
 }
@@ -84,36 +87,30 @@ func (instance *Instance) GetStatus() (unitConfigInfo cloudprotocol.UnitConfigSt
 	return unitConfigInfo, nil
 }
 
-// GetUnitConfigVersion returns unit config version.
-func (instance *Instance) GetUnitConfigVersion(configJSON json.RawMessage) (vendorVersion string, err error) {
-	unitConfig := cloudprotocol.UnitConfig{Version: "unknown"}
-
-	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
-		return unitConfig.Version, aoserrors.Wrap(err)
-	}
-
-	return unitConfig.Version, nil
-}
-
 // CheckUnitConfig checks unit config.
-func (instance *Instance) CheckUnitConfig(configJSON json.RawMessage) (vendorVersion string, err error) {
+func (instance *Instance) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) error {
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfig := cloudprotocol.UnitConfig{Version: "unknown"}
-
-	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
-		return unitConfig.Version, aoserrors.Wrap(err)
+	if err := instance.checkVersion(unitConfig.Version); err != nil {
+		return err
 	}
 
-	if vendorVersion, err = instance.checkUnitConfig(unitConfig); err != nil {
-		return vendorVersion, aoserrors.Wrap(err)
+	if err := instance.client.CheckUnitConfig(unitConfig); err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	return vendorVersion, nil
+	return nil
 }
 
-func (instance *Instance) GetUnitConfiguration(nodeType string) cloudprotocol.NodeConfig {
+// GetUnitConfig returns unit config for node or node type.
+func (instance *Instance) GetUnitConfig(nodeID, nodeType string) cloudprotocol.NodeConfig {
+	for _, node := range instance.unitConfig.Nodes {
+		if node.NodeID != nil && *node.NodeID == nodeID {
+			return node
+		}
+	}
+
 	for _, node := range instance.unitConfig.Nodes {
 		if node.NodeType == nodeType {
 			return node
@@ -124,18 +121,12 @@ func (instance *Instance) GetUnitConfiguration(nodeType string) cloudprotocol.No
 }
 
 // UpdateUnitConfig updates unit config.
-func (instance *Instance) UpdateUnitConfig(configJSON json.RawMessage) (err error) {
+func (instance *Instance) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error) {
 	instance.Lock()
 	defer instance.Unlock()
 
-	unitConfig := cloudprotocol.UnitConfig{Version: "unknown"}
-
-	if err = json.Unmarshal(configJSON, &unitConfig); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if unitConfig.Version == instance.unitConfig.Version {
-		return aoserrors.New("invalid vendor version")
+	if err := instance.checkVersion(unitConfig.Version); err != nil {
+		return err
 	}
 
 	instance.unitConfig = unitConfig
@@ -144,11 +135,12 @@ func (instance *Instance) UpdateUnitConfig(configJSON json.RawMessage) (err erro
 		return aoserrors.Wrap(err)
 	}
 
-	if err = os.WriteFile(instance.unitConfigFile, configJSON, 0o600); err != nil {
+	configJSON, err := json.Marshal(instance.unitConfig)
+	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err = instance.load(); err != nil {
+	if err = os.WriteFile(instance.unitConfigFile, configJSON, 0o600); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -176,14 +168,24 @@ func (instance *Instance) load() (err error) {
 	return nil
 }
 
-func (instance *Instance) checkUnitConfig(unitConfig cloudprotocol.UnitConfig) (vendorVersion string, err error) {
-	if unitConfig.Version == instance.unitConfig.Version {
-		return unitConfig.Version, ErrAlreadyInstalled
+func (instance *Instance) checkVersion(version string) error {
+	curVer, err := semver.NewVersion(instance.unitConfig.Version)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	if err = instance.client.CheckUnitConfig(unitConfig); err != nil {
-		return unitConfig.Version, aoserrors.Wrap(err)
+	newVer, err := semver.NewVersion(version)
+	if err != nil {
+		return aoserrors.Wrap(err)
 	}
 
-	return unitConfig.Version, nil
+	if newVer.Equal(curVer) {
+		return ErrAlreadyInstalled
+	}
+
+	if newVer.LessThan(curVer) {
+		return aoserrors.New("wrong version")
+	}
+
+	return nil
 }
