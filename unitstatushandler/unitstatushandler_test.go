@@ -244,9 +244,9 @@ func TestUpdateComponents(t *testing.T) {
 		Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
 	})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater([]cloudprotocol.ComponentStatus{
-		{ComponentID: "comp0", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
-		{ComponentID: "comp1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
-		{ComponentID: "comp2", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+		{ComponentID: "comp0", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+		{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+		{ComponentID: "comp2", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 	})
 	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
@@ -277,9 +277,9 @@ func TestUpdateComponents(t *testing.T) {
 	expectedUnitStatus := cloudprotocol.UnitStatus{
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{
-			{ComponentID: "comp0", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp2", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+			{ComponentID: "comp0", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+			{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+			{ComponentID: "comp2", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Layers:   []cloudprotocol.LayerStatus{},
 		Services: []cloudprotocol.ServiceStatus{},
@@ -289,8 +289,8 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ComponentID: convertToComponentID("comp0"), Version: "2.0.0"},
-			{ComponentID: convertToComponentID("comp2"), Version: "2.0.0"},
+			{ComponentID: convertToComponentID("comp0"), ComponentType: "type-1", Version: "2.0.0"},
+			{ComponentID: convertToComponentID("comp2"), ComponentType: "type-1", Version: "2.0.0"},
 		},
 	})
 
@@ -310,13 +310,13 @@ func TestUpdateComponents(t *testing.T) {
 	expectedUnitStatus = cloudprotocol.UnitStatus{
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{
-			{ComponentID: "comp0", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+			{ComponentID: "comp0", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+			{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
-				ComponentID: "comp1", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
+				ComponentID: "comp1", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: firmwareUpdater.UpdateError.Error()},
 			},
-			{ComponentID: "comp2", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+			{ComponentID: "comp2", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Layers:   []cloudprotocol.LayerStatus{},
 		Services: []cloudprotocol.ServiceStatus{},
@@ -326,7 +326,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Components: []cloudprotocol.ComponentInfo{
-			{ComponentID: convertToComponentID("comp1"), Version: "2.0.0"},
+			{ComponentID: convertToComponentID("comp1"), ComponentType: "type-1", Version: "2.0.0"},
 		},
 	})
 

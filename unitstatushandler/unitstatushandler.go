@@ -369,6 +369,7 @@ func (instance *Instance) initCurrentStatus() error {
 	for _, status := range componentStatuses {
 		log.WithFields(log.Fields{
 			"id":      status.ComponentID,
+			"type":    status.ComponentType,
 			"status":  status.Status,
 			"version": status.Version,
 			"error":   status.ErrorInfo,
@@ -486,11 +487,11 @@ func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentSt
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"id":            status.ComponentID,
-		"type":          status.ComponentType,
-		"status":        status.Status,
-		"vendorVersion": status.Version,
-		"error":         status.ErrorInfo,
+		"id":      status.ComponentID,
+		"type":    status.ComponentType,
+		"status":  status.Status,
+		"version": status.Version,
+		"error":   status.ErrorInfo,
 	}).Debug("Update component status")
 
 	instance.processComponentStatus(status)
