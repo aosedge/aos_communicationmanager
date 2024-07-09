@@ -665,7 +665,7 @@ func (db *Database) RemoveStorageStateInfo(instanceIdent aostypes.InstanceIdent)
 	return err
 }
 
-func (db *Database) AddNetworkInfo(networkInfo networkmanager.NetworkInfo) error {
+func (db *Database) AddNetworkInfo(networkInfo aostypes.NetworkParameters) error {
 	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?)",
 		networkInfo.NetworkID, networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID)
 }
@@ -678,7 +678,7 @@ func (db *Database) RemoveNetworkInfo(networkID string) (err error) {
 	return err
 }
 
-func (db *Database) GetNetworksInfo() ([]networkmanager.NetworkInfo, error) {
+func (db *Database) GetNetworksInfo() ([]aostypes.NetworkParameters, error) {
 	rows, err := db.sql.Query("SELECT * FROM network")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -689,10 +689,10 @@ func (db *Database) GetNetworksInfo() ([]networkmanager.NetworkInfo, error) {
 		return nil, aoserrors.Wrap(rows.Err())
 	}
 
-	var networks []networkmanager.NetworkInfo
+	var networks []aostypes.NetworkParameters
 
 	for rows.Next() {
-		var networkInfo networkmanager.NetworkInfo
+		var networkInfo aostypes.NetworkParameters
 
 		if err = rows.Scan(&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet, &networkInfo.VlanID); err != nil {
 			return nil, aoserrors.Wrap(err)

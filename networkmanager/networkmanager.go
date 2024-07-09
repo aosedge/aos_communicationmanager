@@ -56,8 +56,8 @@ type Storage interface {
 	RemoveNetworkInstanceInfo(instance aostypes.InstanceIdent) error
 	GetNetworkInstancesInfo() ([]InstanceNetworkInfo, error)
 	RemoveNetworkInfo(networkID string) error
-	AddNetworkInfo(info NetworkInfo) error
-	GetNetworksInfo() ([]NetworkInfo, error)
+	AddNetworkInfo(info aostypes.NetworkParameters) error
+	GetNetworksInfo() ([]aostypes.NetworkParameters, error)
 }
 
 // NodeManager nodes controller.
@@ -76,12 +76,6 @@ type NetworkManager struct {
 	nodeManager      NodeManager
 }
 
-// NetworkInfo represents network info for instance.
-type NetworkInfo struct {
-	aostypes.NetworkParameters
-	NetworkID string
-}
-
 // FirewallRule represents firewall rule.
 type FirewallRule struct {
 	Protocol string
@@ -91,7 +85,7 @@ type FirewallRule struct {
 // InstanceNetworkInfo represents network info for instance.
 type InstanceNetworkInfo struct {
 	aostypes.InstanceIdent
-	NetworkInfo
+	aostypes.NetworkParameters
 	Rules []FirewallRule
 }
 
@@ -162,8 +156,7 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 	}
 
 	for _, networkInfo := range networksInfo {
-		networkInfo.NetworkParameters.NetworkID = networkInfo.NetworkID
-		networkManager.providerNetworks[networkInfo.NetworkID] = networkInfo.NetworkParameters
+		networkManager.providerNetworks[networkInfo.NetworkID] = networkInfo
 	}
 
 	networkInstancesInfos, err := storage.GetNetworkInstancesInfo()
@@ -302,16 +295,14 @@ func (manager *NetworkManager) createNetwork(
 		return networkParameters, err
 	}
 
+	networkParameters.NetworkID = networkID
 	networkParameters.IP = ip.String()
 	networkParameters.Subnet = subnet.String()
 	networkParameters.DNSServers = []string{manager.dns.IPAddress}
 
 	instanceNetworkInfo := InstanceNetworkInfo{
-		InstanceIdent: instanceIdent,
-		NetworkInfo: NetworkInfo{
-			NetworkID:         networkID,
-			NetworkParameters: networkParameters,
-		},
+		InstanceIdent:     instanceIdent,
+		NetworkParameters: networkParameters,
 	}
 
 	if len(params.ExposePorts) > 0 {
@@ -482,12 +473,10 @@ func (manager *NetworkManager) addProviderNetworks(
 
 		networkParameter.Subnet = subnet.String()
 		networkParameter.IP = cidr.Inc(subnet.IP).String()
+		networkParameter.NetworkID = providerID
 		manager.providerNetworks[providerID] = networkParameter
 
-		if err := manager.storage.AddNetworkInfo(NetworkInfo{
-			NetworkID:         providerID,
-			NetworkParameters: networkParameter,
-		}); err != nil {
+		if err := manager.storage.AddNetworkInfo(networkParameter); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
