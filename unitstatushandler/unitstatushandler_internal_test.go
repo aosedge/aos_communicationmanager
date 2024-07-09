@@ -254,27 +254,31 @@ func TestFirmwareManager(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID:  convertToComponentID("comp1"),
-			Version:      "1.0",
-			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{1}},
+			ComponentID:   convertToComponentID("comp1"),
+			ComponentType: "rootfs",
+			Version:       "1.0.0",
+			DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{1}},
 		},
 		{
-			ComponentID:  convertToComponentID("comp2"),
-			Version:      "2.0",
-			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+			ComponentID:   convertToComponentID("comp2"),
+			ComponentType: "rootfs",
+			Version:       "2.0.0",
+			DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
 		},
 	}
 
 	otherUpdateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID:  convertToComponentID("comp3"),
-			Version:      "3.0",
-			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
+			ComponentID:   convertToComponentID("comp3"),
+			ComponentType: "rootfs",
+			Version:       "3.0.0",
+			DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{3}},
 		},
 		{
-			ComponentID:  convertToComponentID("comp4"),
-			Version:      "4.0",
-			DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{4}},
+			ComponentID:   convertToComponentID("comp4"),
+			ComponentType: "rootfs",
+			Version:       "4.0.0",
+			DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{4}},
 		},
 	}
 
@@ -298,17 +302,118 @@ func TestFirmwareManager(t *testing.T) {
 			testID:     "success update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID: {},
-				*updateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]): {},
+				convertToDownloadID(updateComponents[1]): {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+		},
+		{
+			testID:     "success update components with no ID",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "bios", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+			},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: []cloudprotocol.ComponentInfo{
+				{
+					ComponentID:   convertToComponentID("comp1"),
+					ComponentType: "rootfs",
+					Version:       "0.0.1",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{1}},
+				},
+				{
+					ComponentID:   nil,
+					ComponentType: "bios",
+					Version:       "0.0.2",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+				{
+					ComponentID:   nil,
+					ComponentType: "rootfs",
+					Version:       "broken-version",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+				{
+					ComponentID:   nil,
+					ComponentType: "rootfs",
+					Version:       "0.0.2",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+				{
+					ComponentID:   nil,
+					ComponentType: "rootfs",
+					Version:       "0.0.3",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+			}},
+			downloadResult: map[string]*downloadResult{
+				"rootfs:0.0.1": {},
+				"bios:0.0.2":   {},
+				"rootfs:0.0.3": {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.1", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "bios", Version: "0.0.2", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "0.0.3", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading},
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+		},
+		{
+			testID:     "success update with different component types",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "bios", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+			},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: []cloudprotocol.ComponentInfo{
+				{
+					ComponentID:   convertToComponentID("comp1"),
+					ComponentType: "rootfs",
+					Version:       "0.0.1",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{1}},
+				},
+				{
+					ComponentID:   convertToComponentID("comp2"),
+					ComponentType: "rootfs",
+					Version:       "0.0.1",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+				{
+					ComponentID:   convertToComponentID("comp3"),
+					ComponentType: "bios",
+					Version:       "0.0.1",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+			}},
+			downloadResult: map[string]*downloadResult{
+				"rootfs:0.0.1": {},
+				"bios:0.0.1":   {},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.1", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "0.0.1", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "bios", Version: "0.0.1", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
@@ -321,17 +426,50 @@ func TestFirmwareManager(t *testing.T) {
 			testID:     "download error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID: {Error: "download error"},
-				*updateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]): {Error: "download error"},
+				convertToDownloadID(updateComponents[1]): {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.Downloading},
+				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "download error"}},
+			},
+		},
+		{
+			testID:     "download error on same component type",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			initComponentStatuses: []cloudprotocol.ComponentStatus{
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+			},
+			desiredStatus: &cloudprotocol.DesiredStatus{Components: []cloudprotocol.ComponentInfo{
+				{
+					ComponentID:   convertToComponentID("comp1"),
+					ComponentType: "rootfs",
+					Version:       "0.0.1",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{1}},
+				},
+				{
+					ComponentID:   convertToComponentID("comp2"),
+					ComponentType: "rootfs",
+					Version:       "0.0.1",
+					DownloadInfo:  cloudprotocol.DownloadInfo{Sha256: []byte{2}},
+				},
+			}},
+			downloadResult: map[string]*downloadResult{
+				"rootfs:0.0.1": {Error: "download error"},
+			},
+			updateComponentStatuses: []cloudprotocol.ComponentStatus{
+				{ComponentID: "comp1", Version: "0.0.0", ComponentType: "rootfs", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", Version: "0.0.0", ComponentType: "rootfs", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
@@ -342,18 +480,18 @@ func TestFirmwareManager(t *testing.T) {
 			testID:     "update error",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: updateComponents},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID: {},
-				*updateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]): {},
+				convertToDownloadID(updateComponents[1]): {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 				{
-					ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.ErrorStatus,
+					ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
 					ErrorInfo: &cloudprotocol.ErrorInfo{Message: "update error"},
 				},
 			},
@@ -372,17 +510,17 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID: {},
-				*updateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]): {},
+				convertToDownloadID(updateComponents[1]): {},
 			},
 			downloadTime: 1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.ReadyToUpdate},
@@ -396,28 +534,30 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState:  stateReadyToUpdate,
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 				DownloadResult: map[string]*downloadResult{
-					*updateComponents[0].ComponentID: {},
-					*updateComponents[1].ComponentID: {},
+					convertToDownloadID(updateComponents[0]): {},
+					convertToDownloadID(updateComponents[1]): {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					*updateComponents[0].ComponentID: {
-						ComponentID: *updateComponents[0].ComponentID,
-						Version:     updateComponents[0].Version,
+						ComponentID:   *updateComponents[0].ComponentID,
+						ComponentType: updateComponents[0].ComponentType,
+						Version:       updateComponents[0].Version,
 					},
 					*updateComponents[1].ComponentID: {
-						ComponentID: *updateComponents[1].ComponentID,
-						Version:     updateComponents[1].Version,
+						ComponentID:   *updateComponents[1].ComponentID,
+						ComponentType: updateComponents[1].ComponentType,
+						Version:       updateComponents[1].Version,
 					},
 				},
 			},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			downloadTime: 1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Updating},
@@ -430,27 +570,29 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState:  stateUpdating,
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 				DownloadResult: map[string]*downloadResult{
-					*updateComponents[0].ComponentID: {},
-					*updateComponents[1].ComponentID: {},
+					convertToDownloadID(updateComponents[0]): {},
+					convertToDownloadID(updateComponents[1]): {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					*updateComponents[0].ComponentID: {
-						ComponentID: *updateComponents[0].ComponentID,
-						Version:     updateComponents[0].Version,
+						ComponentID:   *updateComponents[0].ComponentID,
+						ComponentType: updateComponents[0].ComponentType,
+						Version:       updateComponents[0].Version,
 					},
 					*updateComponents[1].ComponentID: {
-						ComponentID: *updateComponents[1].ComponentID,
-						Version:     updateComponents[1].Version,
+						ComponentID:   *updateComponents[1].ComponentID,
+						ComponentType: updateComponents[1].ComponentType,
+						Version:       updateComponents[1].Version,
 					},
 				},
 			},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate},
@@ -465,32 +607,34 @@ func TestFirmwareManager(t *testing.T) {
 					Components: updateComponents,
 				},
 				DownloadResult: map[string]*downloadResult{
-					*updateComponents[0].ComponentID: {},
-					*updateComponents[1].ComponentID: {},
+					convertToDownloadID(updateComponents[0]): {},
+					convertToDownloadID(updateComponents[1]): {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					*updateComponents[0].ComponentID: {
-						ComponentID: *updateComponents[0].ComponentID,
-						Version:     updateComponents[0].Version,
+						ComponentID:   *updateComponents[0].ComponentID,
+						ComponentType: updateComponents[0].ComponentType,
+						Version:       updateComponents[0].Version,
 					},
 					*updateComponents[1].ComponentID: {
-						ComponentID: *updateComponents[1].ComponentID,
-						Version:     updateComponents[1].Version,
+						ComponentID:   *updateComponents[1].ComponentID,
+						ComponentType: updateComponents[1].ComponentType,
+						Version:       updateComponents[1].Version,
 					},
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{
 				Components:   updateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			triggerUpdate: true,
 			updateWaitStatuses: []cmserver.UpdateStatus{
@@ -504,28 +648,28 @@ func TestFirmwareManager(t *testing.T) {
 				CurrentState:  stateDownloading,
 				CurrentUpdate: &firmwareUpdate{Components: updateComponents},
 				DownloadResult: map[string]*downloadResult{
-					*updateComponents[0].ComponentID: {},
-					*updateComponents[1].ComponentID: {},
+					convertToDownloadID(updateComponents[0]): {},
+					convertToDownloadID(updateComponents[1]): {},
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Downloading},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp3", Version: "2.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp4", Version: "3.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp4", ComponentType: "rootfs", Version: "3.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID:      {},
-				*updateComponents[1].ComponentID:      {},
-				*otherUpdateComponents[0].ComponentID: {},
-				*otherUpdateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]):      {},
+				convertToDownloadID(updateComponents[1]):      {},
+				convertToDownloadID(otherUpdateComponents[0]): {},
+				convertToDownloadID(otherUpdateComponents[1]): {},
 			},
 			downloadTime: 1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp3", Version: "3.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp4", Version: "4.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "3.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp4", ComponentType: "rootfs", Version: "4.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: context.Canceled.Error()}},
@@ -546,22 +690,22 @@ func TestFirmwareManager(t *testing.T) {
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.ReadyToUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp3", Version: "2.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp4", Version: "3.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp4", ComponentType: "rootfs", Version: "3.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{
 				Components:   otherUpdateComponents,
 				FOTASchedule: cloudprotocol.ScheduleRule{Type: cloudprotocol.TriggerUpdate},
 			},
 			downloadResult: map[string]*downloadResult{
-				*otherUpdateComponents[0].ComponentID: {},
-				*otherUpdateComponents[1].ComponentID: {},
+				convertToDownloadID(otherUpdateComponents[0]): {},
+				convertToDownloadID(otherUpdateComponents[1]): {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp3", Version: "3.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp4", Version: "4.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "3.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp4", ComponentType: "rootfs", Version: "4.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: context.Canceled.Error()}},
@@ -577,41 +721,43 @@ func TestFirmwareManager(t *testing.T) {
 					Components: updateComponents,
 				},
 				DownloadResult: map[string]*downloadResult{
-					*updateComponents[0].ComponentID: {},
-					*updateComponents[1].ComponentID: {},
+					convertToDownloadID(updateComponents[0]): {},
+					convertToDownloadID(updateComponents[1]): {},
 				},
 				ComponentStatuses: map[string]*cloudprotocol.ComponentStatus{
 					*updateComponents[0].ComponentID: {
-						ComponentID: *updateComponents[0].ComponentID,
-						Version:     updateComponents[0].Version,
-						Status:      cloudprotocol.InstallingStatus,
+						ComponentID:   *updateComponents[0].ComponentID,
+						ComponentType: updateComponents[0].ComponentType,
+						Version:       updateComponents[0].Version,
+						Status:        cloudprotocol.InstallingStatus,
 					},
 					*updateComponents[1].ComponentID: {
-						ComponentID: *updateComponents[1].ComponentID,
-						Version:     updateComponents[1].Version,
-						Status:      cloudprotocol.InstallingStatus,
+						ComponentID:   *updateComponents[1].ComponentID,
+						ComponentType: updateComponents[1].ComponentType,
+						Version:       updateComponents[1].Version,
+						Status:        cloudprotocol.InstallingStatus,
 					},
 				},
 			},
 			initStatus: &cmserver.UpdateStatus{State: cmserver.Updating},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp3", Version: "2.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp4", Version: "3.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp4", ComponentType: "rootfs", Version: "3.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{Components: otherUpdateComponents},
 			downloadResult: map[string]*downloadResult{
-				*otherUpdateComponents[0].ComponentID: {},
-				*otherUpdateComponents[1].ComponentID: {},
+				convertToDownloadID(otherUpdateComponents[0]): {},
+				convertToDownloadID(otherUpdateComponents[1]): {},
 			},
 			downloadTime: 1 * time.Second,
 			updateTime:   1 * time.Second,
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp3", Version: "3.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp4", Version: "4.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp3", ComponentType: "rootfs", Version: "3.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp4", ComponentType: "rootfs", Version: "4.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.NoUpdate},
@@ -625,8 +771,8 @@ func TestFirmwareManager(t *testing.T) {
 			testID:     "timetable update",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{
 				FOTASchedule: cloudprotocol.ScheduleRule{
@@ -636,12 +782,12 @@ func TestFirmwareManager(t *testing.T) {
 				Components: updateComponents,
 			},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID: {},
-				*updateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]): {},
+				convertToDownloadID(updateComponents[1]): {},
 			},
 			updateComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "1.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "2.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
@@ -654,8 +800,8 @@ func TestFirmwareManager(t *testing.T) {
 			testID:     "update TTL",
 			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
 			initComponentStatuses: []cloudprotocol.ComponentStatus{
-				{ComponentID: "comp1", Version: "0.0", Status: cloudprotocol.InstalledStatus},
-				{ComponentID: "comp2", Version: "1.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp1", ComponentType: "rootfs", Version: "0.0.0", Status: cloudprotocol.InstalledStatus},
+				{ComponentID: "comp2", ComponentType: "rootfs", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			},
 			desiredStatus: &cloudprotocol.DesiredStatus{
 				FOTASchedule: cloudprotocol.ScheduleRule{
@@ -665,8 +811,8 @@ func TestFirmwareManager(t *testing.T) {
 				Components: updateComponents,
 			},
 			downloadResult: map[string]*downloadResult{
-				*updateComponents[0].ComponentID: {},
-				*updateComponents[1].ComponentID: {},
+				convertToDownloadID(updateComponents[0]): {},
+				convertToDownloadID(updateComponents[1]): {},
 			},
 			updateWaitStatuses: []cmserver.UpdateStatus{
 				{State: cmserver.Downloading},
@@ -1655,9 +1801,15 @@ func (downloader *testGroupDownloader) download(
 	case <-time.After(downloader.downloadTime):
 		if getDownloadError(downloader.result) != nil && !continueOnError {
 			for id := range request {
-				if downloader.result[id].Error == "" {
-					downloader.result[id].Error = aoserrors.Wrap(context.Canceled).Error()
+				if result, ok := downloader.result[id]; ok {
+					if result.Error == "" {
+						result.Error = aoserrors.Wrap(context.Canceled).Error()
+					}
+
+					continue
 				}
+
+				log.Errorf("Download result for id: %s not found", id)
 			}
 		}
 
@@ -1901,4 +2053,8 @@ func waitForSOTAUpdateStatus(
 
 func convertToComponentID(id string) *string {
 	return &id
+}
+
+func convertToDownloadID(component cloudprotocol.ComponentInfo) string {
+	return component.ComponentType + ":" + component.Version
 }
