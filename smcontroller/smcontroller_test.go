@@ -28,6 +28,7 @@ import (
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/utils/pbconvert"
 
 	pbcommon "github.com/aosedge/aos_common/api/common"
 	pbsm "github.com/aosedge/aos_common/api/servicemanager"
@@ -43,6 +44,7 @@ import (
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/launcher"
 	"github.com/aosedge/aos_communicationmanager/smcontroller"
+	"github.com/aosedge/aos_communicationmanager/unitconfig"
 )
 
 /***********************************************************************************************************************
@@ -169,7 +171,9 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, sendRuntimeStatus)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, sendRuntimeStatus)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -189,7 +193,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 	}
 }
 
-func TestUnitConfigMessages(t *testing.T) {
+func TestNodeConfigMessages(t *testing.T) {
 	var (
 		nodeID           = "mainSM"
 		nodeType         = "mainType"
@@ -210,12 +214,21 @@ func TestUnitConfigMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType, Version: originalVersion,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
 
 	defer smClient.close()
+
+	if err := waitMessage(
+		controller.NodeConfigStatusChannel(), unitconfig.NodeConfigStatus{
+			NodeID: nodeID, NodeType: nodeType, Version: originalVersion,
+		}, messageTimeout); err != nil {
+		t.Errorf("Incorrect runtime status notification: %v", err)
+	}
 
 	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
 		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{ConnectionStatus: &pbsm.ConnectionStatus{}},
@@ -224,39 +237,23 @@ func TestUnitConfigMessages(t *testing.T) {
 	}
 
 	go func() {
-		version, err := controller.GetNodeConfigStatus(nodeID)
+		nodeConfigStatus, err := controller.GetNodeConfigStatus(nodeID)
 		if err != nil {
 			t.Errorf("Can't get node config status: %v", err)
 		}
 
-		if version != originalVersion {
-			t.Error("Incorrect node config version")
+		if nodeConfigStatus.Version != originalVersion {
+			t.Errorf("Incorrect node config version: %s", nodeConfigStatus.Version)
 		}
 
 		testWaitChan <- struct{}{}
 	}()
 
-	if err := smClient.waitMessage(
-		&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_GetNodeConfigStatus{}},
-		messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
-	}
-
-	if err := smClient.stream.Send(nodeConfigStatus); err != nil {
-		t.Errorf("Can't send node config status: %v", err)
-	}
-
 	<-testWaitChan
 
 	go func() {
-		if err := controller.CheckUnitConfig(cloudprotocol.UnitConfig{
-			Version: newVersion,
-			Nodes: []cloudprotocol.NodeConfig{
-				{
-					NodeType: nodeType,
-				},
-			},
-		}); err != nil {
+		if err := controller.CheckNodeConfig(newVersion,
+			cloudprotocol.NodeConfig{NodeID: &nodeID, NodeType: nodeType}); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
 
@@ -280,14 +277,8 @@ func TestUnitConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.SetUnitConfig(cloudprotocol.UnitConfig{
-			Version: newVersion,
-			Nodes: []cloudprotocol.NodeConfig{
-				{
-					NodeType: nodeType,
-				},
-			},
-		}); err != nil {
+		if err := controller.SetNodeConfig(newVersion,
+			cloudprotocol.NodeConfig{NodeID: &nodeID, NodeType: nodeType}); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
 
@@ -302,11 +293,21 @@ func TestUnitConfigMessages(t *testing.T) {
 		t.Fatalf("Wait message error: %v", err)
 	}
 
-	nodeConfigStatus.GetNodeConfigStatus().Version = newVersion
+	if err := smClient.stream.Send(nodeConfigStatus); err != nil {
+		t.Errorf("Can't send node config status: %v", err)
+	}
+
+	if err := smClient.waitMessage(
+		&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_GetNodeConfigStatus{}},
+		messageTimeout); err != nil {
+		t.Fatalf("Wait message error: %v", err)
+	}
 
 	if err := smClient.stream.Send(nodeConfigStatus); err != nil {
-		t.Errorf("Can't send node config status")
+		t.Errorf("Can't send node config status: %v", err)
 	}
+
+	nodeConfigStatus.GetNodeConfigStatus().Version = newVersion
 
 	<-testWaitChan
 }
@@ -326,7 +327,9 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -511,7 +514,9 @@ func TestSMMonitoringNotifications(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -628,7 +633,9 @@ func TestLogMessages(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -870,7 +877,9 @@ func TestOverrideEnvVars(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -956,7 +965,9 @@ func TestRunInstances(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, &pbsm.RunInstancesStatus{})
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, &pbsm.RunInstancesStatus{})
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1034,7 +1045,9 @@ func TestUpdateNetwork(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1072,7 +1085,9 @@ func TestSyncClock(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1176,7 +1191,9 @@ func TestGetAverageMonitoring(t *testing.T) {
 	}
 	defer controller.Close()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1233,7 +1250,9 @@ func TestConnectionStatus(t *testing.T) {
 
 	controller.CloudConnected()
 
-	smClient, err := newTestSMClient(cmServerURL, nodeID, nodeType, nil)
+	smClient, err := newTestSMClient(cmServerURL, unitconfig.NodeConfigStatus{
+		NodeID: nodeID, NodeType: nodeType,
+	}, nil)
 	if err != nil {
 		t.Fatalf("Can't create test SM: %v", err)
 	}
@@ -1324,6 +1343,9 @@ func waitMessage[T any](messageChannel <-chan T, expectedMsg interface{}, timeou
 
 	case message := <-messageChannel:
 		if !reflect.DeepEqual(message, expectedMsg) {
+			log.Debugf("%v", message)
+			log.Debugf("%v", expectedMsg)
+
 			return aoserrors.New("incorrect received message")
 		}
 	}
@@ -1332,7 +1354,7 @@ func waitMessage[T any](messageChannel <-chan T, expectedMsg interface{}, timeou
 }
 
 func newTestSMClient(
-	url string, nodeID, nodeType string, runStatus *pbsm.RunInstancesStatus,
+	url string, nodeConfigStatus unitconfig.NodeConfigStatus, runStatus *pbsm.RunInstancesStatus,
 ) (client *testSMClient, err error) {
 	client = &testSMClient{
 		sendMessageChannel:      make(chan *pbsm.SMOutgoingMessages, 10),
@@ -1355,8 +1377,9 @@ func newTestSMClient(
 
 	if err := client.stream.Send(
 		&pbsm.SMOutgoingMessages{
-			SMOutgoingMessage: &pbsm.SMOutgoingMessages_RegisterSm{RegisterSm: &pbsm.RegisterSM{
-				NodeId: nodeID, NodeType: nodeType,
+			SMOutgoingMessage: &pbsm.SMOutgoingMessages_NodeConfigStatus{NodeConfigStatus: &pbsm.NodeConfigStatus{
+				NodeId: nodeConfigStatus.NodeID, NodeType: nodeConfigStatus.NodeType, Version: nodeConfigStatus.Version,
+				Error: pbconvert.ErrorInfoToPB(nodeConfigStatus.Error),
 			}},
 		}); err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -1427,7 +1450,7 @@ func (client *testSMClient) waitMessage(expectedMsg *pbsm.SMIncomingMessages, ti
 
 	case message := <-client.receivedMessagesChannel:
 		if !proto.Equal(message, expectedMsg) {
-			return aoserrors.New("incorrect received client message")
+			return aoserrors.Errorf("incorrect client message received: %v", message)
 		}
 	}
 
