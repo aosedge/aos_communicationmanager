@@ -21,7 +21,9 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_communicationmanager/config"
@@ -49,7 +51,17 @@ const validTestUnitConfig = `
  * Types
  **********************************************************************************************************************/
 
-type testClient struct{}
+type testNodeConfig struct {
+	NodeID   string
+	NodeType string
+	Version  string
+}
+
+type testClient struct {
+	nodeConfigStatuses        []unitconfig.NodeConfigStatus
+	nodeConfigStatusChannel   chan unitconfig.NodeConfigStatus
+	nodeConfigSetCheckChannel chan testNodeConfig
+}
 
 /***********************************************************************************************************************
  * Vars
@@ -100,7 +112,8 @@ func TestValidGetStatus(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, newTestClient())
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -137,7 +150,8 @@ func TestInvalidGetStatus(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
+	unitConfig, err := unitconfig.New(
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, newTestClient())
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -157,7 +171,10 @@ func TestCheckUnitConfig(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
+	client := newTestClient()
+
+	unitConfig, err := unitconfig.New(
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, client)
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -165,10 +182,33 @@ func TestCheckUnitConfig(t *testing.T) {
 	validUnitConfig := cloudprotocol.UnitConfig{
 		FormatVersion: "1",
 		Version:       "2.0.0",
+		Nodes:         []cloudprotocol.NodeConfig{{NodeType: "type1"}},
+	}
+
+	client.nodeConfigStatuses = []unitconfig.NodeConfigStatus{
+		{NodeID: "id1", NodeType: "type1", Version: "1.0.0"},
+		{NodeID: "id2", NodeType: "type1", Version: "1.0.0"},
+		{NodeID: "id3", NodeType: "type1", Version: "1.0.0"},
 	}
 
 	if err := unitConfig.CheckUnitConfig(validUnitConfig); err != nil {
 		t.Errorf("Check unit config error: %v", err)
+	}
+
+	for i := 0; i < len(client.nodeConfigStatuses); i++ {
+		select {
+		case nodeConfig := <-client.nodeConfigSetCheckChannel:
+			if !reflect.DeepEqual(nodeConfig, testNodeConfig{
+				NodeID:   client.nodeConfigStatuses[i].NodeID,
+				NodeType: "type1",
+				Version:  "2.0.0",
+			}) {
+				t.Errorf("Wrong node config: %v", nodeConfig)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Set node config timeout")
+		}
 	}
 
 	invalidUnitConfig := cloudprotocol.UnitConfig{
@@ -186,7 +226,10 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %v", err)
 	}
 
-	unitConfig, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, &testClient{})
+	client := newTestClient()
+
+	unitConfig, err := unitconfig.New(
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, client)
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %v", err)
 	}
@@ -194,10 +237,33 @@ func TestUpdateUnitConfig(t *testing.T) {
 	newUnitConfig := cloudprotocol.UnitConfig{
 		FormatVersion: "1",
 		Version:       "2.0.0",
+		Nodes:         []cloudprotocol.NodeConfig{{NodeType: "type1"}},
+	}
+
+	client.nodeConfigStatuses = []unitconfig.NodeConfigStatus{
+		{NodeID: "id1", NodeType: "type1", Version: "1.0.0"},
+		{NodeID: "id2", NodeType: "type1", Version: "1.0.0"},
+		{NodeID: "id3", NodeType: "type1", Version: "1.0.0"},
 	}
 
 	if err = unitConfig.UpdateUnitConfig(newUnitConfig); err != nil {
 		t.Fatalf("Can't update unit config: %v", err)
+	}
+
+	for i := 0; i < len(client.nodeConfigStatuses); i++ {
+		select {
+		case nodeConfig := <-client.nodeConfigSetCheckChannel:
+			if !reflect.DeepEqual(nodeConfig, testNodeConfig{
+				NodeID:   client.nodeConfigStatuses[i].NodeID,
+				NodeType: "type1",
+				Version:  "2.0.0",
+			}) {
+				t.Errorf("Wrong node config: %v", nodeConfig)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Set node config timeout")
+		}
 	}
 
 	status, err := unitConfig.GetStatus()
@@ -224,14 +290,69 @@ func TestUpdateUnitConfig(t *testing.T) {
 	}
 }
 
+func TestNodeConfigStatus(t *testing.T) {
+	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(validTestUnitConfig), 0o600); err != nil {
+		t.Fatalf("Can't create unit config file: %v", err)
+	}
+
+	client := newTestClient()
+
+	_, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, client)
+	if err != nil {
+		t.Fatalf("Can't create unit config instance: %v", err)
+	}
+
+	client.nodeConfigStatusChannel <- unitconfig.NodeConfigStatus{
+		NodeID:   "id1",
+		NodeType: "type1",
+	}
+
+	select {
+	case nodeConfig := <-client.nodeConfigSetCheckChannel:
+		if !reflect.DeepEqual(nodeConfig, testNodeConfig{NodeID: "id1", NodeType: "type1", Version: "1.0.0"}) {
+			t.Errorf("Wrong node config: %v", nodeConfig)
+		}
+
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Set node config timeout")
+	}
+}
+
 /***********************************************************************************************************************
  * testClient
  **********************************************************************************************************************/
 
-func (client *testClient) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error) {
+func newTestClient() *testClient {
+	return &testClient{
+		nodeConfigStatusChannel:   make(chan unitconfig.NodeConfigStatus, 1),
+		nodeConfigSetCheckChannel: make(chan testNodeConfig, 10),
+	}
+}
+
+func (client *testClient) CheckNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
+	client.nodeConfigSetCheckChannel <- testNodeConfig{
+		NodeID:   *nodeConfig.NodeID,
+		NodeType: nodeConfig.NodeType,
+		Version:  version,
+	}
+
 	return nil
 }
 
-func (client *testClient) SetUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error) {
+func (client *testClient) SetNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
+	client.nodeConfigSetCheckChannel <- testNodeConfig{
+		NodeID:   *nodeConfig.NodeID,
+		NodeType: nodeConfig.NodeType,
+		Version:  version,
+	}
+
 	return nil
+}
+
+func (client *testClient) GetNodeConfigStatuses() ([]unitconfig.NodeConfigStatus, error) {
+	return client.nodeConfigStatuses, nil
+}
+
+func (client *testClient) NodeConfigStatusChannel() <-chan unitconfig.NodeConfigStatus {
+	return client.nodeConfigStatusChannel
 }

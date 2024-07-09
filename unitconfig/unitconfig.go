@@ -25,6 +25,7 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	semver "github.com/hashicorp/go-version"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_communicationmanager/config"
@@ -46,8 +47,18 @@ type Instance struct {
 
 // Client client unit config interface.
 type Client interface {
-	CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error)
-	SetUnitConfig(unitConfig cloudprotocol.UnitConfig) (err error)
+	CheckNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error
+	SetNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error
+	GetNodeConfigStatuses() ([]NodeConfigStatus, error)
+	NodeConfigStatusChannel() <-chan NodeConfigStatus
+}
+
+// NodeConfigStatus node config status.
+type NodeConfigStatus struct {
+	NodeID   string
+	NodeType string
+	Version  string
+	Error    *cloudprotocol.ErrorInfo
 }
 
 // ErrAlreadyInstalled error to detect that unit config with the same version already installed.
@@ -67,6 +78,8 @@ func New(cfg *config.Config, client Client) (instance *Instance, err error) {
 	if err := instance.load(); err != nil {
 		instance.unitConfigError = err
 	}
+
+	go instance.handleNodeConfigStatus()
 
 	return instance, nil
 }
@@ -96,8 +109,24 @@ func (instance *Instance) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) e
 		return err
 	}
 
-	if err := instance.client.CheckUnitConfig(unitConfig); err != nil {
-		return aoserrors.Wrap(err)
+	nodeConfigStatuses, err := instance.client.GetNodeConfigStatuses()
+	if err != nil {
+		log.Errorf("Error getting node config statuses: %v", err)
+	}
+
+	for i, nodeConfigStatus := range nodeConfigStatuses {
+		if nodeConfigStatus.Version != unitConfig.Version || nodeConfigStatus.Error != nil {
+			nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, &unitConfig)
+			if nodeConfig == nil {
+				continue
+			}
+
+			nodeConfig.NodeID = &nodeConfigStatuses[i].NodeID
+
+			if err := instance.client.CheckNodeConfig(unitConfig.Version, *nodeConfig); err != nil {
+				return aoserrors.Wrap(err)
+			}
+		}
 	}
 
 	return nil
@@ -131,8 +160,24 @@ func (instance *Instance) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) 
 
 	instance.unitConfig = unitConfig
 
-	if err = instance.client.SetUnitConfig(instance.unitConfig); err != nil {
-		return aoserrors.Wrap(err)
+	nodeConfigStatuses, err := instance.client.GetNodeConfigStatuses()
+	if err != nil {
+		log.Errorf("Error getting node config statuses: %v", err)
+	}
+
+	for i, nodeConfigStatus := range nodeConfigStatuses {
+		if nodeConfigStatus.Version != unitConfig.Version || nodeConfigStatus.Error != nil {
+			nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, &unitConfig)
+			if nodeConfig == nil {
+				continue
+			}
+
+			nodeConfig.NodeID = &nodeConfigStatuses[i].NodeID
+
+			if err := instance.client.SetNodeConfig(unitConfig.Version, *nodeConfig); err != nil {
+				return aoserrors.Wrap(err)
+			}
+		}
 	}
 
 	configJSON, err := json.Marshal(instance.unitConfig)
@@ -185,6 +230,51 @@ func (instance *Instance) checkVersion(version string) error {
 
 	if newVer.LessThan(curVer) {
 		return aoserrors.New("wrong version")
+	}
+
+	return nil
+}
+
+func (instance *Instance) handleNodeConfigStatus() {
+	for {
+		nodeConfigStatus, ok := <-instance.client.NodeConfigStatusChannel()
+		if !ok {
+			return
+		}
+
+		if instance.unitConfigError != nil {
+			log.WithField("NodeID", nodeConfigStatus.NodeID).Warnf(
+				"Can't update node config due to: %v", instance.unitConfigError)
+		}
+
+		if nodeConfigStatus.Version == instance.unitConfig.Version && nodeConfigStatus.Error == nil {
+			continue
+		}
+
+		nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, &instance.unitConfig)
+		if nodeConfig == nil {
+			continue
+		}
+
+		nodeConfig.NodeID = &nodeConfigStatus.NodeID
+
+		if err := instance.client.SetNodeConfig(instance.unitConfig.Version, *nodeConfig); err != nil {
+			log.WithField("NodeID", nodeConfigStatus.NodeID).Errorf("Can't update node config: %v", err)
+		}
+	}
+}
+
+func findNodeConfig(nodeID, nodeType string, unitConfig *cloudprotocol.UnitConfig) *cloudprotocol.NodeConfig {
+	for i, nodeConfig := range unitConfig.Nodes {
+		if nodeConfig.NodeID != nil && *nodeConfig.NodeID == nodeID {
+			return &unitConfig.Nodes[i]
+		}
+	}
+
+	for i, nodeConfig := range unitConfig.Nodes {
+		if nodeConfig.NodeType == nodeType {
+			return &unitConfig.Nodes[i]
+		}
 	}
 
 	return nil
