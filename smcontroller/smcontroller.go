@@ -37,6 +37,7 @@ import (
 	"github.com/aosedge/aos_communicationmanager/amqphandler"
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/launcher"
+	"github.com/aosedge/aos_communicationmanager/unitconfig"
 )
 
 /***********************************************************************************************************************
@@ -63,6 +64,7 @@ type Controller struct {
 	updateInstancesStatusChan chan []cloudprotocol.InstanceStatus
 	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
 	systemLimitAlertChan      chan cloudprotocol.SystemQuotaAlert
+	nodeConfigStatusChan      chan unitconfig.NodeConfigStatus
 
 	isCloudConnected bool
 	grpcServer       *grpc.Server
@@ -112,6 +114,7 @@ func New(
 		runInstancesStatusChan:    make(chan launcher.NodeRunInstanceStatus, statusChanSize),
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
 		systemLimitAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
+		nodeConfigStatusChan:      make(chan unitconfig.NodeConfigStatus, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
 	}
 
@@ -170,73 +173,78 @@ func (controller *Controller) Close() error {
 		}
 	}
 
+	close(controller.nodeConfigStatusChan)
+
 	return nil
 }
 
 // GetNodeConfigStatus gets node configuration status.
-func (controller *Controller) GetNodeConfigStatus(nodeID string) (version string, err error) {
+func (controller *Controller) GetNodeConfigStatus(nodeID string) (unitconfig.NodeConfigStatus, error) {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
-		return "", aoserrors.Wrap(err)
+		return unitconfig.NodeConfigStatus{}, err
 	}
 
-	return handler.getNodeConfigStatus()
+	return handler.nodeConfigStatus, nil
 }
 
-// CheckUnitConfig checks unit config for the node.
-func (controller *Controller) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) error {
-	for _, nodeConfig := range unitConfig.Nodes {
-		for _, node := range controller.nodes {
-			if node == nil {
-				continue
-			}
+// CheckNodeConfig checks node config.
+func (controller *Controller) CheckNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
+	if nodeConfig.NodeID == nil {
+		return aoserrors.Errorf("node ID is not set")
+	}
 
-			if nodeConfig.NodeID != nil && *nodeConfig.NodeID != node.nodeID {
-				continue
-			}
+	handler, err := controller.getNodeHandlerByID(*nodeConfig.NodeID)
+	if err != nil {
+		return err
+	}
 
-			if nodeConfig.NodeType != node.nodeType {
-				continue
-			}
-
-			nodeConfig.NodeID = &node.nodeID
-
-			err := node.checkNodeConfig(nodeConfig, unitConfig.Version)
-			if err != nil {
-				return err
-			}
-		}
+	if err = handler.checkNodeConfig(version, nodeConfig); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// SetUnitConfig sets unit config for the node.
-func (controller *Controller) SetUnitConfig(unitConfig cloudprotocol.UnitConfig) error {
-	for _, nodeConfig := range unitConfig.Nodes {
-		for _, node := range controller.nodes {
-			if node == nil {
-				continue
-			}
+// SetNodeConfig sets node config.
+func (controller *Controller) SetNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
+	if nodeConfig.NodeID == nil {
+		return aoserrors.Errorf("node ID is not set")
+	}
 
-			if nodeConfig.NodeID != nil && *nodeConfig.NodeID != node.nodeID {
-				continue
-			}
+	handler, err := controller.getNodeHandlerByID(*nodeConfig.NodeID)
+	if err != nil {
+		return err
+	}
 
-			if nodeConfig.NodeType != node.nodeType {
-				continue
-			}
+	if err = handler.setNodeConfig(version, nodeConfig); err != nil {
+		return err
+	}
 
-			nodeConfig.NodeID = &node.nodeID
-
-			err := node.setNodeConfig(nodeConfig, unitConfig.Version)
-			if err != nil {
-				return err
-			}
-		}
+	if handler.nodeConfigStatus, err = handler.getNodeConfigStatus(); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+// GetNodeConfigStatuses returns node configuration statuses.
+func (controller *Controller) GetNodeConfigStatuses() ([]unitconfig.NodeConfigStatus, error) {
+	controller.Lock()
+	defer controller.Unlock()
+
+	statuses := make([]unitconfig.NodeConfigStatus, 0, len(controller.nodes))
+
+	for _, handler := range controller.nodes {
+		statuses = append(statuses, handler.nodeConfigStatus)
+	}
+
+	return statuses, nil
+}
+
+// NodeConfigStatusChannel returns channel used to send new node configuration statuses.
+func (controller *Controller) NodeConfigStatusChannel() <-chan unitconfig.NodeConfigStatus {
+	return controller.nodeConfigStatusChan
 }
 
 // RunInstances runs desired services instances.
@@ -318,7 +326,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 		message, err := stream.Recv()
 		if err != nil {
 			if handler != nil {
-				controller.handleCloseConnection(handler.nodeID)
+				controller.handleCloseConnection(handler.nodeConfigStatus.NodeID)
 			}
 
 			if !errors.Is(err, io.EOF) && codes.Canceled != status.Code(err) {
@@ -331,19 +339,19 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 		}
 
 		if handler == nil {
-			registerMessage, ok := message.GetSMOutgoingMessage().(*pb.SMOutgoingMessages_RegisterSm)
+			nodeConfigStatus, ok := message.GetSMOutgoingMessage().(*pb.SMOutgoingMessages_NodeConfigStatus)
 			if !ok {
 				log.Error("Unexpected first message from stream")
 
 				continue
 			}
 
-			nodeID := registerMessage.RegisterSm.GetNodeId()
-			nodeType := registerMessage.RegisterSm.GetNodeType()
+			log.WithFields(log.Fields{
+				"nodeID":   nodeConfigStatus.NodeConfigStatus.GetNodeId(),
+				"nodeType": nodeConfigStatus.NodeConfigStatus.GetNodeType(),
+			}).Debug("Register SM")
 
-			log.WithFields(log.Fields{"nodeID": nodeID, "nodeType": nodeType}).Debug("Register SM")
-
-			handler, err = newSMHandler(nodeID, nodeType, stream, controller.messageSender, controller.alertSender,
+			handler, err = newSMHandler(stream, controller.messageSender, controller.alertSender,
 				controller.monitoringSender, controller.runInstancesStatusChan, controller.updateInstancesStatusChan,
 				controller.systemLimitAlertChan)
 			if err != nil {
@@ -352,7 +360,8 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 				return err
 			}
 
-			if err := controller.handleNewConnection(nodeID, handler); err != nil {
+			if err := controller.handleNewConnection(
+				nodeConfigStatusFromPB(nodeConfigStatus.NodeConfigStatus), handler); err != nil {
 				log.Errorf("Can't register new SM connection: %v", err)
 
 				return err
@@ -489,15 +498,19 @@ func (controller *Controller) stopServer() {
 	}
 }
 
-func (controller *Controller) handleNewConnection(nodeID string, newHandler *smHandler) error {
+func (controller *Controller) handleNewConnection(
+	nodeConfigStatus unitconfig.NodeConfigStatus, newHandler *smHandler,
+) error {
 	controller.Lock()
 	defer controller.Unlock()
 
-	if _, ok := controller.nodes[nodeID]; ok {
-		return aoserrors.Errorf("connection for node ID %s already exist", nodeID)
+	if _, ok := controller.nodes[nodeConfigStatus.NodeID]; ok {
+		return aoserrors.Errorf("connection for node ID %s already exist", nodeConfigStatus.NodeID)
 	}
 
-	controller.nodes[nodeID] = newHandler
+	controller.nodes[nodeConfigStatus.NodeID] = newHandler
+	newHandler.nodeConfigStatus = nodeConfigStatus
+	controller.nodeConfigStatusChan <- nodeConfigStatus
 
 	if err := newHandler.sendConnectionStatus(controller.isCloudConnected); err != nil {
 		log.Errorf("Can't send connection status: %v", err)
