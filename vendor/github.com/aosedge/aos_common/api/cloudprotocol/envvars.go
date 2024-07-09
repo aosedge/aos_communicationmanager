@@ -36,14 +36,14 @@ const (
 // EnvVarsInstanceInfo struct with envs and related service and user.
 type EnvVarsInstanceInfo struct {
 	InstanceFilter
-	EnvVars []EnvVarInfo `json:"envVars"`
+	Variables []EnvVarInfo `json:"variables"`
 }
 
 // EnvVarInfo env info with id and time to live.
 type EnvVarInfo struct {
-	ID       string     `json:"id"`
-	Variable string     `json:"variable"`
-	TTL      *time.Time `json:"ttl"`
+	Name  string     `json:"name"`
+	Value string     `json:"value"`
+	TTL   *time.Time `json:"ttl"`
 }
 
 // EnvVarsInstanceStatus struct with envs status and related service and user.
@@ -54,18 +54,18 @@ type EnvVarsInstanceStatus struct {
 
 // EnvVarStatus env status with error message.
 type EnvVarStatus struct {
-	ID        string     `json:"id"`
+	Name      string     `json:"name"`
 	ErrorInfo *ErrorInfo `json:"error,omitempty"`
 }
 
 // OverrideEnvVars request to override service environment variables.
 type OverrideEnvVars struct {
-	MessageType     string                `json:"messageType"`
-	OverrideEnvVars []EnvVarsInstanceInfo `json:"overrideEnvVars"`
+	MessageType string                `json:"messageType"`
+	Items       []EnvVarsInstanceInfo `json:"items"`
 }
 
 // OverrideEnvVarsStatus override env status.
 type OverrideEnvVarsStatus struct {
-	MessageType           string                  `json:"messageType"`
-	OverrideEnvVarsStatus []EnvVarsInstanceStatus `json:"overrideEnvVarsStatus"`
+	MessageType string                  `json:"messageType"`
+	Statuses    []EnvVarsInstanceStatus `json:"statuses"`
 }

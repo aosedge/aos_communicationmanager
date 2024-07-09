@@ -71,9 +71,9 @@ func (usageInstance *cgroupsSystemUsage) FillSystemInfo(instanceID string, insta
 		instance.prevCPU = 0
 	}
 
-	instance.monitoringData.CPU = uint64(math.Round(float64(cpu-instance.prevCPU) * 100.0 /
+	instance.monitoring.CPU = uint64(math.Round(float64(cpu-instance.prevCPU) * 100.0 /
 		(float64(now.Sub(instance.prevTime).Microseconds())) / float64(cpuCount)))
-	instance.monitoringData.RAM = ram
+	instance.monitoring.RAM = ram
 
 	instance.prevCPU = cpu
 	instance.prevTime = now

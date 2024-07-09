@@ -18,6 +18,7 @@
 package cloudprotocol
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/aosedge/aos_common/aoserrors"
@@ -115,8 +116,8 @@ type PartitionInfo struct {
 
 // NodeInfo node information.
 type NodeInfo struct {
-	NodeID     string                 `json:"nodeId"`
-	NodeType   string                 `json:"nodeType"`
+	NodeID     string                 `json:"id"`
+	NodeType   string                 `json:"type"`
 	Name       string                 `json:"name"`
 	Status     string                 `json:"status"`
 	CPUs       []CPUInfo              `json:"cpus"`
@@ -130,7 +131,7 @@ type NodeInfo struct {
 
 // ServiceStatus service status.
 type ServiceStatus struct {
-	ServiceID string     `json:"serviceId"`
+	ServiceID string     `json:"id"`
 	Version   string     `json:"version"`
 	Status    string     `json:"status"`
 	ErrorInfo *ErrorInfo `json:"errorInfo,omitempty"`
@@ -148,7 +149,7 @@ type InstanceStatus struct {
 
 // LayerStatus layer status.
 type LayerStatus struct {
-	LayerID   string     `json:"layerId"`
+	LayerID   string     `json:"id"`
 	Digest    string     `json:"digest"`
 	Version   string     `json:"version"`
 	Status    string     `json:"status"`
@@ -157,11 +158,13 @@ type LayerStatus struct {
 
 // ComponentStatus component status.
 type ComponentStatus struct {
-	ComponentID   string     `json:"componentId"`
-	ComponentType string     `json:"componentType"`
-	Version       string     `json:"version"`
-	Status        string     `json:"status"`
-	ErrorInfo     *ErrorInfo `json:"errorInfo,omitempty"`
+	ComponentID   string          `json:"id"`
+	ComponentType string          `json:"type"`
+	Version       string          `json:"version"`
+	NodeID        string          `json:"nodeId"`
+	Status        string          `json:"status"`
+	Annotations   json.RawMessage `json:"annotations,omitempty"`
+	ErrorInfo     *ErrorInfo      `json:"errorInfo,omitempty"`
 }
 
 // UnitStatus unit status structure.

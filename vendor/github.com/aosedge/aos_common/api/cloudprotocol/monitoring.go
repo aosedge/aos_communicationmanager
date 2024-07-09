@@ -18,8 +18,6 @@
 package cloudprotocol
 
 import (
-	"time"
-
 	"github.com/aosedge/aos_common/aostypes"
 )
 
@@ -34,34 +32,17 @@ const MonitoringMessageType = "monitoringData"
  * Types
  **********************************************************************************************************************/
 
-// PartitionUsage partition usage information.
-type PartitionUsage struct {
-	Name     string `json:"name"`
-	UsedSize uint64 `json:"usedSize"`
-}
-
-// MonitoringData monitoring data.
-type MonitoringData struct {
-	RAM        uint64           `json:"ram"`
-	CPU        uint64           `json:"cpu"`
-	InTraffic  uint64           `json:"inTraffic"`
-	OutTraffic uint64           `json:"outTraffic"`
-	Disk       []PartitionUsage `json:"disk"`
-}
-
 // NodeMonitoringData node monitoring data.
 type NodeMonitoringData struct {
-	MonitoringData
-	NodeID           string                   `json:"nodeId"`
-	Timestamp        time.Time                `json:"timestamp"`
-	ServiceInstances []InstanceMonitoringData `json:"serviceInstances"`
+	NodeID string                    `json:"nodeId"`
+	Items  []aostypes.MonitoringData `json:"items"`
 }
 
 // InstanceMonitoringData monitoring data for service.
 type InstanceMonitoringData struct {
 	aostypes.InstanceIdent
-	NodeID string `json:"nodeId"`
-	MonitoringData
+	NodeID string                    `json:"nodeId"`
+	Items  []aostypes.MonitoringData `json:"items"`
 }
 
 // Monitoring monitoring message structure.
