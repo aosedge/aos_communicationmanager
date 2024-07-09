@@ -42,9 +42,8 @@ type Message struct {
 
 // MessageHeader message header.
 type MessageHeader struct {
-	Version     uint64 `json:"version"`
-	SystemID    string `json:"systemId"`
-	MessageType string `json:"messageType"`
+	Version  uint64 `json:"version"`
+	SystemID string `json:"systemId"`
 }
 
 // ErrorInfo error information.

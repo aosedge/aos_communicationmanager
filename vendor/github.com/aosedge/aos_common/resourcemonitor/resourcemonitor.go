@@ -84,7 +84,7 @@ type NodeConfigProvider interface {
 
 // MonitoringSender sends monitoring data.
 type MonitoringSender interface {
-	SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData)
+	SendMonitoringData(monitoringData aostypes.NodeMonitoring)
 }
 
 // TrafficMonitoring interface to get network traffic.
@@ -114,7 +114,7 @@ type ResourceMonitor struct {
 	pollTimer             *time.Ticker
 	averageWindowCount    uint64
 	nodeInfo              cloudprotocol.NodeInfo
-	nodeMonitoringData    cloudprotocol.MonitoringData
+	nodeMonitoring        aostypes.MonitoringData
 	nodeAverageData       averageMonitoring
 	instanceMonitoringMap map[string]*instanceMonitoring
 	alertProcessors       *list.List
@@ -141,7 +141,7 @@ type instanceMonitoring struct {
 	uid                    uint32
 	gid                    uint32
 	partitions             []PartitionParam
-	monitoringData         cloudprotocol.InstanceMonitoringData
+	monitoring             aostypes.InstanceMonitoring
 	averageData            averageMonitoring
 	alertProcessorElements []*list.Element
 	prevCPU                uint64
@@ -258,23 +258,23 @@ func (monitor *ResourceMonitor) StartInstanceMonitor(
 	log.WithFields(log.Fields{"id": instanceID}).Debug("Start instance monitoring")
 
 	instanceMonitoring := &instanceMonitoring{
-		uid:            uint32(monitoringConfig.UID),
-		gid:            uint32(monitoringConfig.GID),
-		partitions:     monitoringConfig.Partitions,
-		monitoringData: cloudprotocol.InstanceMonitoringData{InstanceIdent: monitoringConfig.InstanceIdent},
+		uid:        uint32(monitoringConfig.UID),
+		gid:        uint32(monitoringConfig.GID),
+		partitions: monitoringConfig.Partitions,
+		monitoring: aostypes.InstanceMonitoring{InstanceIdent: monitoringConfig.InstanceIdent},
 	}
 
 	monitor.instanceMonitoringMap[instanceID] = instanceMonitoring
 
-	instanceMonitoring.monitoringData.Disk = make(
-		[]cloudprotocol.PartitionUsage, len(monitoringConfig.Partitions))
+	instanceMonitoring.monitoring.Disk = make(
+		[]aostypes.PartitionUsage, len(monitoringConfig.Partitions))
 
 	for i, partitionParam := range monitoringConfig.Partitions {
-		instanceMonitoring.monitoringData.Disk[i].Name = partitionParam.Name
+		instanceMonitoring.monitoring.Disk[i].Name = partitionParam.Name
 	}
 
 	instanceMonitoring.averageData = *newAverageMonitoring(
-		monitor.averageWindowCount, instanceMonitoring.monitoringData.Disk)
+		monitor.averageWindowCount, instanceMonitoring.monitoring.Disk)
 
 	if monitoringConfig.AlertRules != nil && monitor.alertSender != nil {
 		if err := monitor.setupInstanceAlerts(
@@ -307,25 +307,25 @@ func (monitor *ResourceMonitor) StopInstanceMonitor(instanceID string) error {
 }
 
 // GetAverageMonitoring returns average monitoring data.
-func (monitor *ResourceMonitor) GetAverageMonitoring() (cloudprotocol.NodeMonitoringData, error) {
+func (monitor *ResourceMonitor) GetAverageMonitoring() (aostypes.NodeMonitoring, error) {
 	monitor.Lock()
 	defer monitor.Unlock()
 
 	log.Debug("Get average monitoring data")
 
-	averageMonitoringData := cloudprotocol.NodeMonitoringData{
-		NodeID:           monitor.nodeInfo.NodeID,
-		Timestamp:        time.Now(),
-		MonitoringData:   monitor.nodeAverageData.toMonitoringData(),
-		ServiceInstances: make([]cloudprotocol.InstanceMonitoringData, 0, len(monitor.instanceMonitoringMap)),
+	timestamp := time.Now()
+
+	averageMonitoringData := aostypes.NodeMonitoring{
+		NodeID:        monitor.nodeInfo.NodeID,
+		NodeData:      monitor.nodeAverageData.toMonitoringData(timestamp),
+		InstancesData: make([]aostypes.InstanceMonitoring, 0, len(monitor.instanceMonitoringMap)),
 	}
 
 	for _, instanceMonitoring := range monitor.instanceMonitoringMap {
-		averageMonitoringData.ServiceInstances = append(averageMonitoringData.ServiceInstances,
-			cloudprotocol.InstanceMonitoringData{
-				InstanceIdent:  instanceMonitoring.monitoringData.InstanceIdent,
-				NodeID:         monitor.nodeInfo.NodeID,
-				MonitoringData: instanceMonitoring.averageData.toMonitoringData(),
+		averageMonitoringData.InstancesData = append(averageMonitoringData.InstancesData,
+			aostypes.InstanceMonitoring{
+				InstanceIdent:  instanceMonitoring.monitoring.InstanceIdent,
+				MonitoringData: instanceMonitoring.averageData.toMonitoringData(timestamp),
 			})
 	}
 
@@ -346,15 +346,15 @@ func (monitor *ResourceMonitor) setupNodeMonitoring(nodeInfo cloudprotocol.NodeI
 
 	monitor.nodeInfo = nodeInfo
 
-	monitor.nodeMonitoringData = cloudprotocol.MonitoringData{
-		Disk: make([]cloudprotocol.PartitionUsage, len(nodeInfo.Partitions)),
+	monitor.nodeMonitoring = aostypes.MonitoringData{
+		Disk: make([]aostypes.PartitionUsage, len(nodeInfo.Partitions)),
 	}
 
 	for i, partitionParam := range nodeInfo.Partitions {
-		monitor.nodeMonitoringData.Disk[i].Name = partitionParam.Name
+		monitor.nodeMonitoring.Disk[i].Name = partitionParam.Name
 	}
 
-	monitor.nodeAverageData = *newAverageMonitoring(monitor.averageWindowCount, monitor.nodeMonitoringData.Disk)
+	monitor.nodeAverageData = *newAverageMonitoring(monitor.averageWindowCount, monitor.nodeMonitoring.Disk)
 
 	return nil
 }
@@ -376,7 +376,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 
 		monitor.alertProcessors.PushBack(createAlertProcessor(
 			"System CPU",
-			&monitor.nodeMonitoringData.CPU,
+			&monitor.nodeMonitoring.CPU,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem("cpu", time, value, status))
 			},
@@ -386,7 +386,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	if nodeConfig.AlertRules.RAM != nil {
 		monitor.alertProcessors.PushBack(createAlertProcessor(
 			"System RAM",
-			&monitor.nodeMonitoringData.RAM,
+			&monitor.nodeMonitoring.RAM,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem("ram", time, value, status))
 			},
@@ -394,7 +394,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	}
 
 	for _, diskRule := range nodeConfig.AlertRules.UsedDisks {
-		diskUsageValue, findErr := getDiskUsageValue(monitor.nodeMonitoringData.Disk, diskRule.Name)
+		diskUsageValue, findErr := getDiskUsageValue(monitor.nodeMonitoring.Disk, diskRule.Name)
 		if findErr != nil && err == nil {
 			err = findErr
 
@@ -415,7 +415,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	if nodeConfig.AlertRules.InTraffic != nil {
 		monitor.alertProcessors.PushBack(createAlertProcessor(
 			"IN Traffic",
-			&monitor.nodeMonitoringData.InTraffic,
+			&monitor.nodeMonitoring.InTraffic,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem("inTraffic", time, value, status))
 			},
@@ -425,7 +425,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	if nodeConfig.AlertRules.OutTraffic != nil {
 		monitor.alertProcessors.PushBack(createAlertProcessor(
 			"OUT Traffic",
-			&monitor.nodeMonitoringData.OutTraffic,
+			&monitor.nodeMonitoring.OutTraffic,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem("outTraffic", time, value, status))
 			},
@@ -435,7 +435,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	return err
 }
 
-func getDiskUsageValue(disks []cloudprotocol.PartitionUsage, name string) (*uint64, error) {
+func getDiskUsageValue(disks []aostypes.PartitionUsage, name string) (*uint64, error) {
 	for i, disk := range disks {
 		if disk.Name == name {
 			return &disks[i].UsedSize, nil
@@ -470,7 +470,7 @@ func (monitor *ResourceMonitor) run(ctx context.Context) {
 			monitor.Lock()
 			monitor.sourceSystemUsage.CacheSystemInfos()
 			monitor.getCurrentSystemData()
-			monitor.getCurrentInstanceData()
+			monitor.getCurrentInstancesData()
 			monitor.processAlerts()
 			monitor.sendMonitoringData()
 			monitor.Unlock()
@@ -490,11 +490,11 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 
 		e := monitor.alertProcessors.PushBack(createAlertProcessor(
 			instanceID+" CPU",
-			&instanceMonitoring.monitoringData.CPU,
+			&instanceMonitoring.monitoring.CPU,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoringData.InstanceIdent, "cpu", time, value, status))
+						instanceMonitoring.monitoring.InstanceIdent, "cpu", time, value, status))
 			}, rules))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
@@ -503,18 +503,18 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 	if rules.RAM != nil {
 		e := monitor.alertProcessors.PushBack(createAlertProcessor(
 			instanceID+" RAM",
-			&instanceMonitoring.monitoringData.RAM,
+			&instanceMonitoring.monitoring.RAM,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoringData.InstanceIdent, "ram", time, value, status))
+						instanceMonitoring.monitoring.InstanceIdent, "ram", time, value, status))
 			}, *rules.RAM))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
 	}
 
 	for _, diskRule := range rules.UsedDisks {
-		diskUsageValue, findErr := getDiskUsageValue(instanceMonitoring.monitoringData.Disk, diskRule.Name)
+		diskUsageValue, findErr := getDiskUsageValue(instanceMonitoring.monitoring.Disk, diskRule.Name)
 		if findErr != nil && err == nil {
 			log.Errorf("Can't find disk: %s", diskRule.Name)
 
@@ -529,7 +529,7 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoringData.InstanceIdent, diskRule.Name, time, value, status))
+						instanceMonitoring.monitoring.InstanceIdent, diskRule.Name, time, value, status))
 			}, diskRule.AlertRuleParam))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
@@ -538,11 +538,11 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 	if rules.InTraffic != nil {
 		e := monitor.alertProcessors.PushBack(createAlertProcessor(
 			instanceID+" Traffic IN",
-			&instanceMonitoring.monitoringData.InTraffic,
+			&instanceMonitoring.monitoring.InTraffic,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoringData.InstanceIdent, "inTraffic", time, value, status))
+						instanceMonitoring.monitoring.InstanceIdent, "inTraffic", time, value, status))
 			}, *rules.InTraffic))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
@@ -551,11 +551,11 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 	if rules.OutTraffic != nil {
 		e := monitor.alertProcessors.PushBack(createAlertProcessor(
 			instanceID+" Traffic OUT",
-			&instanceMonitoring.monitoringData.OutTraffic,
+			&instanceMonitoring.monitoring.OutTraffic,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoringData.InstanceIdent, "outTraffic", time, value, status))
+						instanceMonitoring.monitoring.InstanceIdent, "outTraffic", time, value, status))
 			}, *rules.OutTraffic))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
@@ -565,35 +565,36 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 }
 
 func (monitor *ResourceMonitor) sendMonitoringData() {
-	nodeMonitoringData := cloudprotocol.NodeMonitoringData{
-		MonitoringData:   monitor.nodeMonitoringData,
-		NodeID:           monitor.nodeInfo.NodeID,
-		Timestamp:        time.Now(),
-		ServiceInstances: make([]cloudprotocol.InstanceMonitoringData, 0, len(monitor.instanceMonitoringMap)),
+	nodeMonitoringData := aostypes.NodeMonitoring{
+		NodeID:        monitor.nodeInfo.NodeID,
+		NodeData:      monitor.nodeMonitoring,
+		InstancesData: make([]aostypes.InstanceMonitoring, 0, len(monitor.instanceMonitoringMap)),
 	}
 
 	for _, instanceMonitoring := range monitor.instanceMonitoringMap {
-		nodeMonitoringData.ServiceInstances = append(nodeMonitoringData.ServiceInstances,
-			instanceMonitoring.monitoringData)
+		nodeMonitoringData.InstancesData = append(nodeMonitoringData.InstancesData,
+			instanceMonitoring.monitoring)
 	}
 
 	monitor.monitoringSender.SendMonitoringData(nodeMonitoringData)
 }
 
 func (monitor *ResourceMonitor) getCurrentSystemData() {
+	monitor.nodeMonitoring.Timestamp = time.Now()
+
 	cpu, err := getSystemCPUUsage()
 	if err != nil {
 		log.Errorf("Can't get system CPU: %s", err)
 	}
 
-	monitor.nodeMonitoringData.CPU = monitor.cpuToDMIPs(cpu)
+	monitor.nodeMonitoring.CPU = monitor.cpuToDMIPs(cpu)
 
-	monitor.nodeMonitoringData.RAM, err = getSystemRAMUsage()
+	monitor.nodeMonitoring.RAM, err = getSystemRAMUsage()
 	if err != nil {
 		log.Errorf("Can't get system RAM: %s", err)
 	}
 
-	for i, disk := range monitor.nodeMonitoringData.Disk {
+	for i, disk := range monitor.nodeMonitoring.Disk {
 		mountPoint, err := getDiskPath(monitor.nodeInfo.Partitions, disk.Name)
 		if err != nil {
 			log.Errorf("Can't get disk path: %v", err)
@@ -601,7 +602,7 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 			continue
 		}
 
-		monitor.nodeMonitoringData.Disk[i].UsedSize, err = getSystemDiskUsage(mountPoint)
+		monitor.nodeMonitoring.Disk[i].UsedSize, err = getSystemDiskUsage(mountPoint)
 		if err != nil {
 			log.Errorf("Can't get system Disk usage: %v", err)
 		}
@@ -613,32 +614,36 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 			log.Errorf("Can't get system traffic value: %s", err)
 		}
 
-		monitor.nodeMonitoringData.InTraffic = inTraffic
-		monitor.nodeMonitoringData.OutTraffic = outTraffic
+		monitor.nodeMonitoring.InTraffic = inTraffic
+		monitor.nodeMonitoring.OutTraffic = outTraffic
 	}
 
-	monitor.nodeAverageData.updateMonitoringData(monitor.nodeMonitoringData)
+	monitor.nodeAverageData.updateMonitoringData(monitor.nodeMonitoring)
 
 	log.WithFields(log.Fields{
-		"CPU":  monitor.nodeMonitoringData.CPU,
-		"RAM":  monitor.nodeMonitoringData.RAM,
-		"Disk": monitor.nodeMonitoringData.Disk,
-		"IN":   monitor.nodeMonitoringData.InTraffic,
-		"OUT":  monitor.nodeMonitoringData.OutTraffic,
+		"CPU":  monitor.nodeMonitoring.CPU,
+		"RAM":  monitor.nodeMonitoring.RAM,
+		"Disk": monitor.nodeMonitoring.Disk,
+		"IN":   monitor.nodeMonitoring.InTraffic,
+		"OUT":  monitor.nodeMonitoring.OutTraffic,
 	}).Debug("Monitoring data")
 }
 
-func (monitor *ResourceMonitor) getCurrentInstanceData() {
+func (monitor *ResourceMonitor) getCurrentInstancesData() {
+	timestamp := time.Now()
+
 	for instanceID, value := range monitor.instanceMonitoringMap {
+		value.monitoring.Timestamp = timestamp
+
 		err := monitor.sourceSystemUsage.FillSystemInfo(instanceID, value)
 		if err != nil {
 			log.Errorf("Can't fill system usage info: %v", err)
 		}
 
-		value.monitoringData.CPU = monitor.cpuToDMIPs(float64(value.monitoringData.CPU))
+		value.monitoring.CPU = monitor.cpuToDMIPs(float64(value.monitoring.CPU))
 
 		for i, partitionParam := range value.partitions {
-			value.monitoringData.Disk[i].UsedSize, err = getInstanceDiskUsage(partitionParam.Path, value.uid, value.gid)
+			value.monitoring.Disk[i].UsedSize, err = getInstanceDiskUsage(partitionParam.Path, value.uid, value.gid)
 			if err != nil {
 				log.Errorf("Can't get service disk usage: %v", err)
 			}
@@ -650,19 +655,19 @@ func (monitor *ResourceMonitor) getCurrentInstanceData() {
 				log.Errorf("Can't get service traffic: %s", err)
 			}
 
-			value.monitoringData.InTraffic = inTraffic
-			value.monitoringData.OutTraffic = outTraffic
+			value.monitoring.InTraffic = inTraffic
+			value.monitoring.OutTraffic = outTraffic
 		}
 
-		value.averageData.updateMonitoringData(value.monitoringData.MonitoringData)
+		value.averageData.updateMonitoringData(value.monitoring.MonitoringData)
 
 		log.WithFields(log.Fields{
 			"id":   instanceID,
-			"CPU":  value.monitoringData.CPU,
-			"RAM":  value.monitoringData.RAM,
-			"Disk": value.monitoringData.Disk,
-			"IN":   value.monitoringData.InTraffic,
-			"OUT":  value.monitoringData.OutTraffic,
+			"CPU":  value.monitoring.CPU,
+			"RAM":  value.monitoring.RAM,
+			"Disk": value.monitoring.Disk,
+			"IN":   value.monitoring.InTraffic,
+			"OUT":  value.monitoring.OutTraffic,
 		}).Debug("Instance monitoring data")
 	}
 }
@@ -767,7 +772,7 @@ func (monitor *ResourceMonitor) cpuToDMIPs(cpu float64) uint64 {
 	return uint64(math.Round(float64(cpu) * float64(monitor.nodeInfo.MaxDMIPs) / 100.0))
 }
 
-func newAverageMonitoring(windowCount uint64, partitions []cloudprotocol.PartitionUsage) *averageMonitoring {
+func newAverageMonitoring(windowCount uint64, partitions []aostypes.PartitionUsage) *averageMonitoring {
 	averageMonitoring := &averageMonitoring{
 		ram:        newAverageCalc(windowCount),
 		cpu:        newAverageCalc(windowCount),
@@ -783,25 +788,26 @@ func newAverageMonitoring(windowCount uint64, partitions []cloudprotocol.Partiti
 	return averageMonitoring
 }
 
-func (average *averageMonitoring) toMonitoringData() cloudprotocol.MonitoringData {
-	monitoringData := cloudprotocol.MonitoringData{
+func (average *averageMonitoring) toMonitoringData(timestamp time.Time) aostypes.MonitoringData {
+	data := aostypes.MonitoringData{
 		CPU:        average.cpu.getIntValue(),
 		RAM:        average.ram.getIntValue(),
 		InTraffic:  average.inTraffic.getIntValue(),
 		OutTraffic: average.outTraffic.getIntValue(),
-		Disk:       make([]cloudprotocol.PartitionUsage, 0, len(average.disks)),
+		Disk:       make([]aostypes.PartitionUsage, 0, len(average.disks)),
+		Timestamp:  timestamp,
 	}
 
 	for name, diskUsage := range average.disks {
-		monitoringData.Disk = append(monitoringData.Disk, cloudprotocol.PartitionUsage{
+		data.Disk = append(data.Disk, aostypes.PartitionUsage{
 			Name: name, UsedSize: diskUsage.getIntValue(),
 		})
 	}
 
-	return monitoringData
+	return data
 }
 
-func (average *averageMonitoring) updateMonitoringData(data cloudprotocol.MonitoringData) {
+func (average *averageMonitoring) updateMonitoringData(data aostypes.MonitoringData) {
 	average.cpu.calculate(float64(data.CPU))
 	average.ram.calculate(float64(data.RAM))
 	average.inTraffic.calculate(float64(data.InTraffic))

@@ -113,12 +113,12 @@ type FirewallRule struct {
 
 // NetworkParameters networks parameters.
 type NetworkParameters struct {
-	NetworkID     string
-	Subnet        string
-	IP            string
-	VlanID        uint64
-	DNSServers    []string
-	FirewallRules []FirewallRule
+	NetworkID     string         `json:"networkId"`
+	Subnet        string         `json:"subnet"`
+	IP            string         `json:"ip"`
+	VlanID        uint64         `json:"vlanId"`
+	DNSServers    []string       `json:"dnsServers"`
+	FirewallRules []FirewallRule `json:"firewallRules"`
 }
 
 // InstanceInfo instance information to start it.
@@ -211,6 +211,33 @@ type ServiceConfig struct {
 	Resources          []string                     `json:"resources,omitempty"`
 	Permissions        map[string]map[string]string `json:"permissions,omitempty"`
 	AlertRules         *AlertRules                  `json:"alertRules,omitempty"`
+}
+
+// PartitionUsage partition usage information.
+type PartitionUsage struct {
+	Name     string `json:"name"`
+	UsedSize uint64 `json:"usedSize"`
+}
+
+// MonitoringData monitoring data.
+type MonitoringData struct {
+	Timestamp  time.Time        `json:"timestamp"`
+	RAM        uint64           `json:"ram"`
+	CPU        uint64           `json:"cpu"`
+	InTraffic  uint64           `json:"inTraffic"`
+	OutTraffic uint64           `json:"outTraffic"`
+	Disk       []PartitionUsage `json:"disk"`
+}
+
+type InstanceMonitoring struct {
+	InstanceIdent
+	MonitoringData
+}
+
+type NodeMonitoring struct {
+	NodeID        string               `json:"nodeId"`
+	NodeData      MonitoringData       `json:"nodeData"`
+	InstancesData []InstanceMonitoring `json:"instancesData"`
 }
 
 /***********************************************************************************************************************

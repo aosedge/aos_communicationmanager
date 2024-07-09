@@ -36,15 +36,32 @@ const (
 	CrashLog   = "crashLog"
 )
 
+// Log statuses.
+const (
+	LogStatusOk     = "ok"
+	LogStatusError  = "error"
+	LogStatusEmpty  = "empty"
+	LogStatusAbsent = "absent"
+)
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
+// LogUploadOptions request log message.
+type LogUploadOptions struct {
+	Type           string     `json:"type"`
+	URL            string     `json:"url"`
+	BearerToken    string     `json:"bearerToken"`
+	BearerTokenTTL *time.Time `json:"bearerTokenTtl"`
+}
+
 // LogFilter request log message.
 type LogFilter struct {
-	From    *time.Time `json:"from"`
-	Till    *time.Time `json:"till"`
-	NodeIDs []string   `json:"nodeIds,omitempty"`
+	From          *time.Time        `json:"from"`
+	Till          *time.Time        `json:"till"`
+	NodeIDs       []string          `json:"nodeIds,omitempty"`
+	UploadOptions *LogUploadOptions `json:"uploadOptions,omitempty"`
 	InstanceFilter
 }
 
@@ -64,6 +81,7 @@ type PushLog struct {
 	PartsCount  uint64     `json:"partsCount,omitempty"`
 	Part        uint64     `json:"part,omitempty"`
 	Content     []byte     `json:"content,omitempty"`
+	Status      string     `json:"status"`
 	ErrorInfo   *ErrorInfo `json:"errorInfo,omitempty"`
 }
 

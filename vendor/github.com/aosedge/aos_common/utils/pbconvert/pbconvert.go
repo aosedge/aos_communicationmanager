@@ -158,7 +158,7 @@ func NetworkParametersToPB(params aostypes.NetworkParameters) *pbsm.NetworkParam
 }
 
 // NodeInfoFromPB converts NodeInfo from protobuf to Aos type.
-func NewNodeInfoFromPB(pbNodeInfo *pbiam.NodeInfo) cloudprotocol.NodeInfo {
+func NodeInfoFromPB(pbNodeInfo *pbiam.NodeInfo) cloudprotocol.NodeInfo {
 	nodeInfo := cloudprotocol.NodeInfo{
 		NodeID:    pbNodeInfo.GetNodeId(),
 		NodeType:  pbNodeInfo.GetNodeType(),
