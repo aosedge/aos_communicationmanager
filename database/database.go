@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
@@ -32,6 +33,7 @@ import (
 	_ "github.com/mattn/go-sqlite3" // ignore lint
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aosedge/aos_common/utils/semverutils"
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/downloader"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
@@ -51,7 +53,7 @@ const (
 	syncMode    = "NORMAL"
 )
 
-const dbVersion = 1
+const dbVersion = 2
 
 const dbFileName = "communicationmanager.db"
 
@@ -365,44 +367,58 @@ func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err e
 
 // GetServicesInfo returns services info.
 func (db *Database) GetServicesInfo() ([]imagemanager.ServiceInfo, error) {
-	return db.getServicesFromQuery(`SELECT * FROM services WHERE(id, aosVersion)
-                                    IN (SELECT id, MAX(aosVersion) FROM services GROUP BY id)`)
+	allServiceVersions, err := db.getServicesFromQuery(`SELECT * FROM services GROUP BY id`)
+	if err != nil {
+		return nil, err
+	}
+
+	maxVersionServices := make(map[string]imagemanager.ServiceInfo)
+
+	for _, service := range allServiceVersions {
+		if storedService, found := maxVersionServices[service.ServiceID]; found {
+			greater, err := semverutils.GreaterThan(service.Version, storedService.Version)
+			if err != nil {
+				return nil, aoserrors.Wrap(err)
+			}
+			if greater {
+				maxVersionServices[service.ServiceID] = service
+			}
+		} else {
+			maxVersionServices[service.ServiceID] = service
+		}
+	}
+
+	result := make([]imagemanager.ServiceInfo, 0)
+	for _, value := range maxVersionServices {
+		result = append(result, value)
+	}
+
+	return result, nil
 }
 
 // GetServiceInfo returns service info by ID.
 func (db *Database) GetServiceInfo(serviceID string) (service imagemanager.ServiceInfo, err error) {
-	var (
-		configJSON   []byte
-		layers       []byte
-		exposedPorts []byte
-	)
-
-	if err = db.getDataFromQuery(
-		"SELECT * FROM services WHERE aosVersion = (SELECT MAX(aosVersion) FROM services WHERE id = ?) AND id = ?",
-		[]any{serviceID, serviceID},
-		&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion, &service.Description,
-		&service.URL, &service.RemoteURL, &service.Path, &service.Size, &service.Timestamp, &service.Cached,
-		&configJSON, &layers, &service.Sha256, &service.Sha512, &exposedPorts, &service.GID); err != nil {
-		if errors.Is(err, errNotExist) {
-			return service, imagemanager.ErrNotExist
-		}
-
+	maxVersion, err := db.getMaxServiceVersion(serviceID)
+	if err != nil {
 		return service, err
 	}
 
-	if err = json.Unmarshal(configJSON, &service.Config); err != nil {
-		return service, aoserrors.Wrap(err)
+	services, err := db.getServicesFromQuery(
+		"SELECT * FROM services WHERE id = ? and version = ?",
+		serviceID, maxVersion)
+	if err != nil {
+		return service, err
 	}
 
-	if err = json.Unmarshal(layers, &service.Layers); err != nil {
-		return service, aoserrors.Wrap(err)
+	if len(services) == 0 {
+		return imagemanager.ServiceInfo{}, imagemanager.ErrNotExist
 	}
 
-	if err = json.Unmarshal(exposedPorts, &service.ExposedPorts); err != nil {
-		return service, aoserrors.Wrap(err)
+	if len(services) > 1 {
+		return imagemanager.ServiceInfo{}, aoserrors.New("wrong number of services returned")
 	}
 
-	return service, nil
+	return services[0], nil
 }
 
 // AddService adds new service.
@@ -422,10 +438,10 @@ func (db *Database) AddService(service imagemanager.ServiceInfo) error {
 		return aoserrors.Wrap(err)
 	}
 
-	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		service.ID, service.AosVersion, service.ProviderID, service.VendorVersion, service.Description,
-		service.URL, service.RemoteURL, service.Path, service.Size, service.Timestamp, service.Cached,
-		configJSON, layers, service.Sha256, service.Sha512, exposedPorts, service.GID)
+	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		service.ServiceID, service.Version, service.ProviderID, service.URL, service.RemoteURL,
+		service.Path, service.Size, service.Timestamp, service.Cached,
+		configJSON, layers, service.Sha256, exposedPorts, service.GID)
 }
 
 // SetServiceCached sets cached status for the service.
@@ -439,9 +455,9 @@ func (db *Database) SetServiceCached(serviceID string, cached bool) (err error) 
 }
 
 // RemoveService removes existing service.
-func (db *Database) RemoveService(serviceID string, aosVersion uint64) (err error) {
-	if err = db.executeQuery("DELETE FROM services WHERE id = ? AND aosVersion = ?",
-		serviceID, aosVersion); errors.Is(err, errNotExist) {
+func (db *Database) RemoveService(serviceID string, version string) (err error) {
+	if err = db.executeQuery("DELETE FROM services WHERE id = ? AND version = ?",
+		serviceID, version); errors.Is(err, errNotExist) {
 		return nil
 	}
 
@@ -451,13 +467,19 @@ func (db *Database) RemoveService(serviceID string, aosVersion uint64) (err erro
 // GetAllServiceVersions returns all service versions.
 func (db *Database) GetServiceVersions(serviceID string) (services []imagemanager.ServiceInfo, err error) {
 	if services, err = db.getServicesFromQuery(
-		"SELECT * FROM services WHERE id = ? ORDER BY aosVersion", serviceID); err != nil {
+		"SELECT * FROM services WHERE id = ? GROUP BY version", serviceID); err != nil {
 		return nil, err
 	}
 
 	if len(services) == 0 {
 		return nil, imagemanager.ErrNotExist
 	}
+
+	sort.SliceStable(services, func(left, right int) bool {
+		res, _ := semverutils.LessThan(services[left].Version, services[right].Version)
+
+		return res
+	})
 
 	return services, nil
 }
@@ -852,12 +874,10 @@ func (db *Database) createServiceTable() (err error) {
 	log.Info("Create service table")
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS services (id TEXT NOT NULL ,
-                                                               aosVersion INTEGER,
+                                                               version TEXT NOT NULL,
                                                                providerId TEXT,
-                                                               vendorVersion TEXT,
-                                                               description TEXT,
-                                                               localURL   TEXT,
-                                                               remoteURL  TEXT,
+                                                               localURL TEXT,
+                                                               remoteURL TEXT,
                                                                path TEXT,
                                                                size INTEGER,
                                                                timestamp TIMESTAMP,
@@ -865,10 +885,9 @@ func (db *Database) createServiceTable() (err error) {
                                                                config BLOB,
                                                                layers BLOB,
                                                                sha256 BLOB,
-                                                               sha512 BLOB,
                                                                exposedPorts BLOB,
                                                                gid INTEGER,
-                                                               PRIMARY KEY(id, aosVersion))`)
+                                                               PRIMARY KEY(id, version))`)
 
 	return aoserrors.Wrap(err)
 }
@@ -1012,10 +1031,9 @@ func (db *Database) getServicesFromQuery(
 			exposedPorts []byte
 		)
 
-		if err = rows.Scan(&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion,
-			&service.Description, &service.URL, &service.RemoteURL, &service.Path, &service.Size,
-			&service.Timestamp, &service.Cached, &configJSON, &layers, &service.Sha256,
-			&service.Sha512, &exposedPorts, &service.GID); err != nil {
+		if err = rows.Scan(&service.ServiceID, &service.Version, &service.ProviderID, &service.URL, &service.RemoteURL,
+			&service.Path, &service.Size, &service.Timestamp, &service.Cached, &configJSON, &layers,
+			&service.Sha256, &exposedPorts, &service.GID); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -1035,6 +1053,44 @@ func (db *Database) getServicesFromQuery(
 	}
 
 	return services, nil
+}
+
+func (db *Database) getMaxServiceVersion(serviceID string) (version string, err error) {
+	var rows *sql.Rows
+	if serviceID != "" {
+		rows, err = db.sql.Query("SELECT version FROM services WHERE id = ?", serviceID)
+	} else {
+		rows, err = db.sql.Query("SELECT version FROM services")
+	}
+
+	if err != nil {
+		return "", aoserrors.Wrap(err)
+	}
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return "", aoserrors.Wrap(rows.Err())
+	}
+
+	maxVersion := "0.0.0"
+
+	for rows.Next() {
+		var version string
+		if err = rows.Scan(&version); err != nil {
+			return "", aoserrors.Wrap(err)
+		}
+
+		greater, err := semverutils.GreaterThan(version, maxVersion)
+		if err != nil {
+			return "", aoserrors.Wrap(err)
+		}
+
+		if greater {
+			maxVersion = version
+		}
+	}
+
+	return maxVersion, nil
 }
 
 func (db *Database) getLayersFromQuery(
