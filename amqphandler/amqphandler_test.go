@@ -174,7 +174,7 @@ func sendCloudMessage(msgType string, message interface{}) error {
 	}
 
 	dataToSend := cloudprotocol.ReceivedMessage{
-		Header: cloudprotocol.MessageHeader{MessageType: msgType, Version: cloudprotocol.ProtocolVersion},
+		Header: cloudprotocol.MessageHeader{Version: cloudprotocol.ProtocolVersion},
 		Data:   rawJSON,
 	}
 
@@ -318,8 +318,8 @@ func TestReceiveMessages(t *testing.T) {
 		{
 			messageType: cloudprotocol.OverrideEnvVarsMessageType,
 			expectedData: &cloudprotocol.OverrideEnvVars{
-				MessageType:     cloudprotocol.OverrideEnvVarsMessageType,
-				OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{},
+				MessageType: cloudprotocol.OverrideEnvVarsMessageType,
+				Items:       []cloudprotocol.EnvVarsInstanceInfo{},
 			},
 		},
 		{
@@ -439,44 +439,47 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	nodeMonitoring := cloudprotocol.NodeMonitoringData{
-		MonitoringData: cloudprotocol.MonitoringData{
-			RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []cloudprotocol.PartitionUsage{{
-				Name: "p1", UsedSize: 100,
-			}},
+		Items: []aostypes.MonitoringData{
+			{
+				RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []aostypes.PartitionUsage{{
+					Name: "p1", UsedSize: 100,
+				}},
+				Timestamp: time.Now().UTC(),
+			},
 		},
-		NodeID:    "mainNode",
-		Timestamp: time.Now().UTC(),
-		ServiceInstances: []cloudprotocol.InstanceMonitoringData{
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 1024, CPU: 50, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+	}
+
+	instanceMonitoringData := []cloudprotocol.InstanceMonitoringData{
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 1024, CPU: 50, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 128, CPU: 60, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+		},
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 128, CPU: 60, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 256, CPU: 70, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+		},
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 256, CPU: 70, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 512, CPU: 80, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+		},
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 512, CPU: 80, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 	}
 
 	monitoringData := cloudprotocol.Monitoring{
-		MessageType: cloudprotocol.MonitoringMessageType,
-		Nodes:       []cloudprotocol.NodeMonitoringData{nodeMonitoring},
+		MessageType:      cloudprotocol.MonitoringMessageType,
+		Nodes:            []cloudprotocol.NodeMonitoringData{nodeMonitoring},
+		ServiceInstances: instanceMonitoringData,
 	}
 
 	pushServiceLogData := cloudprotocol.PushLog{
@@ -513,18 +516,18 @@ func TestSendMessages(t *testing.T) {
 
 	overrideEnvStatus := cloudprotocol.OverrideEnvVarsStatus{
 		MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType,
-		OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
+		Statuses: []cloudprotocol.EnvVarsInstanceStatus{
 			{
 				InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
 				Statuses: []cloudprotocol.EnvVarStatus{
-					{ID: "1234"},
-					{ID: "345", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "some error"}},
+					{Name: "1234"},
+					{Name: "345", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "some error"}},
 				},
 			},
 			{
 				InstanceFilter: cloudprotocol.NewInstanceFilter("service1", "subject1", -1),
 				Statuses: []cloudprotocol.EnvVarStatus{
-					{ID: "0000"},
+					{Name: "0000"},
 				},
 			},
 		},
@@ -561,9 +564,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.UnitStatusMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.UnitStatus{
 					MessageType:  cloudprotocol.UnitStatusMessageType,
@@ -586,9 +588,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.MonitoringMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &monitoringData,
 			},
@@ -607,9 +608,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.NewStateMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.NewState{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
@@ -632,9 +632,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.StateRequestMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.StateRequest{
 					MessageType:   cloudprotocol.StateRequestMessageType,
@@ -652,9 +651,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.PushLogMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.PushLog{
 					MessageType: cloudprotocol.PushLogMessageType,
@@ -675,9 +673,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.AlertsMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &alertsData,
 			},
@@ -691,9 +688,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.IssueUnitCertsMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &issueCerts,
 			},
@@ -707,9 +703,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &installCertsConfirmation,
 			},
@@ -723,9 +718,8 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &overrideEnvStatus,
 			},
@@ -958,15 +952,20 @@ func TestSendDisconnectMessages(t *testing.T) {
 	for i := 0; i < sendQueueSize; i++ {
 		select {
 		case delivery := <-testClient.delivery:
-			var message cloudprotocol.Message
+			// unmarshal type name
+			var message struct {
+				Data struct {
+					MessageType string `json:"messageType"`
+				} `json:"data"`
+			}
 
 			if err = json.Unmarshal(delivery.Body, &message); err != nil {
-				t.Errorf("Error parsing message: %v", err)
+				t.Errorf("Can't parse json message: %v", err)
 				continue
 			}
 
-			if message.Header.MessageType != cloudprotocol.AlertsMessageType {
-				t.Errorf("Wrong message type: %s", message.Header.MessageType)
+			if message.Data.MessageType != cloudprotocol.AlertsMessageType {
+				t.Errorf("Wrong message type: %s", message.Data.MessageType)
 			}
 
 		case err = <-testClient.errChannel:

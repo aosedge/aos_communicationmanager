@@ -132,14 +132,6 @@ var (
 	ErrSendChannelFull = errors.New("send channel full")
 )
 
-var importantMessages = []string{ //nolint:gochecknoglobals // used as const
-	cloudprotocol.DesiredStatusMessageType, cloudprotocol.StateAcceptanceMessageType,
-	cloudprotocol.RenewCertsNotificationMessageType, cloudprotocol.IssuedUnitCertsMessageType, cloudprotocol.OverrideEnvVarsMessageType,
-	cloudprotocol.NewStateMessageType, cloudprotocol.StateRequestMessageType, cloudprotocol.UnitStatusMessageType,
-	cloudprotocol.IssueUnitCertsMessageType, cloudprotocol.InstallUnitCertsConfirmationMessageType,
-	cloudprotocol.OverrideEnvVarsStatusMessageType,
-}
-
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
@@ -179,8 +171,7 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 	ctx, handler.cancelFunc = context.WithCancel(context.Background())
 
 	if connectionInfo, err = getConnectionInfo(ctx, sdURL,
-		handler.createCloudMessage(cloudprotocol.ServiceDiscoveryType,
-			cloudprotocol.ServiceDiscoveryRequest{}), tlsConfig); err != nil {
+		handler.createCloudMessage(cloudprotocol.ServiceDiscoveryRequest{}), tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -715,12 +706,11 @@ func (handler *AmqpHandler) unmarshalReceiveData(data []byte) (Message, error) {
 	return result, nil
 }
 
-func (handler *AmqpHandler) createCloudMessage(messageType string, data interface{}) cloudprotocol.Message {
+func (handler *AmqpHandler) createCloudMessage(data interface{}) cloudprotocol.Message {
 	return cloudprotocol.Message{
 		Header: cloudprotocol.MessageHeader{
-			Version:     cloudprotocol.ProtocolVersion,
-			SystemID:    handler.systemID,
-			MessageType: messageType,
+			Version:  cloudprotocol.ProtocolVersion,
+			SystemID: handler.systemID,
 		},
 		Data: data,
 	}
@@ -744,7 +734,7 @@ func (handler *AmqpHandler) scheduleMessage(messageType string, data interface{}
 	}
 
 	select {
-	case handler.sendChannel <- handler.createCloudMessage(messageType, data):
+	case handler.sendChannel <- handler.createCloudMessage(data):
 		return nil
 
 	case <-time.After(sendTimeout):
@@ -752,18 +742,8 @@ func (handler *AmqpHandler) scheduleMessage(messageType string, data interface{}
 	}
 }
 
-func isMessageImportant(messageType string) bool {
-	for _, importantType := range importantMessages {
-		if messageType == importantType {
-			return true
-		}
-	}
-
-	return false
-}
-
-func getMessageDataForLog(messageType string, data []byte) string {
-	if len(data) > maxLenLogMessage && !isMessageImportant(messageType) {
+func getMessageDataForLog(message interface{}, data []byte) string {
+	if len(data) > maxLenLogMessage && !isMessageImportant(message) {
 		return string(data[:maxLenLogMessage]) + "..."
 	}
 
@@ -779,9 +759,9 @@ func (handler *AmqpHandler) sendMessage(
 	}
 
 	if handler.sendTry > 1 {
-		log.WithField("data", getMessageDataForLog(message.Header.MessageType, data)).Debug("AMQP retry message")
+		log.WithField("data", getMessageDataForLog(message.Data, data)).Debug("AMQP retry message")
 	} else {
-		log.WithField("data", getMessageDataForLog(message.Header.MessageType, data)).Debug("AMQP send message")
+		log.WithField("data", getMessageDataForLog(message.Data, data)).Debug("AMQP send message")
 	}
 
 	if handler.sendTry++; handler.sendTry > sendMaxTry {
@@ -804,4 +784,33 @@ func (handler *AmqpHandler) sendMessage(
 	}
 
 	return nil
+}
+
+func isMessageImportant(message interface{}) bool {
+	switch message.(type) {
+	case cloudprotocol.DesiredStatus:
+		return true
+	case cloudprotocol.StateAcceptance:
+		return true
+	case cloudprotocol.RenewCertsNotification:
+		return true
+	case cloudprotocol.IssuedUnitCerts:
+		return true
+	case cloudprotocol.OverrideEnvVars:
+		return true
+	case cloudprotocol.NewState:
+		return true
+	case cloudprotocol.StateRequest:
+		return true
+	case cloudprotocol.UnitStatus:
+		return true
+	case cloudprotocol.IssueUnitCerts:
+		return true
+	case cloudprotocol.InstallCertData:
+		return true
+	case cloudprotocol.OverrideEnvVarsStatus:
+		return true
+	}
+
+	return false
 }
