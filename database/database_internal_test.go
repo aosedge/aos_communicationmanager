@@ -486,19 +486,17 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 					SubjectID: "subject1",
 					Instance:  1,
 				},
-				NetworkInfo: networkmanager.NetworkInfo{
+				NetworkParameters: aostypes.NetworkParameters{
 					NetworkID: "network1",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.17.0.0/16",
-						IP:     "172.17.0.1",
-						VlanID: 1,
-						FirewallRules: []aostypes.FirewallRule{
-							{
-								Proto:   "tcp",
-								DstIP:   "172.18.0.1",
-								SrcIP:   "172.17.0.1",
-								DstPort: "80",
-							},
+					Subnet:    "172.17.0.0/16",
+					IP:        "172.17.0.1",
+					VlanID:    1,
+					FirewallRules: []aostypes.FirewallRule{
+						{
+							Proto:   "tcp",
+							DstIP:   "172.18.0.1",
+							SrcIP:   "172.17.0.1",
+							DstPort: "80",
 						},
 					},
 				},
@@ -511,13 +509,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 					SubjectID: "subject2",
 					Instance:  1,
 				},
-				NetworkInfo: networkmanager.NetworkInfo{
+				NetworkParameters: aostypes.NetworkParameters{
 					NetworkID: "network2",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.18.0.0/16",
-						IP:     "172.18.0.1",
-						VlanID: 1,
-					},
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.1",
+					VlanID:    1,
 				},
 			},
 		},
@@ -528,13 +524,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 					SubjectID: "subject2",
 					Instance:  2,
 				},
-				NetworkInfo: networkmanager.NetworkInfo{
+				NetworkParameters: aostypes.NetworkParameters{
 					NetworkID: "network2",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.18.0.0/16",
-						IP:     "172.18.0.2",
-						VlanID: 1,
-					},
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.2",
+					VlanID:    1,
 				},
 			},
 		},
@@ -563,13 +557,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 						SubjectID: "subject2",
 						Instance:  1,
 					},
-					NetworkInfo: networkmanager.NetworkInfo{
+					NetworkParameters: aostypes.NetworkParameters{
 						NetworkID: "network2",
-						NetworkParameters: aostypes.NetworkParameters{
-							Subnet: "172.18.0.0/16",
-							IP:     "172.18.0.1",
-							VlanID: 1,
-						},
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.1",
+						VlanID:    1,
 					},
 				},
 				{
@@ -578,13 +570,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 						SubjectID: "subject2",
 						Instance:  2,
 					},
-					NetworkInfo: networkmanager.NetworkInfo{
+					NetworkParameters: aostypes.NetworkParameters{
 						NetworkID: "network2",
-						NetworkParameters: aostypes.NetworkParameters{
-							Subnet: "172.18.0.0/16",
-							IP:     "172.18.0.2",
-							VlanID: 1,
-						},
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.2",
+						VlanID:    1,
 					},
 				},
 			},
@@ -602,13 +592,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 						SubjectID: "subject2",
 						Instance:  2,
 					},
-					NetworkInfo: networkmanager.NetworkInfo{
+					NetworkParameters: aostypes.NetworkParameters{
 						NetworkID: "network2",
-						NetworkParameters: aostypes.NetworkParameters{
-							Subnet: "172.18.0.0/16",
-							IP:     "172.18.0.2",
-							VlanID: 1,
-						},
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.2",
+						VlanID:    1,
 					},
 				},
 			},
@@ -641,36 +629,30 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 
 func TestNetworkConfiguration(t *testing.T) {
 	casesAdd := []struct {
-		networkInfo networkmanager.NetworkInfo
+		networkInfo aostypes.NetworkParameters
 	}{
 		{
-			networkInfo: networkmanager.NetworkInfo{
+			networkInfo: aostypes.NetworkParameters{
 				NetworkID: "network1",
-				NetworkParameters: aostypes.NetworkParameters{
-					Subnet: "172.17.0.0/16",
-					IP:     "172.17.0.1",
-					VlanID: 1,
-				},
+				Subnet:    "172.17.0.0/16",
+				IP:        "172.17.0.1",
+				VlanID:    1,
 			},
 		},
 		{
-			networkInfo: networkmanager.NetworkInfo{
+			networkInfo: aostypes.NetworkParameters{
 				NetworkID: "network2",
-				NetworkParameters: aostypes.NetworkParameters{
-					Subnet: "172.18.0.0/16",
-					IP:     "172.18.0.1",
-					VlanID: 1,
-				},
+				Subnet:    "172.18.0.0/16",
+				IP:        "172.18.0.1",
+				VlanID:    1,
 			},
 		},
 		{
-			networkInfo: networkmanager.NetworkInfo{
+			networkInfo: aostypes.NetworkParameters{
 				NetworkID: "network3",
-				NetworkParameters: aostypes.NetworkParameters{
-					Subnet: "172.19.0.0/16",
-					IP:     "172.19.0.2",
-					VlanID: 1,
-				},
+				Subnet:    "172.19.0.0/16",
+				IP:        "172.19.0.2",
+				VlanID:    1,
 			},
 		},
 	}
@@ -682,40 +664,34 @@ func TestNetworkConfiguration(t *testing.T) {
 	}
 
 	casesRemove := []struct {
-		expectedNetworkInfo []networkmanager.NetworkInfo
+		expectedNetworkInfo []aostypes.NetworkParameters
 		removeNetwork       string
 	}{
 		{
 			removeNetwork: "network1",
-			expectedNetworkInfo: []networkmanager.NetworkInfo{
+			expectedNetworkInfo: []aostypes.NetworkParameters{
 				{
 					NetworkID: "network2",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.18.0.0/16",
-						IP:     "172.18.0.1",
-						VlanID: 1,
-					},
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.1",
+					VlanID:    1,
 				},
 				{
 					NetworkID: "network3",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.19.0.0/16",
-						IP:     "172.19.0.2",
-						VlanID: 1,
-					},
+					Subnet:    "172.19.0.0/16",
+					IP:        "172.19.0.2",
+					VlanID:    1,
 				},
 			},
 		},
 		{
 			removeNetwork: "network2",
-			expectedNetworkInfo: []networkmanager.NetworkInfo{
+			expectedNetworkInfo: []aostypes.NetworkParameters{
 				{
 					NetworkID: "network3",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.19.0.0/16",
-						IP:     "172.19.0.2",
-						VlanID: 1,
-					},
+					Subnet:    "172.19.0.0/16",
+					IP:        "172.19.0.2",
+					VlanID:    1,
 				},
 			},
 		},

@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
 	"github.com/apparentlymart/go-cidr/cidr"
 	log "github.com/sirupsen/logrus"
 )
@@ -172,7 +173,7 @@ func (ipam *ipSubnet) getAvailableSubnet(networkID string) (*net.IPNet, error) {
 	return subnet.ipNet, nil
 }
 
-func (ipam *ipSubnet) removeAllocatedSubnets(networks []NetworkInfo, networkInstances []InstanceNetworkInfo) {
+func (ipam *ipSubnet) removeAllocatedSubnets(networks []aostypes.NetworkParameters, networkInstances []InstanceNetworkInfo) {
 	ipam.Lock()
 	defer ipam.Unlock()
 
