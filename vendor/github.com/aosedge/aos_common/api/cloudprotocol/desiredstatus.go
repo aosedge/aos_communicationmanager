@@ -180,8 +180,8 @@ type CertificateChain struct {
 
 // TimeSlot time slot with start and finish time.
 type TimeSlot struct {
-	Start  aostypes.Time `json:"start"`
-	Finish aostypes.Time `json:"finish"`
+	Start aostypes.Time `json:"start"`
+	End   aostypes.Time `json:"end"`
 }
 
 // TimetableEntry entry for update timetable.

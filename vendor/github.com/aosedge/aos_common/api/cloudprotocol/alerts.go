@@ -124,6 +124,6 @@ type AlertItem struct {
 
 // Alerts alerts message structure.
 type Alerts struct {
-	MessageType string `json:"messageType"`
-	Items       []AlertItem
+	MessageType string      `json:"messageType"`
+	Items       []AlertItem `json:"items"`
 }
