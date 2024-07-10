@@ -229,8 +229,8 @@ func TestConnection(t *testing.T) {
 	}
 
 	components := []*pb.ComponentStatus{
-		{ComponentId: "component1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "component2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	streamUM1, connUM1, err := createClientConnection("umID1", pb.UpdateState_IDLE, components)
@@ -241,8 +241,8 @@ func TestConnection(t *testing.T) {
 	nodeInfoProvider.addNode("umID2")
 
 	components2 := []*pb.ComponentStatus{
-		{ComponentId: "component3", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "component4", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component3", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component4", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	streamUM2, connUM2, err := createClientConnection("umID2", pb.UpdateState_IDLE, components2)
@@ -405,16 +405,16 @@ func TestFullUpdate(t *testing.T) {
 	}
 
 	um1Components := []*pb.ComponentStatus{
-		{ComponentId: "um1C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um1C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um1C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um1C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um1 := newTestUM(t, "testUM1", pb.UpdateState_IDLE, "init", um1Components)
 	go um1.processMessages()
 
 	um2Components := []*pb.ComponentStatus{
-		{ComponentId: "um2C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um2C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um2C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um2C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um2 := newTestUM(t, "testUM2", pb.UpdateState_IDLE, "init", um2Components)
@@ -429,17 +429,23 @@ func TestFullUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um1C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um1C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um2C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um2C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um2C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um2C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -455,7 +461,7 @@ func TestFullUpdate(t *testing.T) {
 	}(finishChannel)
 
 	um1Components = append(um1Components, &pb.ComponentStatus{
-		ComponentId: "um1C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING,
+		ComponentId: "um1C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLING,
 	})
 	um1.setComponents(um1Components)
 
@@ -465,9 +471,19 @@ func TestFullUpdate(t *testing.T) {
 	um1.sendState(pb.UpdateState_PREPARED)
 
 	um2Components = append(um2Components,
-		&pb.ComponentStatus{ComponentId: "um2C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um2C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um2Components = append(um2Components,
-		&pb.ComponentStatus{ComponentId: "um2C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um2C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um2.setComponents(um2Components)
 
 	um2.step = prepareStep
@@ -486,8 +502,8 @@ func TestFullUpdate(t *testing.T) {
 	um2.sendState(pb.UpdateState_UPDATED)
 
 	um1Components = []*pb.ComponentStatus{
-		{ComponentId: "um1C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um1C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um1C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um1C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um1.setComponents(um1Components)
 
@@ -497,8 +513,8 @@ func TestFullUpdate(t *testing.T) {
 	um1.sendState(pb.UpdateState_IDLE)
 
 	um2Components = []*pb.ComponentStatus{
-		{ComponentId: "um2C1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um2C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um2C1", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um2C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um2.setComponents(um2Components)
 
@@ -515,10 +531,10 @@ func TestFullUpdate(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um1C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um1C2", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um2C1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um2C2", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um1C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um1C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um2C1", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um2C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -564,16 +580,16 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	}
 
 	um3Components := []*pb.ComponentStatus{
-		{ComponentId: "um3C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um3C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um3C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um3C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um3 := newTestUM(t, "testUM3", pb.UpdateState_IDLE, "init", um3Components)
 	go um3.processMessages()
 
 	um4Components := []*pb.ComponentStatus{
-		{ComponentId: "um4C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um4C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um4C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um4C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um4 := newTestUM(t, "testUM4", pb.UpdateState_IDLE, "init", um4Components)
@@ -588,17 +604,23 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um3C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um3C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um4C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um4C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um4C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um4C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -616,7 +638,12 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	// prepare UM3
 	um3Components = append(um3Components,
-		&pb.ComponentStatus{ComponentId: "um3C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um3C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um3.setComponents(um3Components)
 
 	um3.step = prepareStep
@@ -626,9 +653,19 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 
 	// prepare UM4
 	um4Components = append(um4Components,
-		&pb.ComponentStatus{ComponentId: "um4C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um4C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um4Components = append(um4Components,
-		&pb.ComponentStatus{ComponentId: "um4C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um4C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um4.setComponents(um4Components)
 
 	um4.step = prepareStep
@@ -670,8 +707,8 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	<-um3.notifyTestChan
 
 	um3Components = []*pb.ComponentStatus{
-		{ComponentId: "um3C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um3C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um3C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um3C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um3 = newTestUM(t, "testUM3", pb.UpdateState_IDLE, "init", um3Components)
@@ -683,8 +720,8 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	<-um4.notifyTestChan
 
 	um4Components = []*pb.ComponentStatus{
-		{ComponentId: "um4C1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um4C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um4C1", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um4C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um4 = newTestUM(t, "testUM4", pb.UpdateState_IDLE, "init", um4Components)
@@ -696,10 +733,10 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um3C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um3C2", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um4C1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um4C2", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um3C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um3C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um4C1", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um4C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -740,16 +777,16 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	}
 
 	um5Components := []*pb.ComponentStatus{
-		{ComponentId: "um5C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um5C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um5C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um5C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um5 := newTestUM(t, "testUM5", pb.UpdateState_IDLE, "init", um5Components)
 	go um5.processMessages()
 
 	um6Components := []*pb.ComponentStatus{
-		{ComponentId: "um6C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um6C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um6C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um6C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um6 := newTestUM(t, "testUM6", pb.UpdateState_IDLE, "init", um6Components)
@@ -764,17 +801,23 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um5C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um5C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um6C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um6C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um6C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um6C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -792,7 +835,12 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	// prepare UM5
 	um5Components = append(um5Components,
-		&pb.ComponentStatus{ComponentId: "um5C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um5C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um5.setComponents(um5Components)
 
 	um5.step = prepareStep
@@ -802,9 +850,19 @@ func TestFullUpdateWithReboot(t *testing.T) {
 
 	// prepare UM6
 	um6Components = append(um6Components,
-		&pb.ComponentStatus{ComponentId: "um6C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um6C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um6Components = append(um6Components,
-		&pb.ComponentStatus{ComponentId: "um6C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um6C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um6.setComponents(um6Components)
 
 	um6.step = prepareStep
@@ -871,8 +929,8 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	}
 
 	um5Components = []*pb.ComponentStatus{
-		{ComponentId: "um5C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um5C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um5C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um5C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um5 = newTestUM(t, "testUM5", pb.UpdateState_IDLE, "init", um5Components)
@@ -886,8 +944,8 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	<-um6.notifyTestChan
 
 	um6Components = []*pb.ComponentStatus{
-		{ComponentId: "um6C1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um6C2", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um6C1", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um6C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um6 = newTestUM(t, "testUM6", pb.UpdateState_IDLE, "init", um6Components)
@@ -897,10 +955,10 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6.step = finishStep
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um5C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um5C2", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um6C1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um6C2", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um5C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um5C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um6C1", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{ComponentID: "um6C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -941,16 +999,16 @@ func TestRevertOnPrepare(t *testing.T) {
 	}
 
 	um7Components := []*pb.ComponentStatus{
-		{ComponentId: "um7C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um7C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um7C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um7C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um7 := newTestUM(t, "testUM7", pb.UpdateState_IDLE, "init", um7Components)
 	go um7.processMessages()
 
 	um8Components := []*pb.ComponentStatus{
-		{ComponentId: "um8C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um8C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um8C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um8C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um8 := newTestUM(t, "testUM8", pb.UpdateState_IDLE, "init", um8Components)
@@ -965,17 +1023,23 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um7C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um7C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um8C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um8C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um8C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um8C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -992,7 +1056,12 @@ func TestRevertOnPrepare(t *testing.T) {
 	}()
 
 	um7Components = append(um7Components,
-		&pb.ComponentStatus{ComponentId: "um7C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um7C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um7.setComponents(um7Components)
 
 	um7.step = prepareStep
@@ -1001,9 +1070,19 @@ func TestRevertOnPrepare(t *testing.T) {
 	um7.sendState(pb.UpdateState_PREPARED)
 
 	um8Components = append(um8Components,
-		&pb.ComponentStatus{ComponentId: "um8C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um8C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um8Components = append(um8Components,
-		&pb.ComponentStatus{ComponentId: "um8C2", Version: "2.0.0", State: pb.ComponentState_ERROR})
+		&pb.ComponentStatus{
+			ComponentId:   "um8C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_ERROR,
+		})
 	um8.setComponents(um8Components)
 
 	um8.step = prepareStep
@@ -1027,11 +1106,11 @@ func TestRevertOnPrepare(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um7C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um7C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um8C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um8C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um8C2", Version: "2.0.0", Status: "error"},
+		{ComponentID: "um7C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um7C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um8C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um8C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um8C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1073,16 +1152,16 @@ func TestRevertOnUpdate(t *testing.T) {
 	}
 
 	um9Components := []*pb.ComponentStatus{
-		{ComponentId: "um9C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um9C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um9C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um9C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um9 := newTestUM(t, "testUM9", pb.UpdateState_IDLE, "init", um9Components)
 	go um9.processMessages()
 
 	um10Components := []*pb.ComponentStatus{
-		{ComponentId: "um10C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um10C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um10 := newTestUM(t, "testUM10", pb.UpdateState_IDLE, "init", um10Components)
@@ -1097,17 +1176,23 @@ func TestRevertOnUpdate(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um9C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um9C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um10C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um10C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um10C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um10C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -1124,7 +1209,12 @@ func TestRevertOnUpdate(t *testing.T) {
 	}()
 
 	um9Components = append(um9Components,
-		&pb.ComponentStatus{ComponentId: "um9C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um9C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um9.setComponents(um9Components)
 
 	um9.step = prepareStep
@@ -1133,9 +1223,19 @@ func TestRevertOnUpdate(t *testing.T) {
 	um9.sendState(pb.UpdateState_PREPARED)
 
 	um10Components = append(um10Components,
-		&pb.ComponentStatus{ComponentId: "um10C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um10C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um10Components = append(um10Components,
-		&pb.ComponentStatus{ComponentId: "um10C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um10C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um10.setComponents(um10Components)
 
 	um10.step = prepareStep
@@ -1149,10 +1249,10 @@ func TestRevertOnUpdate(t *testing.T) {
 	um9.sendState(pb.UpdateState_UPDATED)
 
 	um10Components = []*pb.ComponentStatus{
-		{ComponentId: "um10C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um10C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um10C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING},
-		{ComponentId: "um10C2", Version: "2.0.0", State: pb.ComponentState_ERROR},
+		{ComponentId: "um10C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um10C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_INSTALLING},
+		{ComponentId: "um10C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_ERROR},
 	}
 	um10.setComponents(um10Components)
 
@@ -1162,8 +1262,8 @@ func TestRevertOnUpdate(t *testing.T) {
 	um10.sendState(pb.UpdateState_FAILED)
 
 	um9Components = []*pb.ComponentStatus{
-		{ComponentId: "um9C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um9C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um9C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um9C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um9.setComponents(um9Components)
 
@@ -1183,11 +1283,11 @@ func TestRevertOnUpdate(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um9C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um9C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um10C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um10C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um10C2", Version: "2.0.0", Status: "error"},
+		{ComponentID: "um9C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um9C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um10C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um10C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um10C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1229,16 +1329,16 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	}
 
 	um11Components := []*pb.ComponentStatus{
-		{ComponentId: "um11C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um11C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um11C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um11C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um11 := newTestUM(t, "testUM11", pb.UpdateState_IDLE, "init", um11Components)
 	go um11.processMessages()
 
 	um12Components := []*pb.ComponentStatus{
-		{ComponentId: "um12C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um12C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um12 := newTestUM(t, "testUM12", pb.UpdateState_IDLE, "init", um12Components)
@@ -1253,17 +1353,23 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um11C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um11C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um12C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um12C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um12C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um12C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -1280,7 +1386,12 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	}()
 
 	um11Components = append(um11Components,
-		&pb.ComponentStatus{ComponentId: "um11C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um11C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um11.setComponents(um11Components)
 
 	um11.step = prepareStep
@@ -1289,9 +1400,19 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um11.sendState(pb.UpdateState_PREPARED)
 
 	um12Components = append(um12Components,
-		&pb.ComponentStatus{ComponentId: "um12C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um12C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um12Components = append(um12Components,
-		&pb.ComponentStatus{ComponentId: "um12C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um12C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um12.setComponents(um12Components)
 
 	um12.step = prepareStep
@@ -1305,9 +1426,9 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	um11.sendState(pb.UpdateState_UPDATED)
 
 	um12Components = []*pb.ComponentStatus{
-		{ComponentId: "um12C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um12C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um12C2", Version: "2.0.0", State: pb.ComponentState_ERROR},
+		{ComponentId: "um12C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um12C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_ERROR},
 	}
 	um12.setComponents(um12Components)
 
@@ -1323,8 +1444,8 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	go um12.processMessages()
 
 	um11Components = []*pb.ComponentStatus{
-		{ComponentId: "um11C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um11C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um11C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um11C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um11.setComponents(um11Components)
 
@@ -1344,11 +1465,11 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um11C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um11C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um12C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um12C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um12C2", Version: "2.0.0", Status: "error"},
+		{ComponentID: "um11C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um11C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um12C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um12C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um12C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1391,16 +1512,16 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	}
 
 	um13Components := []*pb.ComponentStatus{
-		{ComponentId: "um13C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um13C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um13C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um13C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um13 := newTestUM(t, "testUM13", pb.UpdateState_IDLE, "init", um13Components)
 	go um13.processMessages()
 
 	um14Components := []*pb.ComponentStatus{
-		{ComponentId: "um14C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um14C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 
 	um14 := newTestUM(t, "testUM14", pb.UpdateState_IDLE, "init", um14Components)
@@ -1415,17 +1536,23 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 
 	updateComponents := []cloudprotocol.ComponentInfo{
 		{
-			ComponentID: convertToComponentID("um13C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um13C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile1"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um14C1"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um14C1"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile2"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
 		{
-			ComponentID: convertToComponentID("um14C2"), Version: "2.0.0",
+			ComponentID:    convertToComponentID("um14C2"),
+			ComponentType:  "type-1",
+			Version:        "2.0.0",
 			DownloadInfo:   prepareDownloadInfo(path.Join(componentDir, "someFile3"), kilobyte*2),
 			DecryptionInfo: prepareDecryptionInfo(),
 		},
@@ -1442,7 +1569,12 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	}()
 
 	um13Components = append(um13Components,
-		&pb.ComponentStatus{ComponentId: "um13C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um13C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um13.setComponents(um13Components)
 
 	um13.step = prepareStep
@@ -1451,9 +1583,19 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um13.sendState(pb.UpdateState_PREPARED)
 
 	um14Components = append(um14Components,
-		&pb.ComponentStatus{ComponentId: "um14C1", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um14C1",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um14Components = append(um14Components,
-		&pb.ComponentStatus{ComponentId: "um14C2", Version: "2.0.0", State: pb.ComponentState_INSTALLING})
+		&pb.ComponentStatus{
+			ComponentId:   "um14C2",
+			ComponentType: "type-1",
+			Version:       "2.0.0",
+			State:         pb.ComponentState_INSTALLING,
+		})
 	um14.setComponents(um14Components)
 
 	um14.step = prepareStep
@@ -1467,9 +1609,9 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	um13.sendState(pb.UpdateState_UPDATED)
 
 	um14Components = []*pb.ComponentStatus{
-		{ComponentId: "um14C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um14C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um14C2", Version: "2.0.0", State: pb.ComponentState_ERROR},
+		{ComponentId: "um14C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um14C2", ComponentType: "type-1", Version: "2.0.0", State: pb.ComponentState_ERROR},
 	}
 	um14.setComponents(um14Components)
 
@@ -1503,8 +1645,8 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	go um14.processMessages()
 
 	um13Components = []*pb.ComponentStatus{
-		{ComponentId: "um13C1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
-		{ComponentId: "um13C2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um13C1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "um13C2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 	}
 	um13.setComponents(um13Components)
 
@@ -1524,11 +1666,11 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	time.Sleep(time.Second)
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um13C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um13C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um14C1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um14C2", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um14C2", Version: "2.0.0", Status: "error"},
+		{ComponentID: "um13C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um13C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um14C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um14C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
+		{ComponentID: "um14C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1537,9 +1679,12 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(etalonComponents, currentComponents) {
-		log.Debug(currentComponents)
+		log.WithFields(log.Fields{
+			"etalon":  etalonComponents,
+			"current": currentComponents,
+		}).Error("incorrect result component list")
+
 		t.Error("incorrect result component list")
-		log.Debug(etalonComponents)
 	}
 
 	um13.closeConnection()
