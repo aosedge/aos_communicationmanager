@@ -240,12 +240,13 @@ func (handler *umHandler) sendPrepareUpdateRequest(ctx context.Context, e *fsm.E
 
 	for _, value := range request.components {
 		componetInfo := pb.PrepareComponentInfo{
-			ComponentId: value.ID,
-			Version:     value.Version,
-			Annotations: value.Annotations,
-			Url:         value.URL,
-			Sha256:      value.Sha256,
-			Size:        value.Size,
+			ComponentId:   value.ComponentID,
+			ComponentType: value.ComponentType,
+			Version:       value.Version,
+			Annotations:   value.Annotations,
+			Url:           value.URL,
+			Sha256:        value.Sha256,
+			Size:          value.Size,
 		}
 
 		componetForUpdate = append(componetForUpdate, &componetInfo)
