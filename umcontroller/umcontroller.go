@@ -79,12 +79,13 @@ type Controller struct {
 
 // ComponentStatus information about system component update.
 type ComponentStatus struct {
-	ID          string `json:"id"`
-	Version     string `json:"version"`
-	Annotations string `json:"annotations,omitempty"`
-	URL         string `json:"url"`
-	Sha256      []byte `json:"sha256"`
-	Size        uint64 `json:"size"`
+	ComponentID   string `json:"componentID"`
+	ComponentType string `json:"componentType"`
+	Version       string `json:"version"`
+	Annotations   string `json:"annotations,omitempty"`
+	URL           string `json:"url"`
+	Sha256        []byte `json:"sha256"`
+	Size          uint64 `json:"size"`
 }
 
 type umConnection struct {
@@ -112,10 +113,11 @@ type umStatus struct {
 }
 
 type systemComponentStatus struct {
-	id      string
-	version string
-	status  string
-	err     string
+	componentID   string
+	componentType string
+	version       string
+	status        string
+	err           string
 }
 
 type allConnectionMonitor struct {
@@ -327,8 +329,10 @@ func (umCtrl *Controller) UpdateComponents(
 			}
 
 			componentStatus := systemComponentStatus{
-				id: *component.ComponentID, version: component.Version,
-				status: cloudprotocol.DownloadedStatus,
+				componentID:   *component.ComponentID,
+				componentType: component.ComponentType,
+				version:       component.Version,
+				status:        cloudprotocol.DownloadedStatus,
 			}
 
 			encryptedFile, err := getFilePath(component.URLs[0])
@@ -376,9 +380,11 @@ func (umCtrl *Controller) UpdateComponents(
 			}
 
 			componentInfo := ComponentStatus{
-				ID: *component.ComponentID, Version: component.Version,
-				Annotations: string(component.Annotations),
-				Sha256:      fileInfo.Sha256, Size: fileInfo.Size,
+				ComponentID:   *component.ComponentID,
+				ComponentType: component.ComponentType,
+				Version:       component.Version,
+				Annotations:   string(component.Annotations),
+				Sha256:        fileInfo.Sha256, Size: fileInfo.Size,
 				URL: url.String(),
 			}
 
@@ -494,7 +500,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 			idExist := false
 
 			for _, value := range umCtrl.connections[i].components {
-				if value == newComponent.id {
+				if value == newComponent.componentID {
 					idExist = true
 					break
 				}
@@ -504,7 +510,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 				continue
 			}
 
-			umCtrl.connections[i].components = append(umCtrl.connections[i].components, newComponent.id)
+			umCtrl.connections[i].components = append(umCtrl.connections[i].components, newComponent.componentID)
 		}
 
 		break
@@ -563,7 +569,7 @@ func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemCo
 			toRemove := []int{}
 
 			for i, curStatus := range umCtrl.currentComponents {
-				if value.id == curStatus.ComponentID {
+				if value.componentID == curStatus.ComponentID && value.componentType == curStatus.ComponentType {
 					if curStatus.Status != cloudprotocol.InstalledStatus {
 						continue
 					}
@@ -589,7 +595,8 @@ func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemCo
 
 func (umCtrl *Controller) updateComponentElement(component systemComponentStatus) {
 	for i, curElement := range umCtrl.currentComponents {
-		if curElement.ComponentID == component.id && curElement.Version == component.version {
+		if curElement.ComponentID == component.componentID && curElement.ComponentType == component.componentType &&
+			curElement.Version == component.version {
 			if curElement.Status == cloudprotocol.InstalledStatus && component.status != cloudprotocol.InstalledStatus {
 				break
 			}
@@ -607,9 +614,10 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 	}
 
 	newComponentStatus := cloudprotocol.ComponentStatus{
-		ComponentID: component.id,
-		Version:     component.version,
-		Status:      component.status,
+		ComponentID:   component.componentID,
+		ComponentType: component.componentType,
+		Version:       component.version,
+		Status:        component.status,
 	}
 
 	if component.err != "" {
@@ -688,7 +696,7 @@ func (umCtrl *Controller) getUpdateComponentsFromStorage() (err error) {
 func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo ComponentStatus) (err error) {
 	for i := range umCtrl.connections {
 		for _, id := range umCtrl.connections[i].components {
-			if id == componentInfo.ID {
+			if id == componentInfo.ComponentID {
 				newURL, err := umCtrl.fileServer.TranslateURL(umCtrl.connections[i].isLocalClient, componentInfo.URL)
 				if err != nil {
 					return aoserrors.Wrap(err)
@@ -703,7 +711,7 @@ func (umCtrl *Controller) addComponentForUpdateToUm(componentInfo ComponentStatu
 		}
 	}
 
-	return aoserrors.Errorf("component id %s not found", componentInfo.ID)
+	return aoserrors.Errorf("component id %s not found", componentInfo.ComponentID)
 }
 
 func (umCtrl *Controller) cleanupUpdateData() {
@@ -1131,7 +1139,7 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo *cloudprotocol.NodeInfo)
 }
 
 func (status systemComponentStatus) String() string {
-	return fmt.Sprintf("{id: %s, status: %s, version: %s }", status.id, status.status, status.version)
+	return fmt.Sprintf("{id: %s, status: %s, version: %s }", status.componentID, status.status, status.version)
 }
 
 func (umCtrl *Controller) notifyNewComponentListener(status cloudprotocol.ComponentStatus) {

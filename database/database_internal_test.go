@@ -135,10 +135,10 @@ func TestCursor(t *testing.T) {
 func TestComponentsUpdateInfo(t *testing.T) {
 	testData := []umcontroller.ComponentStatus{
 		{
-			ID: "component1", Version: "v1",
+			ComponentID: "component1", Version: "v1",
 			Annotations: "Some annotation", URL: "url12", Sha256: []byte{1, 3, 90, 42},
 		},
-		{ID: "component2", Version: "v1", URL: "url12", Sha256: []byte{1, 3, 90, 42}},
+		{ComponentID: "component2", Version: "v1", URL: "url12", Sha256: []byte{1, 3, 90, 42}},
 	}
 
 	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
