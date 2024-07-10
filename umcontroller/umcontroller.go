@@ -49,6 +49,7 @@ import (
 
 // Controller update managers controller.
 type Controller struct {
+	sync.Mutex
 	storage storage
 	server  *umCtrlServer
 
@@ -61,8 +62,10 @@ type Controller struct {
 
 	allocator spaceallocator.Allocator
 
-	connections       []umConnection
-	currentComponents []cloudprotocol.ComponentStatus
+	connections          []umConnection
+	currentComponents    []cloudprotocol.ComponentStatus
+	newComponentListener chan cloudprotocol.ComponentStatus
+
 	fsm               *fsm.FSM
 	connectionMonitor allConnectionMonitor
 	operable          bool
@@ -218,15 +221,16 @@ func New(config *config.Config, storage storage, certProvider CertificateProvide
 	umCtrl *Controller, err error,
 ) {
 	umCtrl = &Controller{
-		storage:           storage,
-		eventChannel:      make(chan umCtrlInternalMsg),
-		nodeInfoChannel:   nodeInfoProvider.SubscribeNodeInfoChange(),
-		stopChannel:       make(chan bool),
-		componentDir:      config.ComponentsDir,
-		connectionMonitor: allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
-		operable:          true,
-		updateFinishCond:  sync.NewCond(&sync.Mutex{}),
-		decrypter:         decrypter,
+		storage:              storage,
+		eventChannel:         make(chan umCtrlInternalMsg),
+		nodeInfoChannel:      nodeInfoProvider.SubscribeNodeInfoChange(),
+		stopChannel:          make(chan bool),
+		componentDir:         config.ComponentsDir,
+		newComponentListener: nil,
+		connectionMonitor:    allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
+		operable:             true,
+		updateFinishCond:     sync.NewCond(&sync.Mutex{}),
+		decrypter:            decrypter,
 	}
 
 	if err := os.MkdirAll(umCtrl.componentDir, 0o755); err != nil {
@@ -398,6 +402,15 @@ func (umCtrl *Controller) UpdateComponents(
 	umCtrl.updateFinishCond.Wait()
 
 	return umCtrl.currentComponents, umCtrl.updateError
+}
+
+func (umCtrl *Controller) SetNewComponentListener() <-chan cloudprotocol.ComponentStatus {
+	umCtrl.Lock()
+	defer umCtrl.Unlock()
+
+	umCtrl.newComponentListener = make(chan cloudprotocol.ComponentStatus, 1)
+
+	return umCtrl.newComponentListener
 }
 
 /***********************************************************************************************************************
@@ -600,6 +613,8 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 	}
 
 	umCtrl.currentComponents = append(umCtrl.currentComponents, newComponentStatus)
+
+	umCtrl.notifyNewComponentListener(newComponentStatus)
 }
 
 func (umCtrl *Controller) cleanupCurrentComponentStatus() {
@@ -1113,4 +1128,13 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo *cloudprotocol.NodeInfo)
 
 func (status systemComponentStatus) String() string {
 	return fmt.Sprintf("{id: %s, status: %s, version: %s }", status.id, status.status, status.version)
+}
+
+func (umCtrl *Controller) notifyNewComponentListener(status cloudprotocol.ComponentStatus) {
+	umCtrl.Lock()
+	defer umCtrl.Unlock()
+
+	if umCtrl.newComponentListener != nil {
+		umCtrl.newComponentListener <- status
+	}
 }

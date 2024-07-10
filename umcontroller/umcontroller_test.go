@@ -281,6 +281,77 @@ func TestConnection(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
+func TestNewComponentsUpdate(t *testing.T) {
+	umCtrlConfig := config.UMController{
+		CMServerURL:   "localhost:8091",
+		FileServerURL: "localhost:8092",
+	}
+
+	// add components for node with ID=umID1
+	nodeInfoProvider := NewTestNodeInfoProvider([]string{"umID1"})
+	smConfig := config.Config{UMController: umCtrlConfig, ComponentsDir: tmpDir}
+
+	umCtrl, err := umcontroller.New(
+		&smConfig, &testStorage{}, nil, nodeInfoProvider, nil, &testCryptoContext{}, true)
+	if err != nil {
+		t.Fatalf("Can't create: UM controller %s", err)
+	}
+
+	components := []*pb.ComponentStatus{
+		{ComponentId: "component1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component2", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+	}
+
+	streamUM1, connUM1, err := createClientConnection("umID1", pb.UpdateState_IDLE, components)
+	if err != nil {
+		t.Errorf("Error connect %s", err)
+	}
+
+	newComponents, err := umCtrl.GetStatus()
+	if err != nil {
+		t.Errorf("Can't get system components %s", err)
+	}
+
+	if len(newComponents) != 2 {
+		t.Errorf("Incorrect count of components %d", len(newComponents))
+	}
+
+	newComponentListener := umCtrl.SetNewComponentListener()
+
+	// add new components for node with ID=umID2
+	nodeInfoProvider.addNode("umID2")
+
+	components2 := []*pb.ComponentStatus{
+		{ComponentId: "component3", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+		{ComponentId: "component4", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
+	}
+
+	streamUM2, connUM2, err := createClientConnection("umID2", pb.UpdateState_IDLE, components2)
+	if err != nil {
+		t.Errorf("Error connect %s", err)
+	}
+
+	if node2Component3 := <-newComponentListener; node2Component3.ComponentID != "component3" {
+		t.Errorf("Wrong component received %s", node2Component3.ComponentID)
+	}
+
+	if node2Component4 := <-newComponentListener; node2Component4.ComponentID != "component4" {
+		t.Errorf("Wrong component received %s", node2Component4.ComponentID)
+	}
+
+	umCtrl.Close()
+
+	_ = streamUM1.CloseSend()
+
+	connUM1.Close()
+
+	_ = streamUM2.CloseSend()
+
+	connUM2.Close()
+
+	time.Sleep(1 * time.Second)
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
