@@ -116,9 +116,9 @@ func NewTestNodeInfoProvider(nodeIds []string) *testNodeInfoProvider {
 		nodeInfoListeners: make([]chan *cloudprotocol.NodeInfo, 0),
 	}
 
-	for _, nodeId := range nodeIds {
+	for _, nodeID := range nodeIds {
 		nodeInfo := &cloudprotocol.NodeInfo{
-			NodeID: nodeId,
+			NodeID: nodeID,
 			Status: "provisioned",
 			Attrs: map[string]interface{}{
 				cloudprotocol.NodeAttrAosComponents: interface{}(cloudprotocol.AosComponentUM),
@@ -134,7 +134,7 @@ func (provider *testNodeInfoProvider) GetNodeID() string {
 	return "test"
 }
 
-func (provider *testNodeInfoProvider) GetAllNodeIDs() (nodesId []string, err error) {
+func (provider *testNodeInfoProvider) GetAllNodeIDs() (nodesIds []string, err error) {
 	result := make([]string, 0)
 
 	for _, nodeInfo := range provider.nodeInfo {
@@ -1645,9 +1645,9 @@ func (context *testCryptoContext) DecryptAndValidate(
  * Private
  **********************************************************************************************************************/
 
-func newTestUM(t *testing.T, id string, updateStatus pb.UpdateState, testState string, components []*pb.ComponentStatus) (
-	umTest *testUmConnection,
-) {
+func newTestUM(t *testing.T, id string, updateStatus pb.UpdateState,
+	testState string, components []*pb.ComponentStatus,
+) (umTest *testUmConnection) {
 	t.Helper()
 
 	stream, conn, err := createClientConnection(id, updateStatus, components)

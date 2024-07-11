@@ -209,6 +209,8 @@ const (
 
 const connectionTimeout = 600 * time.Second
 
+const lowestUpdatePriority = 1000
+
 const fileScheme = "file"
 
 /***********************************************************************************************************************
@@ -302,6 +304,8 @@ func (umCtrl *Controller) GetStatus() ([]cloudprotocol.ComponentStatus, error) {
 }
 
 // UpdateComponents updates components.
+//
+//nolint:funlen,gocognit
 func (umCtrl *Controller) UpdateComponents(
 	components []cloudprotocol.ComponentInfo, chains []cloudprotocol.CertificateChain,
 	certs []cloudprotocol.Certificate,
@@ -1088,7 +1092,7 @@ func (umCtrl *Controller) createConnections(nodeInfoProvider NodeInfoProvider) e
 		umCtrl.connections = append(umCtrl.connections, umConnection{
 			umID:           nodeInfo.NodeID,
 			isLocalClient:  nodeInfo.NodeID == umCtrl.currentNodeID,
-			updatePriority: 1000,
+			updatePriority: lowestUpdatePriority,
 			handler:        nil,
 		})
 	}
@@ -1122,7 +1126,7 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo *cloudprotocol.NodeInfo)
 
 	umCtrl.connections = append(umCtrl.connections, umConnection{
 		umID:          nodeInfo.NodeID,
-		isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: 1000, handler: nil,
+		isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: lowestUpdatePriority, handler: nil,
 	})
 }
 
