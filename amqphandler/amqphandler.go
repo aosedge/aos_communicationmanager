@@ -624,6 +624,7 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 
 func (handler *AmqpHandler) unmarshalReceiveData(data []byte) (Message, error) {
 	if len(data) == 0 {
+		//nolint:nilnil
 		return nil, nil
 	}
 
