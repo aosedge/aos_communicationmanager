@@ -709,7 +709,9 @@ func TestSendMessages(t *testing.T) {
 				Data: &installCertsConfirmation,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.InstallUnitCertsConfirmation{MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType}
+				return &cloudprotocol.InstallUnitCertsConfirmation{
+					MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType,
+				}
 			},
 		},
 		{
@@ -864,22 +866,34 @@ func TestSendMultipleMessages(t *testing.T) {
 
 	testData := []func() error{
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType}))
+			return aoserrors.Wrap(amqpHandler.SendUnitStatus(
+				cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendMonitoringData(cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}))
+			return aoserrors.Wrap(amqpHandler.SendMonitoringData(
+				cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendInstanceNewState(cloudprotocol.NewState{MessageType: cloudprotocol.NewStateMessageType}))
+			return aoserrors.Wrap(
+				amqpHandler.SendInstanceNewState(cloudprotocol.NewState{MessageType: cloudprotocol.NewStateMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType}))
+			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(
+				cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendLog(cloudprotocol.PushLog{MessageType: cloudprotocol.PushLogMessageType}))
+			return aoserrors.Wrap(
+				amqpHandler.SendLog(cloudprotocol.PushLog{MessageType: cloudprotocol.PushLogMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}))
+			return aoserrors.Wrap(
+				amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}),
+			)
 		},
 		func() error {
 			return aoserrors.Wrap(amqpHandler.SendIssueUnitCerts(nil))
@@ -888,7 +902,9 @@ func TestSendMultipleMessages(t *testing.T) {
 			return aoserrors.Wrap(amqpHandler.SendInstallCertsConfirmation(nil))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}))
+			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(
+				cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}),
+			)
 		},
 	}
 
@@ -938,7 +954,8 @@ func TestSendDisconnectMessages(t *testing.T) {
 
 	// Next important message should fail due to send channel size
 
-	err = amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType})
+	err = amqpHandler.SendInstanceStateRequest(
+		cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType})
 	if !errors.Is(err, amqphandler.ErrSendChannelFull) {
 		t.Errorf("Wrong error type: %v", err)
 	}
