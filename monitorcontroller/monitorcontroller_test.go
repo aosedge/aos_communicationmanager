@@ -57,18 +57,6 @@ func init() {
 }
 
 /***********************************************************************************************************************
- * Main
- **********************************************************************************************************************/
-
-func TestMain(m *testing.M) {
-	monitorcontroller.MinSendPeriod = 100 * time.Millisecond
-
-	ret := m.Run()
-
-	os.Exit(ret)
-}
-
-/***********************************************************************************************************************
  * Tests
  **********************************************************************************************************************/
 
@@ -76,7 +64,7 @@ func TestSendMonitorData(t *testing.T) {
 	sender := newTestMonitoringSender()
 
 	controller, err := monitorcontroller.New(&config.Config{
-		Monitoring: config.Monitoring{MaxOfflineMessages: 8},
+		Monitoring: config.Monitoring{MaxOfflineMessages: 8, SendPeriod: aostypes.Duration{Duration: 1 * time.Second}},
 	}, sender)
 	if err != nil {
 		t.Fatalf("Can't create monitoring controller: %v", err)
@@ -85,32 +73,13 @@ func TestSendMonitorData(t *testing.T) {
 
 	sender.consumer.CloudConnected()
 
-	nodeMonitoring := cloudprotocol.NodeMonitoringData{
-		MonitoringData: cloudprotocol.MonitoringData{
-			RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []cloudprotocol.PartitionUsage{{
-				Name: "p1", UsedSize: 100,
-			}},
-		},
-		NodeID:    "mainNode",
-		Timestamp: time.Now().UTC(),
-		ServiceInstances: []cloudprotocol.InstanceMonitoringData{
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 1024, CPU: 50, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
-			},
-		},
-	}
-
-	controller.SendMonitoringData(nodeMonitoring)
+	inputData, expectedData := getTestMonitoringData()
+	controller.SendNodeMonitoring(inputData)
 
 	receivedMonitoringData, err := sender.waitMonitoringData()
 	if err != nil {
 		t.Fatalf("Error waiting for monitoring data: %v", err)
 	}
-
-	expectedData := cloudprotocol.Monitoring{Nodes: []cloudprotocol.NodeMonitoringData{nodeMonitoring}}
 
 	if !reflect.DeepEqual(receivedMonitoringData, expectedData) {
 		t.Errorf("Incorrect monitoring data: %v", receivedMonitoringData)
@@ -119,44 +88,32 @@ func TestSendMonitorData(t *testing.T) {
 
 func TestSendMonitorOffline(t *testing.T) {
 	const (
-		numOfflineMessages = 32
-		numExtraMessages   = 16
+		numOfflineMessages = 2
+		numExtraMessages   = 1
+		maxMessageSize     = 400
 	)
 
 	sender := newTestMonitoringSender()
 
-	controller, err := monitorcontroller.New(&config.Config{
-		Monitoring: config.Monitoring{MaxOfflineMessages: numOfflineMessages},
-	}, sender)
+	controller, err := monitorcontroller.New(
+		&config.Config{Monitoring: config.Monitoring{
+			MaxOfflineMessages: numOfflineMessages,
+			SendPeriod:         aostypes.Duration{Duration: 1 * time.Second},
+			MaxMessageSize:     maxMessageSize,
+		}}, sender)
 	if err != nil {
 		t.Fatalf("Can't create monitoring controller: %v", err)
 	}
 	defer controller.Close()
 
-	var sentData []cloudprotocol.NodeMonitoringData
+	var sentData []cloudprotocol.Monitoring
 
 	for i := 0; i < numOfflineMessages+numExtraMessages; i++ {
-		nodeMonitoring := cloudprotocol.NodeMonitoringData{
-			MonitoringData: cloudprotocol.MonitoringData{
-				RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}},
-			},
-			NodeID:    "mainNode",
-			Timestamp: time.Now().UTC(),
-			ServiceInstances: []cloudprotocol.InstanceMonitoringData{
-				{
-					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-					MonitoringData: cloudprotocol.MonitoringData{RAM: 1024, CPU: 50, Disk: []cloudprotocol.PartitionUsage{{
-						Name: "p1", UsedSize: 100,
-					}}},
-				},
-			},
-		}
+		inputData, expectedData := getTestMonitoringData()
 
-		controller.SendMonitoringData(nodeMonitoring)
+		controller.SendNodeMonitoring(inputData)
 
-		sentData = append(sentData, nodeMonitoring)
+		sentData = append(sentData, expectedData)
 	}
 
 	if _, err := sender.waitMonitoringData(); err == nil {
@@ -165,13 +122,18 @@ func TestSendMonitorOffline(t *testing.T) {
 
 	sender.consumer.CloudConnected()
 
-	receivedData, err := sender.waitMonitoringData()
-	if err != nil {
-		t.Fatalf("Error waiting for monitoring data: %v", err)
-	}
+	expectedList := sentData[len(sentData)-numOfflineMessages:]
+	for _, message := range expectedList {
+		receivedData, err := sender.waitMonitoringData()
+		if err != nil {
+			t.Fatalf("Error waiting for monitoring data: %v", err)
+			return
+		}
 
-	if !reflect.DeepEqual(receivedData.Nodes, sentData[len(sentData)-numOfflineMessages:]) {
-		t.Errorf("Wrong monitoring data received: %v", receivedData)
+		if !reflect.DeepEqual(receivedData, message) {
+			t.Errorf("Wrong monitoring data received: %v", receivedData)
+			return
+		}
 	}
 
 	if data, err := sender.waitMonitoringData(); err == nil {
@@ -210,7 +172,46 @@ func (sender *testMonitoringSender) waitMonitoringData() (cloudprotocol.Monitori
 	case monitoringData := <-sender.monitoringData:
 		return monitoringData, nil
 
-	case <-time.After(1 * time.Second):
+	case <-time.After(2 * time.Second):
 		return cloudprotocol.Monitoring{}, aoserrors.New("wait monitoring data timeout")
 	}
+}
+
+func getTestMonitoringData() (aostypes.NodeMonitoring, cloudprotocol.Monitoring) {
+	timestamp := time.Now().UTC()
+	nodeMonitoring := cloudprotocol.NodeMonitoringData{
+		NodeID: "mainNode",
+		Items: []aostypes.MonitoringData{
+			{
+				RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Timestamp: timestamp,
+				Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+			},
+		},
+	}
+
+	instanceMonitoring := cloudprotocol.InstanceMonitoringData{
+		NodeID:        "mainNode",
+		InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+		Items: []aostypes.MonitoringData{
+			{
+				RAM: 1024, CPU: 50, Timestamp: timestamp,
+				Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+			},
+		},
+	}
+
+	input := aostypes.NodeMonitoring{
+		NodeID:   "mainNode",
+		NodeData: nodeMonitoring.Items[0],
+		InstancesData: []aostypes.InstanceMonitoring{
+			{InstanceIdent: instanceMonitoring.InstanceIdent, MonitoringData: instanceMonitoring.Items[0]},
+		},
+	}
+
+	output := cloudprotocol.Monitoring{
+		Nodes:            []cloudprotocol.NodeMonitoringData{nodeMonitoring},
+		ServiceInstances: []cloudprotocol.InstanceMonitoringData{instanceMonitoring},
+	}
+
+	return input, output
 }
