@@ -32,6 +32,7 @@ import (
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
+
 type closeReason int
 
 type umHandler struct {
@@ -84,8 +85,8 @@ const (
 
 // NewUmHandler create update manager connection handler.
 func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
-	messageChannel chan umCtrlInternalMsg, state pb.UpdateState) (handler *umHandler, closeChannel chan closeReason, err error,
-) {
+	messageChannel chan umCtrlInternalMsg, state pb.UpdateState,
+) (handler *umHandler, closeChannel chan closeReason, err error) {
 	handler = &umHandler{umID: id, stream: umStream, messageChannel: messageChannel}
 	handler.closeChannel = make(chan closeReason)
 	handler.initialUpdateStatus = state.String()
