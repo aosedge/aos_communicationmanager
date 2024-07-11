@@ -60,6 +60,8 @@ type UMClientConfig struct {
 type Monitoring struct {
 	MonitorConfig      *resourcemonitor.Config `json:"monitorConfig"`
 	MaxOfflineMessages int                     `json:"maxOfflineMessages"`
+	SendPeriod         aostypes.Duration       `json:"sendPeriod"`
+	MaxMessageSize     int                     `json:"maxMessageSize"`
 }
 
 // Alerts configuration for alerts.
@@ -138,7 +140,9 @@ func New(fileName string) (config *Config, err error) {
 			MaxOfflineMessages: 25,
 		},
 		Monitoring: Monitoring{
-			MaxOfflineMessages: 25,
+			MaxOfflineMessages: 16,
+			SendPeriod:         aostypes.Duration{Duration: 1 * time.Minute},
+			MaxMessageSize:     65536,
 		},
 		Downloader: Downloader{
 			MaxConcurrentDownloads: 4,

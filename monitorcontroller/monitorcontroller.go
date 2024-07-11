@@ -19,11 +19,14 @@ package monitorcontroller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
+	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
@@ -45,21 +48,17 @@ type MonitoringSender interface {
 // MonitorController instance.
 type MonitorController struct {
 	sync.Mutex
-	monitoringQueue     []cloudprotocol.NodeMonitoringData
-	monitoringQueueSize int
-	monitoringSender    MonitoringSender
-	cancelFunction      context.CancelFunc
-	isConnected         bool
+	offlineMessages []cloudprotocol.Monitoring
+
+	sendMessageEvent   chan struct{}
+	maxMessageSize     int
+	currentMessageSize int
+	sendPeriod         aostypes.Duration
+
+	monitoringSender MonitoringSender
+	cancelFunction   context.CancelFunc
+	isConnected      bool
 }
-
-/***********************************************************************************************************************
- * Vars
- **********************************************************************************************************************/
-
-// MinSendPeriod used to adjust min send period.
-//
-//nolint:gochecknoglobals
-var MinSendPeriod = 1 * time.Second
 
 /***********************************************************************************************************************
  * Public
@@ -70,9 +69,16 @@ func New(
 	config *config.Config, monitoringSender MonitoringSender,
 ) (monitor *MonitorController, err error) {
 	monitor = &MonitorController{
-		monitoringSender:    monitoringSender,
-		monitoringQueue:     make([]cloudprotocol.NodeMonitoringData, 0, config.Monitoring.MaxOfflineMessages),
-		monitoringQueueSize: config.Monitoring.MaxOfflineMessages,
+		monitoringSender: monitoringSender,
+		offlineMessages:  make([]cloudprotocol.Monitoring, 0, config.Monitoring.MaxOfflineMessages),
+		sendMessageEvent: make(chan struct{}, 1),
+		maxMessageSize:   config.Monitoring.MaxMessageSize,
+		sendPeriod:       config.Monitoring.SendPeriod,
+	}
+
+	if monitor.sendPeriod.Seconds() < 1.0 {
+		log.Warningf("MonitorController send interval is less than 1sec.: %v", monitor.sendPeriod)
+		monitor.sendPeriod = aostypes.Duration{Duration: 1 * time.Second}
 	}
 
 	if err = monitor.monitoringSender.SubscribeForConnectionEvents(monitor); err != nil {
@@ -98,16 +104,43 @@ func (monitor *MonitorController) Close() {
 	}
 }
 
-// SendMonitoringData sends monitoring data.
-func (monitor *MonitorController) SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData) {
+// SendNodeMonitoring sends monitoring data.
+func (monitor *MonitorController) SendNodeMonitoring(nodeMonitoring aostypes.NodeMonitoring) {
 	monitor.Lock()
-	defer monitor.Unlock()
 
-	if len(monitor.monitoringQueue) >= monitor.monitoringQueueSize {
-		monitor.monitoringQueue = monitor.monitoringQueue[1:]
+	// calculate size of input parameter
+	messageSize := 0
+
+	message, err := json.Marshal(nodeMonitoring)
+	if err == nil {
+		messageSize = len(message)
+	} else {
+		log.Errorf("Can't marshal nodeMonitoring: %v", err)
 	}
 
-	monitor.monitoringQueue = append(monitor.monitoringQueue, monitoringData)
+	// allocate new offline message
+	currentMessageOverflows := monitor.currentMessageSize+messageSize > monitor.maxMessageSize
+
+	if len(monitor.offlineMessages) == 0 || currentMessageOverflows {
+		if len(monitor.offlineMessages) == cap(monitor.offlineMessages) {
+			monitor.offlineMessages = monitor.offlineMessages[1:]
+		}
+
+		monitor.offlineMessages = append(monitor.offlineMessages, cloudprotocol.Monitoring{})
+		monitor.currentMessageSize = 0
+	}
+
+	monitor.currentMessageSize += messageSize
+
+	// add monitoring data
+	monitor.addNodeMonitoring(nodeMonitoring)
+
+	// send notification message
+	monitor.Unlock()
+
+	if currentMessageOverflows {
+		monitor.sendMessageEvent <- struct{}{}
+	}
 }
 
 /***********************************************************************************************************************
@@ -135,27 +168,78 @@ func (monitor *MonitorController) CloudDisconnected() {
  **********************************************************************************************************************/
 
 func (monitor *MonitorController) processQueue(ctx context.Context) {
-	sendTicker := time.NewTicker(MinSendPeriod)
+	sendTicker := time.NewTicker(monitor.sendPeriod.Duration)
 
 	for {
 		select {
 		case <-sendTicker.C:
-			monitor.Lock()
+			monitor.sendMessages()
 
-			if len(monitor.monitoringQueue) > 0 && monitor.isConnected {
-				if err := monitor.monitoringSender.SendMonitoringData(
-					cloudprotocol.Monitoring{Nodes: monitor.monitoringQueue}); err != nil &&
-					!errors.Is(err, amqphandler.ErrNotConnected) {
-					log.Errorf("Can't send monitoring data: %v", err)
-				} else {
-					monitor.monitoringQueue = make([]cloudprotocol.NodeMonitoringData, 0, monitor.monitoringQueueSize)
-				}
-			}
-
-			monitor.Unlock()
+		case <-monitor.sendMessageEvent:
+			monitor.sendMessages()
+			sendTicker.Reset(monitor.sendPeriod.Duration)
 
 		case <-ctx.Done():
 			return
+		}
+	}
+}
+
+func (monitor *MonitorController) sendMessages() {
+	monitor.Lock()
+	defer monitor.Unlock()
+
+	if len(monitor.offlineMessages) > 0 && monitor.isConnected {
+		for _, offlineMessage := range monitor.offlineMessages {
+			err := monitor.monitoringSender.SendMonitoringData(offlineMessage)
+			if err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+				log.Errorf("Can't send monitoring data: %v", err)
+			}
+		}
+
+		monitor.offlineMessages = make([]cloudprotocol.Monitoring, 0, cap(monitor.offlineMessages))
+		monitor.currentMessageSize = 0
+	}
+}
+
+func (monitor *MonitorController) addNodeMonitoring(nodeMonitoring aostypes.NodeMonitoring) {
+	latestMessage := &monitor.offlineMessages[len(monitor.offlineMessages)-1]
+
+	// add node monitoring data
+	nodeDataInd := slices.IndexFunc(latestMessage.Nodes,
+		func(item cloudprotocol.NodeMonitoringData) bool { return item.NodeID == nodeMonitoring.NodeID },
+	)
+
+	if nodeDataInd >= 0 {
+		nodeItems := &latestMessage.Nodes[nodeDataInd].Items
+		*nodeItems = append(*nodeItems, nodeMonitoring.NodeData)
+	} else {
+		latestMessage.Nodes = append(latestMessage.Nodes,
+			cloudprotocol.NodeMonitoringData{
+				NodeID: nodeMonitoring.NodeID, Items: []aostypes.MonitoringData{nodeMonitoring.NodeData},
+			},
+		)
+	}
+
+	// add instance monitoring data
+	for _, instanceData := range nodeMonitoring.InstancesData {
+		instanceDataInd := slices.IndexFunc(latestMessage.ServiceInstances,
+			func(item cloudprotocol.InstanceMonitoringData) bool {
+				return item.NodeID == nodeMonitoring.NodeID && item.InstanceIdent == instanceData.InstanceIdent
+			},
+		)
+
+		if instanceDataInd >= 0 {
+			serviceInstanceItems := &latestMessage.ServiceInstances[instanceDataInd].Items
+			*serviceInstanceItems = append(*serviceInstanceItems, instanceData.MonitoringData)
+		} else {
+			latestMessage.ServiceInstances = append(latestMessage.ServiceInstances,
+				cloudprotocol.InstanceMonitoringData{
+					NodeID:        nodeMonitoring.NodeID,
+					InstanceIdent: instanceData.InstanceIdent,
+					Items:         []aostypes.MonitoringData{instanceData.MonitoringData},
+				},
+			)
 		}
 	}
 }
