@@ -398,6 +398,27 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 			return aoserrors.Wrap(err)
 		}
 
+	case *cloudprotocol.StartProvisioningRequest:
+		log.Info("Receive start provisioning request message")
+
+		if err = cm.iam.StartProvisioning(data.NodeID, data.Password); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.FinishProvisioningRequest:
+		log.Info("Receive finish provisioning request message")
+
+		if err = cm.iam.FinishProvisioning(data.NodeID, data.Password, data.Certificates); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.DeprovisioningRequest:
+		log.Info("Receive deprovisioning request message")
+
+		if err = cm.iam.Deprovision(data.NodeID, data.Password); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
 	default:
 		log.Warnf("Receive unsupported amqp message: %s", reflect.TypeOf(data))
 	}

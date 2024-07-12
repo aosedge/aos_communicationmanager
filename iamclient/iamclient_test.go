@@ -77,6 +77,7 @@ type testPublicServer struct {
 
 type testProtectedServer struct {
 	pb.UnimplementedIAMCertificateServiceServer
+	pb.UnimplementedIAMProvisioningServiceServer
 
 	grpcServer *grpc.Server
 	csr        map[string]string
@@ -84,8 +85,11 @@ type testProtectedServer struct {
 }
 
 type testSender struct {
-	csr                  map[string]string
-	currentConfirmations []cloudprotocol.InstallCertData
+	csr                        map[string]string
+	currentConfirmations       []cloudprotocol.InstallCertData
+	startProvisioningResponse  *cloudprotocol.StartProvisioningResponse
+	finishProvisioningResponse *cloudprotocol.FinishProvisioningResponse
+	deprovisioningResponse     *cloudprotocol.DeprovisioningResponse
 }
 
 type testCertProvider struct{}
@@ -408,6 +412,128 @@ func TestSubscribeNodeInfoChange(t *testing.T) {
 	}
 }
 
+func TestStartProvisioning(t *testing.T) {
+	sender := &testSender{}
+
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	protectedServer.csr = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, sender, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	err = client.StartProvisioning("node1", "password")
+	if err != nil {
+		t.Errorf("Error is not expected: %s", err)
+	}
+
+	expectedResponse := cloudprotocol.StartProvisioningResponse{
+		MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+		NodeID:      "node1",
+		CSRs: []cloudprotocol.IssueCertData{
+			{NodeID: "node1", Type: "online", Csr: "onlineCSR"},
+			{NodeID: "node1", Type: "offline", Csr: "offlineCSR"},
+		},
+	}
+
+	if sender.startProvisioningResponse == nil {
+		t.Error("Sender didn't receive start provisioning response")
+	}
+
+	if !reflect.DeepEqual(expectedResponse, *sender.startProvisioningResponse) {
+		log.Debug(expectedResponse)
+		log.Debug(*sender.startProvisioningResponse)
+		t.Error("Wrong start provisioning response")
+	}
+}
+
+func TestFinishProvisioning(t *testing.T) {
+	sender := &testSender{}
+
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	protectedServer.certURL = map[string]string{"online": "onlineCSR", "offline": "offlineCSR"}
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, sender, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	err = client.FinishProvisioning("node2", "password",
+		[]cloudprotocol.IssuedCertData{
+			{NodeID: "node1", Type: "online", CertificateChain: "onlineCSR"},
+			{NodeID: "node1", Type: "offline", CertificateChain: "offlineCSR"},
+		},
+	)
+	if err != nil {
+		t.Errorf("Error is not expected: %v", err)
+	}
+
+	if sender.finishProvisioningResponse == nil {
+		t.Error("Sender didn't receive finish provisioning response")
+	}
+
+	if sender.finishProvisioningResponse.ErrorInfo != nil {
+		t.Errorf("Error is not expected: %v", sender.finishProvisioningResponse.ErrorInfo)
+	}
+}
+
+func TestDeprovisioning(t *testing.T) {
+	sender := &testSender{}
+
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, sender, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	err = client.Deprovision("test-node-id", "password")
+	if err != nil {
+		t.Errorf("Error is not expected: %s", err)
+	}
+
+	if sender.deprovisioningResponse == nil {
+		t.Error("Sender didn't receive deprovisioning response")
+	}
+
+	if sender.deprovisioningResponse.ErrorInfo != nil {
+		t.Errorf("Error is not expected: %v", sender.deprovisioningResponse.ErrorInfo)
+	}
+}
+
 /*******************************************************************************
  * Private
  ******************************************************************************/
@@ -445,6 +571,7 @@ func newTestServer(
 	protectedServer.grpcServer = grpc.NewServer()
 
 	pb.RegisterIAMCertificateServiceServer(protectedServer.grpcServer, protectedServer)
+	pb.RegisterIAMProvisioningServiceServer(protectedServer.grpcServer, protectedServer)
 
 	go func() {
 		if err := protectedServer.grpcServer.Serve(protectedListener); err != nil {
@@ -501,6 +628,38 @@ func (server *testProtectedServer) ApplyCert(
 	return rsp, nil
 }
 
+func (server *testProtectedServer) GetCertTypes(
+	context context.Context, req *pb.GetCertTypesRequest,
+) (rsp *pb.CertTypes, err error) {
+	rsp = &pb.CertTypes{Types: []string{"online", "offline"}}
+
+	return rsp, nil
+}
+
+func (server *testProtectedServer) StartProvisioning(
+	context context.Context, req *pb.StartProvisioningRequest,
+) (rsp *pb.StartProvisioningResponse, err error) {
+	rsp = &pb.StartProvisioningResponse{}
+
+	return rsp, nil
+}
+
+func (server *testProtectedServer) FinishProvisioning(
+	context context.Context, req *pb.FinishProvisioningRequest,
+) (rsp *pb.FinishProvisioningResponse, err error) {
+	rsp = &pb.FinishProvisioningResponse{}
+
+	return rsp, nil
+}
+
+func (server *testProtectedServer) Deprovision(
+	context context.Context, req *pb.DeprovisionRequest,
+) (rsp *pb.DeprovisionResponse, err error) {
+	rsp = &pb.DeprovisionResponse{}
+
+	return rsp, nil
+}
+
 func (server *testPublicServer) GetCert(
 	context context.Context, req *pb.GetCertRequest,
 ) (rsp *pb.GetCertResponse, err error) {
@@ -523,12 +682,6 @@ func (server *testPublicServer) GetCert(
 }
 
 func (server *testPublicServer) GetCertTypes(context context.Context, req *empty.Empty) (rsp *pb.CertTypes, err error) {
-	return rsp, nil
-}
-
-func (server *testProtectedServer) FinishProvisioning(
-	context context.Context, req *empty.Empty,
-) (rsp *empty.Empty, err error) {
 	return rsp, nil
 }
 
@@ -582,6 +735,30 @@ func (sender *testSender) SendInstallCertsConfirmation(confirmations []cloudprot
 			sender.currentConfirmations[i].Description = "error"
 		}
 	}
+
+	return nil
+}
+
+func (sender *testSender) SendStartProvisioningResponse(
+	response cloudprotocol.StartProvisioningResponse,
+) (err error) {
+	sender.startProvisioningResponse = &response
+
+	return nil
+}
+
+func (sender *testSender) SendFinishProvisioningResponse(
+	response cloudprotocol.FinishProvisioningResponse,
+) (err error) {
+	sender.finishProvisioningResponse = &response
+
+	return nil
+}
+
+func (sender *testSender) SendDeprovisioningResponse(
+	response cloudprotocol.DeprovisioningResponse,
+) (err error) {
+	sender.deprovisioningResponse = &response
 
 	return nil
 }
