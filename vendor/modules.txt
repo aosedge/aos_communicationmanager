@@ -29,6 +29,7 @@ github.com/aosedge/aos_common/utils/cryptutils
 github.com/aosedge/aos_common/utils/fs
 github.com/aosedge/aos_common/utils/pbconvert
 github.com/aosedge/aos_common/utils/retryhelper
+github.com/aosedge/aos_common/utils/semverutils
 github.com/aosedge/aos_common/utils/syncstream
 github.com/aosedge/aos_common/utils/testtools
 github.com/aosedge/aos_common/utils/xentop
