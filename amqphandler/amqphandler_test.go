@@ -341,6 +341,34 @@ func TestReceiveMessages(t *testing.T) {
 				SOTASchedule: cloudprotocol.ScheduleRule{TTL: uint64(200), Type: "type2"},
 			},
 		},
+		{
+			messageType: cloudprotocol.StartProvisioningRequestMessageType,
+			expectedData: &cloudprotocol.StartProvisioningRequest{
+				MessageType: cloudprotocol.StartProvisioningRequestMessageType,
+				NodeID:      "node-1",
+				Password:    "password-1",
+			},
+		},
+		{
+			messageType: cloudprotocol.FinishProvisioningRequestMessageType,
+			expectedData: &cloudprotocol.FinishProvisioningRequest{
+				MessageType: cloudprotocol.FinishProvisioningRequestMessageType,
+				NodeID:      "node1",
+				Certificates: []cloudprotocol.IssuedCertData{
+					{NodeID: "node1", Type: "online", CertificateChain: "onlineCSR"},
+					{NodeID: "node1", Type: "offline", CertificateChain: "offlineCSR"},
+				},
+				Password: "password-1",
+			},
+		},
+		{
+			messageType: cloudprotocol.DeprovisioningRequestMessageType,
+			expectedData: &cloudprotocol.DeprovisioningRequest{
+				MessageType: cloudprotocol.DeprovisioningRequestMessageType,
+				NodeID:      "node-1",
+				Password:    "password-1",
+			},
+		},
 	}
 
 	for _, data := range testData {
@@ -531,6 +559,25 @@ func TestSendMessages(t *testing.T) {
 				},
 			},
 		},
+	}
+
+	startProvisioningResponse := cloudprotocol.StartProvisioningResponse{
+		MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+		NodeID:      "node-1",
+		ErrorInfo:   nil,
+		CSRs:        []cloudprotocol.IssueCertData{{Type: "online", Csr: "iam"}, {Type: "offline", Csr: "iam"}},
+	}
+
+	finishProvisioningResponse := cloudprotocol.FinishProvisioningResponse{
+		MessageType: cloudprotocol.FinishProvisioningResponseMessageType,
+		NodeID:      "node-1",
+		ErrorInfo:   nil,
+	}
+
+	deProvisioningResponse := cloudprotocol.DeprovisioningResponse{
+		MessageType: cloudprotocol.DeprovisioningResponseMessageType,
+		NodeID:      "node-1",
+		ErrorInfo:   nil,
 	}
 
 	issueCerts := cloudprotocol.IssueUnitCerts{
@@ -727,6 +774,51 @@ func TestSendMessages(t *testing.T) {
 			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}
+			},
+		},
+		{
+			call: func() error {
+				return aoserrors.Wrap(amqpHandler.SendStartProvisioningResponse(startProvisioningResponse))
+			},
+			data: cloudprotocol.Message{
+				Header: cloudprotocol.MessageHeader{
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
+				},
+				Data: &startProvisioningResponse,
+			},
+			getDataType: func() interface{} {
+				return &cloudprotocol.StartProvisioningResponse{MessageType: cloudprotocol.StartProvisioningResponseMessageType}
+			},
+		},
+		{
+			call: func() error {
+				return aoserrors.Wrap(amqpHandler.SendFinishProvisioningResponse(finishProvisioningResponse))
+			},
+			data: cloudprotocol.Message{
+				Header: cloudprotocol.MessageHeader{
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
+				},
+				Data: &finishProvisioningResponse,
+			},
+			getDataType: func() interface{} {
+				return &cloudprotocol.FinishProvisioningResponse{MessageType: cloudprotocol.FinishProvisioningResponseMessageType}
+			},
+		},
+		{
+			call: func() error {
+				return aoserrors.Wrap(amqpHandler.SendDeprovisioningResponse(deProvisioningResponse))
+			},
+			data: cloudprotocol.Message{
+				Header: cloudprotocol.MessageHeader{
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
+				},
+				Data: &deProvisioningResponse,
+			},
+			getDataType: func() interface{} {
+				return &cloudprotocol.DeprovisioningResponse{MessageType: cloudprotocol.DeprovisioningResponseMessageType}
 			},
 		},
 	}
