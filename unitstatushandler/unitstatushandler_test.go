@@ -110,8 +110,8 @@ func TestSendInitialStatus(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, fotaUpdater, sotaUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, fotaUpdater, sotaUpdater, instanceRunner,
+		unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -158,8 +158,8 @@ func TestUpdateUnitConfig(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, fotaUpdater, sotaUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, fotaUpdater, sotaUpdater, instanceRunner,
+		unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -252,7 +252,7 @@ func TestUpdateComponents(t *testing.T) {
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
-	statusHandler, err := unitstatushandler.New(cfg,
+	statusHandler, err := unitstatushandler.New(cfg, unitstatushandler.NewTestNodeInfoProvider(),
 		unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
 		unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
@@ -359,8 +359,8 @@ func TestUpdateLayers(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -516,8 +516,8 @@ func TestUpdateServices(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
@@ -663,8 +663,8 @@ func TestRunInstances(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %v", err)
 	}
@@ -786,8 +786,8 @@ func TestUpdateInstancesStatus(t *testing.T) {
 	sender := unitstatushandler.NewTestSender()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, unitstatushandler.NewTestDownloader(),
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %v", err)
 	}
@@ -903,8 +903,8 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	downloader := unitstatushandler.NewTestDownloader()
 
 	statusHandler, err := unitstatushandler.New(
-		cfg, unitConfigUpdater, firmwareUpdater, softwareUpdater, instanceRunner, downloader,
-		unitstatushandler.NewTestStorage(), sender)
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, downloader, unitstatushandler.NewTestStorage(), sender)
 	if err != nil {
 		t.Fatalf("Can't create unit status handler: %s", err)
 	}
