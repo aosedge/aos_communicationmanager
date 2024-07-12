@@ -123,6 +123,15 @@ var messageMap = map[string]func() interface{}{ //nolint:gochecknoglobals
 	cloudprotocol.OverrideEnvVarsMessageType: func() interface{} {
 		return &cloudprotocol.OverrideEnvVars{}
 	},
+	cloudprotocol.StartProvisioningRequestMessageType: func() interface{} {
+		return &cloudprotocol.StartProvisioningRequest{}
+	},
+	cloudprotocol.FinishProvisioningRequestMessageType: func() interface{} {
+		return &cloudprotocol.FinishProvisioningRequest{}
+	},
+	cloudprotocol.DeprovisioningRequestMessageType: func() interface{} {
+		return &cloudprotocol.DeprovisioningRequest{}
+	},
 }
 
 var (
@@ -312,6 +321,30 @@ func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs cloudprotocol.Overrid
 	envs.MessageType = cloudprotocol.OverrideEnvVarsStatusMessageType
 
 	return handler.scheduleMessage(cloudprotocol.OverrideEnvVarsStatusMessageType, envs, true)
+}
+
+// SendStartProvisioningResponse sends start provisioning response.
+func (handler *AmqpHandler) SendStartProvisioningResponse(response cloudprotocol.StartProvisioningResponse) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	return handler.scheduleMessage(cloudprotocol.StartProvisioningResponseMessageType, response, true)
+}
+
+// SendFinishProvisioningResponse sends finish provisioning response.
+func (handler *AmqpHandler) SendFinishProvisioningResponse(response cloudprotocol.FinishProvisioningResponse) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	return handler.scheduleMessage(cloudprotocol.FinishProvisioningResponseMessageType, response, true)
+}
+
+// SendDeprovisioningResponse sends deprovisioning response.
+func (handler *AmqpHandler) SendDeprovisioningResponse(response cloudprotocol.DeprovisioningResponse) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	return handler.scheduleMessage(cloudprotocol.DeprovisioningResponseMessageType, response, true)
 }
 
 // SubscribeForConnectionEvents subscribes for connection events.
