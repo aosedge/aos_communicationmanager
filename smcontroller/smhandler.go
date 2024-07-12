@@ -28,6 +28,7 @@ import (
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_common/api/common"
 	pb "github.com/aosedge/aos_common/api/servicemanager"
+	"github.com/aosedge/aos_common/resourcemonitor"
 	"github.com/aosedge/aos_common/utils/pbconvert"
 	"github.com/aosedge/aos_common/utils/syncstream"
 	log "github.com/sirupsen/logrus"
@@ -484,20 +485,30 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 			Parameter: data.SystemQuotaAlert.GetParameter(),
 			Value:     data.SystemQuotaAlert.GetValue(),
 			NodeID:    handler.nodeConfigStatus.NodeID,
+			Status:    data.SystemQuotaAlert.GetStatus(),
 		}
 
-		if alertPayload.Parameter == "cpu" || alertPayload.Parameter == "ram" {
-			handler.systemLimitAlertCh <- alertPayload
+		handler.systemLimitAlertCh <- alertPayload
+
+		if alertPayload.Status != resourcemonitor.AlertStatusRaise {
+			return
 		}
 
 		alertItem.Payload = alertPayload
 
 	case *pb.Alert_InstanceQuotaAlert:
-		alertItem.Payload = cloudprotocol.InstanceQuotaAlert{
+		alertPayload := cloudprotocol.InstanceQuotaAlert{
 			InstanceIdent: pbconvert.InstanceIdentFromPB(data.InstanceQuotaAlert.GetInstance()),
 			Parameter:     data.InstanceQuotaAlert.GetParameter(),
 			Value:         data.InstanceQuotaAlert.GetValue(),
+			Status:        data.InstanceQuotaAlert.GetStatus(),
 		}
+
+		if alertPayload.Status != resourcemonitor.AlertStatusRaise {
+			return
+		}
+
+		alertItem.Payload = alertPayload
 
 	case *pb.Alert_InstanceAlert:
 		alertItem.Payload = cloudprotocol.ServiceInstanceAlert{

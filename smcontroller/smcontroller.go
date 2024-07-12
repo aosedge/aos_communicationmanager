@@ -313,7 +313,7 @@ func (controller *Controller) GetRunInstancesStatusChannel() <-chan launcher.Nod
 	return controller.runInstancesStatusChan
 }
 
-// GetSystemLimitAlertChannel returns channel with alerts about RAM CLU system limits.
+// GetSystemLimitAlertChannel returns channel with alerts about RAM, CPU system limits.
 func (controller *Controller) GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
 	return controller.systemLimitAlertChan
 }
