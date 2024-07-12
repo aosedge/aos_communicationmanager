@@ -69,6 +69,7 @@ type Client struct {
 	publicService       pb.IAMPublicServiceClient
 	identService        pb.IAMPublicIdentityServiceClient
 	certificateService  pb.IAMCertificateServiceClient
+	provisioningService pb.IAMProvisioningServiceClient
 
 	closeChannel      chan struct{}
 	nodeService       pb.IAMPublicNodesServiceClient
@@ -79,6 +80,9 @@ type Client struct {
 type Sender interface {
 	SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error)
 	SendInstallCertsConfirmation(confirmations []cloudprotocol.InstallCertData) (err error)
+	SendStartProvisioningResponse(response cloudprotocol.StartProvisioningResponse) (err error)
+	SendFinishProvisioningResponse(response cloudprotocol.FinishProvisioningResponse) (err error)
+	SendDeprovisioningResponse(response cloudprotocol.DeprovisioningResponse) (err error)
 }
 
 // CertificateProvider provides certificate info.
@@ -127,6 +131,7 @@ func New(
 	}
 
 	localClient.certificateService = pb.NewIAMCertificateServiceClient(localClient.protectedConnection)
+	localClient.provisioningService = pb.NewIAMProvisioningServiceClient(localClient.protectedConnection)
 
 	log.Debug("Connected to IAM")
 
@@ -167,7 +172,7 @@ func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInf
 		return cloudprotocol.NodeInfo{}, aoserrors.Wrap(err)
 	}
 
-	return pbconvert.NewNodeInfoFromPB(response), nil
+	return pbconvert.NodeInfoFromPB(response), nil
 }
 
 // GetAllNodeIDs returns node ids.
@@ -302,6 +307,108 @@ func (client *Client) GetCertificate(
 	return response.GetCertUrl(), response.GetKeyUrl(), nil
 }
 
+// StartProvisioning starts provisioning.
+func (client *Client) StartProvisioning(nodeID, password string) (err error) {
+	log.WithField("nodeID", nodeID).Debug("Start provisioning")
+
+	var (
+		errorInfo *cloudprotocol.ErrorInfo
+		csrs      []cloudprotocol.IssueCertData
+	)
+
+	defer func() {
+		errSend := client.sender.SendStartProvisioningResponse(cloudprotocol.StartProvisioningResponse{
+			MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+			NodeID:      nodeID,
+			ErrorInfo:   errorInfo,
+			CSRs:        csrs,
+		})
+		if errSend != nil && err == nil {
+			err = aoserrors.Wrap(errSend)
+		}
+	}()
+
+	errorInfo = client.startProvisioning(nodeID, password)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	csrs, errorInfo = client.createKeys(nodeID, password)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// FinishProvisioning starts provisioning.
+func (client *Client) FinishProvisioning(
+	nodeID, password string, certificates []cloudprotocol.IssuedCertData,
+) (err error) {
+	log.WithField("nodeID", nodeID).Debug("Finish provisioning")
+
+	var errorInfo *cloudprotocol.ErrorInfo
+
+	defer func() {
+		errSend := client.sender.SendFinishProvisioningResponse(cloudprotocol.FinishProvisioningResponse{
+			MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+			NodeID:      nodeID,
+			ErrorInfo:   errorInfo,
+		})
+		if errSend != nil && err == nil {
+			err = aoserrors.Wrap(errSend)
+		}
+	}()
+
+	errorInfo = client.applyCertificates(nodeID, certificates)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	errorInfo = client.finishProvisioning(nodeID, password)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// Deprovision deprovisions node.
+func (client *Client) Deprovision(nodeID, password string) (err error) {
+	log.WithField("nodeID", nodeID).Debug("Deprovision node")
+
+	var errorInfo *cloudprotocol.ErrorInfo
+
+	defer func() {
+		errSend := client.sender.SendDeprovisioningResponse(cloudprotocol.DeprovisioningResponse{
+			MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+			NodeID:      nodeID,
+			ErrorInfo:   errorInfo,
+		})
+		if errSend != nil && err == nil {
+			err = aoserrors.Wrap(errSend)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.Deprovision(
+		ctx, &pb.DeprovisionRequest{NodeId: nodeID, Password: password})
+	if err != nil {
+		errorInfo = &cloudprotocol.ErrorInfo{Message: err.Error()}
+
+		return aoserrors.Wrap(err)
+	}
+
+	errorInfo = pbconvert.ErrorInfoFromPB(response.GetError())
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
 // Close closes IAM client.
 func (client *Client) Close() (err error) {
 	if client.publicConnection != nil || client.protectedConnection != nil {
@@ -434,7 +541,7 @@ func (client *Client) processMessages(listener pb.IAMPublicNodesService_Subscrib
 
 		client.Lock()
 		for _, listener := range client.nodeInfoListeners {
-			listener <- pbconvert.NewNodeInfoFromPB(nodeInfo)
+			listener <- pbconvert.NodeInfoFromPB(nodeInfo)
 		}
 		client.Unlock()
 	}
@@ -484,4 +591,109 @@ func (client *Client) subscribeNodeInfoChange() (listener pb.IAMPublicNodesServi
 	}
 
 	return listener, err
+}
+
+func (client *Client) getCertTypes(nodeID string) ([]string, error) {
+	log.WithField("nodeID", nodeID).Debug("Get certificate types")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.GetCertTypes(
+		ctx, &pb.GetCertTypesRequest{NodeId: nodeID})
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return response.GetTypes(), nil
+}
+
+func (client *Client) createKeys(nodeID, password string) (
+	certs []cloudprotocol.IssueCertData, errorInfo *cloudprotocol.ErrorInfo,
+) {
+	certTypes, err := client.getCertTypes(nodeID)
+	if err != nil {
+		return nil, &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	for _, certType := range certTypes {
+		log.WithFields(log.Fields{"nodeID": nodeID, "type": certType}).Debug("Create key")
+
+		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+		defer cancel()
+
+		response, err := client.certificateService.CreateKey(ctx, &pb.CreateKeyRequest{
+			Type:     certType,
+			NodeId:   nodeID,
+			Password: password,
+		})
+		if err != nil {
+			return nil, &cloudprotocol.ErrorInfo{Message: err.Error()}
+		}
+
+		if response.GetError() != nil {
+			return nil, pbconvert.ErrorInfoFromPB(response.GetError())
+		}
+
+		certs = append(certs, cloudprotocol.IssueCertData{
+			Type:   certType,
+			Csr:    response.GetCsr(),
+			NodeID: nodeID,
+		})
+	}
+
+	return certs, nil
+}
+
+func (client *Client) startProvisioning(nodeID, password string) (errorInfo *cloudprotocol.ErrorInfo) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.StartProvisioning(
+		ctx, &pb.StartProvisioningRequest{NodeId: nodeID, Password: password})
+	if err != nil {
+		return &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	return pbconvert.ErrorInfoFromPB(response.GetError())
+}
+
+func (client *Client) applyCertificates(
+	nodeID string, certificates []cloudprotocol.IssuedCertData,
+) (errorInfo *cloudprotocol.ErrorInfo) {
+	for _, certificate := range certificates {
+		log.WithFields(log.Fields{"nodeID": nodeID, "type": certificate.Type}).Debug("Apply certificate")
+
+		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+		defer cancel()
+
+		response, err := client.certificateService.ApplyCert(
+			ctx, &pb.ApplyCertRequest{
+				NodeId: nodeID,
+				Type:   certificate.Type,
+				Cert:   certificate.CertificateChain,
+			})
+		if err != nil {
+			return &cloudprotocol.ErrorInfo{Message: err.Error()}
+		}
+
+		if response.GetError() != nil {
+			return pbconvert.ErrorInfoFromPB(response.GetError())
+		}
+	}
+
+	return nil
+}
+
+func (client *Client) finishProvisioning(nodeID, password string) (errorInfo *cloudprotocol.ErrorInfo) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.FinishProvisioning(
+		ctx, &pb.FinishProvisioningRequest{NodeId: nodeID, Password: password})
+	if err != nil {
+		return &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	return pbconvert.ErrorInfoFromPB(response.GetError())
 }
