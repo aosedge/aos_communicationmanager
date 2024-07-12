@@ -28,6 +28,7 @@ import (
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/resourcemonitor"
 	"github.com/aosedge/aos_common/utils/pbconvert"
 
 	pbcommon "github.com/aosedge/aos_common/api/common"
@@ -413,25 +414,33 @@ func TestSMAlertNotifications(t *testing.T) {
 		},
 		{
 			expectedAlert: cloudprotocol.AlertItem{
-				Tag:     cloudprotocol.AlertTagSystemQuota,
-				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "cpu", Value: 42, NodeID: nodeID},
+				Tag: cloudprotocol.AlertTagSystemQuota,
+				Payload: cloudprotocol.SystemQuotaAlert{
+					Parameter: "cpu", Value: 42, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
+				},
 			},
 			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagSystemQuota,
 				Payload: &pbsm.Alert_SystemQuotaAlert{
-					SystemQuotaAlert: &pbsm.SystemQuotaAlert{Parameter: "cpu", Value: 42},
+					SystemQuotaAlert: &pbsm.SystemQuotaAlert{
+						Parameter: "cpu", Value: 42, Status: resourcemonitor.AlertStatusRaise,
+					},
 				},
 			},
 		},
 		{
 			expectedAlert: cloudprotocol.AlertItem{
-				Tag:     cloudprotocol.AlertTagSystemQuota,
-				Payload: cloudprotocol.SystemQuotaAlert{Parameter: "ram", Value: 99, NodeID: nodeID},
+				Tag: cloudprotocol.AlertTagSystemQuota,
+				Payload: cloudprotocol.SystemQuotaAlert{
+					Parameter: "ram", Value: 99, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
+				},
 			},
 			sendAlert: &pbsm.Alert{
 				Tag: cloudprotocol.AlertTagSystemQuota,
 				Payload: &pbsm.Alert_SystemQuotaAlert{
-					SystemQuotaAlert: &pbsm.SystemQuotaAlert{Parameter: "ram", Value: 99},
+					SystemQuotaAlert: &pbsm.SystemQuotaAlert{
+						Parameter: "ram", Value: 99, Status: resourcemonitor.AlertStatusRaise,
+					},
 				},
 			},
 		},
@@ -440,7 +449,7 @@ func TestSMAlertNotifications(t *testing.T) {
 				Tag: cloudprotocol.AlertTagInstanceQuota,
 				Payload: cloudprotocol.InstanceQuotaAlert{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
-					Parameter:     "param1", Value: 42,
+					Parameter:     "param1", Value: 42, Status: resourcemonitor.AlertStatusRaise,
 				},
 			},
 			sendAlert: &pbsm.Alert{
@@ -448,7 +457,7 @@ func TestSMAlertNotifications(t *testing.T) {
 				Payload: &pbsm.Alert_InstanceQuotaAlert{
 					InstanceQuotaAlert: &pbsm.InstanceQuotaAlert{
 						Instance:  &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
-						Parameter: "param1", Value: 42,
+						Parameter: "param1", Value: 42, Status: resourcemonitor.AlertStatusRaise,
 					},
 				},
 			},
@@ -488,8 +497,8 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 
 	expectedSystemLimitAlert := []cloudprotocol.SystemQuotaAlert{
-		{Parameter: "cpu", Value: 42, NodeID: nodeID},
-		{Parameter: "ram", Value: 99, NodeID: nodeID},
+		{Parameter: "cpu", Value: 42, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise},
+		{Parameter: "ram", Value: 99, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise},
 	}
 
 	for _, limitAlert := range expectedSystemLimitAlert {
