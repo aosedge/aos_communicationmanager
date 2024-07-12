@@ -92,11 +92,15 @@ type runRequest struct {
 	forceRestart bool
 }
 
+type testNodeInfoProvider struct {
+	nodeID   string
+	nodeInfo map[string]cloudprotocol.NodeInfo
+}
+
 type testNodeManager struct {
-	runStatusChan   chan launcher.NodeRunInstanceStatus
-	alertsChannel   chan cloudprotocol.SystemQuotaAlert
-	nodeInformation map[string]launcher.NodeInfo
-	runRequest      map[string]runRequest
+	runStatusChan chan launcher.NodeRunInstanceStatus
+	alertsChannel chan cloudprotocol.SystemQuotaAlert
+	runRequest    map[string]runRequest
 }
 
 type testImageProvider struct {
@@ -150,13 +154,14 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager  = newTestNodeManager()
-		imageManager = &testImageProvider{}
-		testStorage  = newTestStorage()
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		imageManager     = &testImageProvider{}
+		testStorage      = newTestStorage()
 	)
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
@@ -166,8 +171,8 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 		t.Fatalf("Can't add instance %v", err)
 	}
 
-	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
-		&testStateStorage{}, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, imageManager,
+		&testResourceManager{}, &testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -187,11 +192,12 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 			ServiceTTLDays: 1,
 		}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		imageManager     = &testImageProvider{}
 		testStorage      = newTestStorage()
@@ -223,8 +229,8 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 	testStorage.services[service2] = make([]imagemanager.ServiceInfo, 1)
 	testStorage.services[service2][0].ServiceInfo.ServiceID = service2
 
-	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
-		testStateStorage, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, imageManager,
+		&testResourceManager{}, testStateStorage, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -256,11 +262,12 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 			ServiceTTLDays: 1,
 		}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		testImageManager = newTestImageProvider()
 		testStorage      = newTestStorage()
@@ -279,8 +286,8 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
 	testStorage.services[service1][0].ServiceInfo.ServiceID = service1
 
-	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, testImageManager, &testResourceManager{},
-		testStateStorage, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, testImageManager,
+		&testResourceManager{}, testStateStorage, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -332,18 +339,18 @@ func TestInitialStatus(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
+				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
+		nodeInfoProvider  = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager       = newTestNodeManager()
 		expectedRunStatus = unitstatushandler.RunInstancesStatus{}
-		expectedNodeInfo  = []cloudprotocol.NodeInfo{}
 		imageManager      = &testImageProvider{}
 	)
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, &testResourceManager{},
-		&testStateStorage{}, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+		&testResourceManager{}, &testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -367,9 +374,8 @@ func TestInitialStatus(t *testing.T) {
 			},
 		}
 
-		nodeManager.nodeInformation[id] = launcher.NodeInfo{NodeInfo: nodeInfo}
+		nodeInfoProvider.nodeInfo[id] = nodeInfo
 
-		expectedNodeInfo = append(expectedNodeInfo, nodeInfo)
 		expectedRunStatus.Instances = append(expectedRunStatus.Instances, instances...)
 
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{NodeID: id, Instances: instances}
@@ -378,11 +384,6 @@ func TestInitialStatus(t *testing.T) {
 	if err := waitRunInstancesStatus(
 		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
 		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	nodesInfo := launcherInstance.GetNodesConfiguration()
-	if !reflect.DeepEqual(expectedNodeInfo, nodesInfo) {
-		t.Error("Incorrect nodes info")
 	}
 }
 
@@ -394,27 +395,28 @@ func TestBalancing(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = &testImageProvider{}
 	)
 
-	nodeManager.nodeInformation = map[string]launcher.NodeInfo{
+	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
 		nodeIDLocalSM: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-			RemoteNode: false, RunnerFeature: []string{runnerRunc},
+			NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 		},
 		nodeIDRemoteSM1: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-			RemoteNode: true, RunnerFeature: []string{runnerRunc},
+			NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 		},
 		nodeIDRemoteSM2: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM},
-			RemoteNode: true, RunnerFeature: []string{runnerRunc},
+			NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
+			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 		},
 		nodeIDRunxSM: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM},
-			RemoteNode: true, RunnerFeature: []string{runnerRunx},
+			NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
+			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
 		},
 	}
 
@@ -464,9 +466,9 @@ func TestBalancing(t *testing.T) {
 				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
 			},
 			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc},
-				service2: {Runner: runnerRunc},
-				service3: {Runner: runnerRunx},
+				service1: {Runners: []string{runnerRunc}},
+				service2: {Runners: []string{runnerRunc}},
+				service3: {Runners: []string{runnerRunx}},
 			},
 			desiredInstances: []cloudprotocol.InstanceInfo{
 				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
@@ -552,9 +554,9 @@ func TestBalancing(t *testing.T) {
 				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
 			},
 			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc},
-				service2: {Runner: runnerRunc},
-				service3: {Runner: runnerRunx},
+				service1: {Runners: []string{runnerRunc}},
+				service2: {Runners: []string{runnerRunc}},
+				service3: {Runners: []string{runnerRunx}},
 			},
 			desiredInstances: []cloudprotocol.InstanceInfo{
 				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2, Labels: []string{"label2"}},
@@ -640,9 +642,9 @@ func TestBalancing(t *testing.T) {
 				nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0},
 			},
 			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc, Resources: []string{"resource1", "resource2"}},
-				service2: {Runner: runnerRunc, Resources: []string{"resource1"}},
-				service3: {Runner: runnerRunc, Resources: []string{"resource3"}},
+				service1: {Runners: []string{runnerRunc}, Resources: []string{"resource1", "resource2"}},
+				service2: {Runners: []string{runnerRunc}, Resources: []string{"resource1"}},
+				service3: {Runners: []string{runnerRunc}, Resources: []string{"resource3"}},
 			},
 			desiredInstances: []cloudprotocol.InstanceInfo{
 				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
@@ -729,9 +731,18 @@ func TestBalancing(t *testing.T) {
 				}},
 			},
 			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc, Devices: []aostypes.ServiceDevice{{Name: "dev1"}, {Name: "dev2"}}},
-				service2: {Runner: runnerRunc, Devices: []aostypes.ServiceDevice{{Name: "dev2"}}},
-				service3: {Runner: runnerRunc, Devices: []aostypes.ServiceDevice{{Name: "dev3"}}},
+				service1: {
+					Runners: []string{runnerRunc},
+					Devices: []aostypes.ServiceDevice{{Name: "dev1"}, {Name: "dev2"}},
+				},
+				service2: {
+					Runners: []string{runnerRunc},
+					Devices: []aostypes.ServiceDevice{{Name: "dev2"}},
+				},
+				service3: {
+					Runners: []string{runnerRunc},
+					Devices: []aostypes.ServiceDevice{{Name: "dev3"}},
+				},
 			},
 			desiredInstances: []cloudprotocol.InstanceInfo{
 				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 4},
@@ -839,15 +850,15 @@ func TestBalancing(t *testing.T) {
 			imageManager.services[serviceID] = service
 		}
 
-		launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-			&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+		launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+			resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 		if err != nil {
 			t.Fatalf("Can't create launcher %v", err)
 		}
 
 		// Wait initial run status
 
-		for nodeID, info := range nodeManager.nodeInformation {
+		for nodeID, info := range nodeInfoProvider.nodeInfo {
 			nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 				NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 			}
@@ -885,17 +896,16 @@ func TestServiceRevert(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		imageManager    = &testImageProvider{}
-		resourceManager = newTestResourceManager()
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		imageManager     = &testImageProvider{}
+		resourceManager  = newTestResourceManager()
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false,
+	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{NodeType: nodeTypeLocalSM, Priority: 100}
-
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
 			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
@@ -916,15 +926,15 @@ func TestServiceRevert(t *testing.T) {
 		},
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+		resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 
 	// Wait initial run status
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
@@ -984,48 +994,48 @@ func TestStorageCleanup(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
+		nodeInfoProvider     = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager          = newTestNodeManager()
 		resourceManager      = newTestResourceManager()
 		imageManager         = &testImageProvider{}
 		stateStorageProvider = &testStateStorage{}
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:      cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode:    false,
-		RunnerFeature: []string{runnerRunc},
+	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{Priority: 100}
 
-	nodeManager.nodeInformation[nodeIDRunxSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeRunxSM},
-		RemoteNode: true, RunnerFeature: []string{runnerRunx},
+	nodeInfoProvider.nodeInfo[nodeIDRunxSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
 	}
 	resourceManager.nodeResources[nodeTypeRunxSM] = cloudprotocol.NodeConfig{Priority: 0}
 
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
 			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
-			RemoteURL:   service1RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunc},
+			RemoteURL:   service1RemoteURL, Config: aostypes.ServiceConfig{Runners: []string{runnerRunc}},
 		},
 		service2: {
 			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
-			RemoteURL:   service2RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunc},
+			RemoteURL:   service2RemoteURL, Config: aostypes.ServiceConfig{Runners: []string{runnerRunc}},
 		},
 		service3: {
 			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
-			RemoteURL:   service3RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunx},
+			RemoteURL:   service3RemoteURL, Config: aostypes.ServiceConfig{Runners: []string{runnerRunx}},
 		},
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-		stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+		resourceManager, stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
@@ -1096,7 +1106,7 @@ func TestStorageCleanup(t *testing.T) {
 
 	if err := waitRunInstancesStatus(
 		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
+		t.Errorf("Error waiting for run instances status: %v", err)
 	}
 
 	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
@@ -1141,14 +1151,15 @@ func TestRebalancing(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = &testImageProvider{}
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false, RunnerFeature: []string{runnerRunc, "crun"},
+	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 
 	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{
@@ -1158,14 +1169,14 @@ func TestRebalancing(t *testing.T) {
 		},
 	}
 
-	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true, RunnerFeature: []string{runnerRunc},
+	nodeInfoProvider.nodeInfo[nodeIDRemoteSM1] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 
-	nodeManager.nodeInformation[nodeIDRemoteSM2] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true, RunnerFeature: []string{runnerRunc},
+	nodeInfoProvider.nodeInfo[nodeIDRemoteSM2] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 
 	resourceManager.nodeResources[nodeTypeRemoteSM] = cloudprotocol.NodeConfig{
@@ -1177,14 +1188,14 @@ func TestRebalancing(t *testing.T) {
 		Resources: []cloudprotocol.ResourceInfo{{Name: "resource1"}},
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+		resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
@@ -1200,7 +1211,7 @@ func TestRebalancing(t *testing.T) {
 			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
 			RemoteURL:   service1RemoteURL,
 			Config: aostypes.ServiceConfig{
-				Runner:    runnerRunc,
+				Runners:   []string{runnerRunc},
 				Resources: []string{"resource1"},
 			},
 		},
@@ -1208,14 +1219,14 @@ func TestRebalancing(t *testing.T) {
 			ServiceInfo: createServiceInfo(service2, 5001, service1LocalURL),
 			RemoteURL:   service2RemoteURL,
 			Config: aostypes.ServiceConfig{
-				Runner: runnerRunc,
+				Runners: []string{runnerRunc},
 			},
 		},
 		service3: {
 			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
 			RemoteURL:   service3RemoteURL,
 			Config: aostypes.ServiceConfig{
-				Runner: runnerRunc,
+				Runners: []string{runnerRunc},
 				Devices: []aostypes.ServiceDevice{
 					{Name: "dev1"},
 				},
@@ -1394,38 +1405,39 @@ func TestRebalancingSameNodePriority(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
-		storage         = newTestStorage()
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = &testImageProvider{}
+		storage          = newTestStorage()
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false,
+	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeLocalSM,
 		Labels:   []string{"label1"},
 	}
 
-	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true,
+	nodeInfoProvider.nodeInfo[nodeIDRemoteSM1] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	resourceManager.nodeResources[nodeTypeRemoteSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeRemoteSM,
 		Labels:   []string{"label2"},
 	}
 
-	launcherInstance, err := launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
+	launcherInstance, err := launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager, resourceManager,
 		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
@@ -1630,37 +1642,38 @@ func TestRebalancingAfterRestart(t *testing.T) {
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
-		storage         = newTestStorage()
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = &testImageProvider{}
+		storage          = newTestStorage()
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false,
+	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeLocalSM,
 		Labels:   []string{"label1"},
 	}
 
-	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true,
+	nodeInfoProvider.nodeInfo[nodeIDRemoteSM1] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	resourceManager.nodeResources[nodeTypeRemoteSM] = cloudprotocol.NodeConfig{
 		NodeType: nodeTypeRemoteSM,
 		Labels:   []string{"label2"},
 	}
 
-	launcherInstance, err := launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
+	launcherInstance, err := launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager, resourceManager,
 		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
@@ -1752,13 +1765,13 @@ func TestRebalancingAfterRestart(t *testing.T) {
 
 	// Restart
 
-	launcherInstance, err = launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
+	launcherInstance, err = launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager, resourceManager,
 		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
@@ -1828,28 +1841,38 @@ func TestRebalancingAfterRestart(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
+// testNodeInfoProvider
+
+func newTestNodeInfoProvider(nodeID string) *testNodeInfoProvider {
+	return &testNodeInfoProvider{
+		nodeID:   nodeID,
+		nodeInfo: make(map[string]cloudprotocol.NodeInfo),
+	}
+}
+
+func (provider *testNodeInfoProvider) GetNodeID() string {
+	return provider.nodeID
+}
+
+func (provider *testNodeInfoProvider) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
+	nodeInfo, ok := provider.nodeInfo[nodeID]
+	if !ok {
+		return cloudprotocol.NodeInfo{}, aoserrors.New("node info not found")
+	}
+
+	return nodeInfo, nil
+}
+
 // testNodeManager
 
 func newTestNodeManager() *testNodeManager {
 	nodeManager := &testNodeManager{
-		runStatusChan:   make(chan launcher.NodeRunInstanceStatus, 10),
-		nodeInformation: make(map[string]launcher.NodeInfo),
-		runRequest:      make(map[string]runRequest),
-		alertsChannel:   make(chan cloudprotocol.SystemQuotaAlert, 10),
+		runStatusChan: make(chan launcher.NodeRunInstanceStatus, 10),
+		runRequest:    make(map[string]runRequest),
+		alertsChannel: make(chan cloudprotocol.SystemQuotaAlert, 10),
 	}
 
 	return nodeManager
-}
-
-func (nodeManager *testNodeManager) GetNodeConfiguration(nodeID string) (launcher.NodeInfo, error) {
-	config, ok := nodeManager.nodeInformation[nodeID]
-	if !ok {
-		return launcher.NodeInfo{}, aoserrors.New("node config doesn't exist")
-	}
-
-	config.NodeID = nodeID
-
-	return config, nil
 }
 
 func (nodeManager *testNodeManager) RunInstances(nodeID string,
@@ -1890,8 +1913,8 @@ func (nodeManager *testNodeManager) GetSystemLimitAlertChannel() <-chan cloudpro
 	return nodeManager.alertsChannel
 }
 
-func (nodeManager *testNodeManager) GetNodeMonitoringData(nodeID string) (cloudprotocol.NodeMonitoringData, error) {
-	return cloudprotocol.NodeMonitoringData{}, nil
+func (nodeManager *testNodeManager) GetAverageMonitoring(nodeID string) (aostypes.NodeMonitoring, error) {
+	return aostypes.NodeMonitoring{}, nil
 }
 
 func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[string]runRequest) error {
@@ -1926,7 +1949,7 @@ func newTestResourceManager() *testResourceManager {
 	return resourceManager
 }
 
-func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string) cloudprotocol.NodeConfig {
+func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType string) cloudprotocol.NodeConfig {
 	resource := resourceManager.nodeResources[nodeType]
 	resource.NodeType = nodeType
 
