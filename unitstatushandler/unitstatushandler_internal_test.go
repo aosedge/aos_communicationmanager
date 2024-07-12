@@ -53,6 +53,8 @@ const waitStatusTimeout = 5 * time.Second
  * Types
  **********************************************************************************************************************/
 
+type TestNodeInfoProvider struct{}
+
 type TestSender struct {
 	Consumer      amqphandler.ConnectionEventsConsumer
 	statusChannel chan cloudprotocol.UnitStatus
@@ -1570,6 +1572,22 @@ func TestSyncExecutor(t *testing.T) {
  **********************************************************************************************************************/
 
 /***********************************************************************************************************************
+ * TestNodeInfoProvider
+ **********************************************************************************************************************/
+
+func NewTestNodeInfoProvider() *TestNodeInfoProvider {
+	return &TestNodeInfoProvider{}
+}
+
+func (provider *TestNodeInfoProvider) GetAllNodeIDs() ([]string, error) {
+	return []string{}, nil
+}
+
+func (provider *TestNodeInfoProvider) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
+	return cloudprotocol.NodeInfo{}, nil
+}
+
+/***********************************************************************************************************************
  * TestSender
  **********************************************************************************************************************/
 
@@ -1710,10 +1728,6 @@ func (runner *TestInstanceRunner) WaitForRunInstance(timeout time.Duration) ([]c
 	case <-time.After(timeout):
 		return nil, aoserrors.New("receive run instances timeout")
 	}
-}
-
-func (runner *TestInstanceRunner) GetNodesConfiguration() (nodes []cloudprotocol.NodeInfo) {
-	return nodes
 }
 
 /***********************************************************************************************************************

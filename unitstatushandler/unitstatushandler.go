@@ -39,6 +39,12 @@ import (
  * Types
  **********************************************************************************************************************/
 
+// NodeInfoProvider provides node info.
+type NodeInfoProvider interface {
+	GetAllNodeIDs() ([]string, error)
+	GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error)
+}
+
 // Downloader downloads packages.
 type Downloader interface {
 	Download(ctx context.Context, packageInfo downloader.PackageInfo) (result downloader.Result, err error)
@@ -70,7 +76,6 @@ type FirmwareUpdater interface {
 type InstanceRunner interface {
 	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
 	RestartInstances() error
-	GetNodesConfiguration() []cloudprotocol.NodeInfo
 }
 
 // SoftwareUpdater updates services, layers.
@@ -118,7 +123,8 @@ type RunInstancesStatus struct {
 type Instance struct {
 	sync.Mutex
 
-	statusSender StatusSender
+	nodeInfoProvider NodeInfoProvider
+	statusSender     StatusSender
 
 	statusMutex sync.Mutex
 
@@ -155,6 +161,7 @@ type itemStatus []statusDescriptor
 // New creates new unit status handler instance.
 func New(
 	cfg *config.Config,
+	nodeInfoProvider NodeInfoProvider,
 	unitConfigUpdater UnitConfigUpdater,
 	firmwareUpdater FirmwareUpdater,
 	softwareUpdater SoftwareUpdater,
@@ -166,6 +173,7 @@ func New(
 	log.Debug("Create unit status handler")
 
 	instance = &Instance{
+		nodeInfoProvider: nodeInfoProvider,
 		statusSender:     statusSender,
 		sendStatusPeriod: cfg.UnitStatusSendTimeout.Duration,
 	}
@@ -645,13 +653,18 @@ func (instance *Instance) sendCurrentStatus() {
 		return
 	}
 
+	nodesInfo, err := instance.getAllNodesInfo()
+	if err != nil {
+		log.Errorf("Can't get nodes info: %v", err)
+	}
+
 	unitStatus := cloudprotocol.UnitStatus{
 		UnitSubjects: instance.unitStatus.subjects,
 		Components:   make([]cloudprotocol.ComponentStatus, 0, len(instance.unitStatus.components)),
 		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.unitStatus.layers)),
 		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.unitStatus.services)),
 		Instances:    instance.unitStatus.instances,
-		Nodes:        instance.softwareManager.instanceRunner.GetNodesConfiguration(),
+		Nodes:        nodesInfo,
 	}
 
 	for _, status := range instance.unitStatus.unitConfig {
@@ -704,4 +717,25 @@ func (instance *Instance) sendCurrentStatus() {
 		unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 		log.Errorf("Can't send unit status: %s", err)
 	}
+}
+
+func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
+	nodeIDs, err := instance.nodeInfoProvider.GetAllNodeIDs()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(nodeIDs))
+
+	for _, nodeID := range nodeIDs {
+		nodeInfo, err := instance.nodeInfoProvider.GetNodeInfo(nodeID)
+		if err != nil {
+			log.WithField("nodeID", nodeID).Errorf("Can't get node info: %s", err)
+			continue
+		}
+
+		nodesInfo = append(nodesInfo, nodeInfo)
+	}
+
+	return nodesInfo, nil
 }
