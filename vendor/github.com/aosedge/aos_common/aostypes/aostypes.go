@@ -200,7 +200,7 @@ type ServiceConfig struct {
 	Author             string                       `json:"author"`
 	Hostname           *string                      `json:"hostname,omitempty"`
 	BalancingPolicy    string                       `json:"balancingPolicy"`
-	Runner             string                       `json:"runner"`
+	Runners            []string                     `json:"runners"`
 	RunParameters      RunParameters                `json:"runParameters,omitempty"`
 	Sysctl             map[string]string            `json:"sysctl,omitempty"`
 	OfflineTTL         Duration                     `json:"offlineTtl,omitempty"`

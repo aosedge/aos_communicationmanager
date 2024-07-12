@@ -84,7 +84,7 @@ type NodeConfigProvider interface {
 
 // MonitoringSender sends monitoring data.
 type MonitoringSender interface {
-	SendMonitoringData(monitoringData aostypes.NodeMonitoring)
+	SendNodeMonitoring(monitoringData aostypes.NodeMonitoring)
 }
 
 // TrafficMonitoring interface to get network traffic.
@@ -576,7 +576,7 @@ func (monitor *ResourceMonitor) sendMonitoringData() {
 			instanceMonitoring.monitoring)
 	}
 
-	monitor.monitoringSender.SendMonitoringData(nodeMonitoringData)
+	monitor.monitoringSender.SendNodeMonitoring(nodeMonitoringData)
 }
 
 func (monitor *ResourceMonitor) getCurrentSystemData() {
