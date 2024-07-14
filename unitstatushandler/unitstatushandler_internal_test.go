@@ -1716,10 +1716,6 @@ func (runner *TestInstanceRunner) RunInstances(instances []cloudprotocol.Instanc
 	return nil
 }
 
-func (runner *TestInstanceRunner) RestartInstances() error {
-	return nil
-}
-
 func (runner *TestInstanceRunner) WaitForRunInstance(timeout time.Duration) ([]cloudprotocol.InstanceInfo, error) {
 	select {
 	case receivedRunInstances := <-runner.runInstanceChan:
