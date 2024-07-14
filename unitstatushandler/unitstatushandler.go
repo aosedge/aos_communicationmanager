@@ -75,7 +75,6 @@ type FirmwareUpdater interface {
 // InstanceRunner instances runner.
 type InstanceRunner interface {
 	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
-	RestartInstances() error
 }
 
 // SoftwareUpdater updates services, layers.
