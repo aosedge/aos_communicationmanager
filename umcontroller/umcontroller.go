@@ -64,7 +64,7 @@ type Controller struct {
 
 	connections          []umConnection
 	currentComponents    []cloudprotocol.ComponentStatus
-	newComponentListener chan cloudprotocol.ComponentStatus
+	newComponentsChannel chan []cloudprotocol.ComponentStatus
 
 	fsm               *fsm.FSM
 	connectionMonitor allConnectionMonitor
@@ -79,7 +79,7 @@ type Controller struct {
 
 // ComponentStatus information about system component update.
 type ComponentStatus struct {
-	ComponentID   string `json:"componentID"`
+	ComponentID   string `json:"componentId"`
 	ComponentType string `json:"componentType"`
 	Version       string `json:"version"`
 	Annotations   string `json:"annotations,omitempty"`
@@ -230,10 +230,10 @@ func New(config *config.Config, storage storage, certProvider CertificateProvide
 		nodeInfoChannel:      nodeInfoProvider.SubscribeNodeInfoChange(),
 		stopChannel:          make(chan bool),
 		componentDir:         config.ComponentsDir,
-		newComponentListener: nil,
 		connectionMonitor:    allConnectionMonitor{stopTimerChan: make(chan bool, 1), timeoutChan: make(chan bool, 1)},
 		operable:             true,
 		updateFinishCond:     sync.NewCond(&sync.Mutex{}),
+		newComponentsChannel: make(chan []cloudprotocol.ComponentStatus, 1),
 		decrypter:            decrypter,
 	}
 
@@ -289,6 +289,7 @@ func (umCtrl *Controller) Close() {
 		}
 	}
 
+	close(umCtrl.newComponentsChannel)
 	umCtrl.operable = false
 	umCtrl.stopChannel <- true
 }
@@ -414,13 +415,8 @@ func (umCtrl *Controller) UpdateComponents(
 	return umCtrl.currentComponents, umCtrl.updateError
 }
 
-func (umCtrl *Controller) SetNewComponentListener() <-chan cloudprotocol.ComponentStatus {
-	umCtrl.Lock()
-	defer umCtrl.Unlock()
-
-	umCtrl.newComponentListener = make(chan cloudprotocol.ComponentStatus, 1)
-
-	return umCtrl.newComponentListener
+func (umCtrl *Controller) NewComponentsChannel() <-chan []cloudprotocol.ComponentStatus {
+	return umCtrl.newComponentsChannel
 }
 
 /***********************************************************************************************************************
@@ -469,6 +465,7 @@ func (umCtrl *Controller) processInternalMessages() {
 	}
 }
 
+//nolint:funlen
 func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, status umStatus) {
 	if handler == nil {
 		log.Error("Handler is nil")
@@ -483,6 +480,10 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		}
 
 		umCtrl.updateCurrentComponentsStatus(status.componsStatus)
+
+		if umCtrl.fsm.Current() != stateInit {
+			umCtrl.notifyNewComponents(umID, status.componsStatus)
+		}
 
 		umIDfound = true
 
@@ -625,8 +626,6 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 	}
 
 	umCtrl.currentComponents = append(umCtrl.currentComponents, newComponentStatus)
-
-	umCtrl.notifyNewComponentListener(newComponentStatus)
 }
 
 func (umCtrl *Controller) cleanupCurrentComponentStatus() {
@@ -1035,7 +1034,7 @@ func (umCtrl *Controller) processUpdateUpdateStatus(ctx context.Context, e *fsm.
 	for i, v := range umCtrl.connections {
 		if v.umID == umID {
 			umCtrl.connections[i].state = status.updateStatus
-			log.Debugf("UMid = %s  state= %s", umID, status.updateStatus)
+			log.Debugf("umID = %s  state = %s", umID, status.updateStatus)
 
 			break
 		}
@@ -1142,11 +1141,28 @@ func (status systemComponentStatus) String() string {
 	return fmt.Sprintf("{id: %s, status: %s, version: %s }", status.componentID, status.status, status.version)
 }
 
-func (umCtrl *Controller) notifyNewComponentListener(status cloudprotocol.ComponentStatus) {
-	umCtrl.Lock()
-	defer umCtrl.Unlock()
+func (umCtrl *Controller) notifyNewComponents(umID string, componsStatus []systemComponentStatus) {
+	newComponents := make([]cloudprotocol.ComponentStatus, 0, len(componsStatus))
 
-	if umCtrl.newComponentListener != nil {
-		umCtrl.newComponentListener <- status
+	for _, status := range componsStatus {
+		newComponent := cloudprotocol.ComponentStatus{
+			ComponentID:   status.componentID,
+			ComponentType: status.componentType,
+			Version:       status.version,
+			NodeID:        umID,
+			Status:        status.status,
+		}
+
+		if status.err != "" {
+			newComponent.ErrorInfo = &cloudprotocol.ErrorInfo{Message: status.err}
+		}
+
+		newComponents = append(newComponents, newComponent)
 	}
+
+	if len(newComponents) == 0 {
+		return
+	}
+
+	umCtrl.newComponentsChannel <- newComponents
 }

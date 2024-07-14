@@ -228,6 +228,15 @@ func TestConnection(t *testing.T) {
 		t.Fatalf("Can't create: UM controller %s", err)
 	}
 
+	go func() {
+		for {
+			_, ok := <-umCtrl.NewComponentsChannel()
+			if !ok {
+				return
+			}
+		}
+	}()
+
 	components := []*pb.ComponentStatus{
 		{ComponentId: "component1", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
 		{ComponentId: "component2", ComponentType: "type-1", Version: "1.0.0", State: pb.ComponentState_INSTALLED},
@@ -316,8 +325,6 @@ func TestNewComponentsUpdate(t *testing.T) {
 		t.Errorf("Incorrect count of components %d", len(newComponents))
 	}
 
-	newComponentListener := umCtrl.SetNewComponentListener()
-
 	// add new components for node with ID=umID2
 	nodeInfoProvider.addNode("umID2")
 
@@ -331,12 +338,17 @@ func TestNewComponentsUpdate(t *testing.T) {
 		t.Errorf("Error connect %s", err)
 	}
 
-	if node2Component3 := <-newComponentListener; node2Component3.ComponentID != "component3" {
-		t.Errorf("Wrong component received %s", node2Component3.ComponentID)
-	}
+	select {
+	case newComponents := <-umCtrl.NewComponentsChannel():
+		if !reflect.DeepEqual(newComponents, []cloudprotocol.ComponentStatus{
+			{ComponentID: "component3", Version: "1.0.0", Status: "installed", NodeID: "umID2"},
+			{ComponentID: "component4", Version: "1.0.0", Status: "installed", NodeID: "umID2"},
+		}) {
+			t.Errorf("Incorrect new components: %v", newComponents)
+		}
 
-	if node2Component4 := <-newComponentListener; node2Component4.ComponentID != "component4" {
-		t.Errorf("Wrong component received %s", node2Component4.ComponentID)
+	case <-time.After(5 * time.Second):
+		t.Error("Waiting for new components timeout")
 	}
 
 	umCtrl.Close()
