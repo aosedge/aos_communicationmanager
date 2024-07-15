@@ -53,7 +53,10 @@ const waitStatusTimeout = 5 * time.Second
  * Types
  **********************************************************************************************************************/
 
-type TestNodeInfoProvider struct{}
+type TestNodeInfoProvider struct {
+	nodesInfo       map[string]cloudprotocol.NodeInfo
+	nodeInfoChannel chan cloudprotocol.NodeInfo
+}
 
 type TestSender struct {
 	Consumer      amqphandler.ConnectionEventsConsumer
@@ -1577,16 +1580,59 @@ func TestSyncExecutor(t *testing.T) {
  * TestNodeInfoProvider
  **********************************************************************************************************************/
 
-func NewTestNodeInfoProvider() *TestNodeInfoProvider {
-	return &TestNodeInfoProvider{}
+func NewTestNodeInfoProvider(nodesInfo []cloudprotocol.NodeInfo) *TestNodeInfoProvider {
+	nodesInfoMap := make(map[string]cloudprotocol.NodeInfo)
+
+	for _, nodeInfo := range nodesInfo {
+		nodesInfoMap[nodeInfo.NodeID] = nodeInfo
+	}
+
+	return &TestNodeInfoProvider{
+		nodesInfo: nodesInfoMap,
+	}
 }
 
 func (provider *TestNodeInfoProvider) GetAllNodeIDs() ([]string, error) {
-	return []string{}, nil
+	nodeIDs := make([]string, 0, len(provider.nodesInfo))
+
+	for nodeID := range provider.nodesInfo {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+
+	return nodeIDs, nil
 }
 
 func (provider *TestNodeInfoProvider) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
-	return cloudprotocol.NodeInfo{}, nil
+	nodeInfo, ok := provider.nodesInfo[nodeID]
+	if !ok {
+		return cloudprotocol.NodeInfo{}, aoserrors.New("node not found")
+	}
+
+	return nodeInfo, nil
+}
+
+func (provider *TestNodeInfoProvider) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
+	provider.nodeInfoChannel = make(chan cloudprotocol.NodeInfo, 1)
+
+	return provider.nodeInfoChannel
+}
+
+func (provider *TestNodeInfoProvider) NodeInfoChanged(nodeInfo cloudprotocol.NodeInfo) {
+	provider.nodesInfo[nodeInfo.NodeID] = nodeInfo
+
+	if provider.nodeInfoChannel != nil {
+		provider.nodeInfoChannel <- nodeInfo
+	}
+}
+
+func (provider *TestNodeInfoProvider) GetAllNodesInfo() []cloudprotocol.NodeInfo {
+	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(provider.nodesInfo))
+
+	for _, nodeInfo := range provider.nodesInfo {
+		nodesInfo = append(nodesInfo, nodeInfo)
+	}
+
+	return nodesInfo
 }
 
 /***********************************************************************************************************************
@@ -1917,8 +1963,8 @@ func (statusHandler *testStatusHandler) updateServiceStatus(serviceInfo cloudpro
 	}).Debug("Update service status")
 }
 
-func (statusHandler *testStatusHandler) setInstanceStatus(status []cloudprotocol.InstanceStatus) {
-	for _, instanceStatus := range status {
+func (statusHandler *testStatusHandler) setInstancesStatus(statuses []cloudprotocol.InstanceStatus) {
+	for _, instanceStatus := range statuses {
 		log.WithFields(log.Fields{
 			"serviceID":  instanceStatus.ServiceID,
 			"subjectID":  instanceStatus.SubjectID,
