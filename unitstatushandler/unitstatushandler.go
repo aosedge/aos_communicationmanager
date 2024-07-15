@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,7 @@ import (
 type NodeInfoProvider interface {
 	GetAllNodeIDs() ([]string, error)
 	GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error)
+	SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo
 }
 
 // Downloader downloads packages.
@@ -136,6 +138,7 @@ type Instance struct {
 	softwareManager *softwareManager
 
 	newComponentsChannel <-chan []cloudprotocol.ComponentStatus
+	nodeChangedChannel   <-chan cloudprotocol.NodeInfo
 
 	initDone    bool
 	isConnected int32
@@ -148,6 +151,7 @@ type unitStatus struct {
 	layers     map[string]*itemStatus
 	services   map[string]*itemStatus
 	instances  []cloudprotocol.InstanceStatus
+	nodes      []cloudprotocol.NodeInfo
 }
 
 type statusDescriptor struct {
@@ -179,6 +183,7 @@ func New(
 		statusSender:         statusSender,
 		sendStatusPeriod:     cfg.UnitStatusSendTimeout.Duration,
 		newComponentsChannel: firmwareUpdater.NewComponentsChannel(),
+		nodeChangedChannel:   nodeInfoProvider.SubscribeNodeInfoChange(),
 	}
 
 	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
@@ -258,6 +263,13 @@ func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 
 	instance.unitStatus.subjects = status.UnitSubjects
 	instance.unitStatus.instances = status.Instances
+
+	nodesInfo, err := instance.getAllNodesInfo()
+	if err != nil {
+		log.Errorf("Can't get nodes info: %v", err)
+	}
+
+	instance.unitStatus.nodes = nodesInfo
 
 	instance.softwareManager.processRunStatus(status)
 	instance.sendCurrentStatus()
@@ -608,11 +620,36 @@ foundloop:
 	instance.statusChanged()
 }
 
-func (instance *Instance) setInstanceStatus(status []cloudprotocol.InstanceStatus) {
+func (instance *Instance) setInstancesStatus(statuses []cloudprotocol.InstanceStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
-	instance.unitStatus.instances = status
+	instance.unitStatus.instances = statuses
+
+	instance.statusChanged()
+}
+
+func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	log.WithFields(log.Fields{
+		"nodeID":   nodeInfo.NodeID,
+		"nodeType": nodeInfo.NodeType,
+		"status":   nodeInfo.Status,
+	}).Debug("Node info changed")
+
+	index := slices.IndexFunc(instance.unitStatus.nodes, func(curNodeInfo cloudprotocol.NodeInfo) bool {
+		return curNodeInfo.NodeID == nodeInfo.NodeID
+	})
+
+	if index == -1 {
+		instance.unitStatus.nodes = append(instance.unitStatus.nodes, nodeInfo)
+	} else {
+		instance.unitStatus.nodes[index] = nodeInfo
+	}
+
+	instance.statusChanged()
 }
 
 func (instance *Instance) statusChanged() {
@@ -658,18 +695,13 @@ func (instance *Instance) sendCurrentStatus() {
 		return
 	}
 
-	nodesInfo, err := instance.getAllNodesInfo()
-	if err != nil {
-		log.Errorf("Can't get nodes info: %v", err)
-	}
-
 	unitStatus := cloudprotocol.UnitStatus{
 		UnitSubjects: instance.unitStatus.subjects,
 		Components:   make([]cloudprotocol.ComponentStatus, 0, len(instance.unitStatus.components)),
 		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.unitStatus.layers)),
 		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.unitStatus.services)),
 		Instances:    instance.unitStatus.instances,
-		Nodes:        nodesInfo,
+		Nodes:        instance.unitStatus.nodes,
 	}
 
 	for _, status := range instance.unitStatus.unitConfig {
@@ -756,6 +788,13 @@ func (instance *Instance) handleChannels() {
 			for _, componentStatus := range newComponents {
 				instance.updateComponentStatus(componentStatus)
 			}
+
+		case nodeInfo, ok := <-instance.nodeChangedChannel:
+			if !ok {
+				return
+			}
+
+			instance.updateNodeInfo(nodeInfo)
 		}
 	}
 }
