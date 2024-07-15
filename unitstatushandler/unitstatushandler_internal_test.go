@@ -70,6 +70,8 @@ type TestFirmwareUpdater struct {
 	InitComponentsInfo   []cloudprotocol.ComponentStatus
 	UpdateComponentsInfo []cloudprotocol.ComponentStatus
 	UpdateError          error
+
+	newComponentsChannel chan []cloudprotocol.ComponentStatus
 }
 
 type TestSoftwareUpdater struct {
@@ -1642,7 +1644,10 @@ func (updater *TestUnitConfigUpdater) UpdateUnitConfig(unitConfig cloudprotocol.
  **********************************************************************************************************************/
 
 func NewTestFirmwareUpdater(componentsInfo []cloudprotocol.ComponentStatus) (updater *TestFirmwareUpdater) {
-	return &TestFirmwareUpdater{InitComponentsInfo: componentsInfo}
+	return &TestFirmwareUpdater{
+		InitComponentsInfo:   componentsInfo,
+		newComponentsChannel: make(chan []cloudprotocol.ComponentStatus, 1),
+	}
 }
 
 func (updater *TestFirmwareUpdater) GetStatus() (info []cloudprotocol.ComponentStatus, err error) {
@@ -1655,6 +1660,14 @@ func (updater *TestFirmwareUpdater) UpdateComponents(
 ) (componentsInfo []cloudprotocol.ComponentStatus, err error) {
 	time.Sleep(updater.UpdateTime)
 	return updater.UpdateComponentsInfo, updater.UpdateError
+}
+
+func (updater *TestFirmwareUpdater) NewComponentsChannel() <-chan []cloudprotocol.ComponentStatus {
+	return updater.newComponentsChannel
+}
+
+func (updater *TestFirmwareUpdater) SetNewComponents(newComponents []cloudprotocol.ComponentStatus) {
+	updater.newComponentsChannel <- newComponents
 }
 
 /***********************************************************************************************************************

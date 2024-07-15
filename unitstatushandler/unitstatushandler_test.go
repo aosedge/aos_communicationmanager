@@ -1008,6 +1008,78 @@ func TestUpdateCachedSOTA(t *testing.T) {
 	}
 }
 
+func TestNewComponents(t *testing.T) {
+	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
+		cloudprotocol.UnitConfigStatus{Version: "1.0.0", Status: cloudprotocol.InstalledStatus})
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
+	sender := unitstatushandler.NewTestSender()
+
+	statusHandler, err := unitstatushandler.New(
+		cfg, unitstatushandler.NewTestNodeInfoProvider(), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender)
+	if err != nil {
+		t.Fatalf("Can't create unit status handler: %v", err)
+	}
+	defer statusHandler.Close()
+
+	sender.Consumer.CloudConnected()
+
+	go handleUpdateStatus(statusHandler)
+
+	if err := statusHandler.ProcessRunStatus(
+		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{}}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	expectedUnitStatus := cloudprotocol.UnitStatus{
+		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+
+	// New components
+
+	newComponents := []cloudprotocol.ComponentStatus{
+		{
+			ComponentID: "comp1", ComponentType: "type1", Version: "1.0.0",
+			Status: cloudprotocol.InstalledStatus, NodeID: "node1",
+		},
+		{
+			ComponentID: "comp2", ComponentType: "type2", Version: "1.0.0",
+			Status: cloudprotocol.InstalledStatus, NodeID: "node2",
+		},
+		{
+			ComponentID: "comp3", ComponentType: "type3", Version: "1.0.0",
+			Status: cloudprotocol.InstalledStatus, NodeID: "node3",
+		},
+	}
+
+	firmwareUpdater.SetNewComponents(newComponents)
+
+	receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	expectedUnitStatus = cloudprotocol.UnitStatus{
+		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
+		Components: newComponents,
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
