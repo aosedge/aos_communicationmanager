@@ -1162,7 +1162,6 @@ func TestSoftwareManager(t *testing.T) {
 				Version: "1.0.0",
 			}},
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating},
 				{State: cmserver.NoUpdate},
@@ -1176,7 +1175,6 @@ func TestSoftwareManager(t *testing.T) {
 			}},
 			updateError: aoserrors.New("unit config error"),
 			updateWaitStatuses: []cmserver.UpdateStatus{
-				{State: cmserver.Downloading},
 				{State: cmserver.ReadyToUpdate},
 				{State: cmserver.Updating},
 				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "unit config error"}},

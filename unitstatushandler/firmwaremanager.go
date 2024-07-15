@@ -338,7 +338,7 @@ func (manager *firmwareManager) noUpdate() {
 			var err error
 
 			if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
-				time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
+				time.Duration(manager.CurrentUpdate.Schedule.TTL)*time.Second, true); err != nil {
 				log.Errorf("Can't start new firmware update: %v", err)
 			}
 		}()
@@ -521,7 +521,7 @@ func (manager *firmwareManager) newUpdate(update *firmwareUpdate) (err error) {
 		manager.CurrentUpdate = update
 
 		if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
-			time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
+			time.Duration(manager.CurrentUpdate.Schedule.TTL)*time.Second, true); err != nil {
 			return aoserrors.Wrap(err)
 		}
 

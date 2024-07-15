@@ -54,10 +54,10 @@ type softwareDownloader interface {
 	releaseDownloadedSoftware() error
 }
 type softwareStatusHandler interface {
-	updateLayerStatus(layerInfo cloudprotocol.LayerStatus)
-	updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus)
-	updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus)
-	setInstanceStatus(status []cloudprotocol.InstanceStatus)
+	updateLayerStatus(status cloudprotocol.LayerStatus)
+	updateServiceStatus(status cloudprotocol.ServiceStatus)
+	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus)
+	setInstancesStatus(statuses []cloudprotocol.InstanceStatus)
 }
 
 type softwareUpdate struct {
@@ -134,6 +134,7 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 	manager.stateMachine = newUpdateStateMachine(manager.CurrentState, fsm.Events{
 		// no update state
 		{Name: eventStartDownload, Src: []string{stateNoUpdate}, Dst: stateDownloading},
+		{Name: eventReadyToUpdate, Src: []string{stateNoUpdate}, Dst: stateReadyToUpdate},
 		// downloading state
 		{Name: eventFinishDownload, Src: []string{stateDownloading}, Dst: stateReadyToUpdate},
 		{Name: eventCancel, Src: []string{stateDownloading}, Dst: stateNoUpdate},
@@ -505,6 +506,13 @@ func (manager *softwareManager) stateChanged(event, state string, updateErr erro
 		}
 	}
 
+	if state == stateDownloading || state == stateReadyToUpdate {
+		if manager.CurrentUpdate.UnitConfig != nil {
+			manager.UnitConfigStatus.Version = manager.CurrentUpdate.UnitConfig.Version
+			manager.updateUnitConfigStatus(cloudprotocol.PendingStatus, nil)
+		}
+	}
+
 	manager.CurrentState = state
 	manager.UpdateErr = errorInfo
 
@@ -544,7 +552,8 @@ func (manager *softwareManager) noUpdate() {
 			var err error
 
 			if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
-				time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
+				time.Duration(manager.CurrentUpdate.Schedule.TTL)*time.Second,
+				manager.isDownloadRequired()); err != nil {
 				log.Errorf("Can't start new software update: %v", err)
 			}
 		}()
@@ -567,11 +576,6 @@ func (manager *softwareManager) download(ctx context.Context) {
 	}()
 
 	manager.DownloadResult = nil
-
-	if manager.CurrentUpdate.UnitConfig != nil {
-		manager.UnitConfigStatus.Version = manager.CurrentUpdate.UnitConfig.Version
-		manager.updateUnitConfigStatus(cloudprotocol.PendingStatus, nil)
-	}
 
 	request := manager.prepareDownloadRequest()
 
@@ -801,7 +805,7 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 		manager.CurrentUpdate = update
 
 		if manager.TTLDate, err = manager.stateMachine.startNewUpdate(
-			time.Duration(manager.CurrentUpdate.Schedule.TTL) * time.Second); err != nil {
+			time.Duration(manager.CurrentUpdate.Schedule.TTL)*time.Second, manager.isDownloadRequired()); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -1328,7 +1332,7 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr error
 		}
 	}
 
-	manager.statusHandler.setInstanceStatus(manager.InstanceStatuses)
+	manager.statusHandler.setInstancesStatus(manager.InstanceStatuses)
 
 	if err := manager.instanceRunner.RunInstances(manager.CurrentUpdate.RunInstances, newServices); err != nil {
 		return aoserrors.Wrap(err)
@@ -1378,4 +1382,14 @@ func (manager *softwareManager) updateUnitConfigStatus(status string, errorInfo 
 	manager.UnitConfigStatus.ErrorInfo = errorInfo
 
 	manager.statusHandler.updateUnitConfigStatus(manager.UnitConfigStatus)
+}
+
+func (manager *softwareManager) isDownloadRequired() bool {
+	if manager.CurrentUpdate != nil &&
+		(len(manager.CurrentUpdate.InstallLayers) > 0 ||
+			len(manager.CurrentUpdate.InstallServices) > 0) {
+		return true
+	}
+
+	return false
 }
