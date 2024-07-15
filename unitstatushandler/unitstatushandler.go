@@ -40,11 +40,13 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// NodeInfoProvider provides node info.
-type NodeInfoProvider interface {
+// NodeManager manages nodes.
+type NodeManager interface {
 	GetAllNodeIDs() ([]string, error)
 	GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error)
 	SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo
+	PauseNode(nodeID string) error
+	ResumeNode(nodeID string) error
 }
 
 // Downloader downloads packages.
@@ -125,8 +127,8 @@ type RunInstancesStatus struct {
 type Instance struct {
 	sync.Mutex
 
-	nodeInfoProvider NodeInfoProvider
-	statusSender     StatusSender
+	nodeManager  NodeManager
+	statusSender StatusSender
 
 	statusMutex sync.Mutex
 
@@ -167,7 +169,7 @@ type itemStatus []statusDescriptor
 // New creates new unit status handler instance.
 func New(
 	cfg *config.Config,
-	nodeInfoProvider NodeInfoProvider,
+	nodeManager NodeManager,
 	unitConfigUpdater UnitConfigUpdater,
 	firmwareUpdater FirmwareUpdater,
 	softwareUpdater SoftwareUpdater,
@@ -179,11 +181,11 @@ func New(
 	log.Debug("Create unit status handler")
 
 	instance = &Instance{
-		nodeInfoProvider:     nodeInfoProvider,
+		nodeManager:          nodeManager,
 		statusSender:         statusSender,
 		sendStatusPeriod:     cfg.UnitStatusSendTimeout.Duration,
 		newComponentsChannel: firmwareUpdater.NewComponentsChannel(),
-		nodeChangedChannel:   nodeInfoProvider.SubscribeNodeInfoChange(),
+		nodeChangedChannel:   nodeManager.SubscribeNodeInfoChange(),
 	}
 
 	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
@@ -198,8 +200,8 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, unitConfigUpdater, softwareUpdater,
-		instanceRunner, storage, cfg.SMController.UpdateTTL.Duration); err != nil {
+	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, nodeManager, unitConfigUpdater,
+		softwareUpdater, instanceRunner, storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
@@ -590,7 +592,7 @@ func (instance *Instance) updateInstanceStatus(status []cloudprotocol.InstanceSt
 
 	newStatuses := []cloudprotocol.InstanceStatus{}
 
-foundloop:
+foundLoop:
 	for _, instanceStatus := range status {
 		for i := range instance.unitStatus.instances {
 			if instanceStatus.InstanceIdent == instance.unitStatus.instances[i].InstanceIdent &&
@@ -608,7 +610,7 @@ foundloop:
 				instance.unitStatus.instances[i].RunState = instanceStatus.RunState
 				instance.unitStatus.instances[i].ErrorInfo = instanceStatus.ErrorInfo
 
-				continue foundloop
+				continue foundLoop
 			}
 		}
 
@@ -757,7 +759,7 @@ func (instance *Instance) sendCurrentStatus() {
 }
 
 func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
-	nodeIDs, err := instance.nodeInfoProvider.GetAllNodeIDs()
+	nodeIDs, err := instance.nodeManager.GetAllNodeIDs()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -765,7 +767,7 @@ func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
 	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(nodeIDs))
 
 	for _, nodeID := range nodeIDs {
-		nodeInfo, err := instance.nodeInfoProvider.GetNodeInfo(nodeID)
+		nodeInfo, err := instance.nodeManager.GetNodeInfo(nodeID)
 		if err != nil {
 			log.WithField("nodeID", nodeID).Errorf("Can't get node info: %s", err)
 			continue
@@ -775,6 +777,21 @@ func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
 	}
 
 	return nodesInfo, nil
+}
+
+func (instance *Instance) getNodesStatus() ([]cloudprotocol.NodeStatus, error) {
+	nodesInfo, err := instance.getAllNodesInfo()
+	if err != nil {
+		return nil, err
+	}
+
+	nodesStatus := make([]cloudprotocol.NodeStatus, 0, len(nodesInfo))
+
+	for _, nodeInfo := range nodesInfo {
+		nodesStatus = append(nodesStatus, cloudprotocol.NodeStatus{NodeID: nodeInfo.NodeID, Status: nodeInfo.Status})
+	}
+
+	return nodesStatus, nil
 }
 
 func (instance *Instance) handleChannels() {

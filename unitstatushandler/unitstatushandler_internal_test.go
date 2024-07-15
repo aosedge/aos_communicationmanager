@@ -53,8 +53,8 @@ const waitStatusTimeout = 5 * time.Second
  * Types
  **********************************************************************************************************************/
 
-type TestNodeInfoProvider struct {
-	nodesInfo       map[string]cloudprotocol.NodeInfo
+type TestNodeManager struct {
+	nodesInfo       map[string]*cloudprotocol.NodeInfo
 	nodeInfoChannel chan cloudprotocol.NodeInfo
 }
 
@@ -1221,8 +1221,27 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.NoUpdate, Error: &cloudprotocol.ErrorInfo{Message: "update timeout"}},
 			},
 		},
+		{
+			testID:     "update node status",
+			initStatus: &cmserver.UpdateStatus{State: cmserver.NoUpdate},
+			desiredStatus: &cloudprotocol.DesiredStatus{
+				Nodes: []cloudprotocol.NodeStatus{
+					{NodeID: "node1", Status: cloudprotocol.NodeStatusPaused},
+					{NodeID: "node2", Status: cloudprotocol.NodeStatusPaused},
+				},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+		},
 	}
 
+	nodeManager := NewTestNodeManager([]cloudprotocol.NodeInfo{
+		{NodeID: "node1", NodeType: "type1", Status: cloudprotocol.NodeStatusProvisioned},
+		{NodeID: "node2", NodeType: "type2", Status: cloudprotocol.NodeStatusProvisioned},
+	})
 	unitConfigUpdater := NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{})
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := NewTestInstanceRunner()
@@ -1247,8 +1266,8 @@ func TestSoftwareManager(t *testing.T) {
 
 		// Create software manager
 
-		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, unitConfigUpdater,
-			softwareUpdater, instanceRunner, testStorage, 30*time.Second)
+		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, nodeManager,
+			unitConfigUpdater, softwareUpdater, instanceRunner, testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create software manager: %s", err)
 			continue
@@ -1303,6 +1322,19 @@ func TestSoftwareManager(t *testing.T) {
 
 				if strings.Contains(err.Error(), "status timeout") {
 					goto closeSM
+				}
+			}
+		}
+
+		if item.desiredStatus != nil && item.desiredStatus.Nodes != nil {
+			for _, nodeStatus := range item.desiredStatus.Nodes {
+				nodeInfo, err := nodeManager.GetNodeInfo(nodeStatus.NodeID)
+				if err != nil {
+					t.Errorf("Get node info error: %v", err)
+				}
+
+				if nodeInfo.Status != nodeStatus.Status {
+					t.Errorf("Wrong node status: %v", nodeInfo.Status)
 				}
 			}
 		}
@@ -1575,62 +1607,87 @@ func TestSyncExecutor(t *testing.T) {
  **********************************************************************************************************************/
 
 /***********************************************************************************************************************
- * TestNodeInfoProvider
+ * TestNodeManager
  **********************************************************************************************************************/
 
-func NewTestNodeInfoProvider(nodesInfo []cloudprotocol.NodeInfo) *TestNodeInfoProvider {
-	nodesInfoMap := make(map[string]cloudprotocol.NodeInfo)
+func NewTestNodeManager(nodesInfo []cloudprotocol.NodeInfo) *TestNodeManager {
+	nodesInfoMap := make(map[string]*cloudprotocol.NodeInfo)
 
 	for _, nodeInfo := range nodesInfo {
-		nodesInfoMap[nodeInfo.NodeID] = nodeInfo
+		nodesInfoMap[nodeInfo.NodeID] = &cloudprotocol.NodeInfo{}
+		*nodesInfoMap[nodeInfo.NodeID] = nodeInfo
 	}
 
-	return &TestNodeInfoProvider{
+	return &TestNodeManager{
 		nodesInfo: nodesInfoMap,
 	}
 }
 
-func (provider *TestNodeInfoProvider) GetAllNodeIDs() ([]string, error) {
-	nodeIDs := make([]string, 0, len(provider.nodesInfo))
+func (manager *TestNodeManager) GetAllNodeIDs() ([]string, error) {
+	nodeIDs := make([]string, 0, len(manager.nodesInfo))
 
-	for nodeID := range provider.nodesInfo {
+	for nodeID := range manager.nodesInfo {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 
 	return nodeIDs, nil
 }
 
-func (provider *TestNodeInfoProvider) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
-	nodeInfo, ok := provider.nodesInfo[nodeID]
+func (manager *TestNodeManager) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
+	nodeInfo, ok := manager.nodesInfo[nodeID]
 	if !ok {
 		return cloudprotocol.NodeInfo{}, aoserrors.New("node not found")
 	}
 
-	return nodeInfo, nil
+	return *nodeInfo, nil
 }
 
-func (provider *TestNodeInfoProvider) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
-	provider.nodeInfoChannel = make(chan cloudprotocol.NodeInfo, 1)
+func (manager *TestNodeManager) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
+	manager.nodeInfoChannel = make(chan cloudprotocol.NodeInfo, 1)
 
-	return provider.nodeInfoChannel
+	return manager.nodeInfoChannel
 }
 
-func (provider *TestNodeInfoProvider) NodeInfoChanged(nodeInfo cloudprotocol.NodeInfo) {
-	provider.nodesInfo[nodeInfo.NodeID] = nodeInfo
+func (manager *TestNodeManager) NodeInfoChanged(nodeInfo cloudprotocol.NodeInfo) {
+	if _, ok := manager.nodesInfo[nodeInfo.NodeID]; !ok {
+		manager.nodesInfo[nodeInfo.NodeID] = &cloudprotocol.NodeInfo{}
+	}
 
-	if provider.nodeInfoChannel != nil {
-		provider.nodeInfoChannel <- nodeInfo
+	*manager.nodesInfo[nodeInfo.NodeID] = nodeInfo
+
+	if manager.nodeInfoChannel != nil {
+		manager.nodeInfoChannel <- nodeInfo
 	}
 }
 
-func (provider *TestNodeInfoProvider) GetAllNodesInfo() []cloudprotocol.NodeInfo {
-	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(provider.nodesInfo))
+func (manager *TestNodeManager) GetAllNodesInfo() []cloudprotocol.NodeInfo {
+	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(manager.nodesInfo))
 
-	for _, nodeInfo := range provider.nodesInfo {
-		nodesInfo = append(nodesInfo, nodeInfo)
+	for _, nodeInfo := range manager.nodesInfo {
+		nodesInfo = append(nodesInfo, *nodeInfo)
 	}
 
 	return nodesInfo
+}
+
+func (manager *TestNodeManager) PauseNode(nodeID string) error {
+	if _, ok := manager.nodesInfo[nodeID]; !ok {
+		return aoserrors.New("node not found")
+	}
+
+	manager.nodesInfo[nodeID].Status = cloudprotocol.NodeStatusPaused
+
+	return nil
+}
+
+func (manager *TestNodeManager) ResumeNode(nodeID string) error {
+	if _, ok := manager.nodesInfo[nodeID]; !ok {
+		return aoserrors.New("node not found")
+	}
+
+	manager.nodesInfo[nodeID].Status = cloudprotocol.NodeStatusProvisioned
+
+	return nil
 }
 
 /***********************************************************************************************************************
@@ -1972,6 +2029,10 @@ func (statusHandler *testStatusHandler) setInstancesStatus(statuses []cloudproto
 			"nodeID":     instanceStatus.NodeID,
 		}).Debug("Update instance status")
 	}
+}
+
+func (statusHandler *testStatusHandler) getNodesStatus() ([]cloudprotocol.NodeStatus, error) {
+	return []cloudprotocol.NodeStatus{}, nil
 }
 
 /***********************************************************************************************************************
