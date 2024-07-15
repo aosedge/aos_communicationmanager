@@ -58,6 +58,7 @@ type softwareStatusHandler interface {
 	updateServiceStatus(status cloudprotocol.ServiceStatus)
 	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus)
 	setInstancesStatus(statuses []cloudprotocol.InstanceStatus)
+	getNodesStatus() ([]cloudprotocol.NodeStatus, error)
 }
 
 type softwareUpdate struct {
@@ -72,6 +73,7 @@ type softwareUpdate struct {
 	RunInstances    []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
 	CertChains      []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
 	Certs           []cloudprotocol.Certificate      `json:"certs,omitempty"`
+	NodesStatus     []cloudprotocol.NodeStatus       `json:"nodesStatus,omitempty"`
 }
 
 type softwareManager struct {
@@ -80,6 +82,7 @@ type softwareManager struct {
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
+	nodeManager       NodeManager
 	unitConfigUpdater UnitConfigUpdater
 	downloader        softwareDownloader
 	statusHandler     softwareStatusHandler
@@ -107,7 +110,7 @@ type softwareManager struct {
  * Interface
  **********************************************************************************************************************/
 
-func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader,
+func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader, nodeManager NodeManager,
 	unitConfigUpdater UnitConfigUpdater, softwareUpdater SoftwareUpdater, instanceRunner InstanceRunner,
 	storage Storage, defaultTTL time.Duration,
 ) (manager *softwareManager, err error) {
@@ -115,6 +118,7 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		statusChannel:     make(chan cmserver.UpdateSOTAStatus, 1),
 		downloader:        downloader,
 		statusHandler:     statusHandler,
+		nodeManager:       nodeManager,
 		unitConfigUpdater: unitConfigUpdater,
 		softwareUpdater:   softwareUpdater,
 		instanceRunner:    instanceRunner,
@@ -242,6 +246,7 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		RemoveLayers:    make([]cloudprotocol.LayerStatus, 0),
 		RunInstances:    desiredStatus.Instances,
 		CertChains:      desiredStatus.CertificateChains, Certs: desiredStatus.Certificates,
+		NodesStatus: make([]cloudprotocol.NodeStatus, 0),
 	}
 
 	allServices, err := manager.softwareUpdater.GetServicesStatus()
@@ -256,10 +261,12 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 
 	manager.processDesiredServices(update, allServices, desiredStatus.Services)
 	manager.processDesiredLayers(update, allLayers, desiredStatus.Layers)
+	manager.processNodesStatus(update, desiredStatus.Nodes)
 
 	if len(update.InstallServices) != 0 || len(update.RemoveServices) != 0 ||
 		len(update.InstallLayers) != 0 || len(update.RemoveLayers) != 0 || len(update.RestoreServices) != 0 ||
-		len(update.RestoreLayers) != 0 || manager.needRunInstances(desiredStatus.Instances) || update.UnitConfig != nil {
+		len(update.RestoreLayers) != 0 || manager.needRunInstances(desiredStatus.Instances) ||
+		update.UnitConfig != nil || len(update.NodesStatus) != 0 {
 		if err := manager.newUpdate(update); err != nil {
 			return aoserrors.Wrap(err)
 		}
@@ -344,6 +351,31 @@ removeLayersLoop:
 		}
 
 		update.RemoveLayers = append(update.RemoveLayers, installedLayer.LayerStatus)
+	}
+}
+
+func (manager *softwareManager) processNodesStatus(
+	update *softwareUpdate, desiredNodesStatus []cloudprotocol.NodeStatus,
+) {
+	curNodesStatus, err := manager.statusHandler.getNodesStatus()
+	if err != nil {
+		log.Errorf("Can't get nodes status: %v", err)
+		return
+	}
+
+desiredNodesLoop:
+	for _, desiredNodeStatus := range desiredNodesStatus {
+		for _, curNodeStatus := range curNodesStatus {
+			if desiredNodeStatus.NodeID == curNodeStatus.NodeID {
+				if desiredNodeStatus.Status != curNodeStatus.Status {
+					update.NodesStatus = append(update.NodesStatus, desiredNodeStatus)
+				}
+
+				goto desiredNodesLoop
+			}
+		}
+
+		update.NodesStatus = append(update.NodesStatus, desiredNodeStatus)
 	}
 }
 
@@ -726,8 +758,12 @@ func (manager *softwareManager) update(ctx context.Context) {
 		}()
 	}()
 
+	if err := manager.updateNodes(); err != nil {
+		updateErr = err
+	}
+
 	if manager.CurrentUpdate.UnitConfig != nil {
-		if err := manager.updateUnitConfig(ctx); err != nil {
+		if err := manager.updateUnitConfig(); err != nil {
 			updateErr = err
 		}
 	}
@@ -1341,7 +1377,33 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr error
 	return nil
 }
 
-func (manager *softwareManager) updateUnitConfig(ctx context.Context) (unitConfigErr error) {
+func (manager *softwareManager) updateNodes() (nodesErr error) {
+	log.Debug("Update nodes status")
+
+	for _, nodeStatus := range manager.CurrentUpdate.NodesStatus {
+		if nodeStatus.Status == cloudprotocol.NodeStatusPaused {
+			if err := manager.nodeManager.PauseNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
+				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't pause node: %v", err)
+
+				nodesErr = aoserrors.Wrap(err)
+			}
+		}
+
+		if nodeStatus.Status == cloudprotocol.NodeStatusProvisioned {
+			log.WithField("nodeID", nodeStatus.NodeID).Debug("Resume node")
+
+			if err := manager.nodeManager.ResumeNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
+				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't resume node: %v", err)
+
+				nodesErr = aoserrors.Wrap(err)
+			}
+		}
+	}
+
+	return nodesErr
+}
+
+func (manager *softwareManager) updateUnitConfig() (unitConfigErr error) {
 	log.Debug("Update unit config")
 
 	defer func() {
