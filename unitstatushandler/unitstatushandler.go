@@ -70,6 +70,7 @@ type FirmwareUpdater interface {
 	GetStatus() (componentsInfo []cloudprotocol.ComponentStatus, err error)
 	UpdateComponents(components []cloudprotocol.ComponentInfo, chains []cloudprotocol.CertificateChain,
 		certs []cloudprotocol.Certificate) (status []cloudprotocol.ComponentStatus, err error)
+	NewComponentsChannel() <-chan []cloudprotocol.ComponentStatus
 }
 
 // InstanceRunner instances runner.
@@ -134,6 +135,8 @@ type Instance struct {
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
 
+	newComponentsChannel <-chan []cloudprotocol.ComponentStatus
+
 	initDone    bool
 	isConnected int32
 }
@@ -172,9 +175,10 @@ func New(
 	log.Debug("Create unit status handler")
 
 	instance = &Instance{
-		nodeInfoProvider: nodeInfoProvider,
-		statusSender:     statusSender,
-		sendStatusPeriod: cfg.UnitStatusSendTimeout.Duration,
+		nodeInfoProvider:     nodeInfoProvider,
+		statusSender:         statusSender,
+		sendStatusPeriod:     cfg.UnitStatusSendTimeout.Duration,
+		newComponentsChannel: firmwareUpdater.NewComponentsChannel(),
 	}
 
 	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
@@ -197,6 +201,8 @@ func New(
 	if err = instance.statusSender.SubscribeForConnectionEvents(instance); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
+
+	go instance.handleChannels()
 
 	return instance, nil
 }
@@ -737,4 +743,19 @@ func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
 	}
 
 	return nodesInfo, nil
+}
+
+func (instance *Instance) handleChannels() {
+	for {
+		select {
+		case newComponents, ok := <-instance.newComponentsChannel:
+			if !ok {
+				return
+			}
+
+			for _, componentStatus := range newComponents {
+				instance.updateComponentStatus(componentStatus)
+			}
+		}
+	}
 }
