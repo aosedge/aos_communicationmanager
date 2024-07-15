@@ -45,6 +45,7 @@ const (
 const (
 	eventStartDownload  = "startDownload"
 	eventFinishDownload = "finishDownload"
+	eventReadyToUpdate  = "readyToUpdate"
 	eventStartUpdate    = "startUpdate"
 	eventFinishUpdate   = "finishUpdate"
 	eventCancel         = "cancel"
@@ -196,7 +197,9 @@ func (stateMachine *updateStateMachine) finishOperation(ctx context.Context, fin
 	}
 }
 
-func (stateMachine *updateStateMachine) startNewUpdate(ttlTime time.Duration) (ttlDate time.Time, err error) {
+func (stateMachine *updateStateMachine) startNewUpdate(
+	ttlTime time.Duration, downloadRequired bool,
+) (ttlDate time.Time, err error) {
 	if ttlTime == 0 {
 		ttlTime = stateMachine.defaultTTL
 	}
@@ -207,8 +210,14 @@ func (stateMachine *updateStateMachine) startNewUpdate(ttlTime time.Duration) (t
 		stateMachine.setTTLTimer(ttlTime)
 	}
 
-	if err = stateMachine.sendEvent(eventStartDownload, nil); err != nil {
-		return ttlDate, aoserrors.Wrap(err)
+	if downloadRequired {
+		if err = stateMachine.sendEvent(eventStartDownload, nil); err != nil {
+			return ttlDate, aoserrors.Wrap(err)
+		}
+	} else {
+		if err = stateMachine.sendEvent(eventReadyToUpdate, nil); err != nil {
+			return ttlDate, aoserrors.Wrap(err)
+		}
 	}
 
 	return ttlDate, nil
