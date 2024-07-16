@@ -57,7 +57,7 @@ type smHandler struct {
 	nodeConfigStatus       unitconfig.NodeConfigStatus
 	runStatusCh            chan<- launcher.NodeRunInstanceStatus
 	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus
-	systemLimitAlertCh     chan<- cloudprotocol.SystemQuotaAlert
+	systemQuotasAlertCh    chan<- cloudprotocol.SystemQuotaAlert
 }
 
 /***********************************************************************************************************************
@@ -68,7 +68,7 @@ func newSMHandler(
 	stream pb.SMService_RegisterSMServer, messageSender MessageSender, alertSender AlertSender,
 	monitoringSender MonitoringSender, runStatusCh chan<- launcher.NodeRunInstanceStatus,
 	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus,
-	systemLimitAlertCh chan<- cloudprotocol.SystemQuotaAlert,
+	systemQuotasAlertCh chan<- cloudprotocol.SystemQuotaAlert,
 ) (*smHandler, error) {
 	handler := smHandler{
 		stream:                 stream,
@@ -78,7 +78,7 @@ func newSMHandler(
 		syncstream:             syncstream.New(),
 		runStatusCh:            runStatusCh,
 		updateInstanceStatusCh: updateInstanceStatusCh,
-		systemLimitAlertCh:     systemLimitAlertCh,
+		systemQuotasAlertCh:    systemQuotasAlertCh,
 	}
 
 	return &handler, nil
@@ -463,7 +463,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		resourceValidate := cloudprotocol.ResourceValidateAlert{
 			Errors: make([]cloudprotocol.ErrorInfo, len(data.ResourceValidateAlert.GetErrors())),
 			NodeID: handler.nodeConfigStatus.NodeID,
-			Name:   data.ResourceValidateAlert.Name,
+			Name:   data.ResourceValidateAlert.GetName(),
 		}
 
 		for i, error := range data.ResourceValidateAlert.GetErrors() {
@@ -488,7 +488,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 			Status:    data.SystemQuotaAlert.GetStatus(),
 		}
 
-		handler.systemLimitAlertCh <- alertPayload
+		handler.systemQuotasAlertCh <- alertPayload
 
 		if alertPayload.Status != resourcemonitor.AlertStatusRaise {
 			return
