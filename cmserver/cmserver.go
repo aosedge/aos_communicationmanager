@@ -73,11 +73,12 @@ type UpdateFOTAStatus struct {
 
 // UpdateSOTAStatus SOTA update status for update scheduler service.
 type UpdateSOTAStatus struct {
-	UnitConfig      *cloudprotocol.UnitConfigStatus
-	InstallServices []cloudprotocol.ServiceStatus
-	RemoveServices  []cloudprotocol.ServiceStatus
-	InstallLayers   []cloudprotocol.LayerStatus
-	RemoveLayers    []cloudprotocol.LayerStatus
+	UnitConfig       *cloudprotocol.UnitConfigStatus
+	InstallServices  []cloudprotocol.ServiceStatus
+	RemoveServices   []cloudprotocol.ServiceStatus
+	InstallLayers    []cloudprotocol.LayerStatus
+	RemoveLayers     []cloudprotocol.LayerStatus
+	RebalanceRequest bool
 	UpdateStatus
 }
 
@@ -318,8 +319,9 @@ func (server *CMServer) notifyAllClients(notification *pb.SchedulerNotifications
 
 func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSOTAStatus) {
 	pbStatus = &pb.UpdateSOTAStatus{
-		Error: pbconvert.ErrorInfoToPB(updateStatus.Error),
-		State: updateStatus.State.getPbState(),
+		Error:            pbconvert.ErrorInfoToPB(updateStatus.Error),
+		State:            updateStatus.State.getPbState(),
+		RebalanceRequest: updateStatus.RebalanceRequest,
 	}
 
 	if updateStatus.UnitConfig != nil {
