@@ -88,6 +88,10 @@ type TestInstanceRunner struct {
 	newServices     []string
 }
 
+type TestSystemQuotaAlertProvider struct {
+	alertsChannel chan cloudprotocol.SystemQuotaAlert
+}
+
 type TestDownloader struct {
 	DownloadTime   time.Duration
 	DownloadedURLs []string
@@ -921,29 +925,30 @@ func TestSoftwareManager(t *testing.T) {
 		updateError        error
 		updateWaitStatuses []cmserver.UpdateStatus
 		newServices        []string
+		requestRebalancing bool
 	}
 
 	updateLayers := []cloudprotocol.LayerInfo{
 		{
 			LayerID: "layer1",
 			Digest:  "digest1",
-			Version: "1.0",
+			Version: "1.0.0",
 		},
 		{
 			LayerID: "layer2",
 			Digest:  "digest2",
-			Version: "2.0",
+			Version: "2.0.0",
 		},
 	}
 
 	updateServices := []cloudprotocol.ServiceInfo{
 		{
 			ServiceID: "service1",
-			Version:   "1.0",
+			Version:   "1.0.0",
 		},
 		{
 			ServiceID: "service2",
-			Version:   "2.0",
+			Version:   "2.0.0",
 		},
 	}
 
@@ -1236,6 +1241,44 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.NoUpdate},
 			},
 		},
+		{
+			testID: "rebalancing request",
+			initState: &softwareManager{
+				CurrentState: stateNoUpdate,
+				CurrentUpdate: &softwareUpdate{
+					RunInstances: []cloudprotocol.InstanceInfo{
+						{ServiceID: "service1", SubjectID: "subject1", NumInstances: 1},
+						{ServiceID: "service2", SubjectID: "subject2", NumInstances: 1},
+					},
+				},
+				ServiceStatuses: map[string]*cloudprotocol.ServiceStatus{
+					"service1": {ServiceID: "service1", Version: "1.0.0"},
+					"service2": {ServiceID: "service2", Version: "2.0.0"},
+				},
+			},
+			initServices: []ServiceStatus{
+				{
+					ServiceStatus: cloudprotocol.ServiceStatus{
+						ServiceID: updateServices[0].ServiceID,
+						Version:   updateServices[0].Version,
+						Status:    cloudprotocol.InstalledStatus,
+					},
+				},
+				{
+					ServiceStatus: cloudprotocol.ServiceStatus{
+						ServiceID: updateServices[1].ServiceID,
+						Version:   updateServices[1].Version,
+						Status:    cloudprotocol.InstalledStatus,
+					},
+				},
+			},
+			updateWaitStatuses: []cmserver.UpdateStatus{
+				{State: cmserver.ReadyToUpdate},
+				{State: cmserver.Updating},
+				{State: cmserver.NoUpdate},
+			},
+			requestRebalancing: true,
+		},
 	}
 
 	nodeManager := NewTestNodeManager([]cloudprotocol.NodeInfo{
@@ -1295,6 +1338,12 @@ func TestSoftwareManager(t *testing.T) {
 		if item.triggerUpdate {
 			if err = softwareManager.startUpdate(); err != nil {
 				t.Errorf("Start update failed: %s", err)
+			}
+		}
+
+		if item.requestRebalancing {
+			if err = softwareManager.requestRebalancing(); err != nil {
+				t.Errorf("Rebalancing failed: %s", err)
 			}
 		}
 
@@ -1838,6 +1887,22 @@ func (runner *TestInstanceRunner) WaitForRunInstance(timeout time.Duration) ([]c
 	case <-time.After(timeout):
 		return nil, aoserrors.New("receive run instances timeout")
 	}
+}
+
+/***********************************************************************************************************************
+ * TestSystemQuotaAlertProvider
+ **********************************************************************************************************************/
+
+func NewTestSystemQuotaAlertProvider() *TestSystemQuotaAlertProvider {
+	return &TestSystemQuotaAlertProvider{alertsChannel: make(chan cloudprotocol.SystemQuotaAlert, 1)}
+}
+
+func (provider *TestSystemQuotaAlertProvider) GetSystemQuoteAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
+	return provider.alertsChannel
+}
+
+func (provider *TestSystemQuotaAlertProvider) SendSystemQuotaAlert(alert cloudprotocol.SystemQuotaAlert) {
+	provider.alertsChannel <- alert
 }
 
 /***********************************************************************************************************************
