@@ -78,6 +78,7 @@ type testPublicServer struct {
 type testProtectedServer struct {
 	pb.UnimplementedIAMCertificateServiceServer
 	pb.UnimplementedIAMProvisioningServiceServer
+	pb.UnimplementedIAMNodesServiceServer
 
 	grpcServer *grpc.Server
 	csr        map[string]string
@@ -534,6 +535,54 @@ func TestDeprovisioning(t *testing.T) {
 	}
 }
 
+func TestPauseNode(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	err = client.PauseNode("test-node-id")
+	if err != nil {
+		t.Errorf("Error is not expected: %s", err)
+	}
+}
+
+func TestResumeNode(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	err = client.ResumeNode("test-node-id")
+	if err != nil {
+		t.Errorf("Error is not expected: %s", err)
+	}
+}
+
 /*******************************************************************************
  * Private
  ******************************************************************************/
@@ -572,6 +621,7 @@ func newTestServer(
 
 	pb.RegisterIAMCertificateServiceServer(protectedServer.grpcServer, protectedServer)
 	pb.RegisterIAMProvisioningServiceServer(protectedServer.grpcServer, protectedServer)
+	pb.RegisterIAMNodesServiceServer(protectedServer.grpcServer, protectedServer)
 
 	go func() {
 		if err := protectedServer.grpcServer.Serve(protectedListener); err != nil {
@@ -656,6 +706,22 @@ func (server *testProtectedServer) Deprovision(
 	context context.Context, req *pb.DeprovisionRequest,
 ) (rsp *pb.DeprovisionResponse, err error) {
 	rsp = &pb.DeprovisionResponse{}
+
+	return rsp, nil
+}
+
+func (server *testProtectedServer) PauseNode(
+	context context.Context, req *pb.PauseNodeRequest,
+) (rsp *pb.PauseNodeResponse, err error) {
+	rsp = &pb.PauseNodeResponse{}
+
+	return rsp, nil
+}
+
+func (server *testProtectedServer) ResumeNode(
+	context context.Context, req *pb.ResumeNodeRequest,
+) (rsp *pb.ResumeNodeResponse, err error) {
+	rsp = &pb.ResumeNodeResponse{}
 
 	return rsp, nil
 }

@@ -71,9 +71,10 @@ type Client struct {
 	certificateService  pb.IAMCertificateServiceClient
 	provisioningService pb.IAMProvisioningServiceClient
 
-	closeChannel      chan struct{}
-	nodeService       pb.IAMPublicNodesServiceClient
-	nodeInfoListeners []chan cloudprotocol.NodeInfo
+	closeChannel       chan struct{}
+	publicNodesService pb.IAMPublicNodesServiceClient
+	nodesService       pb.IAMNodesServiceClient
+	nodeInfoListeners  []chan cloudprotocol.NodeInfo
 }
 
 // Sender provides API to send messages to the cloud.
@@ -123,7 +124,7 @@ func New(
 
 	localClient.publicService = pb.NewIAMPublicServiceClient(localClient.publicConnection)
 	localClient.identService = pb.NewIAMPublicIdentityServiceClient(localClient.publicConnection)
-	localClient.nodeService = pb.NewIAMPublicNodesServiceClient(localClient.publicConnection)
+	localClient.publicNodesService = pb.NewIAMPublicNodesServiceClient(localClient.publicConnection)
 
 	if localClient.protectedConnection, err = localClient.createProtectedConnection(
 		config, cryptocontext, insecure); err != nil {
@@ -132,6 +133,7 @@ func New(
 
 	localClient.certificateService = pb.NewIAMCertificateServiceClient(localClient.protectedConnection)
 	localClient.provisioningService = pb.NewIAMProvisioningServiceClient(localClient.protectedConnection)
+	localClient.nodesService = pb.NewIAMNodesServiceClient(localClient.protectedConnection)
 
 	log.Debug("Connected to IAM")
 
@@ -167,7 +169,7 @@ func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInf
 
 	request := &pb.GetNodeInfoRequest{NodeId: nodeID}
 
-	response, err := client.nodeService.GetNodeInfo(ctx, request)
+	response, err := client.publicNodesService.GetNodeInfo(ctx, request)
 	if err != nil {
 		return cloudprotocol.NodeInfo{}, aoserrors.Wrap(err)
 	}
@@ -182,7 +184,7 @@ func (client *Client) GetAllNodeIDs() (nodeIDs []string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	response, err := client.nodeService.GetAllNodeIDs(ctx, &emptypb.Empty{})
+	response, err := client.publicNodesService.GetAllNodeIDs(ctx, &emptypb.Empty{})
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -409,6 +411,46 @@ func (client *Client) Deprovision(nodeID, password string) (err error) {
 	return nil
 }
 
+// PauseNode pauses node.
+func (client *Client) PauseNode(nodeID string) error {
+	log.WithField("nodeID", nodeID).Debug("Pause node")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.nodesService.PauseNode(ctx, &pb.PauseNodeRequest{NodeId: nodeID})
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	errorInfo := pbconvert.ErrorInfoFromPB(response.GetError())
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// ResumeNode resumes node.
+func (client *Client) ResumeNode(nodeID string) error {
+	log.WithField("nodeID", nodeID).Debug("Resume node")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.nodesService.ResumeNode(ctx, &pb.ResumeNodeRequest{NodeId: nodeID})
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	errorInfo := pbconvert.ErrorInfoFromPB(response.GetError())
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
 // Close closes IAM client.
 func (client *Client) Close() (err error) {
 	if client.publicConnection != nil || client.protectedConnection != nil {
@@ -581,9 +623,9 @@ func (client *Client) subscribeNodeInfoChange() (listener pb.IAMPublicNodesServi
 	client.Lock()
 	defer client.Unlock()
 
-	client.nodeService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
+	client.publicNodesService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
 
-	listener, err = client.nodeService.SubscribeNodeChanged(context.Background(), &emptypb.Empty{})
+	listener, err = client.publicNodesService.SubscribeNodeChanged(context.Background(), &emptypb.Empty{})
 	if err != nil {
 		log.WithField("error", err).Error("Can't subscribe on NodeChange event")
 
