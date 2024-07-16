@@ -177,6 +177,7 @@ func TestConnection(t *testing.T) {
 		UpdateStatus: cmserver.UpdateStatus{State: cmserver.Downloading, Error: &cloudprotocol.ErrorInfo{
 			Message: "SOTA error",
 		}},
+		RebalanceRequest: true,
 	}
 
 	unitStatusHandler.sotaChannel <- statusNotification
@@ -216,7 +217,7 @@ func TestConnection(t *testing.T) {
 	}
 
 	if sotaStatus.GetInstallServices()[0].GetVersion() != "1.0.0" {
-		t.Error("Incorrect service aos version")
+		t.Error("Incorrect service version")
 	}
 
 	if len(sotaStatus.GetInstallLayers()) != 1 {
@@ -232,7 +233,11 @@ func TestConnection(t *testing.T) {
 	}
 
 	if sotaStatus.GetInstallLayers()[0].GetVersion() != "3.0.0" {
-		t.Error("Incorrect layer aos version")
+		t.Error("Incorrect layer version")
+	}
+
+	if sotaStatus.GetRebalanceRequest() != true {
+		t.Error("Incorrect rebalance request")
 	}
 
 	if _, err := client.pbclient.StartFOTAUpdate(ctx, &emptypb.Empty{}); err != nil {
