@@ -28,6 +28,7 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/resourcemonitor"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aosedge/aos_communicationmanager/amqphandler"
@@ -80,6 +81,11 @@ type FirmwareUpdater interface {
 // InstanceRunner instances runner.
 type InstanceRunner interface {
 	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
+}
+
+// SystemQuotaAlertProvider provides system quota alerts.
+type SystemQuotaAlertProvider interface {
+	GetSystemQuoteAlertChannel() <-chan cloudprotocol.SystemQuotaAlert
 }
 
 // SoftwareUpdater updates services, layers.
@@ -139,8 +145,9 @@ type Instance struct {
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
 
-	newComponentsChannel <-chan []cloudprotocol.ComponentStatus
-	nodeChangedChannel   <-chan cloudprotocol.NodeInfo
+	newComponentsChannel    <-chan []cloudprotocol.ComponentStatus
+	nodeChangedChannel      <-chan cloudprotocol.NodeInfo
+	systemQuotaAlertChannel <-chan cloudprotocol.SystemQuotaAlert
 
 	initDone    bool
 	isConnected int32
@@ -177,15 +184,17 @@ func New(
 	downloader Downloader,
 	storage Storage,
 	statusSender StatusSender,
+	systemQuotaAlertProvider SystemQuotaAlertProvider,
 ) (instance *Instance, err error) {
 	log.Debug("Create unit status handler")
 
 	instance = &Instance{
-		nodeManager:          nodeManager,
-		statusSender:         statusSender,
-		sendStatusPeriod:     cfg.UnitStatusSendTimeout.Duration,
-		newComponentsChannel: firmwareUpdater.NewComponentsChannel(),
-		nodeChangedChannel:   nodeManager.SubscribeNodeInfoChange(),
+		nodeManager:             nodeManager,
+		statusSender:            statusSender,
+		sendStatusPeriod:        cfg.UnitStatusSendTimeout.Duration,
+		newComponentsChannel:    firmwareUpdater.NewComponentsChannel(),
+		nodeChangedChannel:      nodeManager.SubscribeNodeInfoChange(),
+		systemQuotaAlertChannel: systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
 	}
 
 	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
@@ -812,6 +821,23 @@ func (instance *Instance) handleChannels() {
 			}
 
 			instance.updateNodeInfo(nodeInfo)
+
+		case systemQuotaAlert, ok := <-instance.systemQuotaAlertChannel:
+			if !ok {
+				return
+			}
+
+			if systemQuotaAlert.Status == resourcemonitor.AlertStatusFall {
+				return
+			}
+
+			rebalancingParameters := []string{"cpu", "ram"}
+
+			if slices.Contains(rebalancingParameters, systemQuotaAlert.Parameter) {
+				if err := instance.softwareManager.requestRebalancing(); err != nil {
+					log.Errorf("Can't perform rebalancing: %v", err)
+				}
+			}
 		}
 	}
 }
