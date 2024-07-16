@@ -131,7 +131,6 @@ type NodeManager interface {
 		forceRestart bool,
 	) error
 	GetRunInstancesStatusChannel() <-chan NodeRunInstanceStatus
-	GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert
 	GetAverageMonitoring(nodeID string) (aostypes.NodeMonitoring, error)
 }
 
@@ -265,23 +264,6 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, n
 	return launcher.sendRunInstances(false)
 }
 
-// RestartInstances performs restart service instances.
-func (launcher *Launcher) RestartInstances() error {
-	launcher.Lock()
-	defer launcher.Unlock()
-
-	launcher.connectionTimer = time.AfterFunc(
-		launcher.config.SMController.NodesConnectionTimeout.Duration, launcher.sendCurrentStatus)
-
-	for _, node := range launcher.nodes {
-		launcher.initNodeConfig(node)
-	}
-
-	launcher.currentErrorStatus = launcher.performNodeBalancing(launcher.currentDesiredInstances)
-
-	return launcher.sendRunInstances(true)
-}
-
 // GetRunStatusesChannel gets channel with run status instances status.
 func (launcher *Launcher) GetRunStatusesChannel() <-chan unitstatushandler.RunInstancesStatus {
 	return launcher.runStatusChannel
@@ -296,9 +278,6 @@ func (launcher *Launcher) processChannels(ctx context.Context) {
 		select {
 		case instances := <-launcher.nodeManager.GetRunInstancesStatusChannel():
 			launcher.processRunInstanceStatus(instances)
-
-		case alert := <-launcher.nodeManager.GetSystemLimitAlertChannel():
-			launcher.performRebalancing(alert)
 
 		case <-ctx.Done():
 			return
@@ -384,108 +363,6 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 	launcher.connectionTimer.Stop()
 
 	launcher.sendCurrentStatus()
-}
-
-//nolint:funlen
-func (launcher *Launcher) performRebalancing(alert cloudprotocol.SystemQuotaAlert) {
-	launcher.Lock()
-	defer launcher.Unlock()
-
-	log.Debug("Perform rebalancing")
-
-	nodeWithIssue := launcher.getNode(alert.NodeID)
-	if nodeWithIssue == nil {
-		log.Errorf("Can't get node: %s", alert.NodeID)
-
-		return
-	}
-
-	if len(nodeWithIssue.currentRunRequest.Instances) <= 1 {
-		log.Warn("No instances for rebalancing")
-
-		return
-	}
-
-	nodes := launcher.getLowerPriorityNodes(nodeWithIssue)
-	if len(nodes) == 0 {
-		log.Error("No nodes with lower priority for rebalancing")
-
-		return
-	}
-
-	for i := len(nodeWithIssue.currentRunRequest.Instances) - 1; i >= 0; i-- {
-		currentInstance := nodeWithIssue.currentRunRequest.Instances[i]
-
-		serviceInfo, err := launcher.imageProvider.GetServiceInfo(currentInstance.ServiceID)
-		if err != nil {
-			log.Errorf("Can't get service: %v", err)
-			continue
-		}
-
-		labels, err := launcher.getLabelsForInstance(currentInstance.InstanceIdent)
-		if err != nil {
-			log.Errorf("Can't get labels for instance %v", err)
-		}
-
-		nodes, err := launcher.getNodesByStaticResources(nodes, serviceInfo, cloudprotocol.InstanceInfo{
-			ServiceID: currentInstance.ServiceID, SubjectID: currentInstance.SubjectID, Labels: labels,
-		})
-		if err != nil {
-			continue
-		}
-
-		nodes, err = launcher.getNodesByDevices(nodes, serviceInfo.Config.Devices)
-		if err != nil {
-			continue
-		}
-
-		nodes = launcher.getNodeByMonitoringData(nodes, alert.Parameter)
-
-		layersForService, err := launcher.getLayersForService(serviceInfo.Layers)
-		if err != nil {
-			log.Errorf("Can't get layer: %v", err)
-
-			continue
-		}
-
-		if err = launcher.allocateDevices(nodes[0], serviceInfo.Config.Devices); err != nil {
-			log.Errorf("Can't allocate devices: %v", err)
-
-			continue
-		}
-
-		launcher.addRunRequest(currentInstance, serviceInfo, layersForService, nodes[0])
-
-		if err := launcher.releaseDevices(nodeWithIssue, serviceInfo.Config.Devices); err != nil {
-			log.Errorf("Can't release devices: %v", err)
-
-			continue
-		}
-
-		sort.Slice(nodeWithIssue.currentRunRequest.Instances, func(i, j int) bool {
-			if nodeWithIssue.currentRunRequest.Instances[i].Priority ==
-				nodeWithIssue.currentRunRequest.Instances[j].Priority {
-				return nodeWithIssue.currentRunRequest.Instances[i].ServiceID <
-					nodeWithIssue.currentRunRequest.Instances[j].ServiceID
-			}
-
-			return nodeWithIssue.currentRunRequest.Instances[i].Priority >
-				nodeWithIssue.currentRunRequest.Instances[j].Priority
-		})
-
-		launcher.removeRunRequest(currentInstance, nodeWithIssue)
-
-		launcher.connectionTimer = time.AfterFunc(
-			launcher.config.SMController.NodesConnectionTimeout.Duration, launcher.sendCurrentStatus)
-
-		if err := launcher.sendRunInstances(false); err != nil {
-			log.Errorf("Can't send run instance while rebalancing: %v", err)
-		}
-
-		return
-	}
-
-	log.Warn("No appropriate condition for rebalancing found")
 }
 
 func (launcher *Launcher) initNodeStatus(nodeID string) (*nodeStatus, error) {
