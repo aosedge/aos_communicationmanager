@@ -62,18 +62,19 @@ type softwareStatusHandler interface {
 }
 
 type softwareUpdate struct {
-	Schedule        cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
-	UnitConfig      *cloudprotocol.UnitConfig        `json:"unitConfig,omitempty"`
-	InstallServices []cloudprotocol.ServiceInfo      `json:"installServices,omitempty"`
-	RemoveServices  []cloudprotocol.ServiceStatus    `json:"removeServices,omitempty"`
-	RestoreServices []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
-	InstallLayers   []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
-	RemoveLayers    []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
-	RestoreLayers   []cloudprotocol.LayerStatus      `json:"restoreLayers,omitempty"`
-	RunInstances    []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
-	CertChains      []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
-	Certs           []cloudprotocol.Certificate      `json:"certs,omitempty"`
-	NodesStatus     []cloudprotocol.NodeStatus       `json:"nodesStatus,omitempty"`
+	Schedule         cloudprotocol.ScheduleRule       `json:"schedule,omitempty"`
+	UnitConfig       *cloudprotocol.UnitConfig        `json:"unitConfig,omitempty"`
+	InstallServices  []cloudprotocol.ServiceInfo      `json:"installServices,omitempty"`
+	RemoveServices   []cloudprotocol.ServiceStatus    `json:"removeServices,omitempty"`
+	RestoreServices  []cloudprotocol.ServiceInfo      `json:"restoreServices,omitempty"`
+	InstallLayers    []cloudprotocol.LayerInfo        `json:"installLayers,omitempty"`
+	RemoveLayers     []cloudprotocol.LayerStatus      `json:"removeLayers,omitempty"`
+	RestoreLayers    []cloudprotocol.LayerStatus      `json:"restoreLayers,omitempty"`
+	RunInstances     []cloudprotocol.InstanceInfo     `json:"runInstances,omitempty"`
+	CertChains       []cloudprotocol.CertificateChain `json:"certChains,omitempty"`
+	Certs            []cloudprotocol.Certificate      `json:"certs,omitempty"`
+	NodesStatus      []cloudprotocol.NodeStatus       `json:"nodesStatus,omitempty"`
+	RebalanceRequest bool                             `json:"rebalanceRequest,omitempty"`
 }
 
 type softwareManager struct {
@@ -175,12 +176,13 @@ func (manager *softwareManager) close() (err error) {
 
 func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTAStatus) {
 	status.State = convertState(manager.CurrentState)
-
 	status.Error = manager.UpdateErr
 
 	if status.State == cmserver.NoUpdate || manager.CurrentUpdate == nil {
 		return status
 	}
+
+	status.RebalanceRequest = manager.CurrentUpdate.RebalanceRequest
 
 	for _, layer := range manager.CurrentUpdate.InstallLayers {
 		status.InstallLayers = append(status.InstallLayers, cloudprotocol.LayerStatus{
@@ -272,6 +274,34 @@ func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol
 		}
 	} else {
 		log.Debug("No SOTA update required")
+	}
+
+	return nil
+}
+
+func (manager *softwareManager) requestRebalancing() error {
+	manager.Lock()
+	defer manager.Unlock()
+
+	log.Debug("Request rebalancing")
+
+	if manager.CurrentUpdate == nil || len(manager.CurrentUpdate.RunInstances) == 0 {
+		return aoserrors.New("no previous update")
+	}
+
+	update := &softwareUpdate{
+		Schedule:         manager.CurrentUpdate.Schedule,
+		InstallServices:  make([]cloudprotocol.ServiceInfo, 0),
+		RemoveServices:   make([]cloudprotocol.ServiceStatus, 0),
+		InstallLayers:    make([]cloudprotocol.LayerInfo, 0),
+		RemoveLayers:     make([]cloudprotocol.LayerStatus, 0),
+		RunInstances:     manager.CurrentUpdate.RunInstances,
+		NodesStatus:      make([]cloudprotocol.NodeStatus, 0),
+		RebalanceRequest: true,
+	}
+
+	if err := manager.newUpdate(update); err != nil {
+		return err
 	}
 
 	return nil
@@ -846,16 +876,21 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 		}
 
 	default:
-		if reflect.DeepEqual(update.UnitConfig, manager.CurrentUpdate.UnitConfig) &&
-			reflect.DeepEqual(update.InstallLayers, manager.CurrentUpdate.InstallLayers) &&
-			reflect.DeepEqual(update.RemoveLayers, manager.CurrentUpdate.RemoveLayers) &&
-			reflect.DeepEqual(update.InstallServices, manager.CurrentUpdate.InstallServices) &&
-			reflect.DeepEqual(update.RemoveServices, manager.CurrentUpdate.RemoveServices) &&
-			reflect.DeepEqual(update.RunInstances, manager.CurrentUpdate.RunInstances) &&
-			reflect.DeepEqual(update.RestoreServices, manager.CurrentUpdate.RestoreServices) &&
-			reflect.DeepEqual(update.RestoreLayers, manager.CurrentUpdate.RestoreLayers) {
-			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
+		if manager.isUpdateEquals(update) {
+			if update.RebalanceRequest {
+				log.Debug("Skip rebalancing during update")
+
 				return nil
+			}
+
+			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
+				log.Debug("Skip update without changes")
+
+				return nil
+			}
+
+			if update.RebalanceRequest {
+				log.Debug("Skip rebalancing")
 			}
 
 			// Schedule changed: in ready to update state we can reschedule update. Except current update is forced type,
@@ -1345,12 +1380,8 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr error
 	for _, instance := range manager.CurrentUpdate.RunInstances {
 		var version string
 
-		for _, serviceInfo := range manager.CurrentUpdate.InstallServices {
-			if serviceInfo.ServiceID == instance.ServiceID {
-				version = serviceInfo.Version
-
-				break
-			}
+		if serviceInfo, ok := manager.ServiceStatuses[instance.ServiceID]; ok {
+			version = serviceInfo.Version
 		}
 
 		ident := aostypes.InstanceIdent{
@@ -1378,10 +1409,10 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr error
 }
 
 func (manager *softwareManager) updateNodes() (nodesErr error) {
-	log.Debug("Update nodes status")
-
 	for _, nodeStatus := range manager.CurrentUpdate.NodesStatus {
 		if nodeStatus.Status == cloudprotocol.NodeStatusPaused {
+			log.WithField("nodeID", nodeStatus.NodeID).Debug("Pause node")
+
 			if err := manager.nodeManager.PauseNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
 				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't pause node: %v", err)
 
@@ -1450,6 +1481,22 @@ func (manager *softwareManager) isDownloadRequired() bool {
 	if manager.CurrentUpdate != nil &&
 		(len(manager.CurrentUpdate.InstallLayers) > 0 ||
 			len(manager.CurrentUpdate.InstallServices) > 0) {
+		return true
+	}
+
+	return false
+}
+
+func (manager *softwareManager) isUpdateEquals(update *softwareUpdate) bool {
+	if reflect.DeepEqual(update.NodesStatus, manager.CurrentUpdate.NodesStatus) &&
+		reflect.DeepEqual(update.UnitConfig, manager.CurrentUpdate.UnitConfig) &&
+		reflect.DeepEqual(update.InstallLayers, manager.CurrentUpdate.InstallLayers) &&
+		reflect.DeepEqual(update.RemoveLayers, manager.CurrentUpdate.RemoveLayers) &&
+		reflect.DeepEqual(update.InstallServices, manager.CurrentUpdate.InstallServices) &&
+		reflect.DeepEqual(update.RemoveServices, manager.CurrentUpdate.RemoveServices) &&
+		reflect.DeepEqual(update.RunInstances, manager.CurrentUpdate.RunInstances) &&
+		reflect.DeepEqual(update.RestoreServices, manager.CurrentUpdate.RestoreServices) &&
+		reflect.DeepEqual(update.RestoreLayers, manager.CurrentUpdate.RestoreLayers) {
 		return true
 	}
 
