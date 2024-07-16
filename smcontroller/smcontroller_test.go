@@ -502,7 +502,7 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 
 	for _, limitAlert := range expectedSystemLimitAlert {
-		if err := waitMessage(controller.GetSystemLimitAlertChannel(), limitAlert, messageTimeout); err != nil {
+		if err := waitMessage(controller.GetSystemQuoteAlertChannel(), limitAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect system limit alert: %v", err)
 		}
 	}

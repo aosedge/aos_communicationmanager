@@ -63,7 +63,7 @@ type Controller struct {
 	monitoringSender          MonitoringSender
 	updateInstancesStatusChan chan []cloudprotocol.InstanceStatus
 	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
-	systemLimitAlertChan      chan cloudprotocol.SystemQuotaAlert
+	systemQuotaAlertChan      chan cloudprotocol.SystemQuotaAlert
 	nodeConfigStatusChan      chan unitconfig.NodeConfigStatus
 
 	isCloudConnected bool
@@ -113,7 +113,7 @@ func New(
 		monitoringSender:          monitoringSender,
 		runInstancesStatusChan:    make(chan launcher.NodeRunInstanceStatus, statusChanSize),
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
-		systemLimitAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
+		systemQuotaAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
 		nodeConfigStatusChan:      make(chan unitconfig.NodeConfigStatus, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
 	}
@@ -313,9 +313,9 @@ func (controller *Controller) GetRunInstancesStatusChannel() <-chan launcher.Nod
 	return controller.runInstancesStatusChan
 }
 
-// GetSystemLimitAlertChannel returns channel with alerts about RAM, CPU system limits.
-func (controller *Controller) GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
-	return controller.systemLimitAlertChan
+// GetSystemQuoteAlertChannel returns channel with alerts about RAM, CPU system limits.
+func (controller *Controller) GetSystemQuoteAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
+	return controller.systemQuotaAlertChan
 }
 
 // RegisterSM registers new SM client connection.
@@ -353,7 +353,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 
 			handler, err = newSMHandler(stream, controller.messageSender, controller.alertSender,
 				controller.monitoringSender, controller.runInstancesStatusChan, controller.updateInstancesStatusChan,
-				controller.systemLimitAlertChan)
+				controller.systemQuotaAlertChan)
 			if err != nil {
 				log.Errorf("Can't crate SM handler: %v", err)
 
