@@ -179,8 +179,8 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	if cfg.Monitoring.MonitorConfig != nil {
-		if cm.resourcemonitor, err = resourcemonitor.New(cm.iam.GetNodeID(), *cfg.Monitoring.MonitorConfig,
-			cm.alerts, cm.monitorcontroller, nil); err != nil {
+		if cm.resourcemonitor, err = resourcemonitor.New(*cfg.Monitoring.MonitorConfig, cm.iam, cm.unitConfig,
+			nil, cm.alerts, cm.monitorcontroller); err != nil {
 			return cm, aoserrors.Wrap(err)
 		}
 	}
@@ -194,11 +194,11 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.iam, cm.cryptoContext, cm.crypt, false); err != nil {
+	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.iam, cm.iam, cm.cryptoContext, cm.crypt, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.unitConfig, err = unitconfig.New(cfg, cm.smController); err != nil {
+	if cm.unitConfig, err = unitconfig.New(cfg, cm.iam, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -215,12 +215,12 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	if cm.launcher, err = launcher.New(
-		cfg, cm.db, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState, cm.network); err != nil {
+		cfg, cm.db, cm.iam, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState, cm.network); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.unitConfig, cm.umController, cm.imagemanager, cm.launcher,
-		cm.downloader, cm.db, cm.amqp); err != nil {
+	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.iam, cm.unitConfig, cm.umController,
+		cm.imagemanager, cm.launcher, cm.downloader, cm.db, cm.amqp, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -331,6 +331,7 @@ func (cm *communicationManager) close() {
 	}
 }
 
+//nolint:funlen
 func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
 	switch data := message.(type) {
 	case *cloudprotocol.DesiredStatus:

@@ -440,6 +440,7 @@ func TestSubscribeNodeInfoChange(t *testing.T) {
 	if secondaryNodeInfo.GetNodeId() != receivedNodeInfo.NodeID {
 		t.Errorf("NodeInfo with not expected Id: %s", receivedNodeInfo.NodeID)
 	}
+
 	if secondaryNodeInfo.GetName() != receivedNodeInfo.Name {
 		t.Errorf("NodeInfo with not expected Name: %s", receivedNodeInfo.Name)
 	}
@@ -795,20 +796,26 @@ func (server *testPublicServer) GetNodeInfo(context context.Context, req *empty.
 	return &pb.NodeInfo{}, nil
 }
 
-func (server *testIAMPublicNodesServiceServer) GetAllNodeIDs(context context.Context, req *emptypb.Empty) (*pb.NodesID, error) {
+func (server *testIAMPublicNodesServiceServer) GetAllNodeIDs(context context.Context, req *emptypb.Empty) (
+	*pb.NodesID, error,
+) {
 	return &pb.NodesID{}, nil
 }
 
-func (server *testIAMPublicNodesServiceServer) GetNodeInfo(context context.Context, req *pb.GetNodeInfoRequest) (*pb.NodeInfo, error) {
+func (server *testIAMPublicNodesServiceServer) GetNodeInfo(context context.Context, req *pb.GetNodeInfoRequest) (
+	*pb.NodeInfo, error,
+) {
 	return &pb.NodeInfo{NodeId: server.currentID, Name: server.currentNodeName}, nil
 }
 
-func (server *testIAMPublicNodesServiceServer) SubscribeNodeChanged(empty *emptypb.Empty, stream pb.IAMPublicNodesService_SubscribeNodeChangedServer) error {
+func (server *testIAMPublicNodesServiceServer) SubscribeNodeChanged(
+	empty *emptypb.Empty, stream pb.IAMPublicNodesService_SubscribeNodeChangedServer,
+) error {
 	log.Error("testIAMPublicNodesServiceServer SubscribeNodeChanged")
 
 	nodeInfo := <-server.nodeInfo
 
-	return stream.Send(nodeInfo)
+	return aoserrors.Wrap(stream.Send(nodeInfo))
 }
 
 func (server *testIAMPublicNodesServiceServer) RegisterNode(pb.IAMPublicNodesService_RegisterNodeServer) error {

@@ -1249,11 +1249,11 @@ func newTestResourceManager() *testResourceManager {
 	return resourceManager
 }
 
-func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType string) cloudprotocol.NodeConfig {
+func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType string) (cloudprotocol.NodeConfig, error) {
 	resource := resourceManager.nodeResources[nodeType]
 	resource.NodeType = nodeType
 
-	return resource
+	return resource, nil
 }
 
 // testStorage

@@ -21,7 +21,6 @@ package fileserver_test
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -110,7 +109,7 @@ func TestFileServer(t *testing.T) {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 
-	outURL, err = fileServer.TranslateURL(false, fmt.Sprintf("file://%s", filepath.Join(serverDir, filename)))
+	outURL, err = fileServer.TranslateURL(false, "file://"+filepath.Join(serverDir, filename))
 	if err != nil {
 		t.Errorf("Can't translate remote url: %s", err)
 	}

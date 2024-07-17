@@ -380,6 +380,7 @@ func (db *Database) GetServicesInfo() ([]imagemanager.ServiceInfo, error) {
 			if err != nil {
 				return nil, aoserrors.Wrap(err)
 			}
+
 			if greater {
 				maxVersionServices[service.ServiceID] = service
 			}
@@ -1066,6 +1067,7 @@ func (db *Database) getMaxServiceVersion(serviceID string) (version string, err 
 	if err != nil {
 		return "", aoserrors.Wrap(err)
 	}
+
 	defer rows.Close()
 
 	if rows.Err() != nil {
