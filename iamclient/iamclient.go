@@ -194,10 +194,10 @@ func (client *Client) GetAllNodeIDs() (nodeIDs []string, err error) {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	return response.Ids, err
+	return response.GetIds(), err
 }
 
-// SubscribeNodeInfoChange subscribes client on NodeInfoChange events
+// SubscribeNodeInfoChange subscribes client on NodeInfoChange events.
 func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
 	client.Lock()
 	defer client.Unlock()
@@ -624,7 +624,9 @@ func (client *Client) connectPublicNodeService() {
 	}
 }
 
-func (client *Client) subscribeNodeInfoChange() (listener pb.IAMPublicNodesService_SubscribeNodeChangedClient, err error) {
+func (client *Client) subscribeNodeInfoChange() (
+	listener pb.IAMPublicNodesService_SubscribeNodeChangedClient, err error,
+) {
 	client.Lock()
 	defer client.Unlock()
 
@@ -637,7 +639,7 @@ func (client *Client) subscribeNodeInfoChange() (listener pb.IAMPublicNodesServi
 		return nil, aoserrors.Wrap(err)
 	}
 
-	return listener, err
+	return listener, aoserrors.Wrap(err)
 }
 
 func (client *Client) getCertTypes(nodeID string) ([]string, error) {

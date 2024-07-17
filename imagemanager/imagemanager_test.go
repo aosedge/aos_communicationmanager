@@ -989,9 +989,8 @@ func TestFileServer(t *testing.T) {
 
 	decryptFilePath := path.Join("layers", base64.URLEncoding.EncodeToString(layerInfo.Sha256)+".dec")
 
-	if layer.RemoteURL != fmt.Sprintf("http://localhost:8092/%s", decryptFilePath) ||
-		layer.URL != fmt.Sprintf("file://%s",
-			path.Join(layersDir, base64.URLEncoding.EncodeToString(layerInfo.Sha256)+".dec")) {
+	if layer.RemoteURL != "http://localhost:8092/"+decryptFilePath ||
+		layer.URL != "file://"+path.Join(layersDir, base64.URLEncoding.EncodeToString(layerInfo.Sha256)+".dec") {
 		t.Fatalf("Unexpected urls")
 	}
 

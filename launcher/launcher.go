@@ -142,7 +142,7 @@ type NodeInfoProvider interface {
 
 // ResourceManager provides node resources.
 type ResourceManager interface {
-	GetNodeConfig(nodeID, nodeType string) cloudprotocol.NodeConfig
+	GetNodeConfig(nodeID, nodeType string) (cloudprotocol.NodeConfig, error)
 }
 
 // StorageStateProvider instances storage state provider.
@@ -381,13 +381,16 @@ func (launcher *Launcher) initNodeStatus(nodeID string) (*nodeStatus, error) {
 		log.WithFields(log.Fields{"nodeID": nodeID}).Errorf("Can't load node run request")
 	}
 
-	launcher.initNodeConfig(status)
+	err = launcher.initNodeConfig(status)
 
-	return status, nil
+	return status, err
 }
 
-func (launcher *Launcher) initNodeConfig(nodeStatus *nodeStatus) {
-	nodeUnitConfig := launcher.resourceManager.GetNodeConfig(nodeStatus.nodeInfo.NodeID, nodeStatus.nodeInfo.NodeType)
+func (launcher *Launcher) initNodeConfig(nodeStatus *nodeStatus) error {
+	nodeUnitConfig, err := launcher.resourceManager.GetNodeConfig(nodeStatus.nodeInfo.NodeID, nodeStatus.nodeInfo.NodeType)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
 
 	nodeStatus.priority = nodeUnitConfig.Priority
 	nodeStatus.availableLabels = nodeUnitConfig.Labels
@@ -416,6 +419,8 @@ func (launcher *Launcher) initNodeConfig(nodeStatus *nodeStatus) {
 				instanceIdentLogFields(instance.InstanceIdent, nil)).Errorf("Can't allocate devices: %v", err)
 		}
 	}
+
+	return nil
 }
 
 func (launcher *Launcher) resetDeviceAllocation() {
@@ -871,6 +876,7 @@ func (launcher *Launcher) getNodesByDevices(
 	return nodes, nil
 }
 
+//nolint:unused
 func (launcher *Launcher) getNodeByMonitoringData(nodes []*nodeStatus, alertType string) (newNodes []*nodeStatus) {
 	if len(nodes) == 1 {
 		return nodes
@@ -958,6 +964,7 @@ serviceDeviceLoop:
 	return nil
 }
 
+//nolint:unused
 func (launcher *Launcher) releaseDevices(node *nodeStatus, serviceDevices []aostypes.ServiceDevice) error {
 serviceDeviceLoop:
 	for _, serviceDevice := range serviceDevices {
@@ -1122,6 +1129,7 @@ layerLoopLabel:
 	}
 }
 
+//nolint:unused
 func (launcher *Launcher) removeInstanceFromNode(ident aostypes.InstanceIdent, node *nodeStatus) {
 	log.WithFields(log.Fields{"ident": ident, "node": node.nodeInfo.NodeID}).Debug("Remove instance from node")
 
@@ -1137,6 +1145,7 @@ func (launcher *Launcher) removeInstanceFromNode(ident aostypes.InstanceIdent, n
 	node.currentRunRequest.Instances = node.currentRunRequest.Instances[:i]
 }
 
+//nolint:unused
 func (launcher *Launcher) removeServiceFromNode(serviceID string, node *nodeStatus) {
 	log.WithFields(log.Fields{"serviceID": serviceID, "node": node.nodeInfo.NodeID}).Debug("Remove service from node")
 
@@ -1152,6 +1161,7 @@ func (launcher *Launcher) removeServiceFromNode(serviceID string, node *nodeStat
 	node.currentRunRequest.Services = node.currentRunRequest.Services[:i]
 }
 
+//nolint:unused
 func (launcher *Launcher) removeLayerFromNode(digest string, node *nodeStatus) {
 	log.WithFields(log.Fields{"digest": digest, "node": node.nodeInfo.NodeID}).Debug("Remove layer from node")
 
@@ -1167,6 +1177,7 @@ func (launcher *Launcher) removeLayerFromNode(digest string, node *nodeStatus) {
 	node.currentRunRequest.Layers = node.currentRunRequest.Layers[:i]
 }
 
+//nolint:unused
 func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node *nodeStatus) {
 	launcher.removeInstanceFromNode(instance.InstanceIdent, node)
 
@@ -1241,6 +1252,7 @@ func (launcher *Launcher) getNode(nodeID string) *nodeStatus {
 	return nil
 }
 
+//nolint:unused
 func (launcher *Launcher) getLowerPriorityNodes(node *nodeStatus) (nodes []*nodeStatus) {
 	for _, currentNode := range launcher.nodes {
 		if currentNode.priority > node.priority || currentNode.nodeInfo.NodeID == node.nodeInfo.NodeID {
@@ -1253,6 +1265,7 @@ func (launcher *Launcher) getLowerPriorityNodes(node *nodeStatus) (nodes []*node
 	return nodes
 }
 
+//nolint:unused
 func (launcher *Launcher) getLabelsForInstance(ident aostypes.InstanceIdent) ([]string, error) {
 	for _, instance := range launcher.currentDesiredInstances {
 		if instance.ServiceID == ident.ServiceID && instance.SubjectID == ident.SubjectID {

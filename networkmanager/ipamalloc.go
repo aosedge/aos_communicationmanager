@@ -173,7 +173,9 @@ func (ipam *ipSubnet) getAvailableSubnet(networkID string) (*net.IPNet, error) {
 	return subnet.ipNet, nil
 }
 
-func (ipam *ipSubnet) removeAllocatedSubnets(networks []aostypes.NetworkParameters, networkInstances []InstanceNetworkInfo) {
+func (ipam *ipSubnet) removeAllocatedSubnets(networks []aostypes.NetworkParameters,
+	networkInstances []InstanceNetworkInfo,
+) {
 	ipam.Lock()
 	defer ipam.Unlock()
 

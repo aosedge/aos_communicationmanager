@@ -78,15 +78,15 @@ type NetworkManager struct {
 
 // FirewallRule represents firewall rule.
 type FirewallRule struct {
-	Protocol string
-	Port     string
+	Protocol string `json:"protocol"`
+	Port     string `json:"port"`
 }
 
 // InstanceNetworkInfo represents network info for instance.
 type InstanceNetworkInfo struct {
 	aostypes.InstanceIdent
 	aostypes.NetworkParameters
-	Rules []FirewallRule
+	Rules []FirewallRule `json:"rules"`
 }
 
 // NetworkParameters represents network parameters.
