@@ -629,7 +629,7 @@ func (manager *firmwareManager) updateComponents(ctx context.Context) (component
 
 	case <-ctx.Done():
 		if err := ctx.Err(); err != nil {
-			return err
+			return aoserrors.Wrap(err)
 		}
 
 		return nil

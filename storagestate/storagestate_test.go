@@ -20,7 +20,6 @@ package storagestate_test
 import (
 	"bytes"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -487,7 +486,7 @@ func TestUpdateState(t *testing.T) {
 			}
 
 			checkSumFromFile, err := getStateFileChecksum(path.Join(
-				stateDir, fmt.Sprintf("%s_state.dat", stateStorageInfo.InstanceID)))
+				stateDir, stateStorageInfo.InstanceID+"_state.dat"))
 			if err != nil {
 				t.Fatalf("Can't get checksum from state file: %v", err)
 			}
@@ -924,7 +923,7 @@ func TestStateAcceptance(t *testing.T) {
 			t.Error("Can't found state storage info by instance ident")
 		}
 
-		pathToStateFile := path.Join(stateDir, fmt.Sprintf("%s_state.dat", stateStorageInfo.InstanceID))
+		pathToStateFile := path.Join(stateDir, stateStorageInfo.InstanceID+"_state.dat")
 
 		if err := os.WriteFile(pathToStateFile, []byte(testData.stateData), 0o600); err != nil {
 			t.Fatalf("Can't write state file: %v", err)

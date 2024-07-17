@@ -54,7 +54,7 @@ type Controller struct {
 	server  *umCtrlServer
 
 	eventChannel    chan umCtrlInternalMsg
-	nodeInfoChannel <-chan *cloudprotocol.NodeInfo
+	nodeInfoChannel <-chan cloudprotocol.NodeInfo
 	stopChannel     chan bool
 	componentDir    string
 
@@ -147,8 +147,8 @@ type Decrypter interface {
 type NodeInfoProvider interface {
 	GetNodeID() string
 	GetAllNodeIDs() (nodeIds []string, err error)
-	GetNodeInfo(nodeID string) (nodeInfo *cloudprotocol.NodeInfo, err error)
-	SubscribeNodeInfoChange() <-chan *cloudprotocol.NodeInfo
+	GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInfo, err error)
+	SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo
 }
 
 /***********************************************************************************************************************
@@ -1107,7 +1107,7 @@ func (umCtrl *Controller) createConnections(nodeInfoProvider NodeInfoProvider) e
 	return nil
 }
 
-func (umCtrl *Controller) handleNodeInfoChange(nodeInfo *cloudprotocol.NodeInfo) {
+func (umCtrl *Controller) handleNodeInfoChange(nodeInfo cloudprotocol.NodeInfo) {
 	if nodeInfo.Status == "unprovisioned" {
 		return
 	}

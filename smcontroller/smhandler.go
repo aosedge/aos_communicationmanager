@@ -539,9 +539,9 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 		Part:       data.GetPart(),
 		Content:    data.GetData(),
 		ErrorInfo: &cloudprotocol.ErrorInfo{
-			AosCode:  int(data.GetError().AosCode),
-			ExitCode: int(data.GetError().ExitCode),
-			Message:  data.GetError().Message,
+			AosCode:  int(data.GetError().GetAosCode()),
+			ExitCode: int(data.GetError().GetExitCode()),
+			Message:  data.GetError().GetMessage(),
 		},
 	}); err != nil {
 		log.Errorf("Can't send log: %v", err)

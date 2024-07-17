@@ -911,6 +911,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 		if err != nil {
 			t.Fatal("Cannot create temporary file", err)
 		}
+
 		defer tmpFile.Close()
 		defer os.Remove(tmpFile.Name())
 
@@ -938,6 +939,7 @@ func TestVerifySignOfComponent(t *testing.T) {
 			t.Fatal("Cannot create temporary file", err)
 		}
 		defer tmpFile.Close()
+
 		defer os.Remove(tmpFile.Name())
 
 		if _, err = tmpFile.Write(data.FileData); err != nil {

@@ -82,8 +82,8 @@ type testCryptoContext struct{}
 
 type testNodeInfoProvider struct {
 	umcontroller.NodeInfoProvider
-	nodeInfo          []*cloudprotocol.NodeInfo
-	nodeInfoListeners []chan *cloudprotocol.NodeInfo
+	nodeInfo          []cloudprotocol.NodeInfo
+	nodeInfoListeners []chan cloudprotocol.NodeInfo
 }
 
 /***********************************************************************************************************************
@@ -112,12 +112,12 @@ func init() {
 
 func NewTestNodeInfoProvider(nodeIds []string) *testNodeInfoProvider {
 	provider := &testNodeInfoProvider{
-		nodeInfo:          make([]*cloudprotocol.NodeInfo, 0),
-		nodeInfoListeners: make([]chan *cloudprotocol.NodeInfo, 0),
+		nodeInfo:          make([]cloudprotocol.NodeInfo, 0),
+		nodeInfoListeners: make([]chan cloudprotocol.NodeInfo, 0),
 	}
 
 	for _, nodeID := range nodeIds {
-		nodeInfo := &cloudprotocol.NodeInfo{
+		nodeInfo := cloudprotocol.NodeInfo{
 			NodeID: nodeID,
 			Status: "provisioned",
 			Attrs: map[string]interface{}{
@@ -144,25 +144,25 @@ func (provider *testNodeInfoProvider) GetAllNodeIDs() (nodesIds []string, err er
 	return result, nil
 }
 
-func (provider *testNodeInfoProvider) GetNodeInfo(nodeID string) (nodeInfo *cloudprotocol.NodeInfo, err error) {
+func (provider *testNodeInfoProvider) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
 	for _, nodeInfo := range provider.nodeInfo {
 		if nodeInfo.NodeID == nodeID {
 			return nodeInfo, nil
 		}
 	}
 
-	return nil, aoserrors.Errorf("not found")
+	return cloudprotocol.NodeInfo{}, aoserrors.Errorf("not found")
 }
 
-func (provider *testNodeInfoProvider) SubscribeNodeInfoChange() <-chan *cloudprotocol.NodeInfo {
-	listener := make(chan *cloudprotocol.NodeInfo)
+func (provider *testNodeInfoProvider) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
+	listener := make(chan cloudprotocol.NodeInfo)
 	provider.nodeInfoListeners = append(provider.nodeInfoListeners, listener)
 
 	return listener
 }
 
 func (provider *testNodeInfoProvider) addNode(nodeID string) {
-	nodeInfo := &cloudprotocol.NodeInfo{
+	nodeInfo := cloudprotocol.NodeInfo{
 		NodeID: nodeID,
 		Status: "provisioned",
 		Attrs: map[string]interface{}{

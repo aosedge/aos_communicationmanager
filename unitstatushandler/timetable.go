@@ -29,7 +29,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const maxAvailableTime = 1<<63 - 1
+const (
+	maxAvailableTime = 1<<63 - 1
+	daysInWeek       = 7
+)
 
 /***********************************************************************************************************************
  * Types
@@ -85,7 +88,7 @@ func getAvailableTimetableTime(
 
 	for _, entry := range timetable {
 		// Convert to time.Weekday
-		entryWeekday := time.Weekday((entry.DayOfWeek) % 7) //nolint:gomnd
+		entryWeekday := time.Weekday((entry.DayOfWeek) % daysInWeek)
 		fromWeekday := fromDate.Weekday()
 
 		// Get num of days from weekday to entry weekday
