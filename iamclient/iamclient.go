@@ -160,6 +160,11 @@ func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
 }
 
+// GetCurrentNodeInfo returns info for current node.
+func (client *Client) GetCurrentNodeInfo() (nodeInfo cloudprotocol.NodeInfo, err error) {
+	return client.GetNodeInfo(client.GetNodeID())
+}
+
 // GetNodeInfo returns node info.
 func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInfo, err error) {
 	log.WithField("nodeID", nodeID).Debug("Get node info")
