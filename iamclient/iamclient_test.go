@@ -378,6 +378,38 @@ func TestGetNodeInfo(t *testing.T) {
 	}
 }
 
+func TestGetCurrentNodeInfo(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %v", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %v", err)
+	}
+	defer client.Close()
+
+	nodeInfo, err := client.GetCurrentNodeInfo()
+	if err != nil {
+		t.Errorf("Error is not expected: %v", err)
+	}
+
+	if nodeInfo.NodeID != publicServer.currentID {
+		t.Errorf("Not expected NodeId: %s", nodeInfo.NodeID)
+	}
+
+	if nodeInfo.Name != publicServer.currentNodeName {
+		t.Errorf("Not expected NodeId: %s", nodeInfo.Name)
+	}
+}
+
 func TestSubscribeNodeInfoChange(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
