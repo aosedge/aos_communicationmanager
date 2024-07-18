@@ -23,7 +23,6 @@ import (
 	"errors"
 	"net/url"
 	"reflect"
-	"slices"
 	"sync"
 	"time"
 
@@ -781,13 +780,14 @@ func handleDesiredComponentsWithNoID(componentsWithNoID []cloudprotocol.Componen
 
 	newComponents := make(map[string]cloudprotocol.ComponentInfo)
 
+installedLoop:
 	for _, installedComponent := range installedComponents {
 		componentID := installedComponent.ComponentID
 
-		if slices.ContainsFunc(update.Components, func(component cloudprotocol.ComponentInfo) bool {
-			return *component.ComponentID == componentID
-		}) {
-			continue
+		for _, updateComponent := range update.Components {
+			if updateComponent.ComponentID != nil && *updateComponent.ComponentID == componentID {
+				continue installedLoop
+			}
 		}
 
 		for _, component := range componentsWithNoID {

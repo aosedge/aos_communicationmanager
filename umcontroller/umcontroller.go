@@ -25,7 +25,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -1085,23 +1084,19 @@ func (umCtrl *Controller) createConnections(nodeInfoProvider NodeInfoProvider) e
 			continue
 		}
 
-		components, err := nodeInfo.GetAosComponents()
+		nodeHasUM, err := umCtrl.nodeHasUMComponent(nodeInfo)
 		if err != nil {
-			log.WithFields(log.Fields{"err": err, "nodeID": nodeInfo.NodeID}).Error("Can't get aos components")
-
-			continue
+			log.WithField("nodeID", nodeInfo.NodeID).Errorf("Failed to check UM component: %v", err)
 		}
 
-		if !slices.Contains(components, cloudprotocol.AosComponentUM) {
-			continue
+		if nodeHasUM {
+			umCtrl.connections = append(umCtrl.connections, umConnection{
+				umID:           nodeInfo.NodeID,
+				isLocalClient:  nodeInfo.NodeID == umCtrl.currentNodeID,
+				updatePriority: lowestUpdatePriority,
+				handler:        nil,
+			})
 		}
-
-		umCtrl.connections = append(umCtrl.connections, umConnection{
-			umID:           nodeInfo.NodeID,
-			isLocalClient:  nodeInfo.NodeID == umCtrl.currentNodeID,
-			updatePriority: lowestUpdatePriority,
-			handler:        nil,
-		})
 	}
 
 	return nil
@@ -1112,23 +1107,19 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo cloudprotocol.NodeInfo) 
 		return
 	}
 
-	components, err := nodeInfo.GetAosComponents()
+	nodeHasUM, err := umCtrl.nodeHasUMComponent(nodeInfo)
 	if err != nil {
-		log.WithField("err", err).Error("Can't get aos components")
+		log.WithField("nodeID", nodeInfo.NodeID).Errorf("Failed to check UM component: %v", err)
+	}
 
+	if !nodeHasUM {
 		return
 	}
 
-	if !slices.Contains(components, cloudprotocol.AosComponentUM) {
-		return
-	}
-
-	connectionAdded := slices.ContainsFunc(umCtrl.connections, func(connection umConnection) bool {
-		return connection.umID == nodeInfo.NodeID
-	})
-
-	if connectionAdded {
-		return
+	for _, connection := range umCtrl.connections {
+		if connection.umID == nodeInfo.NodeID {
+			return
+		}
 	}
 
 	umCtrl.connections = append(umCtrl.connections, umConnection{
@@ -1165,4 +1156,21 @@ func (umCtrl *Controller) notifyNewComponents(umID string, componsStatus []syste
 	}
 
 	umCtrl.newComponentsChannel <- newComponents
+}
+
+func (umCtrl *Controller) nodeHasUMComponent(
+	nodeInfo cloudprotocol.NodeInfo,
+) (bool, error) {
+	components, err := nodeInfo.GetAosComponents()
+	if err != nil {
+		return false, aoserrors.Wrap(err)
+	}
+
+	for _, component := range components {
+		if component == cloudprotocol.AosComponentUM {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

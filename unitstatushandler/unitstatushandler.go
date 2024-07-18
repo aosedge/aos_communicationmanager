@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -650,14 +649,19 @@ func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 		"status":   nodeInfo.Status,
 	}).Debug("Node info changed")
 
-	index := slices.IndexFunc(instance.unitStatus.nodes, func(curNodeInfo cloudprotocol.NodeInfo) bool {
-		return curNodeInfo.NodeID == nodeInfo.NodeID
-	})
+	nodeInfoFound := false
 
-	if index == -1 {
+	for i, curNodeInfo := range instance.unitStatus.nodes {
+		if curNodeInfo.NodeID == nodeInfo.NodeID {
+			instance.unitStatus.nodes[i] = nodeInfo
+			nodeInfoFound = true
+
+			break
+		}
+	}
+
+	if !nodeInfoFound {
 		instance.unitStatus.nodes = append(instance.unitStatus.nodes, nodeInfo)
-	} else {
-		instance.unitStatus.nodes[index] = nodeInfo
 	}
 
 	instance.statusChanged()
@@ -831,12 +835,16 @@ func (instance *Instance) handleChannels() {
 				return
 			}
 
-			rebalancingParameters := []string{"cpu", "ram"}
+			for _, param := range []string{"cpu", "ram"} {
+				if param != systemQuotaAlert.Parameter {
+					continue
+				}
 
-			if slices.Contains(rebalancingParameters, systemQuotaAlert.Parameter) {
 				if err := instance.softwareManager.requestRebalancing(); err != nil {
 					log.Errorf("Can't perform rebalancing: %v", err)
 				}
+
+				break
 			}
 		}
 	}
