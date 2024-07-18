@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 	"sync"
 	"time"
 
@@ -206,40 +205,45 @@ func (monitor *MonitorController) addNodeMonitoring(nodeMonitoring aostypes.Node
 	latestMessage := &monitor.offlineMessages[len(monitor.offlineMessages)-1]
 
 	// add node monitoring data
-	nodeDataInd := slices.IndexFunc(latestMessage.Nodes,
-		func(item cloudprotocol.NodeMonitoringData) bool { return item.NodeID == nodeMonitoring.NodeID },
-	)
+	nodeDataFound := false
 
-	if nodeDataInd >= 0 {
-		nodeItems := &latestMessage.Nodes[nodeDataInd].Items
-		*nodeItems = append(*nodeItems, nodeMonitoring.NodeData)
-	} else {
+	for i, nodeData := range latestMessage.Nodes {
+		if nodeData.NodeID == nodeMonitoring.NodeID {
+			latestMessage.Nodes[i].Items = append(latestMessage.Nodes[i].Items, nodeMonitoring.NodeData)
+			nodeDataFound = true
+
+			break
+		}
+	}
+
+	if !nodeDataFound {
 		latestMessage.Nodes = append(latestMessage.Nodes,
 			cloudprotocol.NodeMonitoringData{
 				NodeID: nodeMonitoring.NodeID, Items: []aostypes.MonitoringData{nodeMonitoring.NodeData},
-			},
-		)
+			})
 	}
 
 	// add instance monitoring data
 	for _, instanceData := range nodeMonitoring.InstancesData {
-		instanceDataInd := slices.IndexFunc(latestMessage.ServiceInstances,
-			func(item cloudprotocol.InstanceMonitoringData) bool {
-				return item.NodeID == nodeMonitoring.NodeID && item.InstanceIdent == instanceData.InstanceIdent
-			},
-		)
+		instanceDataFound := false
 
-		if instanceDataInd >= 0 {
-			serviceInstanceItems := &latestMessage.ServiceInstances[instanceDataInd].Items
-			*serviceInstanceItems = append(*serviceInstanceItems, instanceData.MonitoringData)
-		} else {
+		for i, item := range latestMessage.ServiceInstances {
+			if item.NodeID == nodeMonitoring.NodeID && item.InstanceIdent == instanceData.InstanceIdent {
+				latestMessage.ServiceInstances[i].Items = append(latestMessage.ServiceInstances[i].Items,
+					instanceData.MonitoringData)
+				instanceDataFound = true
+
+				break
+			}
+		}
+
+		if !instanceDataFound {
 			latestMessage.ServiceInstances = append(latestMessage.ServiceInstances,
 				cloudprotocol.InstanceMonitoringData{
 					NodeID:        nodeMonitoring.NodeID,
 					InstanceIdent: instanceData.InstanceIdent,
 					Items:         []aostypes.MonitoringData{instanceData.MonitoringData},
-				},
-			)
+				})
 		}
 	}
 }
