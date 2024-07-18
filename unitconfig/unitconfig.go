@@ -39,10 +39,18 @@ import (
 type Instance struct {
 	sync.Mutex
 
-	client          Client
-	unitConfigFile  string
-	unitConfig      cloudprotocol.UnitConfig
-	unitConfigError error
+	client                   Client
+	curNodeID                string
+	curNodeType              string
+	unitConfigFile           string
+	unitConfig               cloudprotocol.UnitConfig
+	currentNodeConfigChannel chan cloudprotocol.NodeConfig
+	unitConfigError          error
+}
+
+// NodeInfoProvider node info provider interface.
+type NodeInfoProvider interface {
+	GetCurrentNodeInfo() (cloudprotocol.NodeInfo, error)
 }
 
 // Client client unit config interface.
@@ -69,11 +77,21 @@ var ErrAlreadyInstalled = errors.New("already installed")
  **********************************************************************************************************************/
 
 // New creates new unit config instance.
-func New(cfg *config.Config, client Client) (instance *Instance, err error) {
+func New(cfg *config.Config, nodeInfoProvider NodeInfoProvider, client Client) (instance *Instance, err error) {
 	instance = &Instance{
-		client:         client,
-		unitConfigFile: cfg.UnitConfigFile,
+		client:                   client,
+		unitConfigFile:           cfg.UnitConfigFile,
+		currentNodeConfigChannel: make(chan cloudprotocol.NodeConfig, 1),
 	}
+
+	var nodeInfo cloudprotocol.NodeInfo
+
+	if nodeInfo, err = nodeInfoProvider.GetCurrentNodeInfo(); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	instance.curNodeID = nodeInfo.NodeID
+	instance.curNodeType = nodeInfo.NodeType
 
 	if err := instance.load(); err != nil {
 		instance.unitConfigError = err
@@ -132,21 +150,31 @@ func (instance *Instance) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) e
 	return nil
 }
 
-// GetUnitConfig returns unit config for node or node type.
-func (instance *Instance) GetUnitConfig(nodeID, nodeType string) cloudprotocol.NodeConfig {
+// GetNodeConfig returns node config for node or node type.
+func (instance *Instance) GetNodeConfig(nodeID, nodeType string) (cloudprotocol.NodeConfig, error) {
 	for _, node := range instance.unitConfig.Nodes {
 		if node.NodeID != nil && *node.NodeID == nodeID {
-			return node
+			return node, nil
 		}
 	}
 
 	for _, node := range instance.unitConfig.Nodes {
 		if node.NodeType == nodeType {
-			return node
+			return node, nil
 		}
 	}
 
-	return cloudprotocol.NodeConfig{}
+	return cloudprotocol.NodeConfig{}, aoserrors.New("not found")
+}
+
+// GetNodeConfig returns node config of the node with given id and type.
+func (instance *Instance) GetCurrentNodeConfig() (cloudprotocol.NodeConfig, error) {
+	return instance.GetNodeConfig(instance.curNodeID, instance.curNodeType)
+}
+
+// CurrentNodeConfigChannel returns channel of current node config updates.
+func (instance *Instance) CurrentNodeConfigChannel() <-chan cloudprotocol.NodeConfig {
+	return instance.currentNodeConfigChannel
 }
 
 // UpdateUnitConfig updates unit config.
@@ -176,6 +204,10 @@ func (instance *Instance) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) 
 
 			if err := instance.client.SetNodeConfig(unitConfig.Version, *nodeConfig); err != nil {
 				return aoserrors.Wrap(err)
+			}
+
+			if nodeConfigStatus.NodeID == instance.curNodeID {
+				instance.currentNodeConfigChannel <- *nodeConfig
 			}
 		}
 	}
@@ -260,6 +292,10 @@ func (instance *Instance) handleNodeConfigStatus() {
 
 		if err := instance.client.SetNodeConfig(instance.unitConfig.Version, *nodeConfig); err != nil {
 			log.WithField("NodeID", nodeConfigStatus.NodeID).Errorf("Can't update node config: %v", err)
+		}
+
+		if nodeConfigStatus.NodeID == instance.curNodeID {
+			instance.currentNodeConfigChannel <- *nodeConfig
 		}
 	}
 }
