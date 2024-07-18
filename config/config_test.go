@@ -64,19 +64,10 @@ const testConfigContent = `{
 	},
 	"monitoring": {
 		"monitorConfig": {
-			"sendPeriod": "5m",
-			"pollPeriod": "1s",
-			"ram": {
-				"minTimeout": "10s",
-				"minThreshold": 10,
-				"maxThreshold": 150
-			},
-			"outTraffic": {
-				"minTimeout": "20s",
-				"minThreshold": 10,
-				"maxThreshold": 150
-			}
+			"pollPeriod": "1s"
 		},
+		"sendPeriod": "5m",
+		"maxMessageSize": 1024,
 		"maxOfflineMessages": 25
 	},
 	"alerts": {		
@@ -212,20 +203,20 @@ func TestDurationMarshal(t *testing.T) {
 }
 
 func TestGetMonitoringConfig(t *testing.T) {
-	if testCfg.Monitoring.MonitorConfig.SendPeriod.Duration != 5*time.Minute {
-		t.Errorf("Wrong send period value: %s", testCfg.Monitoring.MonitorConfig.SendPeriod)
-	}
-
 	if testCfg.Monitoring.MonitorConfig.PollPeriod.Duration != 1*time.Second {
 		t.Errorf("Wrong poll period value: %s", testCfg.Monitoring.MonitorConfig.PollPeriod)
 	}
 
-	if testCfg.Monitoring.MonitorConfig.RAM.MinTimeout.Duration != 10*time.Second {
-		t.Errorf("Wrong value: %s", testCfg.Monitoring.MonitorConfig.RAM.MinTimeout)
+	if testCfg.Monitoring.SendPeriod.Duration != 5*time.Minute {
+		t.Errorf("Wrong send period value: %s", testCfg.Monitoring.SendPeriod)
 	}
 
-	if testCfg.Monitoring.MonitorConfig.OutTraffic.MinTimeout.Duration != 20*time.Second {
-		t.Errorf("Wrong value: %s", testCfg.Monitoring.MonitorConfig.RAM.MinTimeout)
+	if time.Duration(testCfg.Monitoring.MaxOfflineMessages) != 25 {
+		t.Errorf("Wrong max offline messages value: %d", testCfg.Monitoring.MaxOfflineMessages)
+	}
+
+	if time.Duration(testCfg.Monitoring.MaxMessageSize) != 1024 {
+		t.Errorf("Wrong max message size value: %d", testCfg.Monitoring.MaxMessageSize)
 	}
 }
 
