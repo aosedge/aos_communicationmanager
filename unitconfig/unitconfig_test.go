@@ -47,6 +47,18 @@ const validTestUnitConfig = `
 	 ]
  }`
 
+const node0TestUnitConfig = `
+ {
+	 "formatVersion": "1",
+	 "version": "1.0.0",
+	 "nodes": [
+		{
+			"nodeId" : "node0",
+			"nodeType" : "type1"
+		}
+	 ]
+ }`
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -61,6 +73,11 @@ type testClient struct {
 	nodeConfigStatuses        []unitconfig.NodeConfigStatus
 	nodeConfigStatusChannel   chan unitconfig.NodeConfigStatus
 	nodeConfigSetCheckChannel chan testNodeConfig
+}
+
+type testNodeInfoProvider struct {
+	nodeID   string
+	nodeType string
 }
 
 /***********************************************************************************************************************
@@ -112,8 +129,10 @@ func TestValidGetStatus(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
+	nodeInfoProvider := newTestInfoProvider("node0", "type1")
+
 	unitConfig, err := unitconfig.New(
-		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, newTestClient())
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, newTestClient())
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -131,7 +150,10 @@ func TestValidGetStatus(t *testing.T) {
 		t.Errorf("Wrong unit config version: %s", info.Version)
 	}
 
-	nodeUnitConfig := unitConfig.GetUnitConfig("id1", "type1")
+	nodeUnitConfig, err := unitConfig.GetNodeConfig("id1", "type1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
 
 	if nodeUnitConfig.NodeType != "type1" {
 		t.Error("Unexpected node type")
@@ -150,8 +172,10 @@ func TestInvalidGetStatus(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %s", err)
 	}
 
+	nodeInfoProvider := newTestInfoProvider("node0", "type1")
+
 	unitConfig, err := unitconfig.New(
-		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, newTestClient())
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, newTestClient())
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -172,9 +196,10 @@ func TestCheckUnitConfig(t *testing.T) {
 	}
 
 	client := newTestClient()
+	nodeInfoProvider := newTestInfoProvider("node0", "type1")
 
 	unitConfig, err := unitconfig.New(
-		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, client)
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, client)
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %s", err)
 	}
@@ -227,9 +252,10 @@ func TestUpdateUnitConfig(t *testing.T) {
 	}
 
 	client := newTestClient()
+	nodeInfoProvider := newTestInfoProvider("node0", "type1")
 
 	unitConfig, err := unitconfig.New(
-		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, client)
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, client)
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %v", err)
 	}
@@ -296,8 +322,9 @@ func TestNodeConfigStatus(t *testing.T) {
 	}
 
 	client := newTestClient()
+	nodeInfoProvider := newTestInfoProvider("node0", "type1")
 
-	_, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, client)
+	_, err := unitconfig.New(&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, client)
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %v", err)
 	}
@@ -315,6 +342,45 @@ func TestNodeConfigStatus(t *testing.T) {
 
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Set node config timeout")
+	}
+}
+
+func TestCurrentNodeConfigUpdate(t *testing.T) {
+	if err := os.WriteFile(path.Join(tmpDir, "aos_unit.cfg"), []byte(node0TestUnitConfig), 0o600); err != nil {
+		t.Fatalf("Can't create unit config file: %v", err)
+	}
+
+	client := newTestClient()
+	nodeInfoProvider := newTestInfoProvider("node0", "type1")
+
+	instance, err := unitconfig.New(
+		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, client)
+	if err != nil {
+		t.Fatalf("Can't create unit config instance: %v", err)
+	}
+
+	client.nodeConfigStatusChannel <- unitconfig.NodeConfigStatus{
+		NodeID:   "node0",
+		NodeType: "type1",
+	}
+
+	node0 := "node0"
+
+	for i := 0; i < 2; i++ {
+		select {
+		case nodeConfig := <-client.nodeConfigSetCheckChannel:
+			if !reflect.DeepEqual(nodeConfig, testNodeConfig{NodeID: "node0", NodeType: "type1", Version: "1.0.0"}) {
+				t.Errorf("Wrong node config: %v", nodeConfig)
+			}
+
+		case curNodeConfig := <-instance.CurrentNodeConfigChannel():
+			if !reflect.DeepEqual(curNodeConfig, cloudprotocol.NodeConfig{NodeID: &node0, NodeType: "type1"}) {
+				t.Errorf("Wrong node config: %v", curNodeConfig)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Set node config timeout")
+		}
 	}
 }
 
@@ -355,4 +421,16 @@ func (client *testClient) GetNodeConfigStatuses() ([]unitconfig.NodeConfigStatus
 
 func (client *testClient) NodeConfigStatusChannel() <-chan unitconfig.NodeConfigStatus {
 	return client.nodeConfigStatusChannel
+}
+
+/***********************************************************************************************************************
+ * testNodeInfoProvider
+ **********************************************************************************************************************/
+
+func newTestInfoProvider(nodeID, nodeType string) *testNodeInfoProvider {
+	return &testNodeInfoProvider{nodeID: nodeID, nodeType: nodeType}
+}
+
+func (provider *testNodeInfoProvider) GetCurrentNodeInfo() (cloudprotocol.NodeInfo, error) {
+	return cloudprotocol.NodeInfo{NodeID: provider.nodeID, NodeType: provider.nodeType}, nil
 }
