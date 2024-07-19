@@ -1155,6 +1155,19 @@ func newTestNodeInfoProvider(nodeID string) *testNodeInfoProvider {
 	}
 }
 
+func (provider *testNodeInfoProvider) GetAllNodeIDs() (nodeIDs []string, err error) {
+	if provider.nodeInfo == nil {
+		return nil, aoserrors.New("node info not found")
+	}
+
+	nodeIDs = make([]string, 0, len(provider.nodeInfo))
+	for nodeID := range provider.nodeInfo {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+
+	return nodeIDs, nil
+}
+
 func (provider *testNodeInfoProvider) GetNodeID() string {
 	return provider.nodeID
 }
