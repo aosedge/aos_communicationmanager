@@ -138,6 +138,7 @@ type NodeManager interface {
 type NodeInfoProvider interface {
 	GetNodeID() string
 	GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error)
+	GetAllNodeIDs() (nodeIDs []string, err error)
 }
 
 // ResourceManager provides node resources.
@@ -313,9 +314,16 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 
 	log.Debugf("Received run status from nodeID: %s", runStatus.NodeID)
 
+	allNodeIDs, err := launcher.nodeInfoProvider.GetAllNodeIDs()
+	if err != nil {
+		log.Errorf("Can't get all nodeIDs: %v", err)
+
+		return
+	}
+
 	currentStatus := launcher.getNode(runStatus.NodeID)
 	if currentStatus == nil {
-		if !slices.Contains(launcher.config.SMController.NodeIDs, runStatus.NodeID) {
+		if !slices.Contains(allNodeIDs, runStatus.NodeID) {
 			log.Errorf("Received status for unknown nodeID  %s", runStatus.NodeID)
 
 			return
@@ -332,7 +340,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 
 		launcher.nodes = append(launcher.nodes, currentStatus)
 
-		if len(launcher.nodes) == len(launcher.config.SMController.NodeIDs) {
+		if len(launcher.nodes) == len(allNodeIDs) {
 			log.Debug("All clients connected")
 		}
 
@@ -348,7 +356,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 	currentStatus.receivedRunInstances = runStatus.Instances
 	currentStatus.waitStatus = false
 
-	if len(launcher.nodes) != len(launcher.config.SMController.NodeIDs) {
+	if len(launcher.nodes) != len(allNodeIDs) {
 		return
 	}
 
