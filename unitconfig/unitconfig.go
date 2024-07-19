@@ -31,6 +31,13 @@ import (
 	"github.com/aosedge/aos_communicationmanager/config"
 )
 
+/**********************************************************************************************************************
+* Consts
+**********************************************************************************************************************/
+
+// ErrNotFound error to detect that item not found.
+var ErrNotFound = errors.New("not found")
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -164,7 +171,7 @@ func (instance *Instance) GetNodeConfig(nodeID, nodeType string) (cloudprotocol.
 		}
 	}
 
-	return cloudprotocol.NodeConfig{}, aoserrors.New("not found")
+	return cloudprotocol.NodeConfig{}, ErrNotFound
 }
 
 // GetNodeConfig returns node config of the node with given id and type.
