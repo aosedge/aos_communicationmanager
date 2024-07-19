@@ -36,6 +36,7 @@ import (
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
 	"github.com/aosedge/aos_communicationmanager/networkmanager"
 	"github.com/aosedge/aos_communicationmanager/storagestate"
+	"github.com/aosedge/aos_communicationmanager/unitconfig"
 	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 )
 
@@ -396,7 +397,7 @@ func (launcher *Launcher) initNodeStatus(nodeID string) (*nodeStatus, error) {
 
 func (launcher *Launcher) initNodeConfig(nodeStatus *nodeStatus) error {
 	nodeUnitConfig, err := launcher.resourceManager.GetNodeConfig(nodeStatus.nodeInfo.NodeID, nodeStatus.nodeInfo.NodeType)
-	if err != nil {
+	if err != nil && !errors.Is(err, unitconfig.ErrNotFound) {
 		return aoserrors.Wrap(err)
 	}
 
