@@ -121,7 +121,7 @@ func init() {
  * CommunicationManager
  **********************************************************************************************************************/
 
-func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) { //nolint:funlen
+func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) { //nolint:gocognit,funlen
 	defer func() {
 		if err != nil {
 			cm.close()
@@ -180,9 +180,20 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 
 	if cfg.Monitoring.MonitorConfig != nil {
 		if cm.resourcemonitor, err = resourcemonitor.New(*cfg.Monitoring.MonitorConfig, cm.iam, cm.unitConfig,
-			nil, cm.alerts, cm.monitorcontroller); err != nil {
+			nil, cm.alerts); err != nil {
 			return cm, aoserrors.Wrap(err)
 		}
+
+		go func() {
+			for {
+				monitoringData, ok := <-cm.resourcemonitor.GetNodeMonitoringChannel()
+				if !ok {
+					return
+				}
+
+				cm.monitorcontroller.SendNodeMonitoring(monitoringData)
+			}
+		}()
 	}
 
 	if cm.downloader, err = downloader.New("CM", cfg, cm.alerts, cm.db); err != nil {
