@@ -83,7 +83,6 @@ type Downloader struct {
 type SMController struct {
 	FileServerURL          string            `json:"fileServerUrl"`
 	CMServerURL            string            `json:"cmServerUrl"`
-	NodeIDs                []string          `json:"nodeIds"`
 	NodesConnectionTimeout aostypes.Duration `json:"nodesConnectionTimeout"`
 	UpdateTTL              aostypes.Duration `json:"updateTtl"`
 }
