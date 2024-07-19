@@ -153,7 +153,6 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
@@ -191,7 +190,6 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 			ServiceTTLDays: 1,
@@ -261,7 +259,6 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 			ServiceTTLDays: 1,
@@ -336,9 +333,9 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 func TestInitialStatus(t *testing.T) {
 	var (
-		cfg = &config.Config{
+		nodeIDs = []string{nodeIDLocalSM, nodeIDRemoteSM1}
+		cfg     = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
@@ -355,7 +352,7 @@ func TestInitialStatus(t *testing.T) {
 	}
 	defer launcherInstance.Close()
 
-	for i, id := range cfg.SMController.NodeIDs {
+	for i, id := range nodeIDs {
 		instances := []cloudprotocol.InstanceStatus{{
 			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
 			ServiceVersion: "1.0", StateChecksum: magicSum, RunState: "running",
@@ -390,7 +387,6 @@ func TestBalancing(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1, nodeIDRemoteSM2, nodeIDRunxSM},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
@@ -891,7 +887,6 @@ func TestServiceRevert(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
@@ -989,7 +984,6 @@ func TestStorageCleanup(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRunxSM},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}

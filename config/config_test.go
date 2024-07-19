@@ -270,7 +270,6 @@ func TestSMControllerConfig(t *testing.T) {
 	originalConfig := config.SMController{
 		FileServerURL:          "localhost:8094",
 		CMServerURL:            "localhost:8093",
-		NodeIDs:                []string{"sm1", "sm2"},
 		NodesConnectionTimeout: aostypes.Duration{Duration: 100 * time.Second},
 		UpdateTTL:              aostypes.Duration{Duration: 30 * time.Hour},
 	}
