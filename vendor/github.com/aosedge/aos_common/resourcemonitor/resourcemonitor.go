@@ -49,6 +49,8 @@ const (
 	YearPeriod
 )
 
+const monitoringChannelSize = 16
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -82,11 +84,6 @@ type NodeConfigProvider interface {
 	CurrentNodeConfigChannel() <-chan cloudprotocol.NodeConfig
 }
 
-// MonitoringSender sends monitoring data.
-type MonitoringSender interface {
-	SendNodeMonitoring(monitoringData aostypes.NodeMonitoring)
-}
-
 // TrafficMonitoring interface to get network traffic.
 type TrafficMonitoring interface {
 	GetSystemTraffic() (inputTraffic, outputTraffic uint64, err error)
@@ -107,10 +104,10 @@ type ResourceMonitor struct {
 	nodeInfoProvider   NodeInfoProvider
 	nodeConfigProvider NodeConfigProvider
 	alertSender        AlertSender
-	monitoringSender   MonitoringSender
 	trafficMonitoring  TrafficMonitoring
 	sourceSystemUsage  SystemUsageProvider
 
+	monitoringChannel     chan aostypes.NodeMonitoring
 	pollTimer             *time.Ticker
 	averageWindowCount    uint64
 	nodeInfo              cloudprotocol.NodeInfo
@@ -179,7 +176,7 @@ var (
 // New creates new resource monitor instance.
 func New(
 	config Config, nodeInfoProvider NodeInfoProvider, nodeConfigProvider NodeConfigProvider,
-	trafficMonitoring TrafficMonitoring, alertsSender AlertSender, monitoringSender MonitoringSender) (
+	trafficMonitoring TrafficMonitoring, alertsSender AlertSender) (
 	*ResourceMonitor, error,
 ) {
 	log.Debug("Create monitor")
@@ -188,9 +185,9 @@ func New(
 		nodeInfoProvider:   nodeInfoProvider,
 		nodeConfigProvider: nodeConfigProvider,
 		alertSender:        alertsSender,
-		monitoringSender:   monitoringSender,
 		trafficMonitoring:  trafficMonitoring,
 		sourceSystemUsage:  getSourceSystemUsage(config.Source),
+		monitoringChannel:  make(chan aostypes.NodeMonitoring, monitoringChannelSize),
 	}
 
 	nodeInfo, err := nodeInfoProvider.GetCurrentNodeInfo()
@@ -240,6 +237,8 @@ func (monitor *ResourceMonitor) Close() {
 	if monitor.cancelFunction != nil {
 		monitor.cancelFunction()
 	}
+
+	close(monitor.monitoringChannel)
 }
 
 // StartInstanceMonitor starts monitoring service.
@@ -330,6 +329,11 @@ func (monitor *ResourceMonitor) GetAverageMonitoring() (aostypes.NodeMonitoring,
 	}
 
 	return averageMonitoringData, nil
+}
+
+// GetNodeMonitoringChannel return node monitoring channel.
+func (monitor *ResourceMonitor) GetNodeMonitoringChannel() <-chan aostypes.NodeMonitoring {
+	return monitor.monitoringChannel
 }
 
 /***********************************************************************************************************************
@@ -576,7 +580,7 @@ func (monitor *ResourceMonitor) sendMonitoringData() {
 			instanceMonitoring.monitoring)
 	}
 
-	monitor.monitoringSender.SendNodeMonitoring(nodeMonitoringData)
+	monitor.monitoringChannel <- nodeMonitoringData
 }
 
 func (monitor *ResourceMonitor) getCurrentSystemData() {
