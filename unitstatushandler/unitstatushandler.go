@@ -826,6 +826,10 @@ func (instance *Instance) handleChannels() {
 
 			instance.updateNodeInfo(nodeInfo)
 
+			if err := instance.softwareManager.requestRebalancing(); err != nil {
+				log.Errorf("Can't perform rebalancing: %v", err)
+			}
+
 		case systemQuotaAlert, ok := <-instance.systemQuotaAlertChannel:
 			if !ok {
 				return
