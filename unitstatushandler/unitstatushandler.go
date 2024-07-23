@@ -25,6 +25,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_common/resourcemonitor"
@@ -839,16 +841,10 @@ func (instance *Instance) handleChannels() {
 				return
 			}
 
-			for _, param := range []string{"cpu", "ram"} {
-				if param != systemQuotaAlert.Parameter {
-					continue
-				}
-
+			if slices.Contains([]string{"cpu", "ram"}, systemQuotaAlert.Parameter) {
 				if err := instance.softwareManager.requestRebalancing(); err != nil {
 					log.Errorf("Can't perform rebalancing: %v", err)
 				}
-
-				break
 			}
 		}
 	}
