@@ -876,21 +876,17 @@ func (manager *softwareManager) newUpdate(update *softwareUpdate) (err error) {
 		}
 
 	default:
+		if update.RebalanceRequest {
+			log.Debug("Skip rebalancing during update")
+
+			return nil
+		}
+
 		if manager.isUpdateEquals(update) {
-			if update.RebalanceRequest {
-				log.Debug("Skip rebalancing during update")
-
-				return nil
-			}
-
 			if reflect.DeepEqual(update.Schedule, manager.CurrentUpdate.Schedule) {
 				log.Debug("Skip update without changes")
 
 				return nil
-			}
-
-			if update.RebalanceRequest {
-				log.Debug("Skip rebalancing")
 			}
 
 			// Schedule changed: in ready to update state we can reschedule update. Except current update is forced type,
