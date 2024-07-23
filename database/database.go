@@ -269,28 +269,7 @@ func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) 
 	return state, err
 }
 
-// SetDesiredInstances sets desired instances status.
-func (db *Database) SetDesiredInstances(instances json.RawMessage) (err error) {
-	if err = db.executeQuery(`UPDATE config SET desiredInstances = ?`, instances); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetDesiredInstances returns desired instances.
-func (db *Database) GetDesiredInstances() (instances json.RawMessage, err error) {
-	if err = db.getDataFromQuery(
-		"SELECT desiredInstances FROM config",
-		[]any{}, &instances); err != nil {
-		if errors.Is(err, errNotExist) {
-			return instances, launcher.ErrNotExist
-		}
-	}
-
-	return instances, err
-}
-
+// GetDownloadInfo returns download info by file path.
 func (db *Database) GetDownloadInfo(filePath string) (downloadInfo downloader.DownloadInfo, err error) {
 	if err = db.getDataFromQuery(
 		"SELECT * FROM download WHERE path = ?",
@@ -304,6 +283,7 @@ func (db *Database) GetDownloadInfo(filePath string) (downloadInfo downloader.Do
 	return downloadInfo, err
 }
 
+// GetDownloadInfos returns all download info.
 func (db *Database) GetDownloadInfos() (downloadInfos []downloader.DownloadInfo, err error) {
 	rows, err := db.sql.Query("SELECT * FROM download")
 	if err != nil {
@@ -330,6 +310,7 @@ func (db *Database) GetDownloadInfos() (downloadInfos []downloader.DownloadInfo,
 	return downloadInfos, nil
 }
 
+// RemoveDownloadInfo removes download info by file path.
 func (db *Database) RemoveDownloadInfo(filePath string) (err error) {
 	if err = db.executeQuery("DELETE FROM download WHERE path = ?", filePath); errors.Is(err, errNotExist) {
 		return nil
@@ -338,6 +319,7 @@ func (db *Database) RemoveDownloadInfo(filePath string) (err error) {
 	return err
 }
 
+// SetDownloadInfo stores download info.
 func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err error) {
 	var path string
 
@@ -782,31 +764,6 @@ func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.Ins
 	}
 
 	return networkInfos, nil
-}
-
-// SetNodeState stores node state.
-func (db *Database) SetNodeState(nodeID string, state json.RawMessage) error {
-	if err := db.executeQuery("UPDATE nodes SET state = ? WHERE nodeID = ?", state, nodeID); errors.Is(err, errNotExist) {
-		return db.executeQuery("INSERT INTO nodes values(?, ?)", nodeID, state)
-	} else {
-		return err
-	}
-}
-
-// GetNodeState retrieves node state.
-func (db *Database) GetNodeState(nodeID string) (json.RawMessage, error) {
-	var state json.RawMessage
-
-	if err := db.getDataFromQuery(
-		"SELECT state FROM nodes WHERE nodeID = ?", []any{nodeID}, &state); err != nil {
-		if errors.Is(err, errNotExist) {
-			return nil, launcher.ErrNotExist
-		}
-
-		return nil, err
-	}
-
-	return state, nil
 }
 
 // Close closes database.

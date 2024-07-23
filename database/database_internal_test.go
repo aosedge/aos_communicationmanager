@@ -173,7 +173,6 @@ func TestComponentsUpdateInfo(t *testing.T) {
 func TestSotaFotaInstancesFields(t *testing.T) {
 	fotaState := json.RawMessage("fotaState")
 	sotaState := json.RawMessage("sotaState")
-	desiredInstances := json.RawMessage("desiredInstances")
 
 	if err := testDB.SetFirmwareUpdateState(fotaState); err != nil {
 		t.Fatalf("Can't set FOTA state: %v", err)
@@ -181,10 +180,6 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 
 	if err := testDB.SetSoftwareUpdateState(sotaState); err != nil {
 		t.Fatalf("Can't set SOTA state: %v", err)
-	}
-
-	if err := testDB.SetDesiredInstances(desiredInstances); err != nil {
-		t.Fatalf("Can't set desired instances: %v", err)
 	}
 
 	retFota, err := testDB.GetFirmwareUpdateState()
@@ -203,15 +198,6 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 
 	if string(retSota) != string(sotaState) {
 		t.Errorf("Incorrect SOTA state: %s", string(retSota))
-	}
-
-	retInstances, err := testDB.GetDesiredInstances()
-	if err != nil {
-		t.Fatalf("Can't get desired instances state %v", err)
-	}
-
-	if string(retInstances) != string(desiredInstances) {
-		t.Errorf("Incorrect desired instances: %s", string(retInstances))
 	}
 }
 
@@ -997,38 +983,6 @@ func TestStorageState(t *testing.T) {
 
 	if _, err := testDB.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
 		t.Errorf("Should be: entry does not exist")
-	}
-}
-
-func TestNodeState(t *testing.T) {
-	setNodeState := json.RawMessage("node state 1")
-
-	if err := testDB.SetNodeState("nodeID", setNodeState); err != nil {
-		t.Fatalf("Can't set node state: %v", err)
-	}
-
-	getNodeState, err := testDB.GetNodeState("nodeID")
-	if err != nil {
-		t.Errorf("Can't get node state: %v", err)
-	}
-
-	if string(setNodeState) != string(getNodeState) {
-		t.Errorf("Wrong get node state: %s", string(getNodeState))
-	}
-
-	setNodeState = json.RawMessage("node state 2")
-
-	if err := testDB.SetNodeState("nodeID", setNodeState); err != nil {
-		t.Fatalf("Can't set node state: %v", err)
-	}
-
-	getNodeState, err = testDB.GetNodeState("nodeID")
-	if err != nil {
-		t.Errorf("Can't get node state: %v", err)
-	}
-
-	if string(setNodeState) != string(getNodeState) {
-		t.Errorf("Wrong get node state: %s", string(getNodeState))
 	}
 }
 
