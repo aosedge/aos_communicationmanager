@@ -70,7 +70,7 @@ type QuotaAlert struct {
 
 // AlertSender interface to send resource alerts.
 type AlertSender interface {
-	SendAlert(alert cloudprotocol.AlertItem)
+	SendAlert(alert interface{})
 }
 
 // NodeInfoProvider interface to get node information.
@@ -367,6 +367,8 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	monitor.Lock()
 	defer monitor.Unlock()
 
+	nodeID := monitor.nodeInfo.NodeID
+
 	monitor.alertProcessors = list.New()
 
 	if nodeConfig.AlertRules == nil || monitor.alertSender == nil {
@@ -382,7 +384,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 			"System CPU",
 			&monitor.nodeMonitoring.CPU,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem("cpu", time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "cpu", time, value, status))
 			},
 			rules))
 	}
@@ -392,7 +394,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 			"System RAM",
 			&monitor.nodeMonitoring.RAM,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem("ram", time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "ram", time, value, status))
 			},
 			*nodeConfig.AlertRules.RAM))
 	}
@@ -411,7 +413,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 			"Partition "+diskRule.Name,
 			diskUsageValue,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem(diskRule.Name, time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, diskRule.Name, time, value, status))
 			},
 			diskRule.AlertRuleParam))
 	}
@@ -421,7 +423,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 			"IN Traffic",
 			&monitor.nodeMonitoring.InTraffic,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem("inTraffic", time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "inTraffic", time, value, status))
 			},
 			*nodeConfig.AlertRules.InTraffic))
 	}
@@ -431,7 +433,7 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 			"OUT Traffic",
 			&monitor.nodeMonitoring.OutTraffic,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem("outTraffic", time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "outTraffic", time, value, status))
 			},
 			*nodeConfig.AlertRules.OutTraffic))
 	}
@@ -732,31 +734,26 @@ func getInstanceDiskUsage(path string, uid, gid uint32) (diskUse uint64, err err
 }
 
 func prepareSystemAlertItem(
-	parameter string, timestamp time.Time, value uint64, status string,
-) cloudprotocol.AlertItem {
-	return cloudprotocol.AlertItem{
-		Timestamp: timestamp,
-		Tag:       cloudprotocol.AlertTagSystemQuota,
-		Payload: cloudprotocol.SystemQuotaAlert{
-			Parameter: parameter,
-			Value:     value,
-			Status:    status,
-		},
+	nodeID, parameter string, timestamp time.Time, value uint64, status string,
+) cloudprotocol.SystemQuotaAlert {
+	return cloudprotocol.SystemQuotaAlert{
+		AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: cloudprotocol.AlertTagSystemQuota},
+		NodeID:    nodeID,
+		Parameter: parameter,
+		Value:     value,
+		Status:    status,
 	}
 }
 
 func prepareInstanceAlertItem(
 	instanceIndent aostypes.InstanceIdent, parameter string, timestamp time.Time, value uint64, status string,
-) cloudprotocol.AlertItem {
-	return cloudprotocol.AlertItem{
-		Timestamp: timestamp,
-		Tag:       cloudprotocol.AlertTagInstanceQuota,
-		Payload: cloudprotocol.InstanceQuotaAlert{
-			InstanceIdent: instanceIndent,
-			Parameter:     parameter,
-			Value:         value,
-			Status:        status,
-		},
+) cloudprotocol.InstanceQuotaAlert {
+	return cloudprotocol.InstanceQuotaAlert{
+		AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: cloudprotocol.AlertTagInstanceQuota},
+		InstanceIdent: instanceIndent,
+		Parameter:     parameter,
+		Value:         value,
+		Status:        status,
 	}
 }
 

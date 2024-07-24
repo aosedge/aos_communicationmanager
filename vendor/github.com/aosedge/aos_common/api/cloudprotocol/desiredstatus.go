@@ -87,7 +87,7 @@ type NodeConfig struct {
 
 // UnitConfig unit configuration.
 type UnitConfig struct {
-	FormatVersion string       `json:"formatVersion"`
+	FormatVersion interface{}  `json:"formatVersion"`
 	Version       string       `json:"version"`
 	Nodes         []NodeConfig `json:"nodes"`
 }

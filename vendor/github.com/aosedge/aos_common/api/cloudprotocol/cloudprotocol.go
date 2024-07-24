@@ -17,6 +17,8 @@
 
 package cloudprotocol
 
+import "encoding/json"
+
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
@@ -30,8 +32,8 @@ const ProtocolVersion = 6
 
 // ReceivedMessage structure for Aos incoming messages.
 type ReceivedMessage struct {
-	Header MessageHeader `json:"header"`
-	Data   []byte        `json:"data"`
+	Header MessageHeader   `json:"header"`
+	Data   json.RawMessage `json:"data"`
 }
 
 // Message structure for AOS messages.

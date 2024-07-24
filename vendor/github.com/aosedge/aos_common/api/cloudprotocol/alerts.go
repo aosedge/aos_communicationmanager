@@ -53,14 +53,22 @@ const (
  * Types
  **********************************************************************************************************************/
 
+// AlertItem common alert data.
+type AlertItem struct {
+	Timestamp time.Time `json:"timestamp"`
+	Tag       string    `json:"tag"`
+}
+
 // SystemAlert system alert structure.
 type SystemAlert struct {
+	AlertItem
 	NodeID  string `json:"nodeId"`
 	Message string `json:"message"`
 }
 
 // CoreAlert system alert structure.
 type CoreAlert struct {
+	AlertItem
 	NodeID        string `json:"nodeId"`
 	CoreComponent string `json:"coreComponent"`
 	Message       string `json:"message"`
@@ -68,6 +76,7 @@ type CoreAlert struct {
 
 // DownloadAlert download alert structure.
 type DownloadAlert struct {
+	AlertItem
 	TargetType      string `json:"targetType"`
 	TargetID        string `json:"targetId"`
 	Version         string `json:"version"`
@@ -79,6 +88,7 @@ type DownloadAlert struct {
 
 // SystemQuotaAlert system quota alert structure.
 type SystemQuotaAlert struct {
+	AlertItem
 	NodeID    string `json:"nodeId"`
 	Parameter string `json:"parameter"`
 	Value     uint64 `json:"value"`
@@ -87,6 +97,7 @@ type SystemQuotaAlert struct {
 
 // InstanceQuotaAlert instance quota alert structure.
 type InstanceQuotaAlert struct {
+	AlertItem
 	aostypes.InstanceIdent
 	Parameter string `json:"parameter"`
 	Value     uint64 `json:"value"`
@@ -95,6 +106,7 @@ type InstanceQuotaAlert struct {
 
 // DeviceAllocateAlert device allocate alert structure.
 type DeviceAllocateAlert struct {
+	AlertItem
 	aostypes.InstanceIdent
 	NodeID  string `json:"nodeId"`
 	Device  string `json:"device"`
@@ -103,6 +115,7 @@ type DeviceAllocateAlert struct {
 
 // ResourceValidateAlert resource validate alert structure.
 type ResourceValidateAlert struct {
+	AlertItem
 	NodeID string      `json:"nodeId"`
 	Name   string      `json:"name"`
 	Errors []ErrorInfo `json:"errors"`
@@ -110,20 +123,14 @@ type ResourceValidateAlert struct {
 
 // ServiceInstanceAlert system alert structure.
 type ServiceInstanceAlert struct {
+	AlertItem
 	aostypes.InstanceIdent
 	ServiceVersion string `json:"version"`
 	Message        string `json:"message"`
 }
 
-// AlertItem alert item structure.
-type AlertItem struct {
-	Timestamp time.Time   `json:"timestamp"`
-	Tag       string      `json:"tag"`
-	Payload   interface{} `json:"payload"`
-}
-
 // Alerts alerts message structure.
 type Alerts struct {
-	MessageType string      `json:"messageType"`
-	Items       []AlertItem `json:"items"`
+	MessageType string        `json:"messageType"`
+	Items       []interface{} `json:"items"`
 }
