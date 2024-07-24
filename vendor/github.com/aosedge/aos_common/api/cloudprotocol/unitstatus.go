@@ -142,7 +142,7 @@ type InstanceStatus struct {
 	aostypes.InstanceIdent
 	ServiceVersion string     `json:"version"`
 	StateChecksum  string     `json:"stateChecksum,omitempty"`
-	RunState       string     `json:"runState"`
+	Status         string     `json:"status"`
 	NodeID         string     `json:"nodeId"`
 	ErrorInfo      *ErrorInfo `json:"errorInfo,omitempty"`
 }
