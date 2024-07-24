@@ -168,14 +168,14 @@ func cleanup() {
 }
 
 func sendCloudMessage(msgType string, message interface{}) error {
-	rawJSON, err := json.Marshal(message)
+	jsonMsg, err := json.Marshal(message)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	dataToSend := cloudprotocol.ReceivedMessage{
 		Header: cloudprotocol.MessageHeader{Version: cloudprotocol.ProtocolVersion},
-		Data:   rawJSON,
+		Data:   jsonMsg,
 	}
 
 	dataJSON, err := json.Marshal(dataToSend)
@@ -433,7 +433,7 @@ func TestSendMessages(t *testing.T) {
 	instances := []cloudprotocol.InstanceStatus{
 		{
 			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-			ServiceVersion: "1.0", StateChecksum: "12345", RunState: "running", NodeID: "mainNode",
+			ServiceVersion: "1.0", StateChecksum: "12345", Status: "running", NodeID: "mainNode",
 		},
 	}
 
