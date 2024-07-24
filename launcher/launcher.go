@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -30,13 +29,12 @@ import (
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
+	"golang.org/x/exp/maps"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
 	"github.com/aosedge/aos_communicationmanager/networkmanager"
 	"github.com/aosedge/aos_communicationmanager/storagestate"
-	"github.com/aosedge/aos_communicationmanager/unitconfig"
 	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 )
 
@@ -64,16 +62,16 @@ type NodeRunInstanceStatus struct {
 type Launcher struct {
 	sync.Mutex
 
-	config                  *config.Config
-	storage                 Storage
-	nodeInfoProvider        NodeInfoProvider
-	nodeManager             NodeManager
-	imageProvider           ImageProvider
-	resourceManager         ResourceManager
-	storageStateProvider    StorageStateProvider
-	networkManager          NetworkManager
+	config               *config.Config
+	storage              Storage
+	nodeManager          NodeManager
+	imageProvider        ImageProvider
+	resourceManager      ResourceManager
+	storageStateProvider StorageStateProvider
+	networkManager       NetworkManager
+
 	runStatusChannel        chan unitstatushandler.RunInstancesStatus
-	nodes                   []*nodeStatus
+	nodes                   map[string]*nodeHandler
 	currentDesiredInstances []cloudprotocol.InstanceInfo
 	currentRunStatus        []cloudprotocol.InstanceStatus
 	currentErrorStatus      []cloudprotocol.InstanceStatus
@@ -155,29 +153,6 @@ type StorageStateProvider interface {
 	GetInstanceCheckSum(instance aostypes.InstanceIdent) string
 }
 
-type nodeStatus struct {
-	nodeInfo             cloudprotocol.NodeInfo
-	availableResources   []string
-	availableLabels      []string
-	availableDevices     []nodeDevice
-	priority             uint32
-	receivedRunInstances []cloudprotocol.InstanceStatus
-	currentRunRequest    *runRequestInfo
-	waitStatus           bool
-}
-
-type nodeDevice struct {
-	name           string
-	sharedCount    int
-	allocatedCount int
-}
-
-type runRequestInfo struct {
-	Services  []aostypes.ServiceInfo  `json:"services"`
-	Layers    []aostypes.LayerInfo    `json:"layers"`
-	Instances []aostypes.InstanceInfo `json:"instances"`
-}
-
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
@@ -191,11 +166,10 @@ func New(
 	log.Debug("Create launcher")
 
 	launcher = &Launcher{
-		config: config, storage: storage, nodeManager: nodeManager, nodeInfoProvider: nodeInfoProvider,
-		imageProvider: imageProvider, resourceManager: resourceManager, storageStateProvider: storageStateProvider,
-		networkManager:   networkManager,
+		config: config, storage: storage, nodeManager: nodeManager, imageProvider: imageProvider,
+		resourceManager: resourceManager, storageStateProvider: storageStateProvider, networkManager: networkManager,
 		runStatusChannel: make(chan unitstatushandler.RunInstancesStatus, 10),
-		nodes:            []*nodeStatus{},
+		nodes:            make(map[string]*nodeHandler),
 	}
 
 	if launcher.instanceManager, err = newInstanceManager(config, storage, storageStateProvider,
@@ -209,6 +183,36 @@ func New(
 		if err = json.Unmarshal(rawDesiredInstances, &launcher.currentDesiredInstances); err != nil {
 			log.Debugf("Can't parse desire instances: %v", err)
 		}
+	}
+
+	nodes, err := nodeInfoProvider.GetAllNodeIDs()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	for _, nodeID := range nodes {
+		nodeInfo, err := nodeInfoProvider.GetNodeInfo(nodeID)
+		if err != nil {
+			log.WithField("nodeID", nodeID).Errorf("Can't get node info: %v", err)
+
+			continue
+		}
+
+		if nodeInfo.Status == cloudprotocol.NodeStatusProvisioned {
+			log.WithField("nodeID", nodeID).Debug("Skip not provisioned node")
+
+			continue
+		}
+
+		nodeHandler, err := newNodeHandler(
+			nodeInfo, resourceManager, storage, nodeInfo.NodeID == nodeInfoProvider.GetNodeID())
+		if err != nil {
+			log.WithField("nodeID", nodeID).Errorf("Can't create node handler: %v", err)
+
+			continue
+		}
+
+		launcher.nodes[nodeID] = nodeHandler
 	}
 
 	ctx, cancelFunction := context.WithCancel(context.Background())
@@ -288,10 +292,10 @@ func (launcher *Launcher) processChannels(ctx context.Context) {
 }
 
 func (launcher *Launcher) sendRunInstances(forceRestart bool) (err error) {
-	for _, node := range launcher.nodes {
+	for _, node := range launcher.getNodesByPriorities() {
 		node.waitStatus = true
 
-		if err := launcher.saveNodeRunRequest(node); err != nil {
+		if err := node.saveNodeRunRequest(); err != nil {
 			log.WithFields(log.Fields{"nodeID": node.nodeInfo.NodeID}).Errorf("Can't save node run request: %v", err)
 		}
 
@@ -315,51 +319,15 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 
 	log.Debugf("Received run status from nodeID: %s", runStatus.NodeID)
 
-	allNodeIDs, err := launcher.nodeInfoProvider.GetAllNodeIDs()
-	if err != nil {
-		log.Errorf("Can't get all nodeIDs: %v", err)
-
-		return
-	}
-
 	currentStatus := launcher.getNode(runStatus.NodeID)
 	if currentStatus == nil {
-		if !slices.Contains(allNodeIDs, runStatus.NodeID) {
-			log.Errorf("Received status for unknown nodeID  %s", runStatus.NodeID)
+		log.Errorf("Received status for unknown nodeID  %s", runStatus.NodeID)
 
-			return
-		}
-
-		var err error
-
-		currentStatus, err = launcher.initNodeStatus(runStatus.NodeID)
-		if err != nil {
-			log.Errorf("Can't init node: %v", err)
-
-			return
-		}
-
-		launcher.nodes = append(launcher.nodes, currentStatus)
-
-		if len(launcher.nodes) == len(allNodeIDs) {
-			log.Debug("All clients connected")
-		}
-
-		slices.SortFunc(launcher.nodes, func(a, b *nodeStatus) bool {
-			if a.priority == b.priority {
-				return a.nodeInfo.NodeID < b.nodeInfo.NodeID
-			}
-
-			return a.priority > b.priority
-		})
+		return
 	}
 
 	currentStatus.receivedRunInstances = runStatus.Instances
 	currentStatus.waitStatus = false
-
-	if len(launcher.nodes) != len(allNodeIDs) {
-		return
-	}
 
 	for _, node := range launcher.nodes {
 		if node.waitStatus {
@@ -372,64 +340,6 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 	launcher.connectionTimer.Stop()
 
 	launcher.sendCurrentStatus()
-}
-
-func (launcher *Launcher) initNodeStatus(nodeID string) (*nodeStatus, error) {
-	status := &nodeStatus{currentRunRequest: &runRequestInfo{}}
-
-	log.WithFields(log.Fields{"nodeID": nodeID}).Debug("Init node status")
-
-	nodeInfo, err := launcher.nodeInfoProvider.GetNodeInfo(nodeID)
-	if err != nil {
-		return nil, aoserrors.Errorf("can't get node configuration fot nodeID %s: %v", nodeID, err)
-	}
-
-	status.nodeInfo = nodeInfo
-
-	if err := launcher.loadNodeRunRequest(status); err != nil && !errors.Is(err, ErrNotExist) {
-		log.WithFields(log.Fields{"nodeID": nodeID}).Errorf("Can't load node run request")
-	}
-
-	err = launcher.initNodeConfig(status)
-
-	return status, err
-}
-
-func (launcher *Launcher) initNodeConfig(nodeStatus *nodeStatus) error {
-	nodeUnitConfig, err := launcher.resourceManager.GetNodeConfig(nodeStatus.nodeInfo.NodeID, nodeStatus.nodeInfo.NodeType)
-	if err != nil && !errors.Is(err, unitconfig.ErrNotFound) {
-		return aoserrors.Wrap(err)
-	}
-
-	nodeStatus.priority = nodeUnitConfig.Priority
-	nodeStatus.availableLabels = nodeUnitConfig.Labels
-	nodeStatus.availableResources = make([]string, len(nodeUnitConfig.Resources))
-	nodeStatus.availableDevices = make([]nodeDevice, len(nodeUnitConfig.Devices))
-
-	for i, resource := range nodeUnitConfig.Resources {
-		nodeStatus.availableResources[i] = resource.Name
-	}
-
-	for i, device := range nodeUnitConfig.Devices {
-		nodeStatus.availableDevices[i] = nodeDevice{
-			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0,
-		}
-	}
-
-	for _, instance := range nodeStatus.currentRunRequest.Instances {
-		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
-		if err != nil {
-			log.WithFields(log.Fields{"serviceID": instance.ServiceID}).Errorf("Can't get service info: %v", err)
-			continue
-		}
-
-		if err = launcher.allocateDevices(nodeStatus, serviceInfo.Config.Devices); err != nil {
-			log.WithFields(
-				instanceIdentLogFields(instance.InstanceIdent, nil)).Errorf("Can't allocate devices: %v", err)
-		}
-	}
-
-	return nil
 }
 
 func (launcher *Launcher) resetDeviceAllocation() {
@@ -445,7 +355,7 @@ func (launcher *Launcher) sendCurrentStatus() {
 		UnitSubjects: []string{}, Instances: []cloudprotocol.InstanceStatus{},
 	}
 
-	for _, node := range launcher.nodes {
+	for _, node := range launcher.getNodesByPriorities() {
 		if node.waitStatus {
 			node.waitStatus = false
 
@@ -565,7 +475,7 @@ func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo)
 	return nil
 }
 
-//nolint:funlen
+//nolint:funlen,gocognit
 func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo,
 ) (errStatus []cloudprotocol.InstanceStatus) {
 	for _, node := range launcher.nodes {
@@ -618,7 +528,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			continue
 		}
 
-		nodes, err := launcher.getNodesByStaticResources(launcher.nodes, serviceInfo, instance)
+		nodes, err := getNodesByStaticResources(launcher.getNodesByPriorities(), serviceInfo, instance)
 		if err != nil {
 			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
@@ -631,7 +541,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		// createInstanceStatusFromInfo
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
-			nodeForInstance, err := launcher.getNodesByDevices(nodes, serviceInfo.Config.Devices)
+			nodeForInstance, err := getNodesByDevices(nodes, serviceInfo.Config.Devices)
 			if err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
 					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
@@ -645,16 +555,16 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
 
-			node := launcher.getMostPriorityNode(nodeForInstance)
+			node := getMostPriorityNode(nodeForInstance)
 
-			if err = launcher.allocateDevices(node, serviceInfo.Config.Devices); err != nil {
+			if err = node.allocateDevices(serviceInfo.Config.Devices); err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
 					instanceIndex, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 
 				continue
 			}
 
-			launcher.addRunRequest(instanceInfo, serviceInfo, layers, node)
+			node.addRunRequest(instanceInfo, serviceInfo, layers)
 		}
 	}
 
@@ -670,7 +580,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 }
 
 func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (errStatus []cloudprotocol.InstanceStatus) {
-	for _, node := range launcher.nodes {
+	for _, node := range launcher.getNodesByPriorities() {
 		for i, instance := range node.currentRunRequest.Instances {
 			serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 			if err != nil {
@@ -686,7 +596,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 
 			if instance.NetworkParameters, err = launcher.networkManager.PrepareInstanceNetworkParameters(
 				instance.InstanceIdent, serviceInfo.ProviderID,
-				prepareNetworkParameters(instance, serviceInfo)); err != nil {
+				prepareNetworkParameters(serviceInfo)); err != nil {
 				errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID,
 					instance.Instance, serviceInfo.Version, cloudprotocol.InstanceStateFailed, err.Error()))
 			}
@@ -698,9 +608,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) (err
 	return errStatus
 }
 
-func prepareNetworkParameters(
-	instance aostypes.InstanceInfo, serviceInfo imagemanager.ServiceInfo,
-) networkmanager.NetworkParameters {
+func prepareNetworkParameters(serviceInfo imagemanager.ServiceInfo) networkmanager.NetworkParameters {
 	var hosts []string
 	if serviceInfo.Config.Hostname != nil {
 		hosts = append(hosts, *serviceInfo.Config.Hostname)
@@ -840,395 +748,18 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 	return instanceInfo, nil
 }
 
-func (launcher *Launcher) getNodesByStaticResources(allNodes []*nodeStatus,
-	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo,
-) ([]*nodeStatus, error) {
-	nodes := launcher.getNodeByRunners(allNodes, serviceInfo.Config.Runners)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with runner: %s", serviceInfo.Config.Runners)
-	}
+func (launcher *Launcher) getNodesByPriorities() []*nodeHandler {
+	nodes := maps.Values(launcher.nodes)
 
-	nodes = launcher.getNodesByLabels(nodes, instanceInfo.Labels)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with labels %v", instanceInfo.Labels)
-	}
-
-	nodes = launcher.getNodesByResources(nodes, serviceInfo.Config.Resources)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with resources %v", serviceInfo.Config.Resources)
-	}
-
-	return nodes, nil
-}
-
-func (launcher *Launcher) getNodesByDevices(
-	availableNodes []*nodeStatus, desiredDevices []aostypes.ServiceDevice,
-) ([]*nodeStatus, error) {
-	if len(desiredDevices) == 0 {
-		return slices.Clone(availableNodes), nil
-	}
-
-	nodes := make([]*nodeStatus, 0)
-
-	for _, node := range availableNodes {
-		if !launcher.nodeHasDesiredDevices(node, desiredDevices) {
-			continue
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].priority == nodes[j].priority {
+			return nodes[i].nodeInfo.NodeID < nodes[j].nodeInfo.NodeID
 		}
 
-		nodes = append(nodes, node)
-	}
-
-	if len(nodes) == 0 {
-		return nodes, aoserrors.New("no available device found")
-	}
-
-	return nodes, nil
-}
-
-//nolint:unused
-func (launcher *Launcher) getNodeByMonitoringData(nodes []*nodeStatus, alertType string) (newNodes []*nodeStatus) {
-	if len(nodes) == 1 {
-		return nodes
-	}
-
-	type freeNodeResources struct {
-		node    *nodeStatus
-		freeRAM uint64
-		freeCPU uint64
-	}
-
-	nodesResources := []freeNodeResources{}
-
-	for _, node := range nodes {
-		monitoringData, err := launcher.nodeManager.GetAverageMonitoring(node.nodeInfo.NodeID)
-		if err != nil {
-			log.Errorf("Can't get node monitoring data: %v", err)
-		}
-
-		nodesResources = append(nodesResources, freeNodeResources{
-			node:    node,
-			freeRAM: node.nodeInfo.TotalRAM - monitoringData.NodeData.RAM,
-			freeCPU: uint64(len(node.nodeInfo.CPUs)*100) - monitoringData.NodeData.CPU,
-		})
-	}
-
-	if alertType == "cpu" {
-		slices.SortFunc(nodesResources, func(a, b freeNodeResources) bool {
-			return a.freeCPU > b.freeCPU
-		})
-	} else {
-		slices.SortFunc(nodesResources, func(a, b freeNodeResources) bool {
-			return a.freeRAM > b.freeRAM
-		})
-	}
-
-	for _, sortedResources := range nodesResources {
-		newNodes = append(newNodes, sortedResources.node)
-	}
-
-	return newNodes
-}
-
-func (launcher *Launcher) nodeHasDesiredDevices(node *nodeStatus, desiredDevices []aostypes.ServiceDevice) bool {
-devicesLoop:
-	for _, desiredDevice := range desiredDevices {
-		for _, nodeDevice := range node.availableDevices {
-			if desiredDevice.Name != nodeDevice.name {
-				continue
-			}
-
-			if nodeDevice.sharedCount == 0 || nodeDevice.allocatedCount != nodeDevice.sharedCount {
-				continue devicesLoop
-			}
-		}
-
-		return false
-	}
-
-	return true
-}
-
-func (launcher *Launcher) allocateDevices(node *nodeStatus, serviceDevices []aostypes.ServiceDevice) error {
-serviceDeviceLoop:
-	for _, serviceDevice := range serviceDevices {
-		for i := range node.availableDevices {
-			if node.availableDevices[i].name != serviceDevice.Name {
-				continue
-			}
-
-			if node.availableDevices[i].sharedCount != 0 {
-				if node.availableDevices[i].allocatedCount == node.availableDevices[i].sharedCount {
-					return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
-				}
-
-				node.availableDevices[i].allocatedCount++
-
-				continue serviceDeviceLoop
-			}
-		}
-
-		return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
-	}
-
-	return nil
-}
-
-//nolint:unused
-func (launcher *Launcher) releaseDevices(node *nodeStatus, serviceDevices []aostypes.ServiceDevice) error {
-serviceDeviceLoop:
-	for _, serviceDevice := range serviceDevices {
-		for i := range node.availableDevices {
-			if node.availableDevices[i].name != serviceDevice.Name {
-				continue
-			}
-
-			if node.availableDevices[i].sharedCount != 0 {
-				if node.availableDevices[i].allocatedCount == 0 {
-					return aoserrors.Errorf("can't release device: %s", serviceDevice.Name)
-				}
-
-				node.availableDevices[i].allocatedCount--
-
-				continue serviceDeviceLoop
-			}
-		}
-
-		return aoserrors.Errorf("can't release device: %s", serviceDevice.Name)
-	}
-
-	return nil
-}
-
-func (launcher *Launcher) getNodesByResources(nodes []*nodeStatus, desiredResources []string) (newNodes []*nodeStatus) {
-	if len(desiredResources) == 0 {
-		return nodes
-	}
-
-nodeLoop:
-	for _, node := range nodes {
-		if len(node.availableResources) == 0 {
-			continue
-		}
-
-		for _, resource := range desiredResources {
-			if !slices.Contains(node.availableResources, resource) {
-				continue nodeLoop
-			}
-		}
-
-		newNodes = append(newNodes, node)
-	}
-
-	return newNodes
-}
-
-func (launcher *Launcher) getNodesByLabels(nodes []*nodeStatus, desiredLabels []string) (newNodes []*nodeStatus) {
-	if len(desiredLabels) == 0 {
-		return nodes
-	}
-
-nodeLoop:
-	for _, node := range nodes {
-		if len(node.availableLabels) == 0 {
-			continue
-		}
-
-		for _, label := range desiredLabels {
-			if !slices.Contains(node.availableLabels, label) {
-				continue nodeLoop
-			}
-		}
-
-		newNodes = append(newNodes, node)
-	}
-
-	return newNodes
-}
-
-func (launcher *Launcher) getNodeByRunners(allNodes []*nodeStatus, runners []string) (nodes []*nodeStatus) {
-	if len(runners) == 0 {
-		runners = defaultRunners
-	}
-
-	for _, runner := range runners {
-		for _, node := range allNodes {
-			nodeRunners, err := node.nodeInfo.GetNodeRunners()
-			if err != nil {
-				log.WithField("nodeID", node.nodeInfo.NodeID).Errorf("Can't get node runners: %v", err)
-
-				continue
-			}
-
-			if (len(nodeRunners) == 0 && slices.Contains(defaultRunners, runner)) ||
-				slices.Contains(nodeRunners, runner) {
-				nodes = append(nodes, node)
-			}
-		}
-	}
+		return nodes[i].priority > nodes[j].priority
+	})
 
 	return nodes
-}
-
-func (launcher *Launcher) getMostPriorityNode(nodes []*nodeStatus) *nodeStatus {
-	if len(nodes) == 1 {
-		return nodes[0]
-	}
-
-	maxNodePriorityIndex := 0
-
-	for i := 1; i < len(nodes); i++ {
-		if nodes[maxNodePriorityIndex].priority < nodes[i].priority {
-			maxNodePriorityIndex = i
-		}
-	}
-
-	return nodes[maxNodePriorityIndex]
-}
-
-func (launcher *Launcher) addRunRequest(instance aostypes.InstanceInfo, service imagemanager.ServiceInfo,
-	layers []imagemanager.LayerInfo, node *nodeStatus,
-) {
-	log.WithFields(instanceIdentLogFields(
-		instance.InstanceIdent, log.Fields{"node": node.nodeInfo.NodeID})).Debug("Schedule instance on node")
-
-	node.currentRunRequest.Instances = append(node.currentRunRequest.Instances, instance)
-
-	serviceInfo := service.ServiceInfo
-
-	if node.nodeInfo.NodeID != launcher.nodeInfoProvider.GetNodeID() {
-		serviceInfo.URL = service.RemoteURL
-	}
-
-	isNewService := true
-
-	for _, oldService := range node.currentRunRequest.Services {
-		if reflect.DeepEqual(oldService, serviceInfo) {
-			isNewService = false
-			break
-		}
-	}
-
-	if isNewService {
-		log.WithFields(log.Fields{
-			"serviceID": serviceInfo.ServiceID, "node": node.nodeInfo.NodeID,
-		}).Debug("Schedule service on node")
-
-		node.currentRunRequest.Services = append(node.currentRunRequest.Services, serviceInfo)
-	}
-
-layerLoopLabel:
-	for _, layer := range layers {
-		newLayer := layer.LayerInfo
-
-		if node.nodeInfo.NodeID != launcher.nodeInfoProvider.GetNodeID() {
-			newLayer.URL = layer.RemoteURL
-		}
-
-		for _, oldLayer := range node.currentRunRequest.Layers {
-			if reflect.DeepEqual(newLayer, oldLayer) {
-				continue layerLoopLabel
-			}
-		}
-
-		log.WithFields(log.Fields{
-			"digest": newLayer.Digest, "node": node.nodeInfo.NodeID,
-		}).Debug("Schedule layer on node")
-
-		node.currentRunRequest.Layers = append(node.currentRunRequest.Layers, newLayer)
-	}
-}
-
-//nolint:unused
-func (launcher *Launcher) removeInstanceFromNode(ident aostypes.InstanceIdent, node *nodeStatus) {
-	log.WithFields(log.Fields{"ident": ident, "node": node.nodeInfo.NodeID}).Debug("Remove instance from node")
-
-	i := 0
-
-	for _, instance := range node.currentRunRequest.Instances {
-		if instance.InstanceIdent != ident {
-			node.currentRunRequest.Instances[i] = instance
-			i++
-		}
-	}
-
-	node.currentRunRequest.Instances = node.currentRunRequest.Instances[:i]
-}
-
-//nolint:unused
-func (launcher *Launcher) removeServiceFromNode(serviceID string, node *nodeStatus) {
-	log.WithFields(log.Fields{"serviceID": serviceID, "node": node.nodeInfo.NodeID}).Debug("Remove service from node")
-
-	i := 0
-
-	for _, service := range node.currentRunRequest.Services {
-		if service.ServiceID != serviceID {
-			node.currentRunRequest.Services[i] = service
-			i++
-		}
-	}
-
-	node.currentRunRequest.Services = node.currentRunRequest.Services[:i]
-}
-
-//nolint:unused
-func (launcher *Launcher) removeLayerFromNode(digest string, node *nodeStatus) {
-	log.WithFields(log.Fields{"digest": digest, "node": node.nodeInfo.NodeID}).Debug("Remove layer from node")
-
-	i := 0
-
-	for _, layer := range node.currentRunRequest.Layers {
-		if layer.Digest != digest {
-			node.currentRunRequest.Layers[i] = layer
-			i++
-		}
-	}
-
-	node.currentRunRequest.Layers = node.currentRunRequest.Layers[:i]
-}
-
-//nolint:unused
-func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node *nodeStatus) {
-	launcher.removeInstanceFromNode(instance.InstanceIdent, node)
-
-	// check if we need to remove service
-	removeService := true
-
-	for _, currentInstance := range node.currentRunRequest.Instances {
-		if currentInstance.ServiceID == instance.ServiceID {
-			removeService = false
-		}
-	}
-
-	if removeService {
-		launcher.removeServiceFromNode(instance.ServiceID, node)
-
-		currentServiceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
-		if err != nil {
-			log.Errorf("Can't get service info: %v", err)
-
-			return
-		}
-
-	layerLoop:
-		for _, currentDigest := range currentServiceInfo.Layers {
-			for _, service := range node.currentRunRequest.Services {
-				serviceInfo, err := launcher.imageProvider.GetServiceInfo(service.ServiceID)
-				if err != nil {
-					log.Errorf("Can't get service info: %v", err)
-
-					continue layerLoop
-				}
-
-				for _, digest := range serviceInfo.Layers {
-					if currentDigest == digest {
-						continue layerLoop
-					}
-				}
-			}
-
-			launcher.removeLayerFromNode(currentDigest, node)
-		}
-	}
 }
 
 func createInstanceStatusFromInfo(
@@ -1251,38 +782,13 @@ func createInstanceStatusFromInfo(
 	return instanceStatus
 }
 
-func (launcher *Launcher) getNode(nodeID string) *nodeStatus {
-	for _, node := range launcher.nodes {
-		if node.nodeInfo.NodeID == nodeID {
-			return node
-		}
+func (launcher *Launcher) getNode(nodeID string) *nodeHandler {
+	node, ok := launcher.nodes[nodeID]
+	if !ok {
+		return nil
 	}
 
-	return nil
-}
-
-//nolint:unused
-func (launcher *Launcher) getLowerPriorityNodes(node *nodeStatus) (nodes []*nodeStatus) {
-	for _, currentNode := range launcher.nodes {
-		if currentNode.priority > node.priority || currentNode.nodeInfo.NodeID == node.nodeInfo.NodeID {
-			continue
-		}
-
-		nodes = append(nodes, currentNode)
-	}
-
-	return nodes
-}
-
-//nolint:unused
-func (launcher *Launcher) getLabelsForInstance(ident aostypes.InstanceIdent) ([]string, error) {
-	for _, instance := range launcher.currentDesiredInstances {
-		if instance.ServiceID == ident.ServiceID && instance.SubjectID == ident.SubjectID {
-			return instance.Labels, nil
-		}
-	}
-
-	return nil, aoserrors.New("no labels for instance")
+	return node
 }
 
 func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.LayerInfo, error) {
@@ -1298,32 +804,6 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	}
 
 	return layers, nil
-}
-
-func (launcher *Launcher) loadNodeRunRequest(node *nodeStatus) error {
-	currentRunRequestJSON, err := launcher.storage.GetNodeState(node.nodeInfo.NodeID)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = json.Unmarshal(currentRunRequestJSON, &node.currentRunRequest); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (launcher *Launcher) saveNodeRunRequest(node *nodeStatus) error {
-	runRequestJSON, err := json.Marshal(node.currentRunRequest)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := launcher.storage.SetNodeState(node.nodeInfo.NodeID, runRequestJSON); err != nil {
-		log.Errorf("Can't store desired instances: %v", err)
-	}
-
-	return nil
 }
 
 func instanceIdentLogFields(instance aostypes.InstanceIdent, extraFields log.Fields) log.Fields {

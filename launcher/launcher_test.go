@@ -345,6 +345,21 @@ func TestInitialStatus(t *testing.T) {
 		imageManager      = &testImageProvider{}
 	)
 
+	for _, id := range nodeIDs {
+		nodeInfo := cloudprotocol.NodeInfo{
+			NodeID: id, NodeType: "nodeType",
+			TotalRAM: 100,
+			CPUs: []cloudprotocol.CPUInfo{
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
+			},
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "id", TotalSize: 200},
+			},
+		}
+
+		nodeInfoProvider.nodeInfo[id] = nodeInfo
+	}
+
 	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
 		&testResourceManager{}, &testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
@@ -358,19 +373,6 @@ func TestInitialStatus(t *testing.T) {
 			ServiceVersion: "1.0", StateChecksum: magicSum, Status: "running",
 			NodeID: id,
 		}}
-
-		nodeInfo := cloudprotocol.NodeInfo{
-			NodeID: id, NodeType: "nodeType",
-			TotalRAM: 100,
-			CPUs: []cloudprotocol.CPUInfo{
-				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
-			},
-			Partitions: []cloudprotocol.PartitionInfo{
-				{Name: "id", TotalSize: 200},
-			},
-		}
-
-		nodeInfoProvider.nodeInfo[id] = nodeInfo
 
 		expectedRunStatus.Instances = append(expectedRunStatus.Instances, instances...)
 
