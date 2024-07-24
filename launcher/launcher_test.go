@@ -18,7 +18,6 @@
 package launcher_test
 
 import (
-	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -114,10 +113,8 @@ type testResourceManager struct {
 }
 
 type testStorage struct {
-	instanceInfo     []launcher.InstanceInfo
-	desiredInstances json.RawMessage
-	nodeState        map[string]json.RawMessage
-	services         map[string][]imagemanager.ServiceInfo
+	instanceInfo map[aostypes.InstanceIdent]*launcher.InstanceInfo
+	services     map[string][]imagemanager.ServiceInfo
 }
 
 type testStateStorage struct {
@@ -1269,87 +1266,59 @@ func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType strin
 
 func newTestStorage() *testStorage {
 	return &testStorage{
-		desiredInstances: json.RawMessage("[]"),
-		nodeState:        make(map[string]json.RawMessage),
-		services:         make(map[string][]imagemanager.ServiceInfo),
+		instanceInfo: make(map[aostypes.InstanceIdent]*launcher.InstanceInfo),
+		services:     make(map[string][]imagemanager.ServiceInfo),
 	}
 }
 
 func (storage *testStorage) AddInstance(instanceInfo launcher.InstanceInfo) error {
-	for _, uid := range storage.instanceInfo {
-		if uid.InstanceIdent == instanceInfo.InstanceIdent {
-			return aoserrors.New("uid for instance already exist")
-		}
+	if _, ok := storage.instanceInfo[instanceInfo.InstanceIdent]; ok {
+		return aoserrors.New("instance already exist")
 	}
 
-	storage.instanceInfo = append(storage.instanceInfo, instanceInfo)
+	storage.instanceInfo[instanceInfo.InstanceIdent] = &instanceInfo
 
 	return nil
 }
 
 func (storage *testStorage) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
-	for _, instanceInfo := range storage.instanceInfo {
-		if instanceInfo.InstanceIdent == instance {
-			return instanceInfo.UID, nil
-		}
+	instanceInfo, ok := storage.instanceInfo[instance]
+	if !ok {
+		return 0, launcher.ErrNotExist
 	}
 
-	return 0, launcher.ErrNotExist
+	return instanceInfo.UID, nil
 }
 
 func (storage *testStorage) GetInstances() ([]launcher.InstanceInfo, error) {
-	instances := make([]launcher.InstanceInfo, len(storage.instanceInfo))
-	copy(instances, storage.instanceInfo)
+	instances := make([]launcher.InstanceInfo, 0, len(storage.instanceInfo))
+
+	for _, instanceInfo := range storage.instanceInfo {
+		instances = append(instances, *instanceInfo)
+	}
 
 	return instances, nil
 }
 
 func (storage *testStorage) RemoveInstance(instanceIdent aostypes.InstanceIdent) error {
-	for i, instanceInfo := range storage.instanceInfo {
-		if instanceInfo.InstanceIdent == instanceIdent {
-			storage.instanceInfo = append(storage.instanceInfo[:i], storage.instanceInfo[i+1:]...)
-
-			return nil
-		}
+	if _, ok := storage.instanceInfo[instanceIdent]; !ok {
+		return launcher.ErrNotExist
 	}
 
-	return launcher.ErrNotExist
-}
+	delete(storage.instanceInfo, instanceIdent)
 
-func (storage *testStorage) SetDesiredInstances(instances json.RawMessage) error {
-	storage.desiredInstances = instances
 	return nil
 }
 
 func (storage *testStorage) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
-	for i, instanceInfo := range storage.instanceInfo {
-		if instanceInfo.InstanceIdent == instance {
-			storage.instanceInfo[i].Cached = cached
-
-			return nil
-		}
+	instanceInfo, ok := storage.instanceInfo[instance]
+	if !ok {
+		return launcher.ErrNotExist
 	}
 
-	return launcher.ErrNotExist
-}
-
-func (storage *testStorage) GetDesiredInstances() (instances json.RawMessage, err error) {
-	return storage.desiredInstances, nil
-}
-
-func (storage *testStorage) SetNodeState(nodeID string, runRequest json.RawMessage) error {
-	storage.nodeState[nodeID] = runRequest
+	instanceInfo.Cached = cached
 
 	return nil
-}
-
-func (storage *testStorage) GetNodeState(nodeID string) (json.RawMessage, error) {
-	runRequestJSON, ok := storage.nodeState[nodeID]
-	if !ok {
-		return nil, launcher.ErrNotExist
-	}
-
-	return runRequestJSON, nil
 }
 
 func (storage *testStorage) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {

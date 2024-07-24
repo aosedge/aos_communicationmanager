@@ -19,7 +19,6 @@ package launcher
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sort"
 	"sync"
@@ -70,12 +69,11 @@ type Launcher struct {
 	storageStateProvider StorageStateProvider
 	networkManager       NetworkManager
 
-	runStatusChannel        chan unitstatushandler.RunInstancesStatus
-	nodes                   map[string]*nodeHandler
-	currentDesiredInstances []cloudprotocol.InstanceInfo
-	currentRunStatus        []cloudprotocol.InstanceStatus
-	currentErrorStatus      []cloudprotocol.InstanceStatus
-	pendingNewServices      []string
+	runStatusChannel   chan unitstatushandler.RunInstancesStatus
+	nodes              map[string]*nodeHandler
+	currentRunStatus   []cloudprotocol.InstanceStatus
+	currentErrorStatus []cloudprotocol.InstanceStatus
+	pendingNewServices []string
 
 	cancelFunc      context.CancelFunc
 	connectionTimer *time.Timer
@@ -98,10 +96,6 @@ type Storage interface {
 	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
 	GetInstances() ([]InstanceInfo, error)
 	GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error)
-	GetDesiredInstances() (json.RawMessage, error)
-	SetDesiredInstances(instances json.RawMessage) error
-	SetNodeState(nodeID string, state json.RawMessage) error
-	GetNodeState(nodeID string) (json.RawMessage, error)
 }
 
 // NetworkManager network manager interface.
@@ -177,14 +171,6 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if rawDesiredInstances, err := launcher.storage.GetDesiredInstances(); err != nil {
-		log.Errorf("Can't get desired instances: %v", err)
-	} else {
-		if err = json.Unmarshal(rawDesiredInstances, &launcher.currentDesiredInstances); err != nil {
-			log.Debugf("Can't parse desire instances: %v", err)
-		}
-	}
-
 	nodes, err := nodeInfoProvider.GetAllNodeIDs()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -205,7 +191,7 @@ func New(
 		}
 
 		nodeHandler, err := newNodeHandler(
-			nodeInfo, resourceManager, storage, nodeInfo.NodeID == nodeInfoProvider.GetNodeID())
+			nodeInfo, resourceManager, nodeInfo.NodeID == nodeInfoProvider.GetNodeID())
 		if err != nil {
 			log.WithField("nodeID", nodeID).Errorf("Can't create node handler: %v", err)
 
@@ -247,19 +233,10 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, n
 	launcher.connectionTimer = time.AfterFunc(
 		launcher.config.SMController.NodesConnectionTimeout.Duration, launcher.sendCurrentStatus)
 
-	if rawDesiredInstances, err := json.Marshal(instances); err != nil {
-		log.Errorf("Can't marshall desired instances: %v", err)
-	} else {
-		if err := launcher.storage.SetDesiredInstances(rawDesiredInstances); err != nil {
-			log.Errorf("Can't store desired instances: %v", err)
-		}
-	}
-
 	if err := launcher.updateNetworks(instances); err != nil {
 		log.Errorf("Can't update networks: %v", err)
 	}
 
-	launcher.currentDesiredInstances = instances
 	launcher.pendingNewServices = newServices
 	launcher.currentErrorStatus = launcher.performNodeBalancing(instances)
 
@@ -294,10 +271,6 @@ func (launcher *Launcher) processChannels(ctx context.Context) {
 func (launcher *Launcher) sendRunInstances(forceRestart bool) (err error) {
 	for _, node := range launcher.getNodesByPriorities() {
 		node.waitStatus = true
-
-		if err := node.saveNodeRunRequest(); err != nil {
-			log.WithFields(log.Fields{"nodeID": node.nodeInfo.NodeID}).Errorf("Can't save node run request: %v", err)
-		}
 
 		if runErr := launcher.nodeManager.RunInstances(
 			node.nodeInfo.NodeID, node.currentRunRequest.Services, node.currentRunRequest.Layers,
@@ -505,14 +478,16 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 		serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 		if err != nil {
-			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, "0.0",
+			errStatus = append(errStatus, createInstanceStatusFromInfo(
+				instance.ServiceID, instance.SubjectID, 0, "0.0.0",
 				cloudprotocol.InstanceStateFailed, err.Error()))
 
 			continue
 		}
 
 		if serviceInfo.Cached {
-			errStatus = append(errStatus, createInstanceStatusFromInfo(instance.ServiceID, instance.SubjectID, 0, "0.0",
+			errStatus = append(errStatus, createInstanceStatusFromInfo(
+				instance.ServiceID, instance.SubjectID, 0, "0.0.0",
 				cloudprotocol.InstanceStateFailed, "service deleted"))
 
 			continue
