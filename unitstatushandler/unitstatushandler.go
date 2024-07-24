@@ -610,12 +610,12 @@ foundLoop:
 					"subjectID": instanceStatus.InstanceIdent.SubjectID,
 					"instance":  instanceStatus.InstanceIdent.Instance,
 					"version":   instanceStatus.ServiceVersion,
-					"runState":  instanceStatus.RunState,
+					"status":    instanceStatus.Status,
 					"error":     instanceStatus.ErrorInfo,
 				}).Debug("Update instance status")
 
 				instance.unitStatus.instances[i].StateChecksum = instanceStatus.StateChecksum
-				instance.unitStatus.instances[i].RunState = instanceStatus.RunState
+				instance.unitStatus.instances[i].Status = instanceStatus.Status
 				instance.unitStatus.instances[i].ErrorInfo = instanceStatus.ErrorInfo
 
 				continue foundLoop

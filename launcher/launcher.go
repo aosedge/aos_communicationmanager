@@ -452,7 +452,7 @@ func (launcher *Launcher) sendCurrentStatus() {
 			for _, errInstance := range node.currentRunRequest.Instances {
 				runStatusToSend.Instances = append(runStatusToSend.Instances, cloudprotocol.InstanceStatus{
 					InstanceIdent: errInstance.InstanceIdent,
-					NodeID:        node.nodeInfo.NodeID, RunState: cloudprotocol.InstanceStateFailed,
+					NodeID:        node.nodeInfo.NodeID, Status: cloudprotocol.InstanceStateFailed,
 					ErrorInfo: &cloudprotocol.ErrorInfo{Message: "wait run status timeout"},
 				})
 			}
@@ -1232,14 +1232,14 @@ func (launcher *Launcher) removeRunRequest(instance aostypes.InstanceInfo, node 
 }
 
 func createInstanceStatusFromInfo(
-	serviceID, subjectID string, instanceIndex uint64, serviceVersion string, runState, errorMsg string,
+	serviceID, subjectID string, instanceIndex uint64, serviceVersion string, status, errorMsg string,
 ) cloudprotocol.InstanceStatus {
 	ident := aostypes.InstanceIdent{
 		ServiceID: serviceID, SubjectID: subjectID, Instance: instanceIndex,
 	}
 
 	instanceStatus := cloudprotocol.InstanceStatus{
-		InstanceIdent: ident, ServiceVersion: serviceVersion, RunState: runState,
+		InstanceIdent: ident, ServiceVersion: serviceVersion, Status: status,
 	}
 
 	if errorMsg != "" {

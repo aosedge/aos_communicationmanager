@@ -1394,7 +1394,7 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr error
 			manager.InstanceStatuses = append(manager.InstanceStatuses, cloudprotocol.InstanceStatus{
 				InstanceIdent:  ident,
 				ServiceVersion: version,
-				RunState:       cloudprotocol.InstanceStateActivating,
+				Status:         cloudprotocol.InstanceStateActivating,
 			})
 		}
 	}

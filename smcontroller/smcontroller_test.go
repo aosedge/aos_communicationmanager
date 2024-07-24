@@ -108,11 +108,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			Instances: []*pbsm.InstanceStatus{
 				{
 					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-					ServiceVersion: "1.0.0", RunState: "running",
+					ServiceVersion: "1.0.0", Status: "running",
 				},
 				{
 					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-					ServiceVersion: "1.0.0", RunState: "fail",
+					ServiceVersion: "1.0.0", Status: "fail",
 					ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
@@ -122,11 +122,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			Instances: []cloudprotocol.InstanceStatus{
 				{
 					InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-					ServiceVersion: "1.0.0", RunState: "running", NodeID: nodeID,
+					ServiceVersion: "1.0.0", Status: "running", NodeID: nodeID,
 				},
 				{
 					InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-					ServiceVersion: "1.0.0", RunState: "fail", NodeID: nodeID,
+					ServiceVersion: "1.0.0", Status: "fail", NodeID: nodeID,
 					ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
@@ -140,13 +140,13 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 							Instance: &pbcommon.InstanceIdent{
 								ServiceId: "serv1", SubjectId: "subj1", Instance: 1,
 							},
-							ServiceVersion: "1.0.0", RunState: "running",
+							ServiceVersion: "1.0.0", Status: "running",
 						},
 						{
 							Instance: &pbcommon.InstanceIdent{
 								ServiceId: "serv2", SubjectId: "subj2", Instance: 1,
 							},
-							ServiceVersion: "1.0.0", RunState: "fail",
+							ServiceVersion: "1.0.0", Status: "fail",
 							ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 						},
 					},
@@ -156,11 +156,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 		expectedUpdateState = []cloudprotocol.InstanceStatus{
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv1", SubjectID: "subj1", Instance: 1},
-				ServiceVersion: "1.0.0", RunState: "running", NodeID: nodeID,
+				ServiceVersion: "1.0.0", Status: "running", NodeID: nodeID,
 			},
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "serv2", SubjectID: "subj2", Instance: 1},
-				ServiceVersion: "1.0.0", RunState: "fail", NodeID: nodeID,
+				ServiceVersion: "1.0.0", Status: "fail", NodeID: nodeID,
 				ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 			},
 		}
