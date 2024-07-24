@@ -401,7 +401,7 @@ desiredNodesLoop:
 					update.NodesStatus = append(update.NodesStatus, desiredNodeStatus)
 				}
 
-				goto desiredNodesLoop
+				continue desiredNodesLoop
 			}
 		}
 
