@@ -449,7 +449,7 @@ func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo)
 func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo,
 ) (errStatus []cloudprotocol.InstanceStatus) {
 	for _, node := range launcher.nodes {
-		node.currentRunRequest = &runRequestInfo{}
+		node.currentRunRequest = runRequest{}
 	}
 
 	launcher.resetDeviceAllocation()

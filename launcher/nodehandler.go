@@ -40,7 +40,7 @@ type nodeDevice struct {
 	allocatedCount int
 }
 
-type runRequestInfo struct {
+type runRequest struct {
 	Services  []aostypes.ServiceInfo  `json:"services"`
 	Layers    []aostypes.LayerInfo    `json:"layers"`
 	Instances []aostypes.InstanceInfo `json:"instances"`
@@ -51,7 +51,7 @@ type nodeHandler struct {
 	nodeConfig           cloudprotocol.NodeConfig
 	availableDevices     []nodeDevice
 	receivedRunInstances []cloudprotocol.InstanceStatus
-	currentRunRequest    *runRequestInfo
+	currentRunRequest    runRequest
 	isLocalNode          bool
 	waitStatus           bool
 }
@@ -73,10 +73,9 @@ func newNodeHandler(
 	log.WithFields(log.Fields{"nodeID": nodeInfo.NodeID}).Debug("Init node handler")
 
 	node := &nodeHandler{
-		nodeInfo:          nodeInfo,
-		currentRunRequest: &runRequestInfo{},
-		isLocalNode:       isLocalNode,
-		waitStatus:        true,
+		nodeInfo:    nodeInfo,
+		isLocalNode: isLocalNode,
+		waitStatus:  true,
 	}
 
 	nodeConfig, err := resourceManager.GetNodeConfig(node.nodeInfo.NodeID, node.nodeInfo.NodeType)
