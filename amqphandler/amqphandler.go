@@ -678,16 +678,16 @@ func (handler *AmqpHandler) unmarshalReceiveData(data []byte) (Message, error) {
 		return nil, aoserrors.New("AMQP unsupported message type")
 	}
 
-	result := messageTypeFunc()
+	messageData := messageTypeFunc()
 
-	if err := json.Unmarshal(data, result); err != nil {
+	if err := json.Unmarshal(data, &messageData); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
 	// print DesiredStatus message
-	desiredStatus, ok := result.(*cloudprotocol.DesiredStatus)
+	desiredStatus, ok := messageData.(*cloudprotocol.DesiredStatus)
 	if !ok {
-		return result, nil
+		return messageData, nil
 	}
 
 	log.Debug("Decrypted data:")
@@ -737,7 +737,7 @@ func (handler *AmqpHandler) unmarshalReceiveData(data []byte) (Message, error) {
 		log.Debugf("Sota schedule: %s", schedule)
 	}
 
-	return result, nil
+	return messageData, nil
 }
 
 func (handler *AmqpHandler) createCloudMessage(data interface{}) cloudprotocol.Message {
