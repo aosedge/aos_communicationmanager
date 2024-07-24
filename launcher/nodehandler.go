@@ -34,12 +34,6 @@ import (
  * Types
  **********************************************************************************************************************/
 
-type nodeDevice struct {
-	name           string
-	sharedCount    int
-	allocatedCount int
-}
-
 type runRequest struct {
 	Services  []aostypes.ServiceInfo  `json:"services"`
 	Layers    []aostypes.LayerInfo    `json:"layers"`
@@ -47,13 +41,13 @@ type runRequest struct {
 }
 
 type nodeHandler struct {
-	nodeInfo             cloudprotocol.NodeInfo
-	nodeConfig           cloudprotocol.NodeConfig
-	availableDevices     []nodeDevice
-	receivedRunInstances []cloudprotocol.InstanceStatus
-	currentRunRequest    runRequest
-	isLocalNode          bool
-	waitStatus           bool
+	nodeInfo          cloudprotocol.NodeInfo
+	nodeConfig        cloudprotocol.NodeConfig
+	deviceAllocations map[string]int
+	runStatus         []cloudprotocol.InstanceStatus
+	runRequest        runRequest
+	isLocalNode       bool
+	waitStatus        bool
 }
 
 /***********************************************************************************************************************
@@ -84,60 +78,42 @@ func newNodeHandler(
 	}
 
 	node.nodeConfig = nodeConfig
-	node.initDevices()
+	node.resetDeviceAllocations()
 
 	return node, nil
 }
 
-func (node *nodeHandler) initDevices() {
-	node.availableDevices = make([]nodeDevice, len(node.nodeConfig.Devices))
+func (node *nodeHandler) resetDeviceAllocations() {
+	node.deviceAllocations = make(map[string]int)
 
-	for i, device := range node.nodeConfig.Devices {
-		node.availableDevices[i] = nodeDevice{
-			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0,
-		}
+	for _, device := range node.nodeConfig.Devices {
+		node.deviceAllocations[device.Name] = device.SharedCount
 	}
 }
 
 func (node *nodeHandler) allocateDevices(serviceDevices []aostypes.ServiceDevice) error {
-serviceDeviceLoop:
 	for _, serviceDevice := range serviceDevices {
-		for i := range node.availableDevices {
-			if node.availableDevices[i].name != serviceDevice.Name {
-				continue
-			}
-
-			if node.availableDevices[i].sharedCount != 0 {
-				if node.availableDevices[i].allocatedCount == node.availableDevices[i].sharedCount {
-					return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
-				}
-
-				node.availableDevices[i].allocatedCount++
-
-				continue serviceDeviceLoop
-			}
+		count, ok := node.deviceAllocations[serviceDevice.Name]
+		if !ok {
+			return aoserrors.Errorf("device not found: %s", serviceDevice.Name)
 		}
 
-		return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
+		if count == 0 {
+			return aoserrors.Errorf("can't allocate device: %s", serviceDevice.Name)
+		}
+
+		node.deviceAllocations[serviceDevice.Name] = count - 1
 	}
 
 	return nil
 }
 
 func (node *nodeHandler) nodeHasDesiredDevices(desiredDevices []aostypes.ServiceDevice) bool {
-devicesLoop:
 	for _, desiredDevice := range desiredDevices {
-		for _, nodeDevice := range node.availableDevices {
-			if desiredDevice.Name != nodeDevice.name {
-				continue
-			}
-
-			if nodeDevice.sharedCount == 0 || nodeDevice.allocatedCount != nodeDevice.sharedCount {
-				continue devicesLoop
-			}
+		count, ok := node.deviceAllocations[desiredDevice.Name]
+		if !ok || count == 0 {
+			return false
 		}
-
-		return false
 	}
 
 	return true
@@ -149,7 +125,7 @@ func (node *nodeHandler) addRunRequest(
 	log.WithFields(instanceIdentLogFields(
 		instance.InstanceIdent, log.Fields{"node": node.nodeInfo.NodeID})).Debug("Schedule instance on node")
 
-	node.currentRunRequest.Instances = append(node.currentRunRequest.Instances, instance)
+	node.runRequest.Instances = append(node.runRequest.Instances, instance)
 
 	serviceInfo := service.ServiceInfo
 
@@ -159,7 +135,7 @@ func (node *nodeHandler) addRunRequest(
 
 	isNewService := true
 
-	for _, oldService := range node.currentRunRequest.Services {
+	for _, oldService := range node.runRequest.Services {
 		if reflect.DeepEqual(oldService, serviceInfo) {
 			isNewService = false
 			break
@@ -171,7 +147,7 @@ func (node *nodeHandler) addRunRequest(
 			"serviceID": serviceInfo.ServiceID, "node": node.nodeInfo.NodeID,
 		}).Debug("Schedule service on node")
 
-		node.currentRunRequest.Services = append(node.currentRunRequest.Services, serviceInfo)
+		node.runRequest.Services = append(node.runRequest.Services, serviceInfo)
 	}
 
 layerLoopLabel:
@@ -182,7 +158,7 @@ layerLoopLabel:
 			newLayer.URL = layer.RemoteURL
 		}
 
-		for _, oldLayer := range node.currentRunRequest.Layers {
+		for _, oldLayer := range node.runRequest.Layers {
 			if reflect.DeepEqual(newLayer, oldLayer) {
 				continue layerLoopLabel
 			}
@@ -192,7 +168,7 @@ layerLoopLabel:
 			"digest": newLayer.Digest, "node": node.nodeInfo.NodeID,
 		}).Debug("Schedule layer on node")
 
-		node.currentRunRequest.Layers = append(node.currentRunRequest.Layers, newLayer)
+		node.runRequest.Layers = append(node.runRequest.Layers, newLayer)
 	}
 }
 

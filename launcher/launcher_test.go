@@ -345,6 +345,7 @@ func TestInitialStatus(t *testing.T) {
 	for _, id := range nodeIDs {
 		nodeInfo := cloudprotocol.NodeInfo{
 			NodeID: id, NodeType: "nodeType",
+			Status:   cloudprotocol.NodeStatusProvisioned,
 			TotalRAM: 100,
 			CPUs: []cloudprotocol.CPUInfo{
 				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
@@ -398,19 +399,23 @@ func TestBalancing(t *testing.T) {
 	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
 		nodeIDLocalSM: {
 			NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
-			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			Status: cloudprotocol.NodeStatusProvisioned,
+			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 		},
 		nodeIDRemoteSM1: {
 			NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
-			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			Status: cloudprotocol.NodeStatusProvisioned,
+			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 		},
 		nodeIDRemoteSM2: {
 			NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
-			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			Status: cloudprotocol.NodeStatusProvisioned,
+			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 		},
 		nodeIDRunxSM: {
 			NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
-			Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
+			Status: cloudprotocol.NodeStatusProvisioned,
+			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
 		},
 	}
 
@@ -897,7 +902,8 @@ func TestServiceRevert(t *testing.T) {
 
 	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
 		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
-		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+		Status: cloudprotocol.NodeStatusProvisioned,
+		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
@@ -995,13 +1001,15 @@ func TestStorageCleanup(t *testing.T) {
 
 	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
 		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
-		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+		Status: cloudprotocol.NodeStatusProvisioned,
+		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
 	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{Priority: 100}
 
 	nodeInfoProvider.nodeInfo[nodeIDRunxSM] = cloudprotocol.NodeInfo{
 		NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
-		Attrs: map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
+		Status: cloudprotocol.NodeStatusProvisioned,
+		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
 	}
 	resourceManager.nodeResources[nodeTypeRunxSM] = cloudprotocol.NodeConfig{Priority: 0}
 
