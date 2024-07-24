@@ -7,7 +7,7 @@ github.com/ThalesIgnite/crypto11
 # github.com/anexia-it/fsquota v0.0.0-00010101000000-000000000000 => github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7
 ## explicit; go 1.21
 github.com/anexia-it/fsquota
-# github.com/aosedge/aos_common v0.0.0-20240719174657-a45407039c21
+# github.com/aosedge/aos_common v0.0.0-20240726122926-1a65185db3cc
 ## explicit; go 1.21
 github.com/aosedge/aos_common/aoserrors
 github.com/aosedge/aos_common/aostypes
@@ -24,6 +24,7 @@ github.com/aosedge/aos_common/resourcemonitor
 github.com/aosedge/aos_common/spaceallocator
 github.com/aosedge/aos_common/tpmkey
 github.com/aosedge/aos_common/utils/action
+github.com/aosedge/aos_common/utils/alertutils
 github.com/aosedge/aos_common/utils/contextreader
 github.com/aosedge/aos_common/utils/cryptutils
 github.com/aosedge/aos_common/utils/fs
