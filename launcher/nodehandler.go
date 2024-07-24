@@ -48,15 +48,20 @@ type runRequestInfo struct {
 
 type nodeHandler struct {
 	nodeInfo             cloudprotocol.NodeInfo
-	availableResources   []string
-	availableLabels      []string
+	nodeConfig           cloudprotocol.NodeConfig
 	availableDevices     []nodeDevice
-	priority             uint32
 	receivedRunInstances []cloudprotocol.InstanceStatus
 	currentRunRequest    *runRequestInfo
 	isLocalNode          bool
 	waitStatus           bool
 }
+
+/***********************************************************************************************************************
+ * Vars
+ **********************************************************************************************************************/
+
+//nolint:gochecknoglobals
+var defaultRunners = []string{"crun", "runc"}
 
 /***********************************************************************************************************************
  * Private
@@ -79,22 +84,16 @@ func newNodeHandler(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	node.initNodeConfig(nodeConfig)
+	node.nodeConfig = nodeConfig
+	node.initDevices()
 
 	return node, nil
 }
 
-func (node *nodeHandler) initNodeConfig(nodeConfig cloudprotocol.NodeConfig) {
-	node.priority = nodeConfig.Priority
-	node.availableLabels = nodeConfig.Labels
-	node.availableResources = make([]string, len(nodeConfig.Resources))
-	node.availableDevices = make([]nodeDevice, len(nodeConfig.Devices))
+func (node *nodeHandler) initDevices() {
+	node.availableDevices = make([]nodeDevice, len(node.nodeConfig.Devices))
 
-	for i, resource := range nodeConfig.Resources {
-		node.availableResources[i] = resource.Name
-	}
-
-	for i, device := range nodeConfig.Devices {
+	for i, device := range node.nodeConfig.Devices {
 		node.availableDevices[i] = nodeDevice{
 			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0,
 		}
@@ -248,12 +247,14 @@ func getNodesByResources(nodes []*nodeHandler, desiredResources []string) (newNo
 
 nodeLoop:
 	for _, node := range nodes {
-		if len(node.availableResources) == 0 {
+		if len(node.nodeConfig.Resources) == 0 {
 			continue
 		}
 
 		for _, resource := range desiredResources {
-			if !slices.Contains(node.availableResources, resource) {
+			if !slices.ContainsFunc(node.nodeConfig.Resources, func(info cloudprotocol.ResourceInfo) bool {
+				return info.Name == resource
+			}) {
 				continue nodeLoop
 			}
 		}
@@ -271,12 +272,12 @@ func getNodesByLabels(nodes []*nodeHandler, desiredLabels []string) (newNodes []
 
 nodeLoop:
 	for _, node := range nodes {
-		if len(node.availableLabels) == 0 {
+		if len(node.nodeConfig.Labels) == 0 {
 			continue
 		}
 
 		for _, label := range desiredLabels {
-			if !slices.Contains(node.availableLabels, label) {
+			if !slices.Contains(node.nodeConfig.Labels, label) {
 				continue nodeLoop
 			}
 		}
@@ -319,7 +320,7 @@ func getMostPriorityNode(nodes []*nodeHandler) *nodeHandler {
 	maxNodePriorityIndex := 0
 
 	for i := 1; i < len(nodes); i++ {
-		if nodes[maxNodePriorityIndex].priority < nodes[i].priority {
+		if nodes[maxNodePriorityIndex].nodeConfig.Priority < nodes[i].nodeConfig.Priority {
 			maxNodePriorityIndex = i
 		}
 	}

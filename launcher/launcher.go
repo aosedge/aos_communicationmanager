@@ -43,9 +43,6 @@ import (
 
 var ErrNotExist = errors.New("entry not exist")
 
-//nolint:gochecknoglobals
-var defaultRunners = []string{"crun", "runc"}
-
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -727,11 +724,11 @@ func (launcher *Launcher) getNodesByPriorities() []*nodeHandler {
 	nodes := maps.Values(launcher.nodes)
 
 	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].priority == nodes[j].priority {
+		if nodes[i].nodeConfig.Priority == nodes[j].nodeConfig.Priority {
 			return nodes[i].nodeInfo.NodeID < nodes[j].nodeInfo.NodeID
 		}
 
-		return nodes[i].priority > nodes[j].priority
+		return nodes[i].nodeConfig.Priority > nodes[j].nodeConfig.Priority
 	})
 
 	return nodes
