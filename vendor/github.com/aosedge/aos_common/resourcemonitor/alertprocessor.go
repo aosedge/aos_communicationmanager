@@ -18,6 +18,7 @@
 package resourcemonitor
 
 import (
+	"math"
 	"time"
 
 	"github.com/aosedge/aos_common/aostypes"
@@ -42,22 +43,48 @@ type alertCallback func(time time.Time, value uint64, status string)
 
 // alertProcessor object for detection alerts.
 type alertProcessor struct {
-	name              string
-	source            *uint64
-	callback          alertCallback
-	rule              aostypes.AlertRuleParam
-	highThresholdTime time.Time
-	lowThresholdTime  time.Time
-	alertCondition    bool
+	name     string
+	source   *uint64
+	callback alertCallback
+
+	minTimeout       time.Duration
+	minThreshold     uint64
+	maxThreshold     uint64
+	minThresholdTime time.Time
+	maxThresholdTime time.Time
+	alertCondition   bool
 }
 
-// createAlertProcessor creates alert processor based on configuration.
-func createAlertProcessor(name string, source *uint64,
-	callback alertCallback, rule aostypes.AlertRuleParam,
+// createAlertProcessorPercents creates alert processor based on percents configuration.
+func createAlertProcessorPercents(name string, source *uint64, maxValue uint64,
+	callback alertCallback, rule aostypes.AlertRulePercents,
 ) (alert *alertProcessor) {
-	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert processor")
+	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert percents processor")
 
-	return &alertProcessor{name: name, source: source, callback: callback, rule: rule}
+	return &alertProcessor{
+		name:         name,
+		source:       source,
+		callback:     callback,
+		minTimeout:   rule.MinTimeout.Duration,
+		minThreshold: uint64(math.Round(float64(maxValue) * rule.MinThreshold / 100.0)),
+		maxThreshold: uint64(math.Round(float64(maxValue) * rule.MaxThreshold / 100.0)),
+	}
+}
+
+// createAlertProcessorPoints creates alert processor based on points configuration.
+func createAlertProcessorPoints(name string, source *uint64,
+	callback alertCallback, rule aostypes.AlertRulePoints,
+) (alert *alertProcessor) {
+	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert points processor")
+
+	return &alertProcessor{
+		name:         name,
+		source:       source,
+		callback:     callback,
+		minTimeout:   rule.MinTimeout.Duration,
+		minThreshold: rule.MinThreshold,
+		maxThreshold: rule.MaxThreshold,
+	}
 }
 
 // checkAlertDetection checks if alert was detected.
@@ -65,29 +92,29 @@ func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 	value := *alert.source
 
 	if !alert.alertCondition {
-		alert.handleHighThreshold(currentTime, value)
+		alert.handleMaxThreshold(currentTime, value)
 	} else {
-		alert.handleLowThreshold(currentTime, value)
+		alert.handleMinThreshold(currentTime, value)
 	}
 }
 
-func (alert *alertProcessor) handleHighThreshold(currentTime time.Time, value uint64) {
-	if value >= alert.rule.High && alert.highThresholdTime.IsZero() {
+func (alert *alertProcessor) handleMaxThreshold(currentTime time.Time, value uint64) {
+	if value >= alert.maxThreshold && alert.maxThresholdTime.IsZero() {
 		log.WithFields(log.Fields{
-			"name":          alert.name,
-			"highThreshold": alert.rule.High,
-			"value":         value,
-			"currentTime":   currentTime.Format("Jan 2 15:04:05.000"),
-		}).Debugf("High threshold crossed")
+			"name":         alert.name,
+			"maxThreshold": alert.maxThreshold,
+			"value":        value,
+			"currentTime":  currentTime.Format("Jan 2 15:04:05.000"),
+		}).Debugf("Max threshold crossed")
 
-		alert.highThresholdTime = currentTime
+		alert.maxThresholdTime = currentTime
 	}
 
-	if value >= alert.rule.High && !alert.highThresholdTime.IsZero() &&
-		currentTime.Sub(alert.highThresholdTime) >= alert.rule.Timeout.Duration && !alert.alertCondition {
+	if value >= alert.maxThreshold && !alert.maxThresholdTime.IsZero() &&
+		currentTime.Sub(alert.maxThresholdTime) >= alert.minTimeout && !alert.alertCondition {
 		alert.alertCondition = true
-		alert.highThresholdTime = currentTime
-		alert.lowThresholdTime = time.Time{}
+		alert.maxThresholdTime = currentTime
+		alert.minThresholdTime = time.Time{}
 
 		log.WithFields(log.Fields{
 			"name":        alert.name,
@@ -99,17 +126,17 @@ func (alert *alertProcessor) handleHighThreshold(currentTime time.Time, value ui
 		alert.callback(currentTime, value, AlertStatusRaise)
 	}
 
-	if value < alert.rule.High && !alert.highThresholdTime.IsZero() {
-		alert.highThresholdTime = time.Time{}
+	if value < alert.maxThreshold && !alert.maxThresholdTime.IsZero() {
+		alert.maxThresholdTime = time.Time{}
 	}
 }
 
-func (alert *alertProcessor) handleLowThreshold(currentTime time.Time, value uint64) {
-	if value <= alert.rule.Low && !alert.lowThresholdTime.IsZero() &&
-		currentTime.Sub(alert.lowThresholdTime) >= alert.rule.Timeout.Duration {
+func (alert *alertProcessor) handleMinThreshold(currentTime time.Time, value uint64) {
+	if value <= alert.minThreshold && !alert.minThresholdTime.IsZero() &&
+		currentTime.Sub(alert.minThresholdTime) >= alert.minTimeout {
 		alert.alertCondition = false
-		alert.lowThresholdTime = currentTime
-		alert.highThresholdTime = time.Time{}
+		alert.minThresholdTime = currentTime
+		alert.maxThresholdTime = time.Time{}
 
 		log.WithFields(log.Fields{
 			"name":        alert.name,
@@ -121,8 +148,8 @@ func (alert *alertProcessor) handleLowThreshold(currentTime time.Time, value uin
 		alert.callback(currentTime, value, AlertStatusFall)
 	}
 
-	if currentTime.Sub(alert.highThresholdTime) >= alert.rule.Timeout.Duration && alert.alertCondition {
-		alert.highThresholdTime = currentTime
+	if currentTime.Sub(alert.maxThresholdTime) >= alert.minTimeout && alert.alertCondition {
+		alert.maxThresholdTime = currentTime
 
 		log.WithFields(log.Fields{
 			"name":        alert.name,
@@ -134,15 +161,15 @@ func (alert *alertProcessor) handleLowThreshold(currentTime time.Time, value uin
 		alert.callback(currentTime, value, AlertStatusContinue)
 	}
 
-	if value <= alert.rule.Low && alert.lowThresholdTime.IsZero() {
+	if value <= alert.minThreshold && alert.minThresholdTime.IsZero() {
 		log.WithFields(log.Fields{
-			"name": alert.name, "lowThreshold": alert.rule.Low, "value": value,
-		}).Debugf("Low threshold crossed")
+			"name": alert.name, "minThreshold": alert.minThreshold, "value": value,
+		}).Debugf("Min threshold crossed")
 
-		alert.lowThresholdTime = currentTime
+		alert.minThresholdTime = currentTime
 	}
 
-	if value > alert.rule.Low && !alert.lowThresholdTime.IsZero() {
-		alert.lowThresholdTime = time.Time{}
+	if value > alert.maxThreshold && !alert.minThresholdTime.IsZero() {
+		alert.minThresholdTime = time.Time{}
 	}
 }

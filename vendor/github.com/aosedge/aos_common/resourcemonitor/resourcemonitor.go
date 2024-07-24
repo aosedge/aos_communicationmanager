@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
@@ -146,11 +148,11 @@ type instanceMonitoring struct {
 }
 
 type averageMonitoring struct {
-	ram        *averageCalc
-	cpu        *averageCalc
-	inTraffic  *averageCalc
-	outTraffic *averageCalc
-	disks      map[string]*averageCalc
+	ram      *averageCalc
+	cpu      *averageCalc
+	download *averageCalc
+	upload   *averageCalc
+	disks    map[string]*averageCalc
 }
 
 /***********************************************************************************************************************
@@ -376,23 +378,21 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	}
 
 	if nodeConfig.AlertRules.CPU != nil {
-		rules := *nodeConfig.AlertRules.CPU
-		rules.High = monitor.cpuToDMIPs(float64(rules.High))
-		rules.Low = monitor.cpuToDMIPs(float64(rules.Low))
-
-		monitor.alertProcessors.PushBack(createAlertProcessor(
+		monitor.alertProcessors.PushBack(createAlertProcessorPercents(
 			"System CPU",
 			&monitor.nodeMonitoring.CPU,
+			monitor.nodeInfo.MaxDMIPs,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "cpu", time, value, status))
 			},
-			rules))
+			*nodeConfig.AlertRules.CPU))
 	}
 
 	if nodeConfig.AlertRules.RAM != nil {
-		monitor.alertProcessors.PushBack(createAlertProcessor(
+		monitor.alertProcessors.PushBack(createAlertProcessorPercents(
 			"System RAM",
 			&monitor.nodeMonitoring.RAM,
+			monitor.nodeInfo.TotalRAM,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "ram", time, value, status))
 			},
@@ -400,55 +400,62 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 	}
 
 	for _, diskRule := range nodeConfig.AlertRules.UsedDisks {
-		diskUsageValue, findErr := getDiskUsageValue(monitor.nodeMonitoring.Disk, diskRule.Name)
+		diskUsageValue, diskTotalSize, findErr := getDiskUsageValue(
+			diskRule.Name, monitor.nodeMonitoring.Disk, monitor.nodeInfo.Partitions)
 		if findErr != nil && err == nil {
 			err = findErr
-
-			log.Errorf("Can't find disk: %s", diskRule.Name)
-
 			continue
 		}
 
-		monitor.alertProcessors.PushBack(createAlertProcessor(
+		monitor.alertProcessors.PushBack(createAlertProcessorPercents(
 			"Partition "+diskRule.Name,
 			diskUsageValue,
+			diskTotalSize,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, diskRule.Name, time, value, status))
 			},
-			diskRule.AlertRuleParam))
+			diskRule.AlertRulePercents))
 	}
 
-	if nodeConfig.AlertRules.InTraffic != nil {
-		monitor.alertProcessors.PushBack(createAlertProcessor(
-			"IN Traffic",
-			&monitor.nodeMonitoring.InTraffic,
+	if nodeConfig.AlertRules.Download != nil {
+		monitor.alertProcessors.PushBack(createAlertProcessorPoints(
+			"Download traffic",
+			&monitor.nodeMonitoring.Download,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "inTraffic", time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "download", time, value, status))
 			},
-			*nodeConfig.AlertRules.InTraffic))
+			*nodeConfig.AlertRules.Download))
 	}
 
-	if nodeConfig.AlertRules.OutTraffic != nil {
-		monitor.alertProcessors.PushBack(createAlertProcessor(
-			"OUT Traffic",
-			&monitor.nodeMonitoring.OutTraffic,
+	if nodeConfig.AlertRules.Upload != nil {
+		monitor.alertProcessors.PushBack(createAlertProcessorPoints(
+			"Upload traffic",
+			&monitor.nodeMonitoring.Upload,
 			func(time time.Time, value uint64, status string) {
-				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "outTraffic", time, value, status))
+				monitor.alertSender.SendAlert(prepareSystemAlertItem(nodeID, "upload", time, value, status))
 			},
-			*nodeConfig.AlertRules.OutTraffic))
+			*nodeConfig.AlertRules.Upload))
 	}
 
 	return err
 }
 
-func getDiskUsageValue(disks []aostypes.PartitionUsage, name string) (*uint64, error) {
-	for i, disk := range disks {
-		if disk.Name == name {
-			return &disks[i].UsedSize, nil
-		}
+func getDiskUsageValue(
+	name string, disksUsage []aostypes.PartitionUsage, disksInfo []cloudprotocol.PartitionInfo,
+) (value *uint64, maxValue uint64, err error) {
+	valueIndex := slices.IndexFunc(disksUsage, func(disk aostypes.PartitionUsage) bool {
+		return disk.Name == name
+	})
+
+	maxValueIndex := slices.IndexFunc(disksInfo, func(disk cloudprotocol.PartitionInfo) bool {
+		return disk.Name == name
+	})
+
+	if valueIndex == -1 || maxValueIndex == -1 {
+		return nil, 0, aoserrors.Errorf("disk [%s] not found", name)
 	}
 
-	return nil, aoserrors.Errorf("can't find disk %s", name)
+	return &disksUsage[valueIndex].UsedSize, disksInfo[maxValueIndex].TotalSize, nil
 }
 
 func getDiskPath(disks []cloudprotocol.PartitionInfo, name string) (string, error) {
@@ -490,26 +497,24 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 	instanceMonitoring.alertProcessorElements = make([]*list.Element, 0)
 
 	if rules.CPU != nil {
-		rules := *rules.CPU
-		rules.High = monitor.cpuToDMIPs(float64(rules.High))
-		rules.Low = monitor.cpuToDMIPs(float64(rules.Low))
-
-		e := monitor.alertProcessors.PushBack(createAlertProcessor(
+		e := monitor.alertProcessors.PushBack(createAlertProcessorPercents(
 			instanceID+" CPU",
 			&instanceMonitoring.monitoring.CPU,
+			monitor.nodeInfo.MaxDMIPs,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
 						instanceMonitoring.monitoring.InstanceIdent, "cpu", time, value, status))
-			}, rules))
+			}, *rules.CPU))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
 	}
 
 	if rules.RAM != nil {
-		e := monitor.alertProcessors.PushBack(createAlertProcessor(
+		e := monitor.alertProcessors.PushBack(createAlertProcessorPercents(
 			instanceID+" RAM",
 			&instanceMonitoring.monitoring.RAM,
+			monitor.nodeInfo.TotalRAM,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
@@ -520,49 +525,48 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 	}
 
 	for _, diskRule := range rules.UsedDisks {
-		diskUsageValue, findErr := getDiskUsageValue(instanceMonitoring.monitoring.Disk, diskRule.Name)
+		diskUsageValue, diskTotalSize, findErr := getDiskUsageValue(
+			diskRule.Name, instanceMonitoring.monitoring.Disk, monitor.nodeInfo.Partitions)
 		if findErr != nil && err == nil {
-			log.Errorf("Can't find disk: %s", diskRule.Name)
-
 			err = findErr
-
 			continue
 		}
 
-		e := monitor.alertProcessors.PushBack(createAlertProcessor(
+		e := monitor.alertProcessors.PushBack(createAlertProcessorPercents(
 			instanceID+" Partition "+diskRule.Name,
 			diskUsageValue,
+			diskTotalSize,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
 						instanceMonitoring.monitoring.InstanceIdent, diskRule.Name, time, value, status))
-			}, diskRule.AlertRuleParam))
+			}, diskRule.AlertRulePercents))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
 	}
 
-	if rules.InTraffic != nil {
-		e := monitor.alertProcessors.PushBack(createAlertProcessor(
-			instanceID+" Traffic IN",
-			&instanceMonitoring.monitoring.InTraffic,
+	if rules.Download != nil {
+		e := monitor.alertProcessors.PushBack(createAlertProcessorPoints(
+			instanceID+" download traffic",
+			&instanceMonitoring.monitoring.Download,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoring.InstanceIdent, "inTraffic", time, value, status))
-			}, *rules.InTraffic))
+						instanceMonitoring.monitoring.InstanceIdent, "download", time, value, status))
+			}, *rules.Download))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
 	}
 
-	if rules.OutTraffic != nil {
-		e := monitor.alertProcessors.PushBack(createAlertProcessor(
-			instanceID+" Traffic OUT",
-			&instanceMonitoring.monitoring.OutTraffic,
+	if rules.Upload != nil {
+		e := monitor.alertProcessors.PushBack(createAlertProcessorPoints(
+			instanceID+" upload traffic",
+			&instanceMonitoring.monitoring.Upload,
 			func(time time.Time, value uint64, status string) {
 				monitor.alertSender.SendAlert(
 					prepareInstanceAlertItem(
-						instanceMonitoring.monitoring.InstanceIdent, "outTraffic", time, value, status))
-			}, *rules.OutTraffic))
+						instanceMonitoring.monitoring.InstanceIdent, "upload", time, value, status))
+			}, *rules.Upload))
 
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
 	}
@@ -615,23 +619,23 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 	}
 
 	if monitor.trafficMonitoring != nil {
-		inTraffic, outTraffic, err := monitor.trafficMonitoring.GetSystemTraffic()
+		download, upload, err := monitor.trafficMonitoring.GetSystemTraffic()
 		if err != nil {
 			log.Errorf("Can't get system traffic value: %s", err)
 		}
 
-		monitor.nodeMonitoring.InTraffic = inTraffic
-		monitor.nodeMonitoring.OutTraffic = outTraffic
+		monitor.nodeMonitoring.Download = download
+		monitor.nodeMonitoring.Upload = upload
 	}
 
 	monitor.nodeAverageData.updateMonitoringData(monitor.nodeMonitoring)
 
 	log.WithFields(log.Fields{
-		"CPU":  monitor.nodeMonitoring.CPU,
-		"RAM":  monitor.nodeMonitoring.RAM,
-		"Disk": monitor.nodeMonitoring.Disk,
-		"IN":   monitor.nodeMonitoring.InTraffic,
-		"OUT":  monitor.nodeMonitoring.OutTraffic,
+		"CPU":      monitor.nodeMonitoring.CPU,
+		"RAM":      monitor.nodeMonitoring.RAM,
+		"Disk":     monitor.nodeMonitoring.Disk,
+		"Download": monitor.nodeMonitoring.Download,
+		"Upload":   monitor.nodeMonitoring.Upload,
 	}).Debug("Monitoring data")
 }
 
@@ -656,24 +660,24 @@ func (monitor *ResourceMonitor) getCurrentInstancesData() {
 		}
 
 		if monitor.trafficMonitoring != nil {
-			inTraffic, outTraffic, err := monitor.trafficMonitoring.GetInstanceTraffic(instanceID)
+			download, upload, err := monitor.trafficMonitoring.GetInstanceTraffic(instanceID)
 			if err != nil {
 				log.Errorf("Can't get service traffic: %s", err)
 			}
 
-			value.monitoring.InTraffic = inTraffic
-			value.monitoring.OutTraffic = outTraffic
+			value.monitoring.Download = download
+			value.monitoring.Upload = upload
 		}
 
 		value.averageData.updateMonitoringData(value.monitoring.MonitoringData)
 
 		log.WithFields(log.Fields{
-			"id":   instanceID,
-			"CPU":  value.monitoring.CPU,
-			"RAM":  value.monitoring.RAM,
-			"Disk": value.monitoring.Disk,
-			"IN":   value.monitoring.InTraffic,
-			"OUT":  value.monitoring.OutTraffic,
+			"id":       instanceID,
+			"CPU":      value.monitoring.CPU,
+			"RAM":      value.monitoring.RAM,
+			"Disk":     value.monitoring.Disk,
+			"Download": value.monitoring.Download,
+			"Upload":   value.monitoring.Upload,
 		}).Debug("Instance monitoring data")
 	}
 }
@@ -775,11 +779,11 @@ func (monitor *ResourceMonitor) cpuToDMIPs(cpu float64) uint64 {
 
 func newAverageMonitoring(windowCount uint64, partitions []aostypes.PartitionUsage) *averageMonitoring {
 	averageMonitoring := &averageMonitoring{
-		ram:        newAverageCalc(windowCount),
-		cpu:        newAverageCalc(windowCount),
-		inTraffic:  newAverageCalc(windowCount),
-		outTraffic: newAverageCalc(windowCount),
-		disks:      make(map[string]*averageCalc),
+		ram:      newAverageCalc(windowCount),
+		cpu:      newAverageCalc(windowCount),
+		download: newAverageCalc(windowCount),
+		upload:   newAverageCalc(windowCount),
+		disks:    make(map[string]*averageCalc),
 	}
 
 	for _, partition := range partitions {
@@ -791,12 +795,12 @@ func newAverageMonitoring(windowCount uint64, partitions []aostypes.PartitionUsa
 
 func (average *averageMonitoring) toMonitoringData(timestamp time.Time) aostypes.MonitoringData {
 	data := aostypes.MonitoringData{
-		CPU:        average.cpu.getIntValue(),
-		RAM:        average.ram.getIntValue(),
-		InTraffic:  average.inTraffic.getIntValue(),
-		OutTraffic: average.outTraffic.getIntValue(),
-		Disk:       make([]aostypes.PartitionUsage, 0, len(average.disks)),
-		Timestamp:  timestamp,
+		CPU:       average.cpu.getIntValue(),
+		RAM:       average.ram.getIntValue(),
+		Download:  average.download.getIntValue(),
+		Upload:    average.upload.getIntValue(),
+		Disk:      make([]aostypes.PartitionUsage, 0, len(average.disks)),
+		Timestamp: timestamp,
 	}
 
 	for name, diskUsage := range average.disks {
@@ -811,8 +815,8 @@ func (average *averageMonitoring) toMonitoringData(timestamp time.Time) aostypes
 func (average *averageMonitoring) updateMonitoringData(data aostypes.MonitoringData) {
 	average.cpu.calculate(float64(data.CPU))
 	average.ram.calculate(float64(data.RAM))
-	average.inTraffic.calculate(float64(data.InTraffic))
-	average.outTraffic.calculate(float64(data.OutTraffic))
+	average.download.calculate(float64(data.Download))
+	average.upload.calculate(float64(data.Upload))
 
 	for _, disk := range data.Disk {
 		averageCalc, ok := average.disks[disk.Name]

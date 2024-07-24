@@ -7,7 +7,7 @@ github.com/ThalesIgnite/crypto11
 # github.com/anexia-it/fsquota v0.0.0-00010101000000-000000000000 => github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7
 ## explicit; go 1.21
 github.com/anexia-it/fsquota
-# github.com/aosedge/aos_common v0.0.0-20240726122926-1a65185db3cc
+# github.com/aosedge/aos_common v0.0.0-20240801114759-a9662a53d013
 ## explicit; go 1.21
 github.com/aosedge/aos_common/aoserrors
 github.com/aosedge/aos_common/aostypes
@@ -180,6 +180,7 @@ golang.org/x/crypto/sha3
 # golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0
 ## explicit; go 1.18
 golang.org/x/exp/constraints
+golang.org/x/exp/maps
 golang.org/x/exp/slices
 # golang.org/x/net v0.23.0
 ## explicit; go 1.18
