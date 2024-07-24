@@ -543,6 +543,7 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 			ExitCode: int(data.GetError().GetExitCode()),
 			Message:  data.GetError().GetMessage(),
 		},
+		Status: "ok",
 	}); err != nil {
 		log.Errorf("Can't send log: %v", err)
 	}
