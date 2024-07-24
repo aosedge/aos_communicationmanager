@@ -18,7 +18,6 @@
 package launcher
 
 import (
-	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -48,7 +47,6 @@ type runRequestInfo struct {
 }
 
 type nodeHandler struct {
-	storage              Storage
 	nodeInfo             cloudprotocol.NodeInfo
 	availableResources   []string
 	availableLabels      []string
@@ -65,20 +63,15 @@ type nodeHandler struct {
  **********************************************************************************************************************/
 
 func newNodeHandler(
-	nodeInfo cloudprotocol.NodeInfo, resourceManager ResourceManager, storage Storage, isLocalNode bool,
+	nodeInfo cloudprotocol.NodeInfo, resourceManager ResourceManager, isLocalNode bool,
 ) (*nodeHandler, error) {
 	log.WithFields(log.Fields{"nodeID": nodeInfo.NodeID}).Debug("Init node handler")
 
 	node := &nodeHandler{
-		storage:           storage,
 		nodeInfo:          nodeInfo,
 		currentRunRequest: &runRequestInfo{},
 		isLocalNode:       isLocalNode,
 		waitStatus:        true,
-	}
-
-	if err := node.loadNodeRunRequest(); err != nil && !errors.Is(err, ErrNotExist) {
-		log.WithFields(log.Fields{"nodeID": nodeInfo.NodeID}).Errorf("Can't load node run request: %v", err)
 	}
 
 	nodeConfig, err := resourceManager.GetNodeConfig(node.nodeInfo.NodeID, node.nodeInfo.NodeType)
@@ -106,32 +99,6 @@ func (node *nodeHandler) initNodeConfig(nodeConfig cloudprotocol.NodeConfig) {
 			name: device.Name, sharedCount: device.SharedCount, allocatedCount: 0,
 		}
 	}
-}
-
-func (node *nodeHandler) loadNodeRunRequest() error {
-	currentRunRequestJSON, err := node.storage.GetNodeState(node.nodeInfo.NodeID)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err = json.Unmarshal(currentRunRequestJSON, &node.currentRunRequest); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (node *nodeHandler) saveNodeRunRequest() error {
-	runRequestJSON, err := json.Marshal(node.currentRunRequest)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := node.storage.SetNodeState(node.nodeInfo.NodeID, runRequestJSON); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
 }
 
 func (node *nodeHandler) allocateDevices(serviceDevices []aostypes.ServiceDevice) error {
