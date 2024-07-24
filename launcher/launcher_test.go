@@ -355,7 +355,7 @@ func TestInitialStatus(t *testing.T) {
 	for i, id := range nodeIDs {
 		instances := []cloudprotocol.InstanceStatus{{
 			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
-			ServiceVersion: "1.0", StateChecksum: magicSum, RunState: "running",
+			ServiceVersion: "1.0", StateChecksum: magicSum, Status: "running",
 			NodeID: id,
 		}}
 
@@ -1203,7 +1203,7 @@ func (nodeManager *testNodeManager) RunInstances(nodeID string,
 		successStatus.Instances[i] = cloudprotocol.InstanceStatus{
 			InstanceIdent:  instance.InstanceIdent,
 			ServiceVersion: "1.0",
-			RunState:       cloudprotocol.InstanceStateActive, NodeID: nodeID,
+			Status:         cloudprotocol.InstanceStateActive, NodeID: nodeID,
 		}
 	}
 
@@ -1510,13 +1510,13 @@ func createLayerInfo(digest string, url string) aostypes.LayerInfo {
 func createInstanceStatus(ident aostypes.InstanceIdent, nodeID string, err error) cloudprotocol.InstanceStatus {
 	status := cloudprotocol.InstanceStatus{
 		InstanceIdent:  ident,
-		RunState:       cloudprotocol.InstanceStateActive,
+		Status:         cloudprotocol.InstanceStateActive,
 		ServiceVersion: "1.0",
 		NodeID:         nodeID,
 	}
 
 	if err != nil {
-		status.RunState = cloudprotocol.InstanceStateFailed
+		status.Status = cloudprotocol.InstanceStateFailed
 		status.ErrorInfo = &cloudprotocol.ErrorInfo{
 			Message: err.Error(),
 		}

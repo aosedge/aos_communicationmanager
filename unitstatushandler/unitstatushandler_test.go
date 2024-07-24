@@ -831,7 +831,7 @@ func TestUpdateInstancesStatus(t *testing.T) {
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0},
 				ServiceVersion: "1.0.0",
-				RunState:       "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
+				Status:         "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 			},
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1},
@@ -849,7 +849,7 @@ func TestUpdateInstancesStatus(t *testing.T) {
 		{
 			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0},
 			ServiceVersion: "1.0.0",
-			RunState:       "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
+			Status:         "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 		},
 		{
 			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1},
