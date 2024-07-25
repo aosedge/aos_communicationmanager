@@ -277,10 +277,9 @@ func TestUpdateComponents(t *testing.T) {
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
+		IsDeltaInfo: true,
 		Components: []cloudprotocol.ComponentStatus{
 			{ComponentID: "comp0", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{ComponentID: "comp2", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Layers:   []cloudprotocol.LayerStatus{},
@@ -310,15 +309,12 @@ func TestUpdateComponents(t *testing.T) {
 	firmwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
+		IsDeltaInfo: true,
 		Components: []cloudprotocol.ComponentStatus{
-			{ComponentID: "comp0", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
 				ComponentID: "comp1", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: firmwareUpdater.UpdateError.Error()},
 			},
-			{ComponentID: "comp2", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 		},
 		Layers:   []cloudprotocol.LayerStatus{},
 		Services: []cloudprotocol.ServiceStatus{},
@@ -453,24 +449,21 @@ func TestUpdateLayers(t *testing.T) {
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
-		Components: []cloudprotocol.ComponentStatus{},
+		IsDeltaInfo: true,
 		Layers: []cloudprotocol.LayerStatus{
-			{LayerID: "layer0", Digest: "digest0", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
-			{LayerID: "layer1", Digest: "digest1", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
-			{LayerID: "layer2", Digest: "digest2", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
-			{LayerID: "layer3", Digest: "digest3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
-			{LayerID: "layer4", Digest: "digest4", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
 				LayerID: "layer5", Digest: "digest5", Version: "1.0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 		},
-		Services: []cloudprotocol.ServiceStatus{},
 	}
 
 	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
 		Layers: []cloudprotocol.LayerInfo{
+			{
+				LayerID: "layer1", Digest: "digest1", Version: "0.0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
+			},
 			{
 				LayerID: "layer3", Digest: "digest3", Version: "1.0.0",
 				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{3}},
@@ -492,6 +485,10 @@ func TestUpdateLayers(t *testing.T) {
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
+	}
+
+	if receivedUnitStatus.IsDeltaInfo {
+		t.Logf("Received delta info: %v", receivedUnitStatus)
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
@@ -606,17 +603,12 @@ func TestUpdateServices(t *testing.T) {
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
-		Components: []cloudprotocol.ComponentStatus{},
-		Layers:     []cloudprotocol.LayerStatus{},
+		IsDeltaInfo: true,
 		Services: []cloudprotocol.ServiceStatus{
 			{
 				ServiceID: "service0", Version: "0.0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
-			{ServiceID: "service1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
-			{ServiceID: "service2", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
-			{ServiceID: "service3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
 				ServiceID: "service3", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
@@ -826,16 +818,12 @@ func TestUpdateInstancesStatus(t *testing.T) {
 	}
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
+		IsDeltaInfo: true,
 		Instances: []cloudprotocol.InstanceStatus{
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0},
 				ServiceVersion: "1.0.0",
 				Status:         "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
-			},
-			{
-				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1},
-				ServiceVersion: "1.0.0",
 			},
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1},
@@ -995,6 +983,14 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		},
 	})
 
+	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
+		t.Fatalf("Can't receive unit status: %s", err)
+	}
+
+	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
@@ -1075,12 +1071,12 @@ func TestNewComponents(t *testing.T) {
 
 	receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
-		t.Fatalf("Can't receive unit status: %v", err)
+		t.Fatalf("Can't receive unit status: %s", err)
 	}
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
-		Components: newComponents,
+		IsDeltaInfo: true,
+		Components:  newComponents,
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
@@ -1150,8 +1146,8 @@ func TestNodeInfoChanged(t *testing.T) {
 	}
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
-		Nodes:      nodeInfoProvider.GetAllNodesInfo(),
+		IsDeltaInfo: true,
+		Nodes:       nodeInfoProvider.GetAllNodesInfo(),
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {

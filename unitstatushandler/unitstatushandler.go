@@ -137,6 +137,8 @@ type Instance struct {
 
 	statusMutex sync.Mutex
 
+	deltaUnitStatus *cloudprotocol.UnitStatus
+
 	unitStatus       unitStatus
 	statusTimer      *time.Timer
 	sendStatusPeriod time.Duration
@@ -266,6 +268,8 @@ func (instance *Instance) SendUnitStatus() error {
 func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 	instance.Lock()
 	defer instance.Unlock()
+
+	log.Debug("Process run status")
 
 	if err := instance.initCurrentStatus(); err != nil {
 		return aoserrors.Wrap(err)
@@ -510,7 +514,7 @@ func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfig
 	}).Debug("Update unit config status")
 
 	instance.processUnitConfigStatus(status)
-	instance.statusChanged()
+	instance.statusChanged(status)
 }
 
 func (instance *Instance) processUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
@@ -530,7 +534,7 @@ func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentSt
 	}).Debug("Update component status")
 
 	instance.processComponentStatus(status)
-	instance.statusChanged()
+	instance.statusChanged(status)
 }
 
 func (instance *Instance) processComponentStatus(status cloudprotocol.ComponentStatus) {
@@ -556,7 +560,7 @@ func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) {
 	}).Debug("Update layer status")
 
 	instance.processLayerStatus(status)
-	instance.statusChanged()
+	instance.statusChanged(status)
 }
 
 func (instance *Instance) processLayerStatus(status cloudprotocol.LayerStatus) {
@@ -581,7 +585,7 @@ func (instance *Instance) updateServiceStatus(serviceInfo cloudprotocol.ServiceS
 	}).Debug("Update service status")
 
 	instance.processServiceStatus(serviceInfo)
-	instance.statusChanged()
+	instance.statusChanged(serviceInfo)
 }
 
 func (instance *Instance) processServiceStatus(status cloudprotocol.ServiceStatus) {
@@ -627,7 +631,7 @@ foundLoop:
 
 	instance.unitStatus.instances = append(instance.unitStatus.instances, newStatuses...)
 
-	instance.statusChanged()
+	instance.statusChanged(status)
 }
 
 func (instance *Instance) setInstancesStatus(statuses []cloudprotocol.InstanceStatus) {
@@ -636,7 +640,7 @@ func (instance *Instance) setInstancesStatus(statuses []cloudprotocol.InstanceSt
 
 	instance.unitStatus.instances = statuses
 
-	instance.statusChanged()
+	instance.statusChanged(statuses)
 }
 
 func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
@@ -664,10 +668,12 @@ func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 		instance.unitStatus.nodes = append(instance.unitStatus.nodes, nodeInfo)
 	}
 
-	instance.statusChanged()
+	instance.statusChanged(nodeInfo)
 }
 
-func (instance *Instance) statusChanged() {
+func (instance *Instance) statusChanged(status interface{}) {
+	instance.appendDeltaStatus(status)
+
 	if instance.statusTimer != nil {
 		return
 	}
@@ -676,7 +682,7 @@ func (instance *Instance) statusChanged() {
 		instance.statusMutex.Lock()
 		defer instance.statusMutex.Unlock()
 
-		instance.sendCurrentStatus()
+		instance.sendDeltaStatus()
 	})
 }
 
@@ -696,6 +702,30 @@ func (instance *Instance) updateStatus(status *itemStatus, descriptor statusDesc
 	*status = append(*status, descriptor)
 }
 
+func (instance *Instance) sendDeltaStatus() {
+	if instance.statusTimer != nil {
+		instance.statusTimer.Stop()
+		instance.statusTimer = nil
+	}
+
+	if !instance.initDone {
+		return
+	}
+
+	if atomic.LoadInt32(&instance.isConnected) != 1 {
+		return
+	}
+
+	log.Debugf("Send delta unit status")
+
+	if err := instance.statusSender.SendUnitStatus(
+		*instance.deltaUnitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+		log.Errorf("Can't send unit status: %s", err)
+	}
+
+	instance.deltaUnitStatus = nil
+}
+
 func (instance *Instance) sendCurrentStatus() {
 	if instance.statusTimer != nil {
 		instance.statusTimer.Stop()
@@ -709,6 +739,8 @@ func (instance *Instance) sendCurrentStatus() {
 	if atomic.LoadInt32(&instance.isConnected) != 1 {
 		return
 	}
+
+	log.Debug("Send current status")
 
 	unitStatus := cloudprotocol.UnitStatus{
 		UnitSubjects: instance.unitStatus.subjects,
@@ -769,6 +801,8 @@ func (instance *Instance) sendCurrentStatus() {
 		unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 		log.Errorf("Can't send unit status: %s", err)
 	}
+
+	instance.deltaUnitStatus = nil
 }
 
 func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
@@ -847,5 +881,118 @@ func (instance *Instance) handleChannels() {
 				break
 			}
 		}
+	}
+}
+
+func (instance *Instance) appendDeltaComponentStatus(status cloudprotocol.ComponentStatus) {
+	log.Debug("Append delta component status")
+
+	for i, component := range instance.deltaUnitStatus.Components {
+		if component.ComponentID == status.ComponentID && component.Version == status.Version {
+			instance.deltaUnitStatus.Components[i] = status
+
+			return
+		}
+	}
+
+	instance.deltaUnitStatus.Components = append(instance.deltaUnitStatus.Components, status)
+}
+
+func (instance *Instance) appendDeltaLayerStatus(status cloudprotocol.LayerStatus) {
+	log.Debug("Append delta layer status")
+
+	for i, layer := range instance.deltaUnitStatus.Layers {
+		if layer.LayerID == status.LayerID && layer.Version == status.Version {
+			instance.deltaUnitStatus.Layers[i] = status
+
+			return
+		}
+	}
+
+	instance.deltaUnitStatus.Layers = append(instance.deltaUnitStatus.Layers, status)
+}
+
+func (instance *Instance) appendDeltaServiceStatus(status cloudprotocol.ServiceStatus) {
+	log.Debug("Append delta service status")
+
+	for i, service := range instance.deltaUnitStatus.Services {
+		if service.ServiceID == status.ServiceID && service.Version == status.Version {
+			instance.deltaUnitStatus.Services[i] = status
+
+			return
+		}
+	}
+
+	instance.deltaUnitStatus.Services = append(instance.deltaUnitStatus.Services, status)
+}
+
+func (instance *Instance) appendDeltaInstanceStatus(status cloudprotocol.InstanceStatus) {
+	log.Debug("Append delta instance status")
+
+	for i, instanceStatus := range instance.deltaUnitStatus.Instances {
+		if instanceStatus.InstanceIdent == status.InstanceIdent &&
+			instanceStatus.ServiceVersion == status.ServiceVersion {
+			instance.deltaUnitStatus.Instances[i] = status
+
+			return
+		}
+	}
+
+	instance.deltaUnitStatus.Instances = append(instance.deltaUnitStatus.Instances, status)
+}
+
+func (instance *Instance) appendDeltaNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
+	log.Debug("Append delta node info")
+
+	for i, node := range instance.deltaUnitStatus.Nodes {
+		if node.NodeID == nodeInfo.NodeID {
+			instance.deltaUnitStatus.Nodes[i] = nodeInfo
+
+			return
+		}
+	}
+
+	instance.deltaUnitStatus.Nodes = append(instance.deltaUnitStatus.Nodes, nodeInfo)
+}
+
+func (instance *Instance) appendDeltaStatus(status interface{}) {
+	if instance.deltaUnitStatus == nil {
+		instance.deltaUnitStatus = &cloudprotocol.UnitStatus{
+			IsDeltaInfo:  true,
+			UnitConfig:   make([]cloudprotocol.UnitConfigStatus, 0),
+			Nodes:        make([]cloudprotocol.NodeInfo, 0),
+			Services:     make([]cloudprotocol.ServiceStatus, 0),
+			Instances:    make([]cloudprotocol.InstanceStatus, 0),
+			Layers:       make([]cloudprotocol.LayerStatus, 0),
+			Components:   make([]cloudprotocol.ComponentStatus, 0),
+			UnitSubjects: make([]string, 0),
+		}
+	}
+
+	switch deltaStatus := status.(type) {
+	case cloudprotocol.UnitConfigStatus:
+		instance.deltaUnitStatus.UnitConfig = []cloudprotocol.UnitConfigStatus{deltaStatus}
+
+	case cloudprotocol.ComponentStatus:
+		instance.appendDeltaComponentStatus(deltaStatus)
+
+	case cloudprotocol.LayerStatus:
+		instance.appendDeltaLayerStatus(deltaStatus)
+
+	case cloudprotocol.ServiceStatus:
+		instance.appendDeltaServiceStatus(deltaStatus)
+
+	case []cloudprotocol.InstanceStatus:
+		for _, deltaStatus := range deltaStatus {
+			instance.appendDeltaInstanceStatus(deltaStatus)
+		}
+
+	case cloudprotocol.NodeInfo:
+		instance.appendDeltaNodeInfo(deltaStatus)
+
+	default:
+		log.Warnf("Unhandled delta data type %T", status)
+
+		return
 	}
 }
