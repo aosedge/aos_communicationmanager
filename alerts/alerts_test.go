@@ -89,10 +89,9 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		// alert size = header 96 + message length
-		alertItem := cloudprotocol.AlertItem{
-			Timestamp: time.Now(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		alertItem := cloudprotocol.SystemAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
+			Message:   randomString(200),
 		}
 
 		alertsHandler.SendAlert(alertItem)
@@ -102,10 +101,9 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 
 	for i := 2; i < numMessages; i++ {
 		// alert size = header 96 + message length
-		alertItem := cloudprotocol.AlertItem{
-			Timestamp: time.Now(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		alertItem := cloudprotocol.SystemAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
+			Message:   randomString(200),
 		}
 
 		alertsHandler.SendAlert(alertItem)
@@ -139,10 +137,9 @@ func TestAlertsDuplicationMessages(t *testing.T) {
 
 	expectedAlerts := cloudprotocol.Alerts{}
 
-	alertItem := cloudprotocol.AlertItem{
-		Timestamp: time.Now(),
-		Tag:       cloudprotocol.AlertTagSystemError,
-		Payload:   cloudprotocol.SystemAlert{Message: randomString(32)},
+	alertItem := cloudprotocol.SystemAlert{
+		AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
+		Message:   randomString(32),
 	}
 
 	expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
@@ -183,10 +180,9 @@ func TestAlertsOfflineMessages(t *testing.T) {
 	expectedAlerts := cloudprotocol.Alerts{}
 
 	for i := 0; i < numOfflineMessages; i++ {
-		alertItem := cloudprotocol.AlertItem{
-			Timestamp: time.Now(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		alertItem := cloudprotocol.SystemAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
+			Message:   randomString(200),
 		}
 
 		expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
@@ -195,10 +191,9 @@ func TestAlertsOfflineMessages(t *testing.T) {
 	}
 
 	for i := 0; i < numExtraMessages; i++ {
-		alertItem := cloudprotocol.AlertItem{
-			Timestamp: time.Now(),
-			Tag:       cloudprotocol.AlertTagAosCore,
-			Payload:   cloudprotocol.SystemAlert{Message: randomString(200)},
+		alertItem := cloudprotocol.SystemAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagAosCore},
+			Message:   randomString(200),
 		}
 
 		alertsHandler.SendAlert(alertItem)

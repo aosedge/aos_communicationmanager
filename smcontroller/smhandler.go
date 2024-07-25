@@ -440,40 +440,44 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		"tag":    alert.GetTag(),
 	}).Debug("Receive SM alert")
 
-	alertItem := cloudprotocol.AlertItem{
-		Timestamp: alert.GetTimestamp().AsTime(),
-		Tag:       alert.GetTag(),
-	}
+	timestamp := alert.GetTimestamp().AsTime()
+	tag := alert.GetTag()
+
+	var alertItem interface{}
 
 	switch data := alert.GetPayload().(type) {
 	case *pb.Alert_SystemAlert:
-		alertItem.Payload = cloudprotocol.SystemAlert{
-			Message: data.SystemAlert.GetMessage(),
-			NodeID:  handler.nodeConfigStatus.NodeID,
+		alertItem = cloudprotocol.SystemAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			Message:   data.SystemAlert.GetMessage(),
+			NodeID:    handler.nodeConfigStatus.NodeID,
 		}
 
 	case *pb.Alert_CoreAlert:
-		alertItem.Payload = cloudprotocol.CoreAlert{
+		alertItem = cloudprotocol.CoreAlert{
+			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			CoreComponent: data.CoreAlert.GetCoreComponent(),
 			Message:       data.CoreAlert.GetMessage(),
 			NodeID:        handler.nodeConfigStatus.NodeID,
 		}
 
 	case *pb.Alert_ResourceValidateAlert:
-		resourceValidate := cloudprotocol.ResourceValidateAlert{
-			Errors: make([]cloudprotocol.ErrorInfo, len(data.ResourceValidateAlert.GetErrors())),
-			NodeID: handler.nodeConfigStatus.NodeID,
-			Name:   data.ResourceValidateAlert.GetName(),
+		concreteAlert := cloudprotocol.ResourceValidateAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			Errors:    make([]cloudprotocol.ErrorInfo, len(data.ResourceValidateAlert.GetErrors())),
+			NodeID:    handler.nodeConfigStatus.NodeID,
+			Name:      data.ResourceValidateAlert.GetName(),
 		}
 
 		for i, error := range data.ResourceValidateAlert.GetErrors() {
-			resourceValidate.Errors[i] = *pbconvert.ErrorInfoFromPB(error)
+			concreteAlert.Errors[i] = *pbconvert.ErrorInfoFromPB(error)
 		}
 
-		alertItem.Payload = resourceValidate
+		alertItem = concreteAlert
 
 	case *pb.Alert_DeviceAllocateAlert:
-		alertItem.Payload = cloudprotocol.DeviceAllocateAlert{
+		alertItem = cloudprotocol.DeviceAllocateAlert{
+			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			InstanceIdent: pbconvert.InstanceIdentFromPB(data.DeviceAllocateAlert.GetInstance()),
 			Device:        data.DeviceAllocateAlert.GetDevice(),
 			Message:       data.DeviceAllocateAlert.GetMessage(),
@@ -481,37 +485,40 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		}
 
 	case *pb.Alert_SystemQuotaAlert:
-		alertPayload := cloudprotocol.SystemQuotaAlert{
+		concreteAlert := cloudprotocol.SystemQuotaAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			Parameter: data.SystemQuotaAlert.GetParameter(),
 			Value:     data.SystemQuotaAlert.GetValue(),
 			NodeID:    handler.nodeConfigStatus.NodeID,
 			Status:    data.SystemQuotaAlert.GetStatus(),
 		}
 
-		handler.systemQuotasAlertCh <- alertPayload
+		handler.systemQuotasAlertCh <- concreteAlert
 
-		if alertPayload.Status != resourcemonitor.AlertStatusRaise {
+		if concreteAlert.Status != resourcemonitor.AlertStatusRaise {
 			return
 		}
 
-		alertItem.Payload = alertPayload
+		alertItem = concreteAlert
 
 	case *pb.Alert_InstanceQuotaAlert:
-		alertPayload := cloudprotocol.InstanceQuotaAlert{
+		concreteAlert := cloudprotocol.InstanceQuotaAlert{
+			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			InstanceIdent: pbconvert.InstanceIdentFromPB(data.InstanceQuotaAlert.GetInstance()),
 			Parameter:     data.InstanceQuotaAlert.GetParameter(),
 			Value:         data.InstanceQuotaAlert.GetValue(),
 			Status:        data.InstanceQuotaAlert.GetStatus(),
 		}
 
-		if alertPayload.Status != resourcemonitor.AlertStatusRaise {
+		if concreteAlert.Status != resourcemonitor.AlertStatusRaise {
 			return
 		}
 
-		alertItem.Payload = alertPayload
+		alertItem = concreteAlert
 
 	case *pb.Alert_InstanceAlert:
-		alertItem.Payload = cloudprotocol.ServiceInstanceAlert{
+		alertItem = cloudprotocol.ServiceInstanceAlert{
+			AlertItem:      cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			InstanceIdent:  pbconvert.InstanceIdentFromPB(data.InstanceAlert.GetInstance()),
 			ServiceVersion: data.InstanceAlert.GetServiceVersion(),
 			Message:        data.InstanceAlert.GetMessage(),

@@ -96,7 +96,7 @@ type Storage interface {
 
 // AlertSender provides alert sender interface.
 type AlertSender interface {
-	SendAlert(alert cloudprotocol.AlertItem)
+	SendAlert(alert interface{})
 }
 
 var (
@@ -641,18 +641,16 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 
 func (downloader *Downloader) prepareDownloadAlert(
 	resp *grab.Response, result *downloadResult, msg string,
-) cloudprotocol.AlertItem {
-	return cloudprotocol.AlertItem{
-		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
-		Payload: cloudprotocol.DownloadAlert{
-			TargetType:      result.packageInfo.TargetType,
-			TargetID:        result.packageInfo.TargetID,
-			Version:         result.packageInfo.TargetVersion,
-			URL:             resp.Request.HTTPRequest.URL.String(),
-			DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
-			TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
-			Message:         msg,
-		},
+) cloudprotocol.DownloadAlert {
+	return cloudprotocol.DownloadAlert{
+		AlertItem:       cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress},
+		TargetType:      result.packageInfo.TargetType,
+		TargetID:        result.packageInfo.TargetID,
+		Version:         result.packageInfo.TargetVersion,
+		Message:         msg,
+		URL:             resp.Request.HTTPRequest.URL.String(),
+		DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
+		TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
 	}
 }
 

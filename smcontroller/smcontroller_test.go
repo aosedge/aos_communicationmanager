@@ -29,6 +29,7 @@ import (
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_common/resourcemonitor"
+	"github.com/aosedge/aos_common/utils/alertutils"
 	"github.com/aosedge/aos_common/utils/pbconvert"
 
 	pbcommon "github.com/aosedge/aos_common/api/common"
@@ -74,7 +75,7 @@ type testMessageSender struct {
 }
 
 type testAlertSender struct {
-	messageChannel chan cloudprotocol.AlertItem
+	messageChannel chan interface{}
 }
 
 type testMonitoringSender struct {
@@ -108,11 +109,11 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 			Instances: []*pbsm.InstanceStatus{
 				{
 					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv1", SubjectId: "subj1", Instance: 1},
-					ServiceVersion: "1.0.0", Status: "running",
+					ServiceVersion: "1.0.0", RunState: "running",
 				},
 				{
 					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
-					ServiceVersion: "1.0.0", Status: "fail",
+					ServiceVersion: "1.0.0", RunState: "fail",
 					ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
@@ -140,13 +141,13 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 							Instance: &pbcommon.InstanceIdent{
 								ServiceId: "serv1", SubjectId: "subj1", Instance: 1,
 							},
-							ServiceVersion: "1.0.0", Status: "running",
+							ServiceVersion: "1.0.0", RunState: "running",
 						},
 						{
 							Instance: &pbcommon.InstanceIdent{
 								ServiceId: "serv2", SubjectId: "subj2", Instance: 1,
 							},
-							ServiceVersion: "1.0.0", Status: "fail",
+							ServiceVersion: "1.0.0", RunState: "fail",
 							ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 						},
 					},
@@ -340,48 +341,51 @@ func TestSMAlertNotifications(t *testing.T) {
 	// Test alert notifications
 	type testAlert struct {
 		sendAlert     *pbsm.Alert
-		expectedAlert cloudprotocol.AlertItem
+		expectedAlert interface{}
 	}
+
+	now := time.Now().UTC()
 
 	testData := []testAlert{
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag:     cloudprotocol.AlertTagSystemError,
-				Payload: cloudprotocol.SystemAlert{Message: "SystemAlertMessage", NodeID: nodeID},
+			expectedAlert: cloudprotocol.SystemAlert{
+				AlertItem: cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagSystemError, Timestamp: now},
+				Message:   "SystemAlertMessage", NodeID: nodeID,
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagSystemError,
+				Tag:       cloudprotocol.AlertTagSystemError,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_SystemAlert{
 					SystemAlert: &pbsm.SystemAlert{Message: "SystemAlertMessage"},
 				},
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag:     cloudprotocol.AlertTagAosCore,
-				Payload: cloudprotocol.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage", NodeID: nodeID},
+			expectedAlert: cloudprotocol.CoreAlert{
+				AlertItem:     cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagAosCore, Timestamp: now},
+				CoreComponent: "SM", Message: "CoreAlertMessage", NodeID: nodeID,
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagAosCore,
+				Tag:       cloudprotocol.AlertTagAosCore,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_CoreAlert{
 					CoreAlert: &pbsm.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage"},
 				},
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag: cloudprotocol.AlertTagResourceValidate,
-				Payload: cloudprotocol.ResourceValidateAlert{
-					NodeID: nodeID,
-					Name:   "someName",
-					Errors: []cloudprotocol.ErrorInfo{
-						{AosCode: 200, Message: "error1"},
-						{AosCode: 300, Message: "error2"},
-					},
+			expectedAlert: cloudprotocol.ResourceValidateAlert{
+				AlertItem: cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagResourceValidate, Timestamp: now},
+				NodeID:    nodeID,
+				Name:      "someName",
+				Errors: []cloudprotocol.ErrorInfo{
+					{AosCode: 200, Message: "error1"},
+					{AosCode: 300, Message: "error2"},
 				},
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagResourceValidate,
+				Tag:       cloudprotocol.AlertTagResourceValidate,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_ResourceValidateAlert{
 					ResourceValidateAlert: &pbsm.ResourceValidateAlert{
 						Name: "someName",
@@ -394,16 +398,15 @@ func TestSMAlertNotifications(t *testing.T) {
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag: cloudprotocol.AlertTagDeviceAllocate,
-				Payload: cloudprotocol.DeviceAllocateAlert{
-					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
-					Device:        "someDevice", Message: "someMessage",
-					NodeID: nodeID,
-				},
+			expectedAlert: cloudprotocol.DeviceAllocateAlert{
+				AlertItem:     cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagDeviceAllocate, Timestamp: now},
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
+				Device:        "someDevice", Message: "someMessage",
+				NodeID: nodeID,
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagDeviceAllocate,
+				Tag:       cloudprotocol.AlertTagDeviceAllocate,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_DeviceAllocateAlert{
 					DeviceAllocateAlert: &pbsm.DeviceAllocateAlert{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
@@ -413,14 +416,13 @@ func TestSMAlertNotifications(t *testing.T) {
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag: cloudprotocol.AlertTagSystemQuota,
-				Payload: cloudprotocol.SystemQuotaAlert{
-					Parameter: "cpu", Value: 42, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
-				},
+			expectedAlert: cloudprotocol.SystemQuotaAlert{
+				AlertItem: cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagSystemQuota, Timestamp: now},
+				Parameter: "cpu", Value: 42, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagSystemQuota,
+				Tag:       cloudprotocol.AlertTagSystemQuota,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_SystemQuotaAlert{
 					SystemQuotaAlert: &pbsm.SystemQuotaAlert{
 						Parameter: "cpu", Value: 42, Status: resourcemonitor.AlertStatusRaise,
@@ -429,14 +431,13 @@ func TestSMAlertNotifications(t *testing.T) {
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag: cloudprotocol.AlertTagSystemQuota,
-				Payload: cloudprotocol.SystemQuotaAlert{
-					Parameter: "ram", Value: 99, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
-				},
+			expectedAlert: cloudprotocol.SystemQuotaAlert{
+				AlertItem: cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagSystemQuota, Timestamp: now},
+				Parameter: "ram", Value: 99, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagSystemQuota,
+				Tag:       cloudprotocol.AlertTagSystemQuota,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_SystemQuotaAlert{
 					SystemQuotaAlert: &pbsm.SystemQuotaAlert{
 						Parameter: "ram", Value: 99, Status: resourcemonitor.AlertStatusRaise,
@@ -445,15 +446,14 @@ func TestSMAlertNotifications(t *testing.T) {
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag: cloudprotocol.AlertTagInstanceQuota,
-				Payload: cloudprotocol.InstanceQuotaAlert{
-					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
-					Parameter:     "param1", Value: 42, Status: resourcemonitor.AlertStatusRaise,
-				},
+			expectedAlert: cloudprotocol.InstanceQuotaAlert{
+				AlertItem:     cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagInstanceQuota, Timestamp: now},
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
+				Parameter:     "param1", Value: 42, Status: resourcemonitor.AlertStatusRaise,
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagInstanceQuota,
+				Tag:       cloudprotocol.AlertTagInstanceQuota,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_InstanceQuotaAlert{
 					InstanceQuotaAlert: &pbsm.InstanceQuotaAlert{
 						Instance:  &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
@@ -463,15 +463,14 @@ func TestSMAlertNotifications(t *testing.T) {
 			},
 		},
 		{
-			expectedAlert: cloudprotocol.AlertItem{
-				Tag: cloudprotocol.AlertTagServiceInstance,
-				Payload: cloudprotocol.ServiceInstanceAlert{
-					InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
-					Message:       "ServiceInstanceAlert", ServiceVersion: "42.0.0",
-				},
+			expectedAlert: cloudprotocol.ServiceInstanceAlert{
+				AlertItem:     cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagServiceInstance, Timestamp: now},
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: "id1", SubjectID: "s1", Instance: 1},
+				Message:       "ServiceInstanceAlert", ServiceVersion: "42.0.0",
 			},
 			sendAlert: &pbsm.Alert{
-				Tag: cloudprotocol.AlertTagServiceInstance,
+				Tag:       cloudprotocol.AlertTagServiceInstance,
+				Timestamp: timestamppb.New(now),
 				Payload: &pbsm.Alert_InstanceAlert{
 					InstanceAlert: &pbsm.InstanceAlert{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
@@ -483,26 +482,28 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 
 	for _, testAlert := range testData {
-		currentTime := time.Now().UTC()
-		testAlert.expectedAlert.Timestamp = currentTime
-		testAlert.sendAlert.Timestamp = timestamppb.New(currentTime)
-
 		smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
 			SMOutgoingMessage: &pbsm.SMOutgoingMessages_Alert{Alert: testAlert.sendAlert},
 		}
 
-		if err := waitMessage(alertSender.messageChannel, testAlert.expectedAlert, messageTimeout); err != nil {
+		if err := waitAlerts(alertSender.messageChannel, testAlert.expectedAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect alert notification: %v", err)
 		}
 	}
 
 	expectedSystemLimitAlert := []cloudprotocol.SystemQuotaAlert{
-		{Parameter: "cpu", Value: 42, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise},
-		{Parameter: "ram", Value: 99, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise},
+		{
+			AlertItem: cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagSystemQuota},
+			Parameter: "cpu", Value: 42, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
+		},
+		{
+			AlertItem: cloudprotocol.AlertItem{Tag: cloudprotocol.AlertTagSystemQuota},
+			Parameter: "ram", Value: 99, NodeID: nodeID, Status: resourcemonitor.AlertStatusRaise,
+		},
 	}
 
 	for _, limitAlert := range expectedSystemLimitAlert {
-		if err := waitMessage(controller.GetSystemQuoteAlertChannel(), limitAlert, messageTimeout); err != nil {
+		if err := waitAlerts(controller.GetSystemQuoteAlertChannel(), limitAlert, messageTimeout); err != nil {
 			t.Errorf("Incorrect system limit alert: %v", err)
 		}
 	}
@@ -814,6 +815,7 @@ func TestLogMessages(t *testing.T) {
 		ErrorInfo: &cloudprotocol.ErrorInfo{
 			Message: "this is error",
 		},
+		Status: "ok",
 	}
 
 	smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
@@ -1302,10 +1304,10 @@ func TestConnectionStatus(t *testing.T) {
  **********************************************************************************************************************/
 
 func newTestAlertSender() *testAlertSender {
-	return &testAlertSender{messageChannel: make(chan cloudprotocol.AlertItem, 1)}
+	return &testAlertSender{messageChannel: make(chan interface{}, 1)}
 }
 
-func (sender *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
+func (sender *testAlertSender) SendAlert(alert interface{}) {
 	sender.messageChannel <- alert
 }
 
@@ -1344,6 +1346,23 @@ func (sender *testMessageSender) UnsubscribeFromConnectionEvents(consumer amqpha
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func waitAlerts[T any](messageChannel <-chan T, expectedMsg interface{}, timeout time.Duration) error {
+	select {
+	case <-time.After(timeout):
+		return aoserrors.New("wait message timeout")
+
+	case message := <-messageChannel:
+		if !alertutils.AlertsPayloadEqual(message, expectedMsg) {
+			log.Debugf("%v", message)
+			log.Debugf("%v", expectedMsg)
+
+			return aoserrors.New("incorrect received message")
+		}
+	}
+
+	return nil
+}
 
 func waitMessage[T any](messageChannel <-chan T, expectedMsg interface{}, timeout time.Duration) error {
 	select {
