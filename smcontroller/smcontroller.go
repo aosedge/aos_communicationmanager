@@ -74,7 +74,7 @@ type Controller struct {
 
 // AlertSender sends alert.
 type AlertSender interface {
-	SendAlert(alert cloudprotocol.AlertItem)
+	SendAlert(alert interface{})
 }
 
 // MonitoringSender sends monitoring data.

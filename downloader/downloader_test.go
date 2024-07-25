@@ -757,8 +757,8 @@ func TestReleaseByType(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
-func (instance *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
-	downloadAlert, ok := alert.Payload.(cloudprotocol.DownloadAlert)
+func (instance *testAlertSender) SendAlert(alert interface{}) {
+	downloadAlert, ok := alert.(cloudprotocol.DownloadAlert)
 	if !ok {
 		log.Error("Received not download alert")
 	}
