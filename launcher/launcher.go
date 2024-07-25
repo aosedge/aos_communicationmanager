@@ -20,6 +20,7 @@ package launcher
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -69,7 +70,6 @@ type Launcher struct {
 
 	runStatusChannel   chan unitstatushandler.RunInstancesStatus
 	nodes              map[string]*nodeHandler
-	currentRunStatus   []cloudprotocol.InstanceStatus
 	currentErrorStatus []cloudprotocol.InstanceStatus
 	pendingNewServices []string
 
@@ -205,12 +205,13 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, n
 		log.Errorf("Can't init nodes: %v", err)
 	}
 
+	if err := launcher.processRemovedInstances(instances); err != nil {
+		log.Errorf("Can't process removed instances: %v", err)
+	}
+
 	if err := launcher.updateNetworks(instances); err != nil {
 		log.Errorf("Can't update networks: %v", err)
 	}
-
-	launcher.cacheRemovedInstances(instances)
-	launcher.removeInstanceNetworkParameters(instances)
 
 	launcher.pendingNewServices = newServices
 	launcher.currentErrorStatus = launcher.performNodeBalancing(instances)
@@ -327,7 +328,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 }
 
 func (launcher *Launcher) sendCurrentStatus() {
-	runStatusToSend := unitstatushandler.RunInstancesStatus{
+	runStatus := unitstatushandler.RunInstancesStatus{
 		UnitSubjects: []string{}, Instances: []cloudprotocol.InstanceStatus{},
 	}
 
@@ -336,33 +337,27 @@ func (launcher *Launcher) sendCurrentStatus() {
 			node.waitStatus = false
 
 			for _, errInstance := range node.runRequest.Instances {
-				runStatusToSend.Instances = append(runStatusToSend.Instances, cloudprotocol.InstanceStatus{
+				runStatus.Instances = append(runStatus.Instances, cloudprotocol.InstanceStatus{
 					InstanceIdent: errInstance.InstanceIdent,
 					NodeID:        node.nodeInfo.NodeID, Status: cloudprotocol.InstanceStateFailed,
 					ErrorInfo: &cloudprotocol.ErrorInfo{Message: "wait run status timeout"},
 				})
 			}
-		} else {
-			runStatusToSend.Instances = append(runStatusToSend.Instances, node.runStatus...)
-		}
-	}
-
-	errorInstances := []aostypes.InstanceIdent{}
-
-	for i := range runStatusToSend.Instances {
-		if runStatusToSend.Instances[i].ErrorInfo != nil {
-			errorInstances = append(errorInstances, runStatusToSend.Instances[i].InstanceIdent)
 
 			continue
 		}
 
-		runStatusToSend.Instances[i].StateChecksum = launcher.storageStateProvider.GetInstanceCheckSum(
-			runStatusToSend.Instances[i].InstanceIdent)
+		runStatus.Instances = append(runStatus.Instances, node.runStatus...)
+	}
+
+	for i := range runStatus.Instances {
+		runStatus.Instances[i].StateChecksum = launcher.storageStateProvider.GetInstanceCheckSum(
+			runStatus.Instances[i].InstanceIdent)
 	}
 
 newServicesLoop:
 	for _, newService := range launcher.pendingNewServices {
-		for _, instance := range runStatusToSend.Instances {
+		for _, instance := range runStatus.Instances {
 			if instance.ServiceID == newService && instance.ErrorInfo == nil {
 				continue newServicesLoop
 			}
@@ -380,7 +375,7 @@ newServicesLoop:
 			errorService.ErrorInfo.Message = "can't run any instances"
 		}
 
-		runStatusToSend.ErrorServices = append(runStatusToSend.ErrorServices, errorService)
+		runStatus.ErrorServices = append(runStatus.ErrorServices, errorService)
 
 		if err := launcher.imageProvider.RevertService(newService); err != nil {
 			log.WithField("serviceID:", newService).Errorf("Can't revert service: %v", err)
@@ -389,45 +384,43 @@ newServicesLoop:
 
 	launcher.pendingNewServices = []string{}
 
-	launcher.processStoppedInstances(runStatusToSend.Instances, errorInstances)
-
-	runStatusToSend.Instances = append(runStatusToSend.Instances, launcher.currentErrorStatus...)
-
-	launcher.runStatusChannel <- runStatusToSend
-
-	launcher.currentRunStatus = runStatusToSend.Instances
+	runStatus.Instances = append(runStatus.Instances, launcher.currentErrorStatus...)
+	launcher.runStatusChannel <- runStatus
 	launcher.currentErrorStatus = []cloudprotocol.InstanceStatus{}
 }
 
-func (launcher *Launcher) processStoppedInstances(
-	newStatus []cloudprotocol.InstanceStatus, errorInstances []aostypes.InstanceIdent,
-) {
-	stoppedInstances := errorInstances
+func (launcher *Launcher) processRemovedInstances(newInstances []cloudprotocol.InstanceInfo) error {
+	launcher.removeInstanceNetworkParameters(newInstances)
 
-currentInstancesLoop:
-	for _, currentStatus := range launcher.currentRunStatus {
-		for _, newStatus := range newStatus {
-			if currentStatus.InstanceIdent != newStatus.InstanceIdent {
-				continue
-			}
+	curInstances, err := launcher.storage.GetInstances()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
 
-			if newStatus.ErrorInfo != nil && currentStatus.ErrorInfo == nil {
-				stoppedInstances = append(stoppedInstances, currentStatus.InstanceIdent)
-			}
-
-			continue currentInstancesLoop
+	for _, curInstance := range curInstances {
+		if curInstance.Cached {
+			continue
 		}
 
-		if currentStatus.ErrorInfo == nil {
-			stoppedInstances = append(stoppedInstances, currentStatus.InstanceIdent)
+		if !slices.ContainsFunc(newInstances, func(info cloudprotocol.InstanceInfo) bool {
+			return curInstance.ServiceID == info.ServiceID && curInstance.SubjectID == info.SubjectID &&
+				curInstance.Instance < info.NumInstances
+		}) {
+			log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent, nil)).Debug("Remove instance")
+
+			if err := launcher.storageStateProvider.Cleanup(curInstance.InstanceIdent); err != nil {
+				log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent, nil)).Errorf(
+					"Can't cleanup instance state/storage: %v", err)
+			}
+
+			if err := launcher.storage.SetInstanceCached(curInstance.InstanceIdent, true); err != nil {
+				log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent, nil)).Errorf(
+					"Can't mark instance as cached: %v", err)
+			}
 		}
 	}
 
-	for _, stopIdent := range stoppedInstances {
-		if err := launcher.storageStateProvider.Cleanup(stopIdent); err != nil {
-			log.Errorf("Can't cleanup state storage for instance: %v", err)
-		}
-	}
+	return nil
 }
 
 func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo) error {
@@ -625,37 +618,6 @@ nextNetInstance:
 	}
 }
 
-func (launcher *Launcher) cacheRemovedInstances(instances []cloudprotocol.InstanceInfo) {
-	storeInstances, err := launcher.storage.GetInstances()
-	if err != nil {
-		log.Errorf("Can't get instances from storage: %v", err)
-		return
-	}
-
-nextStoreInstance:
-	for _, storeInstance := range storeInstances {
-		for _, instance := range instances {
-			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
-				instanceIdent := aostypes.InstanceIdent{
-					ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
-					Instance: instanceIndex,
-				}
-
-				if storeInstance.InstanceIdent == instanceIdent {
-					continue nextStoreInstance
-				}
-			}
-		}
-
-		log.WithFields(instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Debug("Cache instance")
-
-		if err := launcher.storage.SetInstanceCached(storeInstance.InstanceIdent, true); err != nil {
-			log.WithFields(
-				instanceIdentLogFields(storeInstance.InstanceIdent, nil)).Errorf("Can't mark instance as cached: %v", err)
-		}
-	}
-}
-
 func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceInfo,
 	instance cloudprotocol.InstanceInfo, index uint64,
 ) (aostypes.InstanceInfo, error) {
@@ -701,8 +663,6 @@ func (launcher *Launcher) prepareInstanceStartInfo(service imagemanager.ServiceI
 
 	instanceInfo.StoragePath, instanceInfo.StatePath, err = launcher.storageStateProvider.Setup(stateStorageParams)
 	if err != nil {
-		_ = launcher.instanceManager.releaseUID(uid)
-
 		return instanceInfo, aoserrors.Wrap(err)
 	}
 
