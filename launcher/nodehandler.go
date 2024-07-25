@@ -195,7 +195,7 @@ func getNodesByStaticResources(allNodes []*nodeHandler,
 
 func getNodesByDevices(availableNodes []*nodeHandler, desiredDevices []aostypes.ServiceDevice) ([]*nodeHandler, error) {
 	if len(desiredDevices) == 0 {
-		return slices.Clone(availableNodes), nil
+		return availableNodes, nil
 	}
 
 	nodes := make([]*nodeHandler, 0)
@@ -287,18 +287,11 @@ func getNodeByRunners(allNodes []*nodeHandler, runners []string) (nodes []*nodeH
 	return nodes
 }
 
-func getMostPriorityNode(nodes []*nodeHandler) *nodeHandler {
-	if len(nodes) == 1 {
-		return nodes[0]
+func getInstanceNode(service imagemanager.ServiceInfo, nodes []*nodeHandler) (*nodeHandler, error) {
+	nodes, err := getNodesByDevices(nodes, service.Config.Devices)
+	if err != nil {
+		return nil, err
 	}
 
-	maxNodePriorityIndex := 0
-
-	for i := 1; i < len(nodes); i++ {
-		if nodes[maxNodePriorityIndex].nodeConfig.Priority < nodes[i].nodeConfig.Priority {
-			maxNodePriorityIndex = i
-		}
-	}
-
-	return nodes[maxNodePriorityIndex]
+	return nodes[0], nil
 }
