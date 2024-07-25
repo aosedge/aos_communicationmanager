@@ -521,23 +521,25 @@ func TestSendMessages(t *testing.T) {
 		},
 	}
 
+	now := time.Now().UTC()
+	nowFormatted := now.Format(time.RFC3339Nano)
+
 	alertsData := cloudprotocol.Alerts{
 		MessageType: cloudprotocol.AlertsMessageType,
-		Items: []cloudprotocol.AlertItem{
-			{
-				Timestamp: time.Now().UTC(),
-				Tag:       cloudprotocol.AlertTagSystemError,
-				Payload:   map[string]interface{}{"Message": "System error", "nodeId": "mainNode"},
+		Items: []interface{}{
+			cloudprotocol.SystemAlert{
+				AlertItem: cloudprotocol.AlertItem{Timestamp: now, Tag: cloudprotocol.AlertTagSystemError},
+				Message:   "System error", NodeID: "mainNode",
 			},
-			{
-				Timestamp: time.Now().UTC(),
-				Tag:       cloudprotocol.AlertTagSystemError,
-				Payload:   map[string]interface{}{"Message": "Service crashed", "nodeId": "mainNode"},
+			cloudprotocol.SystemAlert{
+				AlertItem: cloudprotocol.AlertItem{Timestamp: now, Tag: cloudprotocol.AlertTagSystemError},
+				Message:   "Service crashed", NodeID: "mainNode",
 			},
-			{
-				Timestamp: time.Now().UTC(),
-				Tag:       cloudprotocol.AlertTagResourceValidate,
-				Payload:   map[string]interface{}{"Parameter": "cpu", "Value": float64(100), "nodeId": "mainNode"},
+			cloudprotocol.SystemQuotaAlert{
+				AlertItem: cloudprotocol.AlertItem{Timestamp: now, Tag: cloudprotocol.AlertTagSystemQuota},
+				NodeID:    "mainNode",
+				Parameter: "cpu",
+				Value:     1000,
 			},
 		},
 	}
@@ -723,7 +725,23 @@ func TestSendMessages(t *testing.T) {
 					SystemID: systemID,
 					Version:  cloudprotocol.ProtocolVersion,
 				},
-				Data: &alertsData,
+				Data: &cloudprotocol.Alerts{
+					MessageType: cloudprotocol.AlertsMessageType,
+					Items: []interface{}{
+						map[string]interface{}{
+							"timestamp": nowFormatted, "tag": "systemAlert",
+							"nodeId": "mainNode", "message": "System error",
+						},
+						map[string]interface{}{
+							"timestamp": nowFormatted, "tag": "systemAlert",
+							"nodeId": "mainNode", "message": "Service crashed",
+						},
+						map[string]interface{}{
+							"timestamp": nowFormatted, "tag": "systemQuotaAlert",
+							"nodeId": "mainNode", "parameter": "cpu", "value": float64(1000),
+						},
+					},
+				},
 			},
 			getDataType: func() interface{} {
 				return &cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}
@@ -831,30 +849,31 @@ func TestSendMessages(t *testing.T) {
 
 		select {
 		case delivery := <-testClient.delivery:
-			var (
-				rawData     json.RawMessage
-				receiveData = cloudprotocol.Message{Data: &rawData}
-			)
+			receivedHeader := cloudprotocol.Message{}
 
-			if err = json.Unmarshal(delivery.Body, &receiveData); err != nil {
+			if err = json.Unmarshal(delivery.Body, &receivedHeader); err != nil {
 				t.Errorf("Error parsing message: %v", err)
 				continue
 			}
 
-			if !reflect.DeepEqual(receiveData.Header, message.data.Header) {
-				t.Errorf("Wrong Header received: %v != %v", receiveData.Header, message.data.Header)
+			if !reflect.DeepEqual(receivedHeader.Header, message.data.Header) {
+				t.Errorf("Wrong Header received: %v != %v", receivedHeader.Header, message.data.Header)
 				continue
 			}
 
-			decodedMsg := message.getDataType()
+			var receivedData struct {
+				Data interface{} `json:"data"`
+			}
 
-			if err = json.Unmarshal(rawData, &decodedMsg); err != nil {
+			receivedData.Data = message.getDataType()
+
+			if err = json.Unmarshal(delivery.Body, &receivedData); err != nil {
 				t.Errorf("Error parsing message: %v", err)
 				continue
 			}
 
-			if !reflect.DeepEqual(message.data.Data, decodedMsg) {
-				t.Errorf("Wrong data received: %v != %v", decodedMsg, message.data.Data)
+			if !reflect.DeepEqual(message.data.Data, receivedData.Data) {
+				t.Errorf("Wrong data received: %v != %v", receivedData.Data, message.data.Data)
 			}
 
 		case err = <-testClient.errChannel:
