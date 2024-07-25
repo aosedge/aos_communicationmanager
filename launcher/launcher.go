@@ -35,7 +35,6 @@ import (
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
 	"github.com/aosedge/aos_communicationmanager/networkmanager"
 	"github.com/aosedge/aos_communicationmanager/storagestate"
-	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 )
 
 /**********************************************************************************************************************
@@ -68,10 +67,9 @@ type Launcher struct {
 	storageStateProvider StorageStateProvider
 	networkManager       NetworkManager
 
-	runStatusChannel   chan unitstatushandler.RunInstancesStatus
-	nodes              map[string]*nodeHandler
+	runStatusChannel   chan []cloudprotocol.InstanceStatus
 	currentErrorStatus []cloudprotocol.InstanceStatus
-	pendingNewServices []string
+	nodes              map[string]*nodeHandler
 
 	cancelFunc      context.CancelFunc
 	connectionTimer *time.Timer
@@ -111,7 +109,6 @@ type NetworkManager interface {
 type ImageProvider interface {
 	GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error)
 	GetLayerInfo(digest string) (imagemanager.LayerInfo, error)
-	RevertService(serviceID string) error
 	GetRemoveServiceChannel() (channel <-chan string)
 }
 
@@ -160,7 +157,7 @@ func New(
 	launcher = &Launcher{
 		config: config, storage: storage, nodeInfoProvider: nodeInfoProvider, nodeManager: nodeManager,
 		imageProvider: imageProvider, resourceManager: resourceManager, storageStateProvider: storageStateProvider,
-		networkManager: networkManager, runStatusChannel: make(chan unitstatushandler.RunInstancesStatus, 10),
+		networkManager: networkManager, runStatusChannel: make(chan []cloudprotocol.InstanceStatus, 10),
 	}
 
 	if launcher.instanceManager, err = newInstanceManager(config, storage, storageStateProvider,
@@ -195,7 +192,7 @@ func (launcher *Launcher) Close() {
 }
 
 // RunInstances performs run service instances.
-func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error {
+func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo) error {
 	launcher.Lock()
 	defer launcher.Unlock()
 
@@ -213,7 +210,6 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, n
 		log.Errorf("Can't update networks: %v", err)
 	}
 
-	launcher.pendingNewServices = newServices
 	launcher.currentErrorStatus = launcher.performNodeBalancing(instances)
 
 	if err := launcher.networkManager.RestartDNSServer(); err != nil {
@@ -224,7 +220,7 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, n
 }
 
 // GetRunStatusesChannel gets channel with run status instances status.
-func (launcher *Launcher) GetRunStatusesChannel() <-chan unitstatushandler.RunInstancesStatus {
+func (launcher *Launcher) GetRunStatusesChannel() <-chan []cloudprotocol.InstanceStatus {
 	return launcher.runStatusChannel
 }
 
@@ -328,16 +324,14 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 }
 
 func (launcher *Launcher) sendCurrentStatus() {
-	runStatus := unitstatushandler.RunInstancesStatus{
-		UnitSubjects: []string{}, Instances: []cloudprotocol.InstanceStatus{},
-	}
+	var instancesStatus []cloudprotocol.InstanceStatus
 
 	for _, node := range launcher.getNodesByPriorities() {
 		if node.waitStatus {
 			node.waitStatus = false
 
 			for _, errInstance := range node.runRequest.Instances {
-				runStatus.Instances = append(runStatus.Instances, cloudprotocol.InstanceStatus{
+				instancesStatus = append(instancesStatus, cloudprotocol.InstanceStatus{
 					InstanceIdent: errInstance.InstanceIdent,
 					NodeID:        node.nodeInfo.NodeID, Status: cloudprotocol.InstanceStateFailed,
 					ErrorInfo: &cloudprotocol.ErrorInfo{Message: "wait run status timeout"},
@@ -347,46 +341,17 @@ func (launcher *Launcher) sendCurrentStatus() {
 			continue
 		}
 
-		runStatus.Instances = append(runStatus.Instances, node.runStatus...)
+		instancesStatus = append(instancesStatus, node.runStatus...)
 	}
 
-	for i := range runStatus.Instances {
-		runStatus.Instances[i].StateChecksum = launcher.storageStateProvider.GetInstanceCheckSum(
-			runStatus.Instances[i].InstanceIdent)
+	for i := range instancesStatus {
+		instancesStatus[i].StateChecksum = launcher.storageStateProvider.GetInstanceCheckSum(
+			instancesStatus[i].InstanceIdent)
 	}
 
-newServicesLoop:
-	for _, newService := range launcher.pendingNewServices {
-		for _, instance := range runStatus.Instances {
-			if instance.ServiceID == newService && instance.ErrorInfo == nil {
-				continue newServicesLoop
-			}
-		}
-
-		errorService := cloudprotocol.ServiceStatus{
-			ServiceID: newService, Status: cloudprotocol.ErrorStatus, ErrorInfo: &cloudprotocol.ErrorInfo{},
-		}
-
-		service, err := launcher.imageProvider.GetServiceInfo(newService)
-		if err != nil {
-			errorService.ErrorInfo.Message = err.Error()
-		} else {
-			errorService.Version = service.Version
-			errorService.ErrorInfo.Message = "can't run any instances"
-		}
-
-		runStatus.ErrorServices = append(runStatus.ErrorServices, errorService)
-
-		if err := launcher.imageProvider.RevertService(newService); err != nil {
-			log.WithField("serviceID:", newService).Errorf("Can't revert service: %v", err)
-		}
-	}
-
-	launcher.pendingNewServices = []string{}
-
-	runStatus.Instances = append(runStatus.Instances, launcher.currentErrorStatus...)
-	launcher.runStatusChannel <- runStatus
-	launcher.currentErrorStatus = []cloudprotocol.InstanceStatus{}
+	instancesStatus = append(instancesStatus, launcher.currentErrorStatus...)
+	launcher.runStatusChannel <- instancesStatus
+	launcher.currentErrorStatus = nil
 }
 
 func (launcher *Launcher) processRemovedInstances(newInstances []cloudprotocol.InstanceInfo) error {

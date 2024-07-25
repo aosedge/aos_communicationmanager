@@ -38,7 +38,6 @@ import (
 	"github.com/aosedge/aos_communicationmanager/launcher"
 	"github.com/aosedge/aos_communicationmanager/networkmanager"
 	"github.com/aosedge/aos_communicationmanager/storagestate"
-	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 )
 
 /***********************************************************************************************************************
@@ -104,7 +103,6 @@ type testNodeManager struct {
 type testImageProvider struct {
 	services                      map[string]imagemanager.ServiceInfo
 	layers                        map[string]imagemanager.LayerInfo
-	revertedServices              []string
 	removeServiceInstancesChannel chan string
 }
 
@@ -338,7 +336,7 @@ func TestInitialStatus(t *testing.T) {
 		}
 		nodeInfoProvider  = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager       = newTestNodeManager()
-		expectedRunStatus = unitstatushandler.RunInstancesStatus{}
+		expectedRunStatus = []cloudprotocol.InstanceStatus{}
 		imageManager      = &testImageProvider{}
 	)
 
@@ -372,7 +370,7 @@ func TestInitialStatus(t *testing.T) {
 			NodeID: id,
 		}}
 
-		expectedRunStatus.Instances = append(expectedRunStatus.Instances, instances...)
+		expectedRunStatus = append(expectedRunStatus, instances...)
 
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{NodeID: id, Instances: instances}
 	}
@@ -452,7 +450,7 @@ func TestBalancing(t *testing.T) {
 		serviceConfigs      map[string]aostypes.ServiceConfig
 		desiredInstances    []cloudprotocol.InstanceInfo
 		expectedRunRequests map[string]runRequest
-		expectedRunStatus   unitstatushandler.RunInstancesStatus
+		expectedRunStatus   []cloudprotocol.InstanceStatus
 	}
 
 	testItems := []testData{
@@ -522,27 +520,25 @@ func TestBalancing(t *testing.T) {
 					},
 				},
 			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, nodeIDRunxSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, nodeIDRunxSM, nil),
-				},
+			expectedRunStatus: []cloudprotocol.InstanceStatus{
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 1,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 1,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, nodeIDRunxSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 1,
+				}, nodeIDRunxSM, nil),
 			},
 		},
 		// Check labels: label low priority service to run on high priority node
@@ -601,27 +597,25 @@ func TestBalancing(t *testing.T) {
 					instances: []aostypes.InstanceInfo{},
 				},
 			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
-				},
+			expectedRunStatus: []cloudprotocol.InstanceStatus{
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 1,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 1,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 1,
+				}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
 			},
 		},
 		// Check available resources
@@ -689,27 +683,25 @@ func TestBalancing(t *testing.T) {
 					instances: []aostypes.InstanceInfo{},
 				},
 			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
-				},
+			expectedRunStatus: []cloudprotocol.InstanceStatus{
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 1,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 1,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 1,
+				}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
 			},
 		},
 		// Check available devices
@@ -806,36 +798,34 @@ func TestBalancing(t *testing.T) {
 					instances: []aostypes.InstanceInfo{},
 				},
 			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 2,
-					}, nodeIDRemoteSM2, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 3,
-					}, "", errors.New("no available device found")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 2,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, "", errors.New("no available device found")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, "", errors.New("no available device found")), //nolint:goerr113
-				},
+			expectedRunStatus: []cloudprotocol.InstanceStatus{
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 0,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 1,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 2,
+				}, nodeIDRemoteSM2, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service1, SubjectID: subject1, Instance: 3,
+				}, "", errors.New("no available device found")), //nolint:goerr113
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 0,
+				}, nodeIDLocalSM, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 1,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service2, SubjectID: subject1, Instance: 2,
+				}, nodeIDRemoteSM1, nil),
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 0,
+				}, "", errors.New("no available device found")), //nolint:goerr113
+				createInstanceStatus(aostypes.InstanceIdent{
+					ServiceID: service3, SubjectID: subject1, Instance: 1,
+				}, "", errors.New("no available device found")), //nolint:goerr113
 			},
 		},
 	}
@@ -864,13 +854,13 @@ func TestBalancing(t *testing.T) {
 		}
 
 		if err := waitRunInstancesStatus(
-			launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+			launcherInstance.GetRunStatusesChannel(), []cloudprotocol.InstanceStatus{}, time.Second); err != nil {
 			t.Errorf("Incorrect run status: %v", err)
 		}
 
 		// Run instances
 
-		if err := launcherInstance.RunInstances(testItem.desiredInstances, nil); err != nil {
+		if err := launcherInstance.RunInstances(testItem.desiredInstances); err != nil {
 			t.Fatalf("Can't run instances %v", err)
 		}
 
@@ -884,104 +874,6 @@ func TestBalancing(t *testing.T) {
 		}
 
 		launcherInstance.Close()
-	}
-}
-
-func TestServiceRevert(t *testing.T) {
-	var (
-		cfg = &config.Config{
-			SMController: config.SMController{
-				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
-			},
-		}
-		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
-		nodeManager      = newTestNodeManager()
-		imageManager     = &testImageProvider{}
-		resourceManager  = newTestResourceManager()
-	)
-
-	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
-		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
-		Status: cloudprotocol.NodeStatusProvisioned,
-		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
-	}
-	imageManager.services = map[string]imagemanager.ServiceInfo{
-		service1: {
-			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
-			RemoteURL:   service1RemoteURL,
-			Layers:      []string{layer1},
-		},
-		service2: {
-			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
-			RemoteURL:   service2RemoteURL,
-			Layers:      []string{layer2},
-		},
-	}
-
-	imageManager.layers = map[string]imagemanager.LayerInfo{
-		layer1: {
-			LayerInfo: createLayerInfo(layer1, layer1LocalURL),
-			RemoteURL: layer1RemoteURL,
-		},
-	}
-
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
-		resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
-	if err != nil {
-		t.Fatalf("Can't create launcher %v", err)
-	}
-
-	// Wait initial run status
-
-	for nodeID, info := range nodeInfoProvider.nodeInfo {
-		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
-			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
-		}
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	// Run instances
-
-	desiredInstances := []cloudprotocol.InstanceInfo{
-		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
-		{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
-	}
-
-	if err := launcherInstance.RunInstances(desiredInstances, []string{service2}); err != nil {
-		t.Fatalf("Can't run instances %v", err)
-	}
-
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 1,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, "", errors.New("layer does't exist")), //nolint:goerr113
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 1,
-			}, "", errors.New("layer does't exist")), //nolint:goerr113
-		},
-		ErrorServices: []cloudprotocol.ServiceStatus{
-			{ServiceID: service2, Version: "1.0", Status: cloudprotocol.ErrorStatus},
-		},
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if !reflect.DeepEqual([]string{service2}, imageManager.revertedServices) {
-		t.Errorf("Incorrect reverted services: %v", imageManager.revertedServices)
 	}
 }
 
@@ -1042,7 +934,7 @@ func TestStorageCleanup(t *testing.T) {
 	}
 
 	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		launcherInstance.GetRunStatusesChannel(), []cloudprotocol.InstanceStatus{}, time.Second); err != nil {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
@@ -1052,7 +944,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service3, SubjectID: subject1, Priority: 100, NumInstances: 1},
 	}
 
-	if err := launcherInstance.RunInstances(desiredInstances, nil); err != nil {
+	if err := launcherInstance.RunInstances(desiredInstances); err != nil {
 		t.Fatalf("Can't run instances %v", err)
 	}
 
@@ -1087,21 +979,19 @@ func TestStorageCleanup(t *testing.T) {
 		},
 	}
 
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 1,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDRunxSM, nil),
-		},
+	expectedRunStatus := []cloudprotocol.InstanceStatus{
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service1, SubjectID: subject1, Instance: 0,
+		}, nodeIDLocalSM, nil),
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service1, SubjectID: subject1, Instance: 1,
+		}, nodeIDLocalSM, nil),
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service2, SubjectID: subject1, Instance: 0,
+		}, nodeIDLocalSM, nil),
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service3, SubjectID: subject1, Instance: 0,
+		}, nodeIDRunxSM, nil),
 	}
 
 	if err := waitRunInstancesStatus(
@@ -1117,7 +1007,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
 	}
 
-	expectedRunStatus.Instances = []cloudprotocol.InstanceStatus{
+	expectedRunStatus = []cloudprotocol.InstanceStatus{
 		createInstanceStatus(aostypes.InstanceIdent{
 			ServiceID: service1, SubjectID: subject1, Instance: 0,
 		}, nodeIDLocalSM, nil),
@@ -1129,7 +1019,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service3, SubjectID: subject1, Instance: 0},
 	}
 
-	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
+	if err := launcherInstance.RunInstances(desiredInstances); err != nil {
 		t.Fatalf("Can't run instances %v", err)
 	}
 
@@ -1396,12 +1286,6 @@ func (testProvider *testImageProvider) GetRemoveServiceChannel() (channel <-chan
 	return testProvider.removeServiceInstancesChannel
 }
 
-func (testProvider *testImageProvider) RevertService(serviceID string) error {
-	testProvider.revertedServices = append(testProvider.revertedServices, serviceID)
-
-	return nil
-}
-
 // testNetworkManager
 
 func newTestNetworkManager(network string) *testNetworkManager {
@@ -1519,63 +1403,48 @@ func createInstanceInfo(uid uint32, ip int, ident aostypes.InstanceIdent, priori
 	}
 }
 
-func waitRunInstancesStatus(
-	messageChannel <-chan unitstatushandler.RunInstancesStatus, expectedMsg unitstatushandler.RunInstancesStatus,
-	timeout time.Duration,
-) (err error) {
-	var message unitstatushandler.RunInstancesStatus
-
+func waitRunInstancesStatus(runStatusChannel <-chan []cloudprotocol.InstanceStatus,
+	expectedStatus []cloudprotocol.InstanceStatus, timeout time.Duration,
+) error {
 	select {
 	case <-time.After(timeout):
 		return aoserrors.New("wait message timeout")
 
-	case message = <-messageChannel:
-		if len(message.Instances) != len(expectedMsg.Instances) {
+	case receivedStatus := <-runStatusChannel:
+		if len(receivedStatus) != len(expectedStatus) {
 			return aoserrors.New("incorrect length")
 		}
 
 	topLoop:
-		for _, receivedEl := range message.Instances {
-			for _, expectedEl := range expectedMsg.Instances {
-				if receivedEl.ErrorInfo == nil && expectedEl.ErrorInfo != nil {
+		for _, receivedItem := range receivedStatus {
+			for _, expectedItem := range expectedStatus {
+				if receivedItem.ErrorInfo == nil && expectedItem.ErrorInfo != nil {
 					continue
 				}
 
-				if receivedEl.ErrorInfo != nil && expectedEl.ErrorInfo == nil {
+				if receivedItem.ErrorInfo != nil && expectedItem.ErrorInfo == nil {
 					continue
 				}
 
-				if receivedEl.ErrorInfo != nil && expectedEl.ErrorInfo != nil {
-					if receivedEl.ErrorInfo.AosCode != expectedEl.ErrorInfo.AosCode ||
-						receivedEl.ErrorInfo.ExitCode != expectedEl.ErrorInfo.ExitCode ||
-						!strings.Contains(receivedEl.ErrorInfo.Message, expectedEl.ErrorInfo.Message) {
+				if receivedItem.ErrorInfo != nil && expectedItem.ErrorInfo != nil {
+					if receivedItem.ErrorInfo.AosCode != expectedItem.ErrorInfo.AosCode ||
+						receivedItem.ErrorInfo.ExitCode != expectedItem.ErrorInfo.ExitCode ||
+						!strings.Contains(receivedItem.ErrorInfo.Message, expectedItem.ErrorInfo.Message) {
 						continue
 					}
 				}
 
-				receivedForCheck := receivedEl
+				receivedForCheck := receivedItem
 
 				receivedForCheck.ErrorInfo = nil
-				expectedEl.ErrorInfo = nil
+				expectedItem.ErrorInfo = nil
 
-				if reflect.DeepEqual(receivedForCheck, expectedEl) {
+				if reflect.DeepEqual(receivedForCheck, expectedItem) {
 					continue topLoop
 				}
 			}
 
 			return aoserrors.New("incorrect instances in run status")
-		}
-
-		if err := deepSlicesCompare(expectedMsg.UnitSubjects, message.UnitSubjects); err != nil {
-			return aoserrors.New("incorrect subjects in run status")
-		}
-
-		for i := range message.ErrorServices {
-			message.ErrorServices[i].ErrorInfo = nil
-		}
-
-		if err := deepSlicesCompare(expectedMsg.ErrorServices, message.ErrorServices); err != nil {
-			return aoserrors.New("incorrect error services in run status")
 		}
 
 		return nil
