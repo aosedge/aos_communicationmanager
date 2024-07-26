@@ -181,14 +181,16 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 
 // RemoveInstanceNetworkConf removes stored instance network parameters.
 func (manager *NetworkManager) RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent, networkID string) {
+	manager.Lock()
+	defer manager.Unlock()
+
 	networkParameters, found := manager.getNetworkParametersToCache(networkID, instanceIdent)
 	if !found {
 		return
 	}
 
-	manager.deleteNetworkParametersFromCache(networkID, instanceIdent, net.IP(networkParameters.IP))
-
-	if err := manager.storage.RemoveNetworkInstanceInfo(instanceIdent); err != nil {
+	if err := manager.removeInstanceNetworkParameters(
+		networkID, instanceIdent, net.IP(networkParameters.IP)); err != nil {
 		log.Errorf("Can't remove network info: %v", err)
 	}
 }
@@ -275,6 +277,18 @@ func (manager *NetworkManager) PrepareInstanceNetworkParameters(
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (manager *NetworkManager) removeInstanceNetworkParameters(
+	networkID string, instanceIdent aostypes.InstanceIdent, ip net.IP,
+) error {
+	manager.deleteNetworkParametersFromCache(networkID, instanceIdent, ip)
+
+	if err := manager.storage.RemoveNetworkInstanceInfo(instanceIdent); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
 
 func (manager *NetworkManager) createNetwork(
 	instanceIdent aostypes.InstanceIdent, networkID string, params NetworkParameters,
@@ -394,9 +408,6 @@ func checkIPInSubnet(subnet, ip string) (bool, error) {
 func (manager *NetworkManager) deleteNetworkParametersFromCache(
 	networkID string, instanceIdent aostypes.InstanceIdent, ip net.IP,
 ) {
-	manager.Lock()
-	defer manager.Unlock()
-
 	delete(manager.instancesData[networkID], instanceIdent)
 	delete(manager.dns.hosts, ip.String())
 
@@ -417,9 +428,6 @@ func (manager *NetworkManager) addNetworkParametersToCache(instanceNetworkInfo I
 func (manager *NetworkManager) getNetworkParametersToCache(
 	networkID string, instanceIdent aostypes.InstanceIdent,
 ) (aostypes.NetworkParameters, bool) {
-	manager.RLock()
-	defer manager.RUnlock()
-
 	if instances, ok := manager.instancesData[networkID]; ok {
 		if networkParameter, ok := instances[instanceIdent]; ok {
 			return networkParameter.NetworkParameters, true
@@ -435,6 +443,15 @@ next:
 		for _, providerID := range providers {
 			if networkID == providerID {
 				continue next
+			}
+		}
+
+		log.Debugf("Remove provider network %s", networkID)
+
+		for instanceIdent, netInfo := range manager.instancesData[networkID] {
+			if err := manager.removeInstanceNetworkParameters(
+				networkID, instanceIdent, net.IP(netInfo.IP)); err != nil {
+				log.Errorf("Can't remove network info: %v", err)
 			}
 		}
 
