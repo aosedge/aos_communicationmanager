@@ -212,7 +212,7 @@ desiredLoop:
 		}
 
 		log.WithFields(log.Fields{
-			"id":      desiredComponent.ComponentID,
+			"id":      *desiredComponent.ComponentID,
 			"type":    desiredComponent.ComponentType,
 			"version": desiredComponent.Version,
 		}).Error("Desired component not found")
