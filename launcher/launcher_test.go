@@ -112,7 +112,6 @@ type testResourceManager struct {
 
 type testStorage struct {
 	instanceInfo map[aostypes.InstanceIdent]*launcher.InstanceInfo
-	services     map[string][]imagemanager.ServiceInfo
 }
 
 type testStateStorage struct {
@@ -153,7 +152,7 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 		}
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
-		imageManager     = &testImageProvider{}
+		imageManager     = newTestImageProvider()
 		testStorage      = newTestStorage()
 	)
 
@@ -191,7 +190,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 		}
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
-		imageManager     = &testImageProvider{}
+		imageManager     = newTestImageProvider()
 		testStorage      = newTestStorage()
 		testStateStorage = &testStateStorage{}
 	)
@@ -215,11 +214,13 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 	}
 
 	// add a service to the storage
-	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service1][0].ServiceInfo.ServiceID = service1
 
-	testStorage.services[service2] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service2][0].ServiceInfo.ServiceID = service2
+	imageManager.services[service1] = imagemanager.ServiceInfo{
+		ServiceInfo: createServiceInfo(service1, 0, ""),
+	}
+	imageManager.services[service2] = imagemanager.ServiceInfo{
+		ServiceInfo: createServiceInfo(service2, 0, ""),
+	}
 
 	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, imageManager,
 		&testResourceManager{}, testStateStorage, newTestNetworkManager(""))
@@ -273,18 +274,12 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 		t.Fatalf("Can't add instance %v", err)
 	}
 
-	// add a service to the storage
-	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service1][0].ServiceInfo.ServiceID = service1
-
 	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, testImageManager,
 		&testResourceManager{}, testStateStorage, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
-
-	defer testImageManager.close()
 
 	testImageManager.removeServiceInstancesChannel <- service1
 
@@ -337,7 +332,7 @@ func TestInitialStatus(t *testing.T) {
 		nodeInfoProvider  = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager       = newTestNodeManager()
 		expectedRunStatus = []cloudprotocol.InstanceStatus{}
-		imageManager      = &testImageProvider{}
+		imageManager      = newTestImageProvider()
 	)
 
 	for _, id := range nodeIDs {
@@ -391,7 +386,7 @@ func TestBalancing(t *testing.T) {
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		resourceManager  = newTestResourceManager()
-		imageManager     = &testImageProvider{}
+		imageManager     = newTestImageProvider()
 	)
 
 	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
@@ -887,7 +882,7 @@ func TestStorageCleanup(t *testing.T) {
 		nodeInfoProvider     = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager          = newTestNodeManager()
 		resourceManager      = newTestResourceManager()
-		imageManager         = &testImageProvider{}
+		imageManager         = newTestImageProvider()
 		stateStorageProvider = &testStateStorage{}
 	)
 
@@ -1165,7 +1160,6 @@ func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType strin
 func newTestStorage() *testStorage {
 	return &testStorage{
 		instanceInfo: make(map[aostypes.InstanceIdent]*launcher.InstanceInfo),
-		services:     make(map[string][]imagemanager.ServiceInfo),
 	}
 }
 
@@ -1219,15 +1213,6 @@ func (storage *testStorage) SetInstanceCached(instance aostypes.InstanceIdent, c
 	return nil
 }
 
-func (storage *testStorage) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
-	services, ok := storage.services[serviceID]
-	if !ok {
-		return imagemanager.ServiceInfo{}, imagemanager.ErrNotExist
-	}
-
-	return services[len(services)-1], nil
-}
-
 // testStateStorage
 
 func (provider *testStateStorage) Setup(
@@ -1260,10 +1245,6 @@ func newTestImageProvider() *testImageProvider {
 		layers:                        make(map[string]imagemanager.LayerInfo),
 		removeServiceInstancesChannel: make(chan string, 1),
 	}
-}
-
-func (testProvider *testImageProvider) close() {
-	close(testProvider.removeServiceInstancesChannel)
 }
 
 func (testProvider *testImageProvider) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
