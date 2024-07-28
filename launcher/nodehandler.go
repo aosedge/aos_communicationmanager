@@ -119,13 +119,17 @@ func (node *nodeHandler) nodeHasDesiredDevices(desiredDevices []aostypes.Service
 	return true
 }
 
-func (node *nodeHandler) addRunRequest(
-	instance aostypes.InstanceInfo, service imagemanager.ServiceInfo, layers []imagemanager.LayerInfo,
-) {
+func (node *nodeHandler) addRunRequest(instanceInfo aostypes.InstanceInfo, service imagemanager.ServiceInfo,
+	layers []imagemanager.LayerInfo,
+) error {
 	log.WithFields(instanceIdentLogFields(
-		instance.InstanceIdent, log.Fields{"node": node.nodeInfo.NodeID})).Debug("Schedule instance on node")
+		instanceInfo.InstanceIdent, log.Fields{"node": node.nodeInfo.NodeID})).Debug("Schedule instance on node")
 
-	node.runRequest.Instances = append(node.runRequest.Instances, instance)
+	if err := node.allocateDevices(service.Config.Devices); err != nil {
+		return err
+	}
+
+	node.runRequest.Instances = append(node.runRequest.Instances, instanceInfo)
 
 	serviceInfo := service.ServiceInfo
 
@@ -170,6 +174,8 @@ layerLoopLabel:
 
 		node.runRequest.Layers = append(node.runRequest.Layers, newLayer)
 	}
+
+	return nil
 }
 
 func getNodesByStaticResources(allNodes []*nodeHandler,
