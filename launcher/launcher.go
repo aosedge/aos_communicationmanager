@@ -58,14 +58,12 @@ type NodeRunInstanceStatus struct {
 type Launcher struct {
 	sync.Mutex
 
-	config               *config.Config
-	storage              Storage
-	nodeInfoProvider     NodeInfoProvider
-	nodeManager          NodeManager
-	imageProvider        ImageProvider
-	resourceManager      ResourceManager
-	storageStateProvider StorageStateProvider
-	networkManager       NetworkManager
+	config           *config.Config
+	nodeInfoProvider NodeInfoProvider
+	nodeManager      NodeManager
+	imageProvider    ImageProvider
+	resourceManager  ResourceManager
+	networkManager   NetworkManager
 
 	runStatusChannel chan []cloudprotocol.InstanceStatus
 	errorStatus      []cloudprotocol.InstanceStatus
@@ -75,23 +73,6 @@ type Launcher struct {
 	connectionTimer *time.Timer
 
 	instanceManager *instanceManager
-}
-
-type InstanceInfo struct {
-	aostypes.InstanceIdent
-	UID       int
-	Timestamp time.Time
-	Cached    bool
-}
-
-// Storage storage interface.
-type Storage interface {
-	AddInstance(instanceInfo InstanceInfo) error
-	RemoveInstance(instanceIdent aostypes.InstanceIdent) error
-	SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error
-	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
-	GetInstances() ([]InstanceInfo, error)
-	GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error)
 }
 
 // NetworkManager network manager interface.
@@ -155,12 +136,12 @@ func New(
 	log.Debug("Create launcher")
 
 	launcher = &Launcher{
-		config: config, storage: storage, nodeInfoProvider: nodeInfoProvider, nodeManager: nodeManager,
-		imageProvider: imageProvider, resourceManager: resourceManager, storageStateProvider: storageStateProvider,
-		networkManager: networkManager, runStatusChannel: make(chan []cloudprotocol.InstanceStatus, 10),
+		config: config, nodeInfoProvider: nodeInfoProvider, nodeManager: nodeManager, imageProvider: imageProvider,
+		resourceManager: resourceManager, networkManager: networkManager,
+		runStatusChannel: make(chan []cloudprotocol.InstanceStatus, 10),
 	}
 
-	if launcher.instanceManager, err = newInstanceManager(config, storage, storageStateProvider,
+	if launcher.instanceManager, err = newInstanceManager(config, imageProvider, storageStateProvider, storage,
 		launcher.imageProvider.GetRemoveServiceChannel()); err != nil {
 		return nil, err
 	}
@@ -211,6 +192,12 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo) e
 	}
 
 	launcher.performNodeBalancing(instances)
+
+	// first prepare network for instance which have exposed ports
+	launcher.prepareNetworkForInstances(true)
+
+	// then prepare network for rest of instances
+	launcher.prepareNetworkForInstances(false)
 
 	if err := launcher.networkManager.RestartDNSServer(); err != nil {
 		log.Errorf("Can't restart DNS server: %v", err)
@@ -348,7 +335,7 @@ func (launcher *Launcher) sendCurrentStatus() {
 	}
 
 	for i := range instancesStatus {
-		instancesStatus[i].StateChecksum = launcher.storageStateProvider.GetInstanceCheckSum(
+		instancesStatus[i].StateChecksum = launcher.instanceManager.getInstanceCheckSum(
 			instancesStatus[i].InstanceIdent)
 	}
 
@@ -360,30 +347,19 @@ func (launcher *Launcher) sendCurrentStatus() {
 func (launcher *Launcher) processRemovedInstances(newInstances []cloudprotocol.InstanceInfo) error {
 	launcher.removeInstanceNetworkParameters(newInstances)
 
-	curInstances, err := launcher.storage.GetInstances()
+	curInstances, err := launcher.instanceManager.getCurrentInstances()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, curInstance := range curInstances {
-		if curInstance.Cached {
-			continue
-		}
-
 		if !slices.ContainsFunc(newInstances, func(info cloudprotocol.InstanceInfo) bool {
 			return curInstance.ServiceID == info.ServiceID && curInstance.SubjectID == info.SubjectID &&
 				curInstance.Instance < info.NumInstances
 		}) {
-			log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent, nil)).Debug("Remove instance")
-
-			if err := launcher.storageStateProvider.Cleanup(curInstance.InstanceIdent); err != nil {
+			if err := launcher.instanceManager.cacheInstance(curInstance); err != nil {
 				log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent, nil)).Errorf(
-					"Can't cleanup instance state/storage: %v", err)
-			}
-
-			if err := launcher.storage.SetInstanceCached(curInstance.InstanceIdent, true); err != nil {
-				log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent, nil)).Errorf(
-					"Can't mark instance as cached: %v", err)
+					"Can't cache instance: %v", err)
 			}
 		}
 	}
@@ -412,6 +388,7 @@ func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo)
 	return nil
 }
 
+//nolint:gocognit
 func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo) {
 	sort.Slice(instances, func(i, j int) bool {
 		if instances[i].Priority == instances[j].Priority {
@@ -460,7 +437,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 				continue
 			}
 
-			instanceInfo, err := launcher.prepareInstanceStartInfo(instance, instanceIndex, service)
+			instanceInfo, err := launcher.instanceManager.setupInstance(instance, instanceIndex, service)
 			if err != nil {
 				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(instance.ServiceID, instance.SubjectID,
 					instanceIndex, service.Version, cloudprotocol.InstanceStateFailed, err))
@@ -468,23 +445,14 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 				continue
 			}
 
-			if err = node.allocateDevices(service.Config.Devices); err != nil {
+			if err = node.addRunRequest(instanceInfo, service, layers); err != nil {
 				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(instance.ServiceID, instance.SubjectID,
 					instanceIndex, service.Version, cloudprotocol.InstanceStateFailed, err))
 
 				continue
 			}
-
-			node.addRunRequest(instanceInfo, service, layers)
-
 		}
 	}
-
-	// first prepare network for instance which have exposed ports
-	launcher.prepareNetworkForInstances(true)
-
-	// then prepare network for rest of instances
-	launcher.prepareNetworkForInstances(false)
 }
 
 func (launcher *Launcher) getServiceLayers(instance cloudprotocol.InstanceInfo) (
@@ -584,64 +552,6 @@ nextNetInstance:
 
 		launcher.networkManager.RemoveInstanceNetworkParameters(netInstance, serviceInfo.ProviderID)
 	}
-}
-
-func (launcher *Launcher) prepareInstanceStartInfo(
-	instance cloudprotocol.InstanceInfo, index uint64, service imagemanager.ServiceInfo,
-) (aostypes.InstanceInfo, error) {
-	instanceInfo := aostypes.InstanceInfo{InstanceIdent: aostypes.InstanceIdent{
-		ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
-		Instance: index,
-	}, Priority: instance.Priority}
-
-	uid, err := launcher.storage.GetInstanceUID(instanceInfo.InstanceIdent)
-	if err != nil {
-		if !errors.Is(err, ErrNotExist) {
-			return instanceInfo, aoserrors.Wrap(err)
-		}
-
-		uid, err = launcher.instanceManager.acquireUID()
-		if err != nil {
-			return instanceInfo, aoserrors.Wrap(err)
-		}
-
-		if err := launcher.storage.AddInstance(InstanceInfo{
-			InstanceIdent: instanceInfo.InstanceIdent,
-			UID:           uid,
-			Timestamp:     time.Now(),
-		}); err != nil {
-			log.Errorf("Can't store uid: %v", err)
-		}
-	}
-
-	instanceInfo.UID = uint32(uid)
-
-	stateStorageParams := storagestate.SetupParams{
-		InstanceIdent: instanceInfo.InstanceIdent,
-		UID:           uid, GID: int(service.GID),
-	}
-
-	if service.Config.Quotas.StateLimit != nil {
-		stateStorageParams.StateQuota = *service.Config.Quotas.StateLimit
-	}
-
-	if service.Config.Quotas.StorageLimit != nil {
-		stateStorageParams.StorageQuota = *service.Config.Quotas.StorageLimit
-	}
-
-	instanceInfo.StoragePath, instanceInfo.StatePath, err = launcher.storageStateProvider.Setup(stateStorageParams)
-	if err != nil {
-		return instanceInfo, aoserrors.Wrap(err)
-	}
-
-	if err := launcher.storage.SetInstanceCached(instanceInfo.InstanceIdent, false); err != nil {
-		log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent,
-			nil)).Errorf("Can't mark instance as not cached: %v", err)
-
-		return instanceInfo, aoserrors.Wrap(err)
-	}
-
-	return instanceInfo, nil
 }
 
 func (launcher *Launcher) getNodesByPriorities() []*nodeHandler {

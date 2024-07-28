@@ -20,13 +20,17 @@ package launcher
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/imagemanager"
+	"github.com/aosedge/aos_communicationmanager/storagestate"
 	"github.com/aosedge/aos_communicationmanager/utils/uidgidpool"
 )
 
@@ -40,10 +44,27 @@ const removePeriod = time.Hour * 24
  * Types
  **********************************************************************************************************************/
 
+type InstanceInfo struct {
+	aostypes.InstanceIdent
+	UID       int
+	Timestamp time.Time
+	Cached    bool
+}
+
+// Storage storage interface.
+type Storage interface {
+	AddInstance(instanceInfo InstanceInfo) error
+	RemoveInstance(instanceIdent aostypes.InstanceIdent) error
+	SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error
+	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
+	GetInstances() ([]InstanceInfo, error)
+}
+
 type instanceManager struct {
 	config               *config.Config
-	storage              Storage
+	imageProvider        ImageProvider
 	storageStateProvider StorageStateProvider
+	storage              Storage
 	cancelFunc           context.CancelFunc
 	uidPool              *uidgidpool.IdentifierPool
 	removeServiceChannel <-chan string
@@ -53,13 +74,14 @@ type instanceManager struct {
  * Private
  **********************************************************************************************************************/
 
-func newInstanceManager(config *config.Config, storage Storage, storageStateProvider StorageStateProvider,
-	removeServiceChannel <-chan string,
+func newInstanceManager(config *config.Config, imageProvider ImageProvider, storageStateProvider StorageStateProvider,
+	storage Storage, removeServiceChannel <-chan string,
 ) (im *instanceManager, err error) {
 	im = &instanceManager{
 		config:               config,
-		storage:              storage,
+		imageProvider:        imageProvider,
 		storageStateProvider: storageStateProvider,
+		storage:              storage,
 		removeServiceChannel: removeServiceChannel,
 		uidPool:              uidgidpool.NewUserIDPool(),
 	}
@@ -89,6 +111,100 @@ func newInstanceManager(config *config.Config, storage Storage, storageStateProv
 	go im.instanceRemover(ctx)
 
 	return im, nil
+}
+
+func (im *instanceManager) getCurrentInstances() ([]InstanceInfo, error) {
+	instances, err := im.storage.GetInstances()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return slices.DeleteFunc(instances, func(instance InstanceInfo) bool {
+		return instance.Cached
+	}), nil
+}
+
+func (im *instanceManager) setupInstance(
+	instance cloudprotocol.InstanceInfo, index uint64, service imagemanager.ServiceInfo,
+) (aostypes.InstanceInfo, error) {
+	instanceInfo := aostypes.InstanceInfo{
+		InstanceIdent: aostypes.InstanceIdent{
+			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID, Instance: index,
+		},
+		Priority: instance.Priority,
+	}
+
+	uid, err := im.storage.GetInstanceUID(instanceInfo.InstanceIdent)
+	if err != nil {
+		if !errors.Is(err, ErrNotExist) {
+			return aostypes.InstanceInfo{}, aoserrors.Wrap(err)
+		}
+
+		uid, err = im.acquireUID()
+		if err != nil {
+			return aostypes.InstanceInfo{}, err
+		}
+
+		if err := im.storage.AddInstance(InstanceInfo{
+			InstanceIdent: instanceInfo.InstanceIdent,
+			UID:           uid,
+			Timestamp:     time.Now(),
+		}); err != nil {
+			log.Errorf("Can't store uid: %v", err)
+		}
+	}
+
+	instanceInfo.UID = uint32(uid)
+
+	if err = im.setupInstanceStateStorage(&instanceInfo, service); err != nil {
+		return aostypes.InstanceInfo{}, err
+	}
+
+	return instanceInfo, nil
+}
+
+func (im *instanceManager) getInstanceCheckSum(instance aostypes.InstanceIdent) string {
+	return im.storageStateProvider.GetInstanceCheckSum(instance)
+}
+
+func (im *instanceManager) setupInstanceStateStorage(
+	instanceInfo *aostypes.InstanceInfo, serviceInfo imagemanager.ServiceInfo,
+) error {
+	stateStorageParams := storagestate.SetupParams{
+		InstanceIdent: instanceInfo.InstanceIdent,
+		UID:           int(instanceInfo.UID), GID: int(serviceInfo.GID),
+	}
+
+	if serviceInfo.Config.Quotas.StateLimit != nil {
+		stateStorageParams.StateQuota = *serviceInfo.Config.Quotas.StateLimit
+	}
+
+	if serviceInfo.Config.Quotas.StorageLimit != nil {
+		stateStorageParams.StorageQuota = *serviceInfo.Config.Quotas.StorageLimit
+	}
+
+	var err error
+
+	instanceInfo.StoragePath, instanceInfo.StatePath, err = im.storageStateProvider.Setup(stateStorageParams)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (im *instanceManager) cacheInstance(instanceInfo InstanceInfo) error {
+	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Debug("Cache instance")
+
+	if err := im.storageStateProvider.Cleanup(instanceInfo.InstanceIdent); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if err := im.storage.SetInstanceCached(instanceInfo.InstanceIdent, true); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
 }
 
 func (im *instanceManager) acquireUID() (int, error) {
@@ -177,7 +293,7 @@ func (im *instanceManager) clearInstancesWithDeletedService() error {
 	}
 
 	for _, instance := range instances {
-		if _, err := im.storage.GetServiceInfo(instance.ServiceID); err == nil {
+		if _, err := im.imageProvider.GetServiceInfo(instance.ServiceID); err == nil {
 			continue
 		}
 
