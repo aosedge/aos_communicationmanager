@@ -49,6 +49,8 @@ const waitMessageTimeout = 5 * time.Second
  **********************************************************************************************************************/
 
 type smHandler struct {
+	nodeID                 string
+	nodeType               string
 	stream                 pb.SMService_RegisterSMServer
 	messageSender          MessageSender
 	alertSender            AlertSender
@@ -65,12 +67,15 @@ type smHandler struct {
  **********************************************************************************************************************/
 
 func newSMHandler(
+	nodeID, nodeType string,
 	stream pb.SMService_RegisterSMServer, messageSender MessageSender, alertSender AlertSender,
 	monitoringSender MonitoringSender, runStatusCh chan<- launcher.NodeRunInstanceStatus,
 	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus,
 	systemQuotasAlertCh chan<- cloudprotocol.SystemQuotaAlert,
 ) (*smHandler, error) {
 	handler := smHandler{
+		nodeID:                 nodeID,
+		nodeType:               nodeType,
 		stream:                 stream,
 		messageSender:          messageSender,
 		alertSender:            alertSender,
@@ -103,7 +108,12 @@ func (handler *smHandler) getNodeConfigStatus() (unitconfig.NodeConfigStatus, er
 		return unitconfig.NodeConfigStatus{}, aoserrors.New(pbStatus.NodeConfigStatus.GetError().GetMessage())
 	}
 
-	return nodeConfigStatusFromPB(pbStatus.NodeConfigStatus), nil
+	nodeConfigStatus := nodeConfigStatusFromPB(pbStatus.NodeConfigStatus)
+
+	nodeConfigStatus.NodeID = handler.nodeID
+	nodeConfigStatus.NodeType = handler.nodeType
+
+	return nodeConfigStatus, nil
 }
 
 func (handler *smHandler) checkNodeConfig(version string, unitConfig cloudprotocol.NodeConfig) error {
@@ -154,7 +164,8 @@ func (handler *smHandler) setNodeConfig(version string, cfg cloudprotocol.NodeCo
 
 func (handler *smHandler) updateNetworks(networkParameters []aostypes.NetworkParameters) error {
 	log.WithFields(log.Fields{
-		"nodeID": handler.nodeConfigStatus.NodeID,
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
 	}).Debug("CM update networks")
 
 	pbNetworkParameters := make([]*pb.NetworkParameters, len(networkParameters))
@@ -183,7 +194,8 @@ func (handler *smHandler) runInstances(
 	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo, forceRestart bool,
 ) error {
 	log.WithFields(log.Fields{
-		"nodeID": handler.nodeConfigStatus.NodeID,
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
 	}).Debug("SM run instances")
 
 	pbRunInstances := &pb.RunInstances{
@@ -238,10 +250,11 @@ func (handler *smHandler) runInstances(
 
 func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
-		"nodeID": handler.nodeConfigStatus.NodeID,
-		"logID":  logRequest.LogID,
-		"from":   logRequest.Filter.From,
-		"till":   logRequest.Filter.Till,
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+		"logID":    logRequest.LogID,
+		"from":     logRequest.Filter.From,
+		"till":     logRequest.Filter.Till,
 	}).Debug("Get SM system log")
 
 	request := &pb.SystemLogRequest{LogId: logRequest.LogID}
@@ -266,7 +279,8 @@ func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestLog) (err
 //nolint:dupl
 func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
-		"nodeID":    handler.nodeConfigStatus.NodeID,
+		"nodeID":    handler.nodeID,
+		"nodeType":  handler.nodeType,
 		"logID":     logRequest.LogID,
 		"serviceID": logRequest.Filter.ServiceID,
 		"from":      logRequest.Filter.From,
@@ -297,7 +311,8 @@ func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (e
 //nolint:dupl
 func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
-		"nodeID":    handler.nodeConfigStatus.NodeID,
+		"nodeID":    handler.nodeID,
+		"nodeType":  handler.nodeType,
 		"logID":     logRequest.LogID,
 		"serviceID": logRequest.Filter.ServiceID,
 		"from":      logRequest.Filter.From,
@@ -328,7 +343,10 @@ func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLo
 }
 
 func (handler *smHandler) overrideEnvVars(envVars cloudprotocol.OverrideEnvVars) (err error) {
-	log.WithFields(log.Fields{"nodeID": handler.nodeConfigStatus.NodeID}).Debug("Override env vars SM ")
+	log.WithFields(log.Fields{
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+	}).Debug("Override env vars SM ")
 
 	request := &pb.OverrideEnvVars{EnvVars: make([]*pb.OverrideInstanceEnvVar, len(envVars.Items))}
 
@@ -376,7 +394,7 @@ func (handler *smHandler) getAverageMonitoring() (monitoring aostypes.NodeMonito
 	}
 
 	monitoring = averageMonitoringFromPB(pbMonitoring.AverageMonitoring)
-	monitoring.NodeID = handler.nodeConfigStatus.NodeID
+	monitoring.NodeID = handler.nodeID
 
 	return monitoring, nil
 }
@@ -419,25 +437,28 @@ func (handler *smHandler) processSMMessages(message *pb.SMOutgoingMessages) {
 
 func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus) {
 	runStatus := launcher.NodeRunInstanceStatus{
-		NodeID:   handler.nodeConfigStatus.NodeID,
-		NodeType: handler.nodeConfigStatus.NodeType,
-		Instances: instancesStatusFromPB(status.GetInstances(),
-			handler.nodeConfigStatus.NodeID),
+		NodeID:    handler.nodeID,
+		NodeType:  handler.nodeType,
+		Instances: instancesStatusFromPB(status.GetInstances(), handler.nodeID),
 	}
 
 	handler.runStatusCh <- runStatus
 }
 
 func (handler *smHandler) processUpdateInstancesStatus(data *pb.UpdateInstancesStatus) {
-	log.WithFields(log.Fields{"nodeID": handler.nodeConfigStatus.NodeID}).Debug("Receive SM update instances status")
+	log.WithFields(log.Fields{
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+	}).Debug("Receive SM update instances status")
 
-	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.GetInstances(), handler.nodeConfigStatus.NodeID)
+	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.GetInstances(), handler.nodeID)
 }
 
 func (handler *smHandler) processAlert(alert *pb.Alert) {
 	log.WithFields(log.Fields{
-		"nodeID": handler.nodeConfigStatus.NodeID,
-		"tag":    alert.GetTag(),
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+		"tag":      alert.GetTag(),
 	}).Debug("Receive SM alert")
 
 	timestamp := alert.GetTimestamp().AsTime()
@@ -450,7 +471,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		alertItem = cloudprotocol.SystemAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			Message:   data.SystemAlert.GetMessage(),
-			NodeID:    handler.nodeConfigStatus.NodeID,
+			NodeID:    handler.nodeID,
 		}
 
 	case *pb.Alert_CoreAlert:
@@ -458,14 +479,14 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			CoreComponent: data.CoreAlert.GetCoreComponent(),
 			Message:       data.CoreAlert.GetMessage(),
-			NodeID:        handler.nodeConfigStatus.NodeID,
+			NodeID:        handler.nodeID,
 		}
 
 	case *pb.Alert_ResourceValidateAlert:
 		concreteAlert := cloudprotocol.ResourceValidateAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			Errors:    make([]cloudprotocol.ErrorInfo, len(data.ResourceValidateAlert.GetErrors())),
-			NodeID:    handler.nodeConfigStatus.NodeID,
+			NodeID:    handler.nodeID,
 			Name:      data.ResourceValidateAlert.GetName(),
 		}
 
@@ -481,7 +502,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 			InstanceIdent: pbconvert.InstanceIdentFromPB(data.DeviceAllocateAlert.GetInstance()),
 			Device:        data.DeviceAllocateAlert.GetDevice(),
 			Message:       data.DeviceAllocateAlert.GetMessage(),
-			NodeID:        handler.nodeConfigStatus.NodeID,
+			NodeID:        handler.nodeID,
 		}
 
 	case *pb.Alert_SystemQuotaAlert:
@@ -489,7 +510,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			Parameter: data.SystemQuotaAlert.GetParameter(),
 			Value:     data.SystemQuotaAlert.GetValue(),
-			NodeID:    handler.nodeConfigStatus.NodeID,
+			NodeID:    handler.nodeID,
 			Status:    data.SystemQuotaAlert.GetStatus(),
 		}
 
@@ -533,14 +554,15 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 
 func (handler *smHandler) processLogMessage(data *pb.LogData) {
 	log.WithFields(log.Fields{
-		"nodeID":    handler.nodeConfigStatus.NodeID,
+		"nodeID":    handler.nodeID,
+		"nodeType":  handler.nodeType,
 		"logID":     data.GetLogId(),
 		"part":      data.GetPart(),
 		"partCount": data.GetPartCount(),
 	}).Debug("Receive SM push log")
 
 	if err := handler.messageSender.SendLog(cloudprotocol.PushLog{
-		NodeID:     handler.nodeConfigStatus.NodeID,
+		NodeID:     handler.nodeID,
 		LogID:      data.GetLogId(),
 		PartsCount: data.GetPartCount(),
 		Part:       data.GetPart(),
@@ -557,11 +579,14 @@ func (handler *smHandler) processLogMessage(data *pb.LogData) {
 }
 
 func (handler *smHandler) processInstantMonitoring(instantMonitoring *pb.InstantMonitoring) {
-	log.WithFields(log.Fields{"nodeID": handler.nodeConfigStatus.NodeID}).Debug("Receive SM monitoring")
+	log.WithFields(log.Fields{
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+	}).Debug("Receive SM monitoring")
 
 	nodeMonitoring := instantMonitoringFromPB(instantMonitoring)
 
-	nodeMonitoring.NodeID = handler.nodeConfigStatus.NodeID
+	nodeMonitoring.NodeID = handler.nodeID
 
 	handler.monitoringSender.SendNodeMonitoring(nodeMonitoring)
 }
