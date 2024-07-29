@@ -500,7 +500,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			continue
 		}
 
-		nodes, err := getNodesByStaticResources(launcher.getNodesByPriorities(), service, instance)
+		nodes, err := getNodesByStaticResources(launcher.getNodesByPriorities(), service.Config, instance)
 		if err != nil {
 			launcher.instanceManager.setAllInstanceError(instance, service.Version, err)
 			continue
@@ -511,7 +511,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 				continue
 			}
 
-			node, err := getInstanceNode(service, nodes)
+			node, err := getInstanceNode(nodes, service.Config)
 			if err != nil {
 				launcher.instanceManager.setInstanceError(
 					createInstanceIdent(instance, instanceIndex), service.Version, err)
@@ -694,6 +694,34 @@ func getStorageRequestRatio(
 
 	if nodeRatios != nil && nodeRatios.Storage != nil {
 		return float64(*nodeRatios.Storage) / 100
+	}
+
+	return defaultResourceRation / 100
+}
+
+func getCPURequestRatio(
+	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
+) float64 {
+	if serviceRatios != nil && serviceRatios.CPU != nil {
+		return float64(*serviceRatios.CPU) / 100
+	}
+
+	if nodeRatios != nil && nodeRatios.CPU != nil {
+		return float64(*nodeRatios.CPU) / 100
+	}
+
+	return defaultResourceRation / 100
+}
+
+func getRAMRequestRatio(
+	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
+) float64 {
+	if serviceRatios != nil && serviceRatios.RAM != nil {
+		return float64(*serviceRatios.RAM) / 100
+	}
+
+	if nodeRatios != nil && nodeRatios.CPU != nil {
+		return float64(*nodeRatios.CPU) / 100
 	}
 
 	return defaultResourceRation / 100

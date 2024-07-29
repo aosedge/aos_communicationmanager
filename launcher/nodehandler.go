@@ -19,7 +19,6 @@ package launcher
 
 import (
 	"errors"
-	"reflect"
 	"slices"
 
 	"github.com/aosedge/aos_common/aoserrors"
@@ -48,6 +47,8 @@ type nodeHandler struct {
 	runRequest        runRequest
 	isLocalNode       bool
 	waitStatus        bool
+	availableCPU      uint64
+	availableRAM      uint64
 }
 
 /***********************************************************************************************************************
@@ -79,6 +80,9 @@ func newNodeHandler(
 
 	node.nodeConfig = nodeConfig
 	node.resetDeviceAllocations()
+
+	node.availableCPU = node.nodeInfo.MaxDMIPs
+	node.availableRAM = node.nodeInfo.TotalRAM
 
 	return node, nil
 }
@@ -131,51 +135,65 @@ func (node *nodeHandler) addRunRequest(instanceInfo aostypes.InstanceInfo, servi
 
 	node.runRequest.Instances = append(node.runRequest.Instances, instanceInfo)
 
+	node.addService(service)
+	node.addLayers(layers)
+
+	requestedCPU := node.getRequestedCPU(service.Config)
+	if requestedCPU > node.availableCPU {
+		return aoserrors.Errorf("not enough CPU")
+	}
+
+	requestedRAM := node.getRequestedRAM(service.Config)
+	if requestedRAM > node.availableRAM {
+		return aoserrors.Errorf("not enough CPU")
+	}
+
+	node.availableCPU -= requestedCPU
+	node.availableRAM -= requestedRAM
+
+	return nil
+}
+
+func (node *nodeHandler) addService(service imagemanager.ServiceInfo) {
 	serviceInfo := service.ServiceInfo
 
 	if !node.isLocalNode {
 		serviceInfo.URL = service.RemoteURL
 	}
 
-	isNewService := true
-
-	for _, oldService := range node.runRequest.Services {
-		if reflect.DeepEqual(oldService, serviceInfo) {
-			isNewService = false
-			break
-		}
+	if slices.ContainsFunc(node.runRequest.Services, func(info aostypes.ServiceInfo) bool {
+		return info.ServiceID == serviceInfo.ServiceID
+	}) {
+		return
 	}
 
-	if isNewService {
-		log.WithFields(log.Fields{
-			"serviceID": serviceInfo.ServiceID, "node": node.nodeInfo.NodeID,
-		}).Debug("Schedule service on node")
+	log.WithFields(log.Fields{
+		"serviceID": serviceInfo.ServiceID, "node": node.nodeInfo.NodeID,
+	}).Debug("Schedule service on node")
 
-		node.runRequest.Services = append(node.runRequest.Services, serviceInfo)
-	}
+	node.runRequest.Services = append(node.runRequest.Services, serviceInfo)
+}
 
-layerLoopLabel:
+func (node *nodeHandler) addLayers(layers []imagemanager.LayerInfo) {
 	for _, layer := range layers {
-		newLayer := layer.LayerInfo
+		layerInfo := layer.LayerInfo
 
 		if !node.isLocalNode {
-			newLayer.URL = layer.RemoteURL
+			layerInfo.URL = layer.RemoteURL
 		}
 
-		for _, oldLayer := range node.runRequest.Layers {
-			if reflect.DeepEqual(newLayer, oldLayer) {
-				continue layerLoopLabel
-			}
+		if slices.ContainsFunc(node.runRequest.Layers, func(info aostypes.LayerInfo) bool {
+			return info.Digest == layerInfo.Digest
+		}) {
+			continue
 		}
 
 		log.WithFields(log.Fields{
-			"digest": newLayer.Digest, "node": node.nodeInfo.NodeID,
+			"digest": layerInfo.Digest, "node": node.nodeInfo.NodeID,
 		}).Debug("Schedule layer on node")
 
-		node.runRequest.Layers = append(node.runRequest.Layers, newLayer)
+		node.runRequest.Layers = append(node.runRequest.Layers, layerInfo)
 	}
-
-	return nil
 }
 
 func (node *nodeHandler) getPartitionSize(partitionType string) uint64 {
@@ -190,53 +208,73 @@ func (node *nodeHandler) getPartitionSize(partitionType string) uint64 {
 	return node.nodeInfo.Partitions[partitionIndex].TotalSize
 }
 
-func getNodesByStaticResources(allNodes []*nodeHandler,
-	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo,
-) ([]*nodeHandler, error) {
-	nodes := getNodeByRunners(allNodes, serviceInfo.Config.Runners)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with runner: %s", serviceInfo.Config.Runners)
+func (node *nodeHandler) getRequestedCPU(serviceConfig aostypes.ServiceConfig) uint64 {
+	requestedCPU := uint64(0)
+
+	if serviceConfig.Quotas.CPULimit != nil {
+		requestedCPU = uint64(float64(*serviceConfig.Quotas.CPULimit)*getCPURequestRatio(
+			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
 	}
 
-	nodes = getNodesByLabels(nodes, instanceInfo.Labels)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with labels %v", instanceInfo.Labels)
-	}
-
-	nodes = getNodesByResources(nodes, serviceInfo.Config.Resources)
-	if len(nodes) == 0 {
-		return nodes, aoserrors.Errorf("no node with resources %v", serviceInfo.Config.Resources)
-	}
-
-	return nodes, nil
+	return requestedCPU
 }
 
-func getNodesByDevices(availableNodes []*nodeHandler, desiredDevices []aostypes.ServiceDevice) ([]*nodeHandler, error) {
-	if len(desiredDevices) == 0 {
-		return availableNodes, nil
+func (node *nodeHandler) getRequestedRAM(serviceConfig aostypes.ServiceConfig) uint64 {
+	requestedRAM := uint64(0)
+
+	if serviceConfig.Quotas.RAMLimit != nil {
+		requestedRAM = uint64(float64(*serviceConfig.Quotas.RAMLimit)*getRAMRequestRatio(
+			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
 	}
 
-	nodes := make([]*nodeHandler, 0)
+	return requestedRAM
+}
 
-	for _, node := range availableNodes {
+func getNodesByStaticResources(nodes []*nodeHandler,
+	serviceConfig aostypes.ServiceConfig, instanceInfo cloudprotocol.InstanceInfo,
+) ([]*nodeHandler, error) {
+	resultNodes := getNodeByRunners(nodes, serviceConfig.Runners)
+	if len(resultNodes) == 0 {
+		return resultNodes, aoserrors.Errorf("no nodes with runner: %s", serviceConfig.Runners)
+	}
+
+	resultNodes = getNodesByLabels(resultNodes, instanceInfo.Labels)
+	if len(resultNodes) == 0 {
+		return resultNodes, aoserrors.Errorf("no nodes with labels %v", instanceInfo.Labels)
+	}
+
+	resultNodes = getNodesByResources(resultNodes, serviceConfig.Resources)
+	if len(resultNodes) == 0 {
+		return resultNodes, aoserrors.Errorf("no nodes with resources %v", serviceConfig.Resources)
+	}
+
+	return resultNodes, nil
+}
+
+func getNodesByDevices(nodes []*nodeHandler, desiredDevices []aostypes.ServiceDevice) []*nodeHandler {
+	if len(desiredDevices) == 0 {
+		return nodes
+	}
+
+	resultNodes := make([]*nodeHandler, 0)
+
+	for _, node := range nodes {
 		if !node.nodeHasDesiredDevices(desiredDevices) {
 			continue
 		}
 
-		nodes = append(nodes, node)
+		resultNodes = append(resultNodes, node)
 	}
 
-	if len(nodes) == 0 {
-		return nodes, aoserrors.New("no available device found")
-	}
-
-	return nodes, nil
+	return resultNodes
 }
 
-func getNodesByResources(nodes []*nodeHandler, desiredResources []string) (newNodes []*nodeHandler) {
+func getNodesByResources(nodes []*nodeHandler, desiredResources []string) []*nodeHandler {
 	if len(desiredResources) == 0 {
 		return nodes
 	}
+
+	resultNodes := make([]*nodeHandler, 0)
 
 nodeLoop:
 	for _, node := range nodes {
@@ -252,16 +290,18 @@ nodeLoop:
 			}
 		}
 
-		newNodes = append(newNodes, node)
+		resultNodes = append(resultNodes, node)
 	}
 
-	return newNodes
+	return resultNodes
 }
 
-func getNodesByLabels(nodes []*nodeHandler, desiredLabels []string) (newNodes []*nodeHandler) {
+func getNodesByLabels(nodes []*nodeHandler, desiredLabels []string) []*nodeHandler {
 	if len(desiredLabels) == 0 {
 		return nodes
 	}
+
+	resultNodes := make([]*nodeHandler, 0)
 
 nodeLoop:
 	for _, node := range nodes {
@@ -275,19 +315,21 @@ nodeLoop:
 			}
 		}
 
-		newNodes = append(newNodes, node)
+		resultNodes = append(resultNodes, node)
 	}
 
-	return newNodes
+	return resultNodes
 }
 
-func getNodeByRunners(allNodes []*nodeHandler, runners []string) (nodes []*nodeHandler) {
+func getNodeByRunners(nodes []*nodeHandler, runners []string) []*nodeHandler {
 	if len(runners) == 0 {
 		runners = defaultRunners
 	}
 
+	resultNodes := make([]*nodeHandler, 0)
+
 	for _, runner := range runners {
-		for _, node := range allNodes {
+		for _, node := range nodes {
 			nodeRunners, err := node.nodeInfo.GetNodeRunners()
 			if err != nil {
 				log.WithField("nodeID", node.nodeInfo.NodeID).Errorf("Can't get node runners: %v", err)
@@ -297,19 +339,88 @@ func getNodeByRunners(allNodes []*nodeHandler, runners []string) (nodes []*nodeH
 
 			if (len(nodeRunners) == 0 && slices.Contains(defaultRunners, runner)) ||
 				slices.Contains(nodeRunners, runner) {
-				nodes = append(nodes, node)
+				resultNodes = append(resultNodes, node)
 			}
 		}
 	}
 
-	return nodes
+	return resultNodes
 }
 
-func getInstanceNode(service imagemanager.ServiceInfo, nodes []*nodeHandler) (*nodeHandler, error) {
-	nodes, err := getNodesByDevices(nodes, service.Config.Devices)
-	if err != nil {
-		return nil, err
+func getNodesByCPU(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) []*nodeHandler {
+	resultNodes := make([]*nodeHandler, 0)
+
+	for _, node := range nodes {
+		if node.availableCPU >= node.getRequestedCPU(serviceConfig) {
+			resultNodes = append(resultNodes, node)
+		}
 	}
 
-	return nodes[0], nil
+	return resultNodes
+}
+
+func getNodesByRAM(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) []*nodeHandler {
+	resultNodes := make([]*nodeHandler, 0)
+
+	for _, node := range nodes {
+		if node.availableRAM >= node.getRequestedRAM(serviceConfig) {
+			resultNodes = append(resultNodes, node)
+		}
+	}
+
+	return resultNodes
+}
+
+func getTopPriorityNodes(nodes []*nodeHandler) []*nodeHandler {
+	if len(nodes) == 0 {
+		return nodes
+	}
+
+	topPriority := nodes[0].nodeConfig.Priority
+
+	resultNodes := make([]*nodeHandler, 0)
+
+	for _, node := range nodes {
+		if node.nodeConfig.Priority == topPriority {
+			resultNodes = append(resultNodes, node)
+		}
+	}
+
+	return resultNodes
+}
+
+func getInstanceNode(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) (*nodeHandler, error) {
+	resultNodes := getNodesByDevices(nodes, serviceConfig.Devices)
+	if len(resultNodes) == 0 {
+		return nil, aoserrors.Errorf("no nodes with devices %v", serviceConfig.Devices)
+	}
+
+	resultNodes = getNodesByCPU(resultNodes, serviceConfig)
+	if len(resultNodes) == 0 {
+		return nil, aoserrors.Errorf("no nodes with available CPU")
+	}
+
+	resultNodes = getNodesByRAM(resultNodes, serviceConfig)
+	if len(resultNodes) == 0 {
+		return nil, aoserrors.Errorf("no nodes with available RAM")
+	}
+
+	resultNodes = getTopPriorityNodes(resultNodes)
+	if len(resultNodes) == 0 {
+		return nil, aoserrors.Errorf("can't get top priority nodes")
+	}
+
+	slices.SortStableFunc(resultNodes, func(node1, node2 *nodeHandler) int {
+		if node1.availableCPU < node2.availableCPU {
+			return 1
+		}
+
+		if node1.availableCPU > node2.availableCPU {
+			return -1
+		}
+
+		return 0
+	})
+
+	return resultNodes[0], nil
 }
