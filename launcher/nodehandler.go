@@ -178,6 +178,18 @@ layerLoopLabel:
 	return nil
 }
 
+func (node *nodeHandler) getPartitionSize(partitionType string) uint64 {
+	partitionIndex := slices.IndexFunc(node.nodeInfo.Partitions, func(partition cloudprotocol.PartitionInfo) bool {
+		return slices.Contains(partition.Types, partitionType)
+	})
+
+	if partitionIndex == -1 {
+		return 0
+	}
+
+	return node.nodeInfo.Partitions[partitionIndex].TotalSize
+}
+
 func getNodesByStaticResources(allNodes []*nodeHandler,
 	serviceInfo imagemanager.ServiceInfo, instanceInfo cloudprotocol.InstanceInfo,
 ) ([]*nodeHandler, error) {

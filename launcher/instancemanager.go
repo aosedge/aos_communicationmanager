@@ -63,15 +63,16 @@ type Storage interface {
 }
 
 type instanceManager struct {
-	config               *config.Config
-	imageProvider        ImageProvider
-	storageStateProvider StorageStateProvider
-	storage              Storage
-	cancelFunc           context.CancelFunc
-	uidPool              *uidgidpool.IdentifierPool
-	errorStatus          map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus
-	instances            map[aostypes.InstanceIdent]aostypes.InstanceInfo
-	removeServiceChannel <-chan string
+	config                           *config.Config
+	imageProvider                    ImageProvider
+	storageStateProvider             StorageStateProvider
+	storage                          Storage
+	cancelFunc                       context.CancelFunc
+	uidPool                          *uidgidpool.IdentifierPool
+	errorStatus                      map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus
+	instances                        map[aostypes.InstanceIdent]aostypes.InstanceInfo
+	removeServiceChannel             <-chan string
+	availableStorage, availableState uint64
 }
 
 /***********************************************************************************************************************
@@ -122,6 +123,10 @@ func (im *instanceManager) initInstances() {
 	im.errorStatus = make(map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus)
 }
 
+func (im *instanceManager) resetStorageStateUsage(storageSize, stateSize uint64) {
+	im.availableStorage, im.availableState = storageSize, stateSize
+}
+
 func (im *instanceManager) getCurrentInstances() ([]InstanceInfo, error) {
 	instances, err := im.storage.GetInstances()
 	if err != nil {
@@ -134,7 +139,7 @@ func (im *instanceManager) getCurrentInstances() ([]InstanceInfo, error) {
 }
 
 func (im *instanceManager) setupInstance(
-	instance cloudprotocol.InstanceInfo, index uint64, nodeID string, service imagemanager.ServiceInfo,
+	instance cloudprotocol.InstanceInfo, index uint64, node *nodeHandler, service imagemanager.ServiceInfo,
 ) (aostypes.InstanceInfo, error) {
 	instanceInfo := aostypes.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{
@@ -160,7 +165,7 @@ func (im *instanceManager) setupInstance(
 
 		storedInstance = InstanceInfo{
 			InstanceIdent: instanceInfo.InstanceIdent,
-			NodeID:        nodeID,
+			NodeID:        node.nodeInfo.NodeID,
 			UID:           uid,
 			Timestamp:     time.Now(),
 		}
@@ -169,7 +174,7 @@ func (im *instanceManager) setupInstance(
 			log.Errorf("Can't add instance: %v", err)
 		}
 	} else {
-		storedInstance.NodeID = nodeID
+		storedInstance.NodeID = node.nodeInfo.NodeID
 		storedInstance.Timestamp = time.Now()
 		storedInstance.Cached = false
 
@@ -181,7 +186,8 @@ func (im *instanceManager) setupInstance(
 
 	instanceInfo.UID = uint32(storedInstance.UID)
 
-	if err = im.setupInstanceStateStorage(&instanceInfo, service); err != nil {
+	if err = im.setupInstanceStateStorage(&instanceInfo, service,
+		getStorageRequestRatio(service.Config.ResourceRatios, node.nodeConfig.ResourceRatios)); err != nil {
 		return aostypes.InstanceInfo{}, err
 	}
 
@@ -241,6 +247,7 @@ func (im *instanceManager) getInstanceCheckSum(instance aostypes.InstanceIdent) 
 
 func (im *instanceManager) setupInstanceStateStorage(
 	instanceInfo *aostypes.InstanceInfo, serviceInfo imagemanager.ServiceInfo,
+	requestRation float64,
 ) error {
 	stateStorageParams := storagestate.SetupParams{
 		InstanceIdent: instanceInfo.InstanceIdent,
@@ -255,12 +262,26 @@ func (im *instanceManager) setupInstanceStateStorage(
 		stateStorageParams.StorageQuota = *serviceInfo.Config.Quotas.StorageLimit
 	}
 
+	requestedStorage := uint64(float64(stateStorageParams.StorageQuota)*requestRation + 0.5)
+	requestedState := uint64(float64(stateStorageParams.StateQuota)*requestRation + 0.5)
+
+	if requestedStorage > im.availableStorage {
+		return aoserrors.Errorf("not enough storage space")
+	}
+
+	if requestedState > im.availableState {
+		return aoserrors.Errorf("not enough state space")
+	}
+
 	var err error
 
 	instanceInfo.StoragePath, instanceInfo.StatePath, err = im.storageStateProvider.Setup(stateStorageParams)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
+
+	im.availableStorage -= requestedStorage
+	im.availableState -= requestedState
 
 	return nil
 }
