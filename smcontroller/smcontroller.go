@@ -326,7 +326,7 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 		message, err := stream.Recv()
 		if err != nil {
 			if handler != nil {
-				controller.handleCloseConnection(handler.nodeConfigStatus.NodeID)
+				controller.handleCloseConnection(handler.nodeID)
 			}
 
 			if !errors.Is(err, io.EOF) && codes.Canceled != status.Code(err) {
@@ -346,12 +346,15 @@ func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) e
 				continue
 			}
 
+			nodeID := nodeConfigStatus.NodeConfigStatus.GetNodeId()
+			nodeType := nodeConfigStatus.NodeConfigStatus.GetNodeType()
+
 			log.WithFields(log.Fields{
-				"nodeID":   nodeConfigStatus.NodeConfigStatus.GetNodeId(),
-				"nodeType": nodeConfigStatus.NodeConfigStatus.GetNodeType(),
+				"nodeID":   nodeID,
+				"nodeType": nodeType,
 			}).Debug("Register SM")
 
-			handler, err = newSMHandler(stream, controller.messageSender, controller.alertSender,
+			handler, err = newSMHandler(nodeID, nodeType, stream, controller.messageSender, controller.alertSender,
 				controller.monitoringSender, controller.runInstancesStatusChan, controller.updateInstancesStatusChan,
 				controller.systemQuotaAlertChan)
 			if err != nil {
