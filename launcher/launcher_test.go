@@ -403,8 +403,10 @@ func TestBalancing(t *testing.T) {
 	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
 		nodeIDLocalSM: {
 			NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
-			Status: cloudprotocol.NodeStatusProvisioned,
-			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 			Partitions: []cloudprotocol.PartitionInfo{
 				{Name: "storages", Types: []string{aostypes.StoragesPartition}, TotalSize: 1024},
 				{Name: "states", Types: []string{aostypes.StatesPartition}, TotalSize: 1024},
@@ -412,18 +414,24 @@ func TestBalancing(t *testing.T) {
 		},
 		nodeIDRemoteSM1: {
 			NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
-			Status: cloudprotocol.NodeStatusProvisioned,
-			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 		},
 		nodeIDRemoteSM2: {
 			NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
-			Status: cloudprotocol.NodeStatusProvisioned,
-			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 		},
 		nodeIDRunxSM: {
 			NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
-			Status: cloudprotocol.NodeStatusProvisioned,
-			Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 		},
 	}
 
@@ -462,6 +470,8 @@ func TestBalancing(t *testing.T) {
 		testItemDevices(),
 		testItemStorageRatio(),
 		testItemStateRatio(),
+		testItemCPURatio(),
+		testItemRAMRatio(),
 	}
 
 	for _, testItem := range testItems {
@@ -1144,10 +1154,10 @@ func testItemLabels() testData {
 			}, nodeIDLocalSM, nil),
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
+			}, "", errors.New("no nodes with labels [label1]")), //nolint:goerr113
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service3, SubjectID: subject1, Instance: 1,
-			}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
+			}, "", errors.New("no nodes with labels [label1]")), //nolint:goerr113
 		},
 	}
 }
@@ -1233,10 +1243,10 @@ func testItemResources() testData {
 			}, nodeIDLocalSM, nil),
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
+			}, "", errors.New("no nodes with resources [resource3]")), //nolint:goerr113
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service3, SubjectID: subject1, Instance: 1,
-			}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
+			}, "", errors.New("no nodes with resources [resource3]")), //nolint:goerr113
 		},
 	}
 }
@@ -1348,7 +1358,7 @@ func testItemDevices() testData {
 			}, nodeIDRemoteSM2, nil),
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service1, SubjectID: subject1, Instance: 3,
-			}, "", errors.New("no available device found")), //nolint:goerr113
+			}, "", errors.New("no nodes with devices")), //nolint:goerr113
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service2, SubjectID: subject1, Instance: 0,
 			}, nodeIDLocalSM, nil),
@@ -1360,10 +1370,10 @@ func testItemDevices() testData {
 			}, nodeIDRemoteSM1, nil),
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, "", errors.New("no available device found")), //nolint:goerr113
+			}, "", errors.New("no nodes with devices")), //nolint:goerr113
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service3, SubjectID: subject1, Instance: 1,
-			}, "", errors.New("no available device found")), //nolint:goerr113
+			}, "", errors.New("no nodes with devices")), //nolint:goerr113
 		},
 	}
 }
@@ -1492,6 +1502,204 @@ func testItemStateRatio() testData {
 	}
 }
 
+func testItemCPURatio() testData {
+	return testData{
+		testCaseName: "CPU ratio",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 8},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+					createInstanceInfo(5004, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 4,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5003, 6, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 3,
+					}, 100),
+					createInstanceInfo(5005, 7, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 5,
+					}, 100),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 4,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 5,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 6,
+			}, "", errors.New("no nodes with available CPU")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 7,
+			}, "", errors.New("no nodes with available CPU")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemRAMRatio() testData {
+	return testData{
+		testCaseName: "RAM ratio",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					RAMLimit: newQuota(1024),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 8},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+					createInstanceInfo(5003, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 3,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5004, 6, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 4,
+					}, 100),
+					createInstanceInfo(5005, 7, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 5,
+					}, 100),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 4,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 5,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 6,
+			}, "", errors.New("no nodes with available RAM")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 7,
+			}, "", errors.New("no nodes with available RAM")), //nolint:goerr113
+		},
+	}
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
@@ -1586,9 +1794,6 @@ func waitRunInstancesStatus(runStatusChannel <-chan []cloudprotocol.InstanceStat
 					continue topLoop
 				}
 			}
-
-			log.Debug(receivedStatus)
-			log.Debug(expectedStatus)
 
 			return aoserrors.New("incorrect instances in run status")
 		}
