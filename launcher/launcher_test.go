@@ -107,7 +107,7 @@ type testImageProvider struct {
 }
 
 type testResourceManager struct {
-	nodeResources map[string]cloudprotocol.NodeConfig
+	nodeConfigs map[string]cloudprotocol.NodeConfig
 }
 
 type testStorage struct {
@@ -153,7 +153,7 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		imageManager     = newTestImageProvider()
-		testStorage      = newTestStorage()
+		testStorage      = newTestStorage(nil)
 	)
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
@@ -191,7 +191,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		imageManager     = newTestImageProvider()
-		testStorage      = newTestStorage()
+		testStorage      = newTestStorage(nil)
 		testStateStorage = &testStateStorage{}
 	)
 
@@ -262,7 +262,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		testImageManager = newTestImageProvider()
-		testStorage      = newTestStorage()
+		testStorage      = newTestStorage(nil)
 		testStateStorage = &testStateStorage{}
 	)
 
@@ -351,7 +351,7 @@ func TestInitialStatus(t *testing.T) {
 		nodeInfoProvider.nodeInfo[id] = nodeInfo
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+	launcherInstance, err := launcher.New(cfg, newTestStorage(nil), nodeInfoProvider, nodeManager, imageManager,
 		&testResourceManager{}, &testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
@@ -441,18 +441,20 @@ func TestBalancing(t *testing.T) {
 	}
 
 	type testData struct {
-		nodeResources       map[string]cloudprotocol.NodeConfig
+		nodeConfigs         map[string]cloudprotocol.NodeConfig
 		serviceConfigs      map[string]aostypes.ServiceConfig
 		desiredInstances    []cloudprotocol.InstanceInfo
+		storedInstances     []launcher.InstanceInfo
 		expectedRunRequests map[string]runRequest
 		expectedRunStatus   []cloudprotocol.InstanceStatus
+		rebalancing         bool
 	}
 
 	testItems := []testData{
 		// Check node priority and runner: all service instances should be start on higher priority node according to
 		// supported runner
 		{
-			nodeResources: map[string]cloudprotocol.NodeConfig{
+			nodeConfigs: map[string]cloudprotocol.NodeConfig{
 				nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100},
 				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
 				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
@@ -538,7 +540,7 @@ func TestBalancing(t *testing.T) {
 		},
 		// Check labels: label low priority service to run on high priority node
 		{
-			nodeResources: map[string]cloudprotocol.NodeConfig{
+			nodeConfigs: map[string]cloudprotocol.NodeConfig{
 				nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100, Labels: []string{"label1"}},
 				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"}},
 				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
@@ -615,7 +617,7 @@ func TestBalancing(t *testing.T) {
 		},
 		// Check available resources
 		{
-			nodeResources: map[string]cloudprotocol.NodeConfig{
+			nodeConfigs: map[string]cloudprotocol.NodeConfig{
 				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Resources: []cloudprotocol.ResourceInfo{
 					{Name: "resource1"},
 					{Name: "resource3"},
@@ -701,7 +703,7 @@ func TestBalancing(t *testing.T) {
 		},
 		// Check available devices
 		{
-			nodeResources: map[string]cloudprotocol.NodeConfig{
+			nodeConfigs: map[string]cloudprotocol.NodeConfig{
 				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Devices: []cloudprotocol.DeviceInfo{
 					{Name: "dev1", SharedCount: 1},
 					{Name: "dev2", SharedCount: 2},
@@ -826,7 +828,7 @@ func TestBalancing(t *testing.T) {
 	}
 
 	for _, testItem := range testItems {
-		resourceManager.nodeResources = testItem.nodeResources
+		resourceManager.nodeConfigs = testItem.nodeConfigs
 
 		for serviceID, config := range testItem.serviceConfigs {
 			service := imageManager.services[serviceID]
@@ -834,7 +836,9 @@ func TestBalancing(t *testing.T) {
 			imageManager.services[serviceID] = service
 		}
 
-		launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+		storage := newTestStorage(testItem.storedInstances)
+
+		launcherInstance, err := launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager,
 			resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 		if err != nil {
 			t.Fatalf("Can't create launcher %v", err)
@@ -855,7 +859,7 @@ func TestBalancing(t *testing.T) {
 
 		// Run instances
 
-		if err := launcherInstance.RunInstances(testItem.desiredInstances); err != nil {
+		if err := launcherInstance.RunInstances(testItem.desiredInstances, testItem.rebalancing); err != nil {
 			t.Fatalf("Can't run instances %v", err)
 		}
 
@@ -891,14 +895,14 @@ func TestStorageCleanup(t *testing.T) {
 		Status: cloudprotocol.NodeStatusProvisioned,
 		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = cloudprotocol.NodeConfig{Priority: 100}
+	resourceManager.nodeConfigs[nodeTypeLocalSM] = cloudprotocol.NodeConfig{Priority: 100}
 
 	nodeInfoProvider.nodeInfo[nodeIDRunxSM] = cloudprotocol.NodeInfo{
 		NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
 		Status: cloudprotocol.NodeStatusProvisioned,
 		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
 	}
-	resourceManager.nodeResources[nodeTypeRunxSM] = cloudprotocol.NodeConfig{Priority: 0}
+	resourceManager.nodeConfigs[nodeTypeRunxSM] = cloudprotocol.NodeConfig{Priority: 0}
 
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
@@ -915,7 +919,7 @@ func TestStorageCleanup(t *testing.T) {
 		},
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeInfoProvider, nodeManager, imageManager,
+	launcherInstance, err := launcher.New(cfg, newTestStorage(nil), nodeInfoProvider, nodeManager, imageManager,
 		resourceManager, stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
@@ -939,7 +943,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service3, SubjectID: subject1, Priority: 100, NumInstances: 1},
 	}
 
-	if err := launcherInstance.RunInstances(desiredInstances); err != nil {
+	if err := launcherInstance.RunInstances(desiredInstances, false); err != nil {
 		t.Fatalf("Can't run instances %v", err)
 	}
 
@@ -1014,7 +1018,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service3, SubjectID: subject1, Instance: 0},
 	}
 
-	if err := launcherInstance.RunInstances(desiredInstances); err != nil {
+	if err := launcherInstance.RunInstances(desiredInstances, false); err != nil {
 		t.Fatalf("Can't run instances %v", err)
 	}
 
@@ -1023,8 +1027,8 @@ func TestStorageCleanup(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	if !reflect.DeepEqual(expectedCleanInstances, stateStorageProvider.cleanedInstances) {
-		t.Errorf("Incorrect state storage cleanup: %v", stateStorageProvider.cleanedInstances)
+	if err := deepSlicesCompare(expectedCleanInstances, stateStorageProvider.cleanedInstances); err != nil {
+		t.Errorf("Incorrect state storage cleanup: %v", err)
 	}
 }
 
@@ -1142,14 +1146,14 @@ func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[s
 
 func newTestResourceManager() *testResourceManager {
 	resourceManager := &testResourceManager{
-		nodeResources: make(map[string]cloudprotocol.NodeConfig),
+		nodeConfigs: make(map[string]cloudprotocol.NodeConfig),
 	}
 
 	return resourceManager
 }
 
 func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType string) (cloudprotocol.NodeConfig, error) {
-	resource := resourceManager.nodeResources[nodeType]
+	resource := resourceManager.nodeConfigs[nodeType]
 	resource.NodeType = nodeType
 
 	return resource, nil
@@ -1157,10 +1161,17 @@ func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType strin
 
 // testStorage
 
-func newTestStorage() *testStorage {
-	return &testStorage{
+func newTestStorage(instances []launcher.InstanceInfo) *testStorage {
+	storage := &testStorage{
 		instanceInfo: make(map[aostypes.InstanceIdent]*launcher.InstanceInfo),
 	}
+
+	for _, instance := range instances {
+		storage.instanceInfo[instance.InstanceIdent] = &launcher.InstanceInfo{}
+		*storage.instanceInfo[instance.InstanceIdent] = instance
+	}
+
+	return storage
 }
 
 func (storage *testStorage) AddInstance(instanceInfo launcher.InstanceInfo) error {
@@ -1173,13 +1184,23 @@ func (storage *testStorage) AddInstance(instanceInfo launcher.InstanceInfo) erro
 	return nil
 }
 
-func (storage *testStorage) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
-	instanceInfo, ok := storage.instanceInfo[instance]
-	if !ok {
-		return 0, launcher.ErrNotExist
+func (storage *testStorage) UpdateInstance(instanceInfo launcher.InstanceInfo) error {
+	if _, ok := storage.instanceInfo[instanceInfo.InstanceIdent]; !ok {
+		return launcher.ErrNotExist
 	}
 
-	return instanceInfo.UID, nil
+	storage.instanceInfo[instanceInfo.InstanceIdent] = &instanceInfo
+
+	return nil
+}
+
+func (storage *testStorage) GetInstance(instanceIdent aostypes.InstanceIdent) (launcher.InstanceInfo, error) {
+	instanceInfo, ok := storage.instanceInfo[instanceIdent]
+	if !ok {
+		return launcher.InstanceInfo{}, launcher.ErrNotExist
+	}
+
+	return *instanceInfo, nil
 }
 
 func (storage *testStorage) GetInstances() ([]launcher.InstanceInfo, error) {
@@ -1198,17 +1219,6 @@ func (storage *testStorage) RemoveInstance(instanceIdent aostypes.InstanceIdent)
 	}
 
 	delete(storage.instanceInfo, instanceIdent)
-
-	return nil
-}
-
-func (storage *testStorage) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
-	instanceInfo, ok := storage.instanceInfo[instance]
-	if !ok {
-		return launcher.ErrNotExist
-	}
-
-	instanceInfo.Cached = cached
 
 	return nil
 }
