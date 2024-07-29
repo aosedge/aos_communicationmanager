@@ -43,6 +43,8 @@ import (
 
 var ErrNotExist = errors.New("entry not exist")
 
+const defaultResourceRation = 50.0
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -178,11 +180,7 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, r
 
 	log.Debug("Run instances")
 
-	if err := launcher.initNodes(); err != nil {
-		log.Errorf("Can't init nodes: %v", err)
-	}
-
-	launcher.instanceManager.initInstances()
+	launcher.prepareBalancing()
 
 	if err := launcher.processRemovedInstances(instances); err != nil {
 		log.Errorf("Can't process removed instances: %v", err)
@@ -219,6 +217,24 @@ func (launcher *Launcher) GetRunStatusesChannel() <-chan []cloudprotocol.Instanc
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+func (launcher *Launcher) prepareBalancing() {
+	if err := launcher.initNodes(); err != nil {
+		log.Errorf("Can't init nodes: %v", err)
+	}
+
+	launcher.instanceManager.initInstances()
+
+	localNode := launcher.getLocalNode()
+
+	if localNode != nil {
+		launcher.instanceManager.resetStorageStateUsage(
+			localNode.getPartitionSize(aostypes.StoragesPartition),
+			localNode.getPartitionSize(aostypes.StatesPartition))
+	} else {
+		log.Errorf("Local node not found")
+	}
+}
 
 func (launcher *Launcher) initNodes() error {
 	launcher.nodes = make(map[string]*nodeHandler)
@@ -443,7 +459,7 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 			}
 
 			instanceInfo, err := launcher.instanceManager.setupInstance(
-				instance, instanceIndex, node.nodeInfo.NodeID, service)
+				instance, instanceIndex, node, service)
 			if err != nil {
 				launcher.instanceManager.setInstanceError(
 					createInstanceIdent(instance, instanceIndex), service.Version, err)
@@ -503,7 +519,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			}
 
 			instanceInfo, err := launcher.instanceManager.setupInstance(
-				instance, instanceIndex, node.nodeInfo.NodeID, service)
+				instance, instanceIndex, node, service)
 			if err != nil {
 				launcher.instanceManager.setInstanceError(
 					createInstanceIdent(instance, instanceIndex), service.Version, err)
@@ -644,6 +660,16 @@ func (launcher *Launcher) getNode(nodeID string) *nodeHandler {
 	return node
 }
 
+func (launcher *Launcher) getLocalNode() *nodeHandler {
+	for _, node := range launcher.nodes {
+		if node.isLocalNode {
+			return node
+		}
+	}
+
+	return nil
+}
+
 func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.LayerInfo, error) {
 	layers := make([]imagemanager.LayerInfo, len(digests))
 
@@ -657,6 +683,20 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	}
 
 	return layers, nil
+}
+
+func getStorageRequestRatio(
+	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
+) float64 {
+	if serviceRatios != nil && serviceRatios.Storage != nil {
+		return float64(*serviceRatios.Storage) / 100
+	}
+
+	if nodeRatios != nil && nodeRatios.Storage != nil {
+		return float64(*nodeRatios.Storage) / 100
+	}
+
+	return defaultResourceRation / 100
 }
 
 func instanceIdentLogFields(instance aostypes.InstanceIdent, extraFields log.Fields) log.Fields {
