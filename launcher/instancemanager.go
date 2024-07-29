@@ -27,6 +27,7 @@ import (
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/maps"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
@@ -46,6 +47,7 @@ const removePeriod = time.Hour * 24
 
 type InstanceInfo struct {
 	aostypes.InstanceIdent
+	NodeID    string
 	UID       int
 	Timestamp time.Time
 	Cached    bool
@@ -54,9 +56,9 @@ type InstanceInfo struct {
 // Storage storage interface.
 type Storage interface {
 	AddInstance(instanceInfo InstanceInfo) error
+	UpdateInstance(instanceInfo InstanceInfo) error
 	RemoveInstance(instanceIdent aostypes.InstanceIdent) error
-	SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error
-	GetInstanceUID(instance aostypes.InstanceIdent) (int, error)
+	GetInstance(instanceIdent aostypes.InstanceIdent) (InstanceInfo, error)
 	GetInstances() ([]InstanceInfo, error)
 }
 
@@ -67,6 +69,8 @@ type instanceManager struct {
 	storage              Storage
 	cancelFunc           context.CancelFunc
 	uidPool              *uidgidpool.IdentifierPool
+	errorStatus          map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus
+	instances            map[aostypes.InstanceIdent]aostypes.InstanceInfo
 	removeServiceChannel <-chan string
 }
 
@@ -113,6 +117,11 @@ func newInstanceManager(config *config.Config, imageProvider ImageProvider, stor
 	return im, nil
 }
 
+func (im *instanceManager) initInstances() {
+	im.instances = make(map[aostypes.InstanceIdent]aostypes.InstanceInfo)
+	im.errorStatus = make(map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus)
+}
+
 func (im *instanceManager) getCurrentInstances() ([]InstanceInfo, error) {
 	instances, err := im.storage.GetInstances()
 	if err != nil {
@@ -125,7 +134,7 @@ func (im *instanceManager) getCurrentInstances() ([]InstanceInfo, error) {
 }
 
 func (im *instanceManager) setupInstance(
-	instance cloudprotocol.InstanceInfo, index uint64, service imagemanager.ServiceInfo,
+	instance cloudprotocol.InstanceInfo, index uint64, nodeID string, service imagemanager.ServiceInfo,
 ) (aostypes.InstanceInfo, error) {
 	instanceInfo := aostypes.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{
@@ -134,33 +143,96 @@ func (im *instanceManager) setupInstance(
 		Priority: instance.Priority,
 	}
 
-	uid, err := im.storage.GetInstanceUID(instanceInfo.InstanceIdent)
+	if _, ok := im.instances[instanceInfo.InstanceIdent]; ok {
+		return aostypes.InstanceInfo{}, aoserrors.Errorf("instance already set up")
+	}
+
+	storedInstance, err := im.storage.GetInstance(instanceInfo.InstanceIdent)
 	if err != nil {
 		if !errors.Is(err, ErrNotExist) {
 			return aostypes.InstanceInfo{}, aoserrors.Wrap(err)
 		}
 
-		uid, err = im.acquireUID()
+		uid, err := im.acquireUID()
 		if err != nil {
 			return aostypes.InstanceInfo{}, err
 		}
 
-		if err := im.storage.AddInstance(InstanceInfo{
+		storedInstance = InstanceInfo{
 			InstanceIdent: instanceInfo.InstanceIdent,
+			NodeID:        nodeID,
 			UID:           uid,
 			Timestamp:     time.Now(),
-		}); err != nil {
-			log.Errorf("Can't store uid: %v", err)
+		}
+
+		if err := im.storage.AddInstance(storedInstance); err != nil {
+			log.Errorf("Can't add instance: %v", err)
+		}
+	} else {
+		storedInstance.NodeID = nodeID
+		storedInstance.Timestamp = time.Now()
+		storedInstance.Cached = false
+
+		err = im.storage.UpdateInstance(storedInstance)
+		if err != nil {
+			log.Errorf("Can't update instance: %v", err)
 		}
 	}
 
-	instanceInfo.UID = uint32(uid)
+	instanceInfo.UID = uint32(storedInstance.UID)
 
 	if err = im.setupInstanceStateStorage(&instanceInfo, service); err != nil {
 		return aostypes.InstanceInfo{}, err
 	}
 
+	im.instances[instanceInfo.InstanceIdent] = instanceInfo
+
 	return instanceInfo, nil
+}
+
+func createInstanceIdent(instance cloudprotocol.InstanceInfo, instanceIndex uint64) aostypes.InstanceIdent {
+	return aostypes.InstanceIdent{
+		ServiceID: instance.ServiceID, SubjectID: instance.SubjectID, Instance: instanceIndex,
+	}
+}
+
+func (im *instanceManager) setInstanceError(
+	instanceIdent aostypes.InstanceIdent, serviceVersion string, err error,
+) {
+	instanceStatus := cloudprotocol.InstanceStatus{
+		InstanceIdent:  instanceIdent,
+		ServiceVersion: serviceVersion,
+		Status:         cloudprotocol.InstanceStateFailed,
+	}
+
+	if err != nil {
+		log.WithFields(instanceIdentLogFields(instanceStatus.InstanceIdent, nil)).Errorf(
+			"Schedule instance error: %v", err)
+
+		instanceStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	im.errorStatus[instanceStatus.InstanceIdent] = instanceStatus
+}
+
+func (im *instanceManager) setAllInstanceError(
+	instance cloudprotocol.InstanceInfo, serviceVersion string, err error,
+) {
+	for i := uint64(0); i < instance.NumInstances; i++ {
+		im.setInstanceError(createInstanceIdent(instance, i), serviceVersion, err)
+	}
+}
+
+func (im *instanceManager) isInstanceScheduled(instanceIdent aostypes.InstanceIdent) bool {
+	if _, ok := im.instances[instanceIdent]; ok {
+		return true
+	}
+
+	if _, ok := im.errorStatus[instanceIdent]; ok {
+		return true
+	}
+
+	return false
 }
 
 func (im *instanceManager) getInstanceCheckSum(instance aostypes.InstanceIdent) string {
@@ -196,11 +268,14 @@ func (im *instanceManager) setupInstanceStateStorage(
 func (im *instanceManager) cacheInstance(instanceInfo InstanceInfo) error {
 	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Debug("Cache instance")
 
-	if err := im.storageStateProvider.Cleanup(instanceInfo.InstanceIdent); err != nil {
-		return aoserrors.Wrap(err)
+	instanceInfo.Cached = true
+	instanceInfo.NodeID = ""
+
+	if err := im.storage.UpdateInstance(instanceInfo); err != nil {
+		log.Errorf("Can't update instance: %v", err)
 	}
 
-	if err := im.storage.SetInstanceCached(instanceInfo.InstanceIdent, true); err != nil {
+	if err := im.storageStateProvider.Cleanup(instanceInfo.InstanceIdent); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -303,6 +378,10 @@ func (im *instanceManager) clearInstancesWithDeletedService() error {
 	}
 
 	return nil
+}
+
+func (im *instanceManager) getErrorInstanceStatuses() []cloudprotocol.InstanceStatus {
+	return maps.Values(im.errorStatus)
 }
 
 func (im *instanceManager) instanceRemover(ctx context.Context) {

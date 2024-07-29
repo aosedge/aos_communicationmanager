@@ -66,7 +66,6 @@ type Launcher struct {
 	networkManager   NetworkManager
 
 	runStatusChannel chan []cloudprotocol.InstanceStatus
-	errorStatus      []cloudprotocol.InstanceStatus
 	nodes            map[string]*nodeHandler
 
 	cancelFunc      context.CancelFunc
@@ -173,7 +172,7 @@ func (launcher *Launcher) Close() {
 }
 
 // RunInstances performs run service instances.
-func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo) error {
+func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, rebalancing bool) error {
 	launcher.Lock()
 	defer launcher.Unlock()
 
@@ -183,12 +182,18 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo) e
 		log.Errorf("Can't init nodes: %v", err)
 	}
 
+	launcher.instanceManager.initInstances()
+
 	if err := launcher.processRemovedInstances(instances); err != nil {
 		log.Errorf("Can't process removed instances: %v", err)
 	}
 
 	if err := launcher.updateNetworks(instances); err != nil {
 		log.Errorf("Can't update networks: %v", err)
+	}
+
+	if rebalancing {
+		launcher.performPolicyBalancing(instances)
 	}
 
 	launcher.performNodeBalancing(instances)
@@ -339,9 +344,8 @@ func (launcher *Launcher) sendCurrentStatus() {
 			instancesStatus[i].InstanceIdent)
 	}
 
-	instancesStatus = append(instancesStatus, launcher.errorStatus...)
+	instancesStatus = append(instancesStatus, launcher.instanceManager.getErrorInstanceStatuses()...)
 	launcher.runStatusChannel <- instancesStatus
-	launcher.errorStatus = nil
 }
 
 func (launcher *Launcher) processRemovedInstances(newInstances []cloudprotocol.InstanceInfo) error {
@@ -388,7 +392,75 @@ func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo)
 	return nil
 }
 
-//nolint:gocognit
+func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.InstanceInfo) {
+	curInstances, err := launcher.instanceManager.getCurrentInstances()
+	if err != nil {
+		log.Errorf("Can't get current instances: %v", err)
+		return
+	}
+
+	for _, instance := range instances {
+		log.WithFields(log.Fields{
+			"serviceID":    instance.ServiceID,
+			"subjectID":    instance.SubjectID,
+			"numInstances": instance.NumInstances,
+			"priority":     instance.Priority,
+		}).Debug("Check balancing policy")
+
+		service, layers, err := launcher.getServiceLayers(instance)
+		if err != nil {
+			launcher.instanceManager.setAllInstanceError(instance, service.Version, err)
+
+			continue
+		}
+
+		if service.Config.BalancingPolicy != aostypes.BalancingDisabled {
+			continue
+		}
+
+		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+			curIndex := slices.IndexFunc(curInstances, func(curInstance InstanceInfo) bool {
+				return curInstance.ServiceID == instance.ServiceID &&
+					curInstance.SubjectID == instance.SubjectID &&
+					curInstance.Instance == instanceIndex
+			})
+
+			if curIndex == -1 {
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex),
+					service.Version, aoserrors.Errorf("instance not found"))
+
+				continue
+			}
+
+			node := launcher.getNode(curInstances[curIndex].NodeID)
+			if node == nil {
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex),
+					service.Version, aoserrors.Errorf("node not found"))
+
+				continue
+			}
+
+			instanceInfo, err := launcher.instanceManager.setupInstance(
+				instance, instanceIndex, node.nodeInfo.NodeID, service)
+			if err != nil {
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex), service.Version, err)
+
+				continue
+			}
+
+			if err = node.addRunRequest(instanceInfo, service, layers); err != nil {
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex), service.Version, err)
+
+				continue
+			}
+		}
+	}
+}
+
 func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo) {
 	sort.Slice(instances, func(i, j int) bool {
 		if instances[i].Priority == instances[j].Priority {
@@ -408,47 +480,39 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 		service, layers, err := launcher.getServiceLayers(instance)
 		if err != nil {
-			for i := uint64(0); i < instance.NumInstances; i++ {
-				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(
-					instance.ServiceID, instance.SubjectID, i, service.Version,
-					cloudprotocol.InstanceStateFailed, err))
-			}
-
+			launcher.instanceManager.setAllInstanceError(instance, service.Version, err)
 			continue
 		}
 
 		nodes, err := getNodesByStaticResources(launcher.getNodesByPriorities(), service, instance)
 		if err != nil {
-			for i := uint64(0); i < instance.NumInstances; i++ {
-				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(
-					instance.ServiceID, instance.SubjectID, i, service.Version,
-					cloudprotocol.InstanceStateFailed, err))
-			}
-
+			launcher.instanceManager.setAllInstanceError(instance, service.Version, err)
 			continue
 		}
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
-			node, err := getInstanceNode(service, nodes)
-			if err != nil {
-				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(instance.ServiceID, instance.SubjectID,
-					instanceIndex, service.Version, cloudprotocol.InstanceStateFailed, err))
-
+			if launcher.instanceManager.isInstanceScheduled(createInstanceIdent(instance, instanceIndex)) {
 				continue
 			}
 
-			instanceInfo, err := launcher.instanceManager.setupInstance(instance, instanceIndex, service)
+			node, err := getInstanceNode(service, nodes)
 			if err != nil {
-				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(instance.ServiceID, instance.SubjectID,
-					instanceIndex, service.Version, cloudprotocol.InstanceStateFailed, err))
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex), service.Version, err)
+				continue
+			}
 
+			instanceInfo, err := launcher.instanceManager.setupInstance(
+				instance, instanceIndex, node.nodeInfo.NodeID, service)
+			if err != nil {
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex), service.Version, err)
 				continue
 			}
 
 			if err = node.addRunRequest(instanceInfo, service, layers); err != nil {
-				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(instance.ServiceID, instance.SubjectID,
-					instanceIndex, service.Version, cloudprotocol.InstanceStateFailed, err))
-
+				launcher.instanceManager.setInstanceError(
+					createInstanceIdent(instance, instanceIndex), service.Version, err)
 				continue
 			}
 		}
@@ -478,11 +542,15 @@ func (launcher *Launcher) getServiceLayers(instance cloudprotocol.InstanceInfo) 
 func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) {
 	for _, node := range launcher.getNodesByPriorities() {
 		for i, instance := range node.runRequest.Instances {
+			serviceVersion := ""
+
 			if err := func() error {
 				serviceInfo, err := launcher.imageProvider.GetServiceInfo(instance.ServiceID)
 				if err != nil {
 					return aoserrors.Wrap(err)
 				}
+
+				serviceVersion = serviceInfo.Version
 
 				if onlyExposedPorts && len(serviceInfo.ExposedPorts) == 0 {
 					return nil
@@ -498,8 +566,7 @@ func (launcher *Launcher) prepareNetworkForInstances(onlyExposedPorts bool) {
 
 				return nil
 			}(); err != nil {
-				launcher.errorStatus = append(launcher.errorStatus, createInstanceStatus(
-					instance.ServiceID, instance.SubjectID, 0, "", cloudprotocol.InstanceStateFailed, err))
+				launcher.instanceManager.setInstanceError(instance.InstanceIdent, serviceVersion, err)
 			}
 		}
 	}
@@ -566,29 +633,6 @@ func (launcher *Launcher) getNodesByPriorities() []*nodeHandler {
 	})
 
 	return nodes
-}
-
-func createInstanceStatus(
-	serviceID, subjectID string, instance uint64, serviceVersion, status string, err error,
-) cloudprotocol.InstanceStatus {
-	instanceStatus := cloudprotocol.InstanceStatus{
-		InstanceIdent: aostypes.InstanceIdent{
-			ServiceID: serviceID,
-			SubjectID: subjectID,
-			Instance:  instance,
-		},
-		ServiceVersion: serviceVersion,
-		Status:         status,
-	}
-
-	if err != nil {
-		log.WithFields(instanceIdentLogFields(instanceStatus.InstanceIdent, nil)).Errorf(
-			"Can't schedule instance: %v", err)
-
-		instanceStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: err.Error()}
-	}
-
-	return instanceStatus
 }
 
 func (launcher *Launcher) getNode(nodeID string) *nodeHandler {
