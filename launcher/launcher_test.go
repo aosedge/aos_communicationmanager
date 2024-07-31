@@ -98,6 +98,7 @@ type testNodeInfoProvider struct {
 type testNodeManager struct {
 	runStatusChan chan launcher.NodeRunInstanceStatus
 	runRequest    map[string]runRequest
+	monitoring    map[string]aostypes.NodeMonitoring
 }
 
 type testImageProvider struct {
@@ -133,6 +134,7 @@ type testData struct {
 	storedInstances     []launcher.InstanceInfo
 	expectedRunRequests map[string]runRequest
 	expectedRunStatus   []cloudprotocol.InstanceStatus
+	monitoring          map[string]aostypes.NodeMonitoring
 	rebalancing         bool
 }
 
@@ -210,6 +212,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
 		Cached:        true,
 		Timestamp:     time.Now().Add(-time.Hour * 25).UTC(),
+		UID:           5000,
 	})
 	if err != nil {
 		t.Fatalf("Can't add instance %v", err)
@@ -219,6 +222,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service2},
 		Cached:        true,
 		Timestamp:     time.Now().UTC(),
+		UID:           5001,
 	})
 	if err != nil {
 		t.Fatalf("Can't add instance %v", err)
@@ -525,6 +529,120 @@ func TestBalancing(t *testing.T) {
 	}
 }
 
+func TestRebalancing(t *testing.T) {
+	var (
+		cfg = &config.Config{
+			SMController: config.SMController{
+				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
+			},
+		}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = newTestImageProvider()
+	)
+
+	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
+		nodeIDLocalSM: {
+			NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "storages", Types: []string{aostypes.StoragesPartition}, TotalSize: 1024},
+				{Name: "states", Types: []string{aostypes.StatesPartition}, TotalSize: 1024},
+			},
+		},
+		nodeIDRemoteSM1: {
+			NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+		},
+		nodeIDRemoteSM2: {
+			NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+		},
+	}
+
+	imageManager.services = map[string]imagemanager.ServiceInfo{
+		service1: {
+			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
+			RemoteURL:   service1RemoteURL,
+		},
+		service2: {
+			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
+			RemoteURL:   service2RemoteURL,
+		},
+		service3: {
+			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
+			RemoteURL:   service3RemoteURL,
+		},
+	}
+
+	testItems := []testData{
+		testItemRebalancing(),
+		testItemRebalancingPolicy(),
+		testItemRebalancingPrevNode(),
+	}
+
+	for _, testItem := range testItems {
+		t.Logf("Test case: %s", testItem.testCaseName)
+
+		resourceManager.nodeConfigs = testItem.nodeConfigs
+		nodeManager.monitoring = testItem.monitoring
+
+		for serviceID, config := range testItem.serviceConfigs {
+			service := imageManager.services[serviceID]
+			service.Config = config
+			imageManager.services[serviceID] = service
+		}
+
+		storage := newTestStorage(testItem.storedInstances)
+
+		launcherInstance, err := launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager,
+			resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+		if err != nil {
+			t.Fatalf("Can't create launcher %v", err)
+		}
+
+		// Wait initial run status
+
+		for nodeID, info := range nodeInfoProvider.nodeInfo {
+			nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+				NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+			}
+		}
+
+		if err := waitRunInstancesStatus(
+			launcherInstance.GetRunStatusesChannel(), []cloudprotocol.InstanceStatus{}, time.Second); err != nil {
+			t.Errorf("Incorrect run status: %v", err)
+		}
+
+		// Run instances
+
+		if err := launcherInstance.RunInstances(testItem.desiredInstances, testItem.rebalancing); err != nil {
+			t.Fatalf("Can't run instances %v", err)
+		}
+
+		if err := waitRunInstancesStatus(
+			launcherInstance.GetRunStatusesChannel(), testItem.expectedRunStatus, time.Second); err != nil {
+			t.Errorf("Incorrect run status: %v", err)
+		}
+
+		if err := nodeManager.compareRunRequests(testItem.expectedRunRequests); err != nil {
+			t.Errorf("Incorrect run request: %v", err)
+		}
+
+		launcherInstance.Close()
+	}
+}
+
 func TestStorageCleanup(t *testing.T) {
 	var (
 		cfg = &config.Config{
@@ -726,6 +844,7 @@ func newTestNodeManager() *testNodeManager {
 	nodeManager := &testNodeManager{
 		runStatusChan: make(chan launcher.NodeRunInstanceStatus, 10),
 		runRequest:    make(map[string]runRequest),
+		monitoring:    make(map[string]aostypes.NodeMonitoring),
 	}
 
 	return nodeManager
@@ -766,6 +885,11 @@ func (nodeManager *testNodeManager) GetUpdateInstancesStatusChannel() <-chan []c
 }
 
 func (nodeManager *testNodeManager) GetAverageMonitoring(nodeID string) (aostypes.NodeMonitoring, error) {
+	monitoring, ok := nodeManager.monitoring[nodeID]
+	if ok {
+		return monitoring, nil
+	}
+
 	return aostypes.NodeMonitoring{}, nil
 }
 
@@ -1697,6 +1821,355 @@ func testItemRAMRatio() testData {
 				ServiceID: service1, SubjectID: subject1, Instance: 7,
 			}, "", errors.New("no nodes with available RAM")), //nolint:goerr113
 		},
+	}
+}
+
+func testItemRebalancing() testData {
+	return testData{
+		testCaseName: "rebalancing",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {
+				NodeType: nodeTypeLocalSM, Priority: 100,
+				AlertRules: &aostypes.AlertRules{
+					CPU: &aostypes.AlertRulePercents{
+						MinThreshold: 75.0, MaxThreshold: 85.0,
+					},
+				},
+			},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+			service2: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+			service3: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+		},
+		monitoring: map[string]aostypes.NodeMonitoring{
+			nodeIDLocalSM: {
+				NodeData: aostypes.MonitoringData{CPU: 1000},
+				InstancesData: []aostypes.InstanceMonitoring{
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+				},
+			},
+		},
+		storedInstances: []launcher.InstanceInfo{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5000,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5001,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service3, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDRemoteSM1,
+				UID:           5002,
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service3, 5002, service3RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM2, nil),
+		},
+		rebalancing: true,
+	}
+}
+
+func testItemRebalancingPolicy() testData {
+	return testData{
+		testCaseName: "rebalancing policy",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {
+				NodeType: nodeTypeLocalSM, Priority: 100,
+				AlertRules: &aostypes.AlertRules{
+					CPU: &aostypes.AlertRulePercents{
+						MinThreshold: 75.0, MaxThreshold: 85.0,
+					},
+				},
+			},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+			service2: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+			service3: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+				BalancingPolicy: aostypes.BalancingDisabled,
+			},
+		},
+		monitoring: map[string]aostypes.NodeMonitoring{
+			nodeIDLocalSM: {
+				NodeData: aostypes.MonitoringData{CPU: 1000},
+				InstancesData: []aostypes.InstanceMonitoring{
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+				},
+			},
+		},
+		storedInstances: []launcher.InstanceInfo{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5000,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5001,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service3, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDRemoteSM1,
+				UID:           5002,
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service3, 5002, service3RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 3, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM2, nil),
+		},
+		rebalancing: true,
+	}
+}
+
+func testItemRebalancingPrevNode() testData {
+	return testData{
+		testCaseName: "rebalancing prev node",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {
+				NodeType: nodeTypeLocalSM, Priority: 100,
+				AlertRules: &aostypes.AlertRules{
+					CPU: &aostypes.AlertRulePercents{
+						MinThreshold: 75.0, MaxThreshold: 85.0,
+					},
+				},
+			},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+			service2: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+			service3: {
+				Quotas: aostypes.ServiceQuotas{
+					CPULimit: newQuota(1000),
+				},
+			},
+		},
+		monitoring: map[string]aostypes.NodeMonitoring{
+			nodeIDLocalSM: {
+				NodeData: aostypes.MonitoringData{CPU: 1000},
+				InstancesData: []aostypes.InstanceMonitoring{
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+				},
+			},
+		},
+		storedInstances: []launcher.InstanceInfo{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5000,
+				PrevNodeID:    nodeIDLocalSM,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5001,
+				PrevNodeID:    nodeIDRemoteSM1,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service3, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDRemoteSM1,
+				UID:           5002,
+				PrevNodeID:    nodeIDRemoteSM2,
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service3, 5002, service3RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 3, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM2, nil),
+		},
+		rebalancing: true,
 	}
 }
 

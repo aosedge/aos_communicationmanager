@@ -20,7 +20,6 @@ package launcher
 import (
 	"context"
 	"errors"
-	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
@@ -147,7 +147,7 @@ func New(
 		return nil, err
 	}
 
-	if err := launcher.initNodes(); err != nil {
+	if err := launcher.initNodes(false); err != nil {
 		return nil, err
 	}
 
@@ -178,9 +178,17 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, r
 	launcher.Lock()
 	defer launcher.Unlock()
 
-	log.Debug("Run instances")
+	log.WithField("rebalancing", rebalancing).Debug("Run instances")
 
-	launcher.prepareBalancing()
+	sort.Slice(instances, func(i, j int) bool {
+		if instances[i].Priority == instances[j].Priority {
+			return instances[i].ServiceID < instances[j].ServiceID
+		}
+
+		return instances[i].Priority > instances[j].Priority
+	})
+
+	launcher.prepareBalancing(rebalancing)
 
 	if err := launcher.processRemovedInstances(instances); err != nil {
 		log.Errorf("Can't process removed instances: %v", err)
@@ -194,7 +202,7 @@ func (launcher *Launcher) RunInstances(instances []cloudprotocol.InstanceInfo, r
 		launcher.performPolicyBalancing(instances)
 	}
 
-	launcher.performNodeBalancing(instances)
+	launcher.performNodeBalancing(instances, rebalancing)
 
 	// first prepare network for instance which have exposed ports
 	launcher.prepareNetworkForInstances(true)
@@ -218,8 +226,8 @@ func (launcher *Launcher) GetRunStatusesChannel() <-chan []cloudprotocol.Instanc
  * Private
  **********************************************************************************************************************/
 
-func (launcher *Launcher) prepareBalancing() {
-	if err := launcher.initNodes(); err != nil {
+func (launcher *Launcher) prepareBalancing(rebalancing bool) {
+	if err := launcher.initNodes(rebalancing); err != nil {
 		log.Errorf("Can't init nodes: %v", err)
 	}
 
@@ -236,7 +244,7 @@ func (launcher *Launcher) prepareBalancing() {
 	}
 }
 
-func (launcher *Launcher) initNodes() error {
+func (launcher *Launcher) initNodes(rebalancing bool) error {
 	launcher.nodes = make(map[string]*nodeHandler)
 
 	nodes, err := launcher.nodeInfoProvider.GetAllNodeIDs()
@@ -259,7 +267,8 @@ func (launcher *Launcher) initNodes() error {
 		}
 
 		nodeHandler, err := newNodeHandler(
-			nodeInfo, launcher.resourceManager, nodeInfo.NodeID == launcher.nodeInfoProvider.GetNodeID())
+			nodeInfo, launcher.nodeManager, launcher.resourceManager,
+			nodeInfo.NodeID == launcher.nodeInfoProvider.GetNodeID(), rebalancing)
 		if err != nil {
 			log.WithField("nodeID", nodeID).Errorf("Can't create node handler: %v", err)
 
@@ -364,16 +373,11 @@ func (launcher *Launcher) sendCurrentStatus() {
 	launcher.runStatusChannel <- instancesStatus
 }
 
-func (launcher *Launcher) processRemovedInstances(newInstances []cloudprotocol.InstanceInfo) error {
-	launcher.removeInstanceNetworkParameters(newInstances)
+func (launcher *Launcher) processRemovedInstances(instances []cloudprotocol.InstanceInfo) error {
+	launcher.removeInstanceNetworkParameters(instances)
 
-	curInstances, err := launcher.instanceManager.getCurrentInstances()
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, curInstance := range curInstances {
-		if !slices.ContainsFunc(newInstances, func(info cloudprotocol.InstanceInfo) bool {
+	for _, curInstance := range launcher.instanceManager.getCurrentInstances() {
+		if !slices.ContainsFunc(instances, func(info cloudprotocol.InstanceInfo) bool {
 			return curInstance.ServiceID == info.ServiceID && curInstance.SubjectID == info.SubjectID &&
 				curInstance.Instance < info.NumInstances
 		}) {
@@ -409,12 +413,6 @@ func (launcher *Launcher) updateNetworks(instances []cloudprotocol.InstanceInfo)
 }
 
 func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.InstanceInfo) {
-	curInstances, err := launcher.instanceManager.getCurrentInstances()
-	if err != nil {
-		log.Errorf("Can't get current instances: %v", err)
-		return
-	}
-
 	for _, instance := range instances {
 		log.WithFields(log.Fields{
 			"serviceID":    instance.ServiceID,
@@ -435,21 +433,17 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 		}
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
-			curIndex := slices.IndexFunc(curInstances, func(curInstance InstanceInfo) bool {
-				return curInstance.ServiceID == instance.ServiceID &&
-					curInstance.SubjectID == instance.SubjectID &&
-					curInstance.Instance == instanceIndex
-			})
-
-			if curIndex == -1 {
+			curInstance, err := launcher.instanceManager.getCurrentInstance(
+				createInstanceIdent(instance, instanceIndex))
+			if err != nil {
 				launcher.instanceManager.setInstanceError(
 					createInstanceIdent(instance, instanceIndex),
-					service.Version, aoserrors.Errorf("instance not found"))
+					service.Version, err)
 
 				continue
 			}
 
-			node := launcher.getNode(curInstances[curIndex].NodeID)
+			node := launcher.getNode(curInstance.NodeID)
 			if node == nil {
 				launcher.instanceManager.setInstanceError(
 					createInstanceIdent(instance, instanceIndex),
@@ -459,7 +453,7 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 			}
 
 			instanceInfo, err := launcher.instanceManager.setupInstance(
-				instance, instanceIndex, node, service)
+				instance, instanceIndex, node, service, true)
 			if err != nil {
 				launcher.instanceManager.setInstanceError(
 					createInstanceIdent(instance, instanceIndex), service.Version, err)
@@ -477,15 +471,8 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 	}
 }
 
-func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo) {
-	sort.Slice(instances, func(i, j int) bool {
-		if instances[i].Priority == instances[j].Priority {
-			return instances[i].ServiceID < instances[j].ServiceID
-		}
-
-		return instances[i].Priority > instances[j].Priority
-	})
-
+//nolint:gocognit
+func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo, rebalancing bool) {
 	for _, instance := range instances {
 		log.WithFields(log.Fields{
 			"serviceID":    instance.ServiceID,
@@ -507,28 +494,44 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 		}
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
-			if launcher.instanceManager.isInstanceScheduled(createInstanceIdent(instance, instanceIndex)) {
+			instanceIdent := createInstanceIdent(instance, instanceIndex)
+
+			if launcher.instanceManager.isInstanceScheduled(instanceIdent) {
 				continue
 			}
 
-			node, err := getInstanceNode(nodes, service.Config)
+			if rebalancing {
+				curInstance, err := launcher.instanceManager.getCurrentInstance(instanceIdent)
+				if err != nil {
+					launcher.instanceManager.setInstanceError(instanceIdent, service.Version, err)
+					continue
+				}
+
+				if curInstance.PrevNodeID != "" && curInstance.PrevNodeID != curInstance.NodeID {
+					nodes = excludeNodes(nodes, []string{curInstance.PrevNodeID})
+					if len(nodes) == 0 {
+						launcher.instanceManager.setInstanceError(instanceIdent, service.Version,
+							aoserrors.Errorf("can't find node for rebalancing"))
+						continue
+					}
+				}
+			}
+
+			node, err := getInstanceNode(nodes, instanceIdent, service.Config)
 			if err != nil {
-				launcher.instanceManager.setInstanceError(
-					createInstanceIdent(instance, instanceIndex), service.Version, err)
+				launcher.instanceManager.setInstanceError(instanceIdent, service.Version, err)
 				continue
 			}
 
 			instanceInfo, err := launcher.instanceManager.setupInstance(
-				instance, instanceIndex, node, service)
+				instance, instanceIndex, node, service, rebalancing)
 			if err != nil {
-				launcher.instanceManager.setInstanceError(
-					createInstanceIdent(instance, instanceIndex), service.Version, err)
+				launcher.instanceManager.setInstanceError(instanceIdent, service.Version, err)
 				continue
 			}
 
 			if err = node.addRunRequest(instanceInfo, service, layers); err != nil {
-				launcher.instanceManager.setInstanceError(
-					createInstanceIdent(instance, instanceIndex), service.Version, err)
+				launcher.instanceManager.setInstanceError(instanceIdent, service.Version, err)
 				continue
 			}
 		}

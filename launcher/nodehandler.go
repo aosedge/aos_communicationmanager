@@ -19,6 +19,7 @@ package launcher
 
 import (
 	"errors"
+	"math"
 	"slices"
 
 	"github.com/aosedge/aos_common/aoserrors"
@@ -47,6 +48,8 @@ type nodeHandler struct {
 	runRequest        runRequest
 	isLocalNode       bool
 	waitStatus        bool
+	averageMonitoring aostypes.NodeMonitoring
+	needRebalancing   bool
 	availableCPU      uint64
 	availableRAM      uint64
 }
@@ -63,7 +66,8 @@ var defaultRunners = []string{"crun", "runc"}
  **********************************************************************************************************************/
 
 func newNodeHandler(
-	nodeInfo cloudprotocol.NodeInfo, resourceManager ResourceManager, isLocalNode bool,
+	nodeInfo cloudprotocol.NodeInfo, nodeManager NodeManager, resourceManager ResourceManager,
+	isLocalNode bool, rebalancing bool,
 ) (*nodeHandler, error) {
 	log.WithFields(log.Fields{"nodeID": nodeInfo.NodeID}).Debug("Init node handler")
 
@@ -81,10 +85,100 @@ func newNodeHandler(
 	node.nodeConfig = nodeConfig
 	node.resetDeviceAllocations()
 
-	node.availableCPU = node.nodeInfo.MaxDMIPs
-	node.availableRAM = node.nodeInfo.TotalRAM
+	node.initAvailableResources(nodeManager, rebalancing)
 
 	return node, nil
+}
+
+func (node *nodeHandler) initAvailableResources(nodeManager NodeManager, rebalancing bool) {
+	var err error
+
+	if rebalancing && node.nodeConfig.AlertRules != nil &&
+		(node.nodeConfig.AlertRules.CPU != nil || node.nodeConfig.AlertRules.RAM != nil) {
+		node.averageMonitoring, err = nodeManager.GetAverageMonitoring(node.nodeInfo.NodeID)
+		if err != nil {
+			log.WithField("nodeID", node.nodeInfo.NodeID).Errorf("Can't get average monitoring: %v", err)
+		}
+
+		if (node.nodeConfig.AlertRules.CPU != nil &&
+			node.averageMonitoring.NodeData.CPU >
+				uint64(math.Round(float64(node.nodeInfo.MaxDMIPs)*
+					node.nodeConfig.AlertRules.CPU.MaxThreshold/100.0))) ||
+			(node.nodeConfig.AlertRules.RAM != nil &&
+				node.averageMonitoring.NodeData.RAM >
+					uint64(math.Round(float64(node.nodeInfo.TotalRAM)*
+						node.nodeConfig.AlertRules.RAM.MaxThreshold/100.0))) {
+			node.needRebalancing = true
+		}
+	}
+
+	nodeCPU := node.getNodeCPU()
+	nodeRAM := node.getNodeRAM()
+	totalCPU := node.nodeInfo.MaxDMIPs
+	totalRAM := node.nodeInfo.TotalRAM
+
+	// For nodes required rebalancing, we need to increase resource consumption below the low	threshold
+	if node.needRebalancing {
+		if node.nodeConfig.AlertRules.CPU != nil {
+			totalCPU = uint64(math.Round(float64(node.nodeInfo.MaxDMIPs) *
+				node.nodeConfig.AlertRules.CPU.MinThreshold / 100.0))
+		}
+
+		if node.nodeConfig.AlertRules.RAM != nil {
+			totalRAM = uint64(math.Round(float64(node.nodeInfo.TotalRAM) *
+				node.nodeConfig.AlertRules.RAM.MinThreshold / 100.0))
+		}
+	}
+
+	if nodeCPU > totalCPU {
+		node.availableCPU = 0
+	} else {
+		node.availableCPU = totalCPU - nodeCPU
+	}
+
+	if nodeRAM > totalRAM {
+		node.availableRAM = 0
+	} else {
+		node.availableRAM = totalRAM - nodeRAM
+	}
+
+	if node.needRebalancing {
+		log.WithFields(log.Fields{
+			"nodeID": node.nodeInfo.NodeID, "RAM": nodeRAM, "CPU": nodeCPU,
+		}).Debug("Node resources usage")
+	}
+
+	log.WithFields(log.Fields{
+		"nodeID": node.nodeInfo.NodeID, "RAM": node.availableRAM, "CPU": node.availableCPU,
+	}).Debug("Available resources on node")
+}
+
+func (node *nodeHandler) getNodeCPU() uint64 {
+	instancesCPU := uint64(0)
+
+	for _, instance := range node.averageMonitoring.InstancesData {
+		instancesCPU += instance.CPU
+	}
+
+	if instancesCPU > node.averageMonitoring.NodeData.CPU {
+		return 0
+	}
+
+	return node.averageMonitoring.NodeData.CPU - instancesCPU
+}
+
+func (node *nodeHandler) getNodeRAM() uint64 {
+	instancesRAM := uint64(0)
+
+	for _, instance := range node.averageMonitoring.InstancesData {
+		instancesRAM += instance.RAM
+	}
+
+	if instancesRAM > node.averageMonitoring.NodeData.RAM {
+		return 0
+	}
+
+	return node.averageMonitoring.NodeData.RAM - instancesRAM
 }
 
 func (node *nodeHandler) resetDeviceAllocations() {
@@ -138,18 +232,22 @@ func (node *nodeHandler) addRunRequest(instanceInfo aostypes.InstanceInfo, servi
 	node.addService(service)
 	node.addLayers(layers)
 
-	requestedCPU := node.getRequestedCPU(service.Config)
+	requestedCPU := node.getRequestedCPU(instanceInfo.InstanceIdent, service.Config)
 	if requestedCPU > node.availableCPU {
 		return aoserrors.Errorf("not enough CPU")
 	}
 
-	requestedRAM := node.getRequestedRAM(service.Config)
+	requestedRAM := node.getRequestedRAM(instanceInfo.InstanceIdent, service.Config)
 	if requestedRAM > node.availableRAM {
 		return aoserrors.Errorf("not enough CPU")
 	}
 
 	node.availableCPU -= requestedCPU
 	node.availableRAM -= requestedRAM
+
+	log.WithFields(log.Fields{
+		"nodeID": node.nodeInfo.NodeID, "RAM": node.availableRAM, "CPU": node.availableCPU,
+	}).Debug("Remaining resources on node")
 
 	return nil
 }
@@ -208,7 +306,9 @@ func (node *nodeHandler) getPartitionSize(partitionType string) uint64 {
 	return node.nodeInfo.Partitions[partitionIndex].TotalSize
 }
 
-func (node *nodeHandler) getRequestedCPU(serviceConfig aostypes.ServiceConfig) uint64 {
+func (node *nodeHandler) getRequestedCPU(
+	instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
+) uint64 {
 	requestedCPU := uint64(0)
 
 	if serviceConfig.Quotas.CPULimit != nil {
@@ -216,15 +316,41 @@ func (node *nodeHandler) getRequestedCPU(serviceConfig aostypes.ServiceConfig) u
 			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
 	}
 
+	if node.needRebalancing {
+		index := slices.IndexFunc(node.averageMonitoring.InstancesData, func(instance aostypes.InstanceMonitoring) bool {
+			return instance.InstanceIdent == instanceIdent
+		})
+
+		if index != -1 {
+			if node.averageMonitoring.InstancesData[index].CPU > requestedCPU {
+				return node.averageMonitoring.InstancesData[index].CPU
+			}
+		}
+	}
+
 	return requestedCPU
 }
 
-func (node *nodeHandler) getRequestedRAM(serviceConfig aostypes.ServiceConfig) uint64 {
+func (node *nodeHandler) getRequestedRAM(
+	instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
+) uint64 {
 	requestedRAM := uint64(0)
 
 	if serviceConfig.Quotas.RAMLimit != nil {
 		requestedRAM = uint64(float64(*serviceConfig.Quotas.RAMLimit)*getRAMRequestRatio(
 			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
+	}
+
+	if node.needRebalancing {
+		index := slices.IndexFunc(node.averageMonitoring.InstancesData, func(instance aostypes.InstanceMonitoring) bool {
+			return instance.InstanceIdent == instanceIdent
+		})
+
+		if index != -1 {
+			if node.averageMonitoring.InstancesData[index].RAM > requestedRAM {
+				return node.averageMonitoring.InstancesData[index].RAM
+			}
+		}
 	}
 
 	return requestedRAM
@@ -347,11 +473,13 @@ func getNodeByRunners(nodes []*nodeHandler, runners []string) []*nodeHandler {
 	return resultNodes
 }
 
-func getNodesByCPU(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) []*nodeHandler {
+func getNodesByCPU(
+	nodes []*nodeHandler, instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
+) []*nodeHandler {
 	resultNodes := make([]*nodeHandler, 0)
 
 	for _, node := range nodes {
-		if node.availableCPU >= node.getRequestedCPU(serviceConfig) {
+		if node.availableCPU >= node.getRequestedCPU(instanceIdent, serviceConfig) {
 			resultNodes = append(resultNodes, node)
 		}
 	}
@@ -359,11 +487,13 @@ func getNodesByCPU(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) [
 	return resultNodes
 }
 
-func getNodesByRAM(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) []*nodeHandler {
+func getNodesByRAM(
+	nodes []*nodeHandler, instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
+) []*nodeHandler {
 	resultNodes := make([]*nodeHandler, 0)
 
 	for _, node := range nodes {
-		if node.availableRAM >= node.getRequestedRAM(serviceConfig) {
+		if node.availableRAM >= node.getRequestedRAM(instanceIdent, serviceConfig) {
 			resultNodes = append(resultNodes, node)
 		}
 	}
@@ -389,18 +519,36 @@ func getTopPriorityNodes(nodes []*nodeHandler) []*nodeHandler {
 	return resultNodes
 }
 
-func getInstanceNode(nodes []*nodeHandler, serviceConfig aostypes.ServiceConfig) (*nodeHandler, error) {
+func excludeNodes(nodes []*nodeHandler, excludeNodes []string) []*nodeHandler {
+	if len(excludeNodes) == 0 {
+		return nodes
+	}
+
+	resultNodes := make([]*nodeHandler, 0)
+
+	for _, node := range nodes {
+		if !slices.Contains(excludeNodes, node.nodeInfo.NodeID) {
+			resultNodes = append(resultNodes, node)
+		}
+	}
+
+	return resultNodes
+}
+
+func getInstanceNode(
+	nodes []*nodeHandler, instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
+) (*nodeHandler, error) {
 	resultNodes := getNodesByDevices(nodes, serviceConfig.Devices)
 	if len(resultNodes) == 0 {
 		return nil, aoserrors.Errorf("no nodes with devices %v", serviceConfig.Devices)
 	}
 
-	resultNodes = getNodesByCPU(resultNodes, serviceConfig)
+	resultNodes = getNodesByCPU(resultNodes, instanceIdent, serviceConfig)
 	if len(resultNodes) == 0 {
 		return nil, aoserrors.Errorf("no nodes with available CPU")
 	}
 
-	resultNodes = getNodesByRAM(resultNodes, serviceConfig)
+	resultNodes = getNodesByRAM(resultNodes, instanceIdent, serviceConfig)
 	if len(resultNodes) == 0 {
 		return nil, aoserrors.Errorf("no nodes with available RAM")
 	}
