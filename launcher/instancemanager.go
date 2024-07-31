@@ -20,7 +20,6 @@ package launcher
 import (
 	"context"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
@@ -28,6 +27,7 @@ import (
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
@@ -47,10 +47,11 @@ const removePeriod = time.Hour * 24
 
 type InstanceInfo struct {
 	aostypes.InstanceIdent
-	NodeID    string
-	UID       int
-	Timestamp time.Time
-	Cached    bool
+	NodeID     string
+	PrevNodeID string
+	UID        int
+	Timestamp  time.Time
+	Cached     bool
 }
 
 // Storage storage interface.
@@ -72,6 +73,7 @@ type instanceManager struct {
 	errorStatus                      map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus
 	instances                        map[aostypes.InstanceIdent]aostypes.InstanceInfo
 	removeServiceChannel             <-chan string
+	curInstances                     []InstanceInfo
 	availableStorage, availableState uint64
 }
 
@@ -121,25 +123,48 @@ func newInstanceManager(config *config.Config, imageProvider ImageProvider, stor
 func (im *instanceManager) initInstances() {
 	im.instances = make(map[aostypes.InstanceIdent]aostypes.InstanceInfo)
 	im.errorStatus = make(map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus)
+
+	var err error
+
+	instances, err := im.storage.GetInstances()
+	if err != nil {
+		log.Errorf("Can't get current instances: %v", err)
+	}
+
+	im.curInstances = make([]InstanceInfo, 0, len(instances))
+
+	for _, instance := range instances {
+		if instance.Cached {
+			continue
+		}
+
+		im.curInstances = append(im.curInstances, instance)
+	}
+}
+
+func (im *instanceManager) getCurrentInstances() []InstanceInfo {
+	return im.curInstances
+}
+
+func (im *instanceManager) getCurrentInstance(instanceIdent aostypes.InstanceIdent) (InstanceInfo, error) {
+	curIndex := slices.IndexFunc(im.curInstances, func(curInstance InstanceInfo) bool {
+		return curInstance.InstanceIdent == instanceIdent
+	})
+
+	if curIndex == -1 {
+		return InstanceInfo{}, aoserrors.Wrap(ErrNotExist)
+	}
+
+	return im.curInstances[curIndex], nil
 }
 
 func (im *instanceManager) resetStorageStateUsage(storageSize, stateSize uint64) {
 	im.availableStorage, im.availableState = storageSize, stateSize
 }
 
-func (im *instanceManager) getCurrentInstances() ([]InstanceInfo, error) {
-	instances, err := im.storage.GetInstances()
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	return slices.DeleteFunc(instances, func(instance InstanceInfo) bool {
-		return instance.Cached
-	}), nil
-}
-
 func (im *instanceManager) setupInstance(
 	instance cloudprotocol.InstanceInfo, index uint64, node *nodeHandler, service imagemanager.ServiceInfo,
+	rebalancing bool,
 ) (aostypes.InstanceInfo, error) {
 	instanceInfo := aostypes.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{
@@ -174,6 +199,12 @@ func (im *instanceManager) setupInstance(
 			log.Errorf("Can't add instance: %v", err)
 		}
 	} else {
+		if rebalancing {
+			storedInstance.PrevNodeID = storedInstance.NodeID
+		} else {
+			storedInstance.PrevNodeID = ""
+		}
+
 		storedInstance.NodeID = node.nodeInfo.NodeID
 		storedInstance.Timestamp = time.Now()
 		storedInstance.Cached = false
