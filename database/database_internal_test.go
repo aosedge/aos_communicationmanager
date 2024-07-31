@@ -792,7 +792,7 @@ func TestInstance(t *testing.T) {
 		t.Error("Incorrect empty instances")
 	}
 
-	if _, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
+	if _, err := testDB.GetInstance(aostypes.InstanceIdent{
 		ServiceID: "notexist", SubjectID: "notexist", Instance: 0,
 	}); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
@@ -800,10 +800,12 @@ func TestInstance(t *testing.T) {
 
 	for i := 100; i < 105; i++ {
 		instanceInfo := launcher.InstanceInfo{
-			InstanceIdent: aostypes.InstanceIdent{
-				ServiceID: servicePrefix + strconv.Itoa(i), SubjectID: subjectPrefix + strconv.Itoa(i), Instance: 0,
-			},
-			UID: i,
+			InstanceIdent: createInstanceIdent(i),
+			NodeID:        fmt.Sprintf("node%d", i+1),
+			PrevNodeID:    fmt.Sprintf("node%d", i),
+			Timestamp:     time.Now().UTC(),
+			UID:           i,
+			Cached:        i%2 == 0,
 		}
 
 		if err := testDB.AddInstance(instanceInfo); err != nil {
@@ -813,18 +815,16 @@ func TestInstance(t *testing.T) {
 		expectedInstances = append(expectedInstances, instanceInfo)
 	}
 
-	expectedUID := 103
+	expectedIndex := 103
 
-	uid, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
-	})
+	instanceInfo, err := testDB.GetInstance(createInstanceIdent(expectedIndex))
 	if err != nil {
-		t.Errorf("Can't get instance uid: %v", err)
+		t.Fatalf("Can't get instance: %v", err)
 	}
 
-	if uid != expectedUID {
-		t.Error("Incorrect uid for instance")
+	if !reflect.DeepEqual(instanceInfo, expectedInstances[expectedIndex-100]) {
+		t.Errorf("Incorrect result for get instance: %v, expected: %v", instanceInfo,
+			expectedInstances[expectedIndex-100])
 	}
 
 	instances, err = testDB.GetInstances()
@@ -836,42 +836,37 @@ func TestInstance(t *testing.T) {
 		t.Errorf("Incorrect result for get instances: %v, expected: %v", instances, expectedInstances)
 	}
 
-	expectedCachedInstanceIdent := aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
+	updatedIndex := 102
+
+	updatedInstance := launcher.InstanceInfo{
+		InstanceIdent: createInstanceIdent(updatedIndex),
+		NodeID:        "updatedNode",
+		PrevNodeID:    "prevUpdatedNode",
+		Timestamp:     time.Now().UTC(),
+		UID:           5000,
+		Cached:        true,
 	}
 
-	if err := testDB.SetInstanceCached(expectedCachedInstanceIdent, true); err != nil {
-		t.Errorf("Can't set instance cached: %v", err)
+	if err := testDB.UpdateInstance(updatedInstance); err != nil {
+		t.Errorf("Can't update instance: %v", err)
 	}
 
-	instances, err = testDB.GetInstances()
-	if err != nil {
-		t.Errorf("Can't get all instances: %v", err)
+	if instanceInfo, err = testDB.GetInstance(createInstanceIdent(expectedIndex)); err != nil {
+		t.Fatalf("Can't get instance: %v", err)
 	}
 
-	for _, instance := range instances {
-		cached := instance.Cached
-		if instance.InstanceIdent == expectedCachedInstanceIdent {
-			if !cached {
-				t.Error("Instance expected to be cached")
-			}
-
-			break
-		}
+	if !reflect.DeepEqual(instanceInfo, expectedInstances[expectedIndex-100]) {
+		t.Errorf("Incorrect result for get instance: %v, expected: %v", instanceInfo,
+			expectedInstances[expectedIndex-100])
 	}
 
-	if err := testDB.RemoveInstance(aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
-	}); err != nil {
+	removedInstance := 104
+
+	if err := testDB.RemoveInstance(createInstanceIdent(removedInstance)); err != nil {
 		t.Errorf("Can't remove instance: %v", err)
 	}
 
-	if _, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
-	}); !errors.Is(err, launcher.ErrNotExist) {
+	if _, err := testDB.GetInstance(createInstanceIdent(removedInstance)); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
 	}
 }
@@ -1195,4 +1190,12 @@ func isTableExist(sqlite *sql.DB, tableName string) (bool, error) {
 	}
 
 	return false, aoserrors.Wrap(rows.Err())
+}
+
+func createInstanceIdent(index int) aostypes.InstanceIdent {
+	return aostypes.InstanceIdent{
+		ServiceID: servicePrefix + strconv.Itoa(index),
+		SubjectID: subjectPrefix + strconv.Itoa(index),
+		Instance:  uint64(index),
+	}
 }

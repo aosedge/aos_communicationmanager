@@ -25,7 +25,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
@@ -514,26 +513,47 @@ func (db *Database) RemoveLayer(digest string) (err error) {
 	return err
 }
 
-// AddInstance adds instanace with uid.
+// AddInstance adds instanace info.
 func (db *Database) AddInstance(instanceInfo launcher.InstanceInfo) error {
-	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?, ?, 0)",
-		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance, instanceInfo.UID, instanceInfo.Timestamp)
+	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?, ?, ?, ?, ?)",
+		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance, instanceInfo.NodeID,
+		instanceInfo.PrevNodeID, instanceInfo.UID, instanceInfo.Timestamp, instanceInfo.Cached)
 }
 
-// GetInstanceUID gets uid by instanace ident.
-func (db *Database) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
-	var uid int
-
-	if err := db.getDataFromQuery("SELECT uid FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
-		[]any{instance.ServiceID, instance.SubjectID, instance.Instance}, &uid); err != nil {
+// UpdateInstance updates instance info.
+func (db *Database) UpdateInstance(instanceInfo launcher.InstanceInfo) error {
+	if err := db.executeQuery("UPDATE instances SET "+
+		"nodeID = ? prevNodeID = ? uid = ? timestamp = ? cached = ? "+
+		"WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
+		instanceInfo.NodeID, instanceInfo.PrevNodeID, instanceInfo.UID, instanceInfo.Timestamp, instanceInfo.Cached,
+		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance); err != nil {
 		if errors.Is(err, errNotExist) {
-			return uid, launcher.ErrNotExist
+			return launcher.ErrNotExist
 		}
-
-		return uid, err
 	}
 
-	return uid, nil
+	return nil
+}
+
+// GetInstance returns instance by instance ident.
+func (db *Database) GetInstance(instance aostypes.InstanceIdent) (launcher.InstanceInfo, error) {
+	instanceInfo := launcher.InstanceInfo{
+		InstanceIdent: instance,
+	}
+
+	if err := db.getDataFromQuery("SELECT nodeID, prevNodeID, uid, timestamp, cached "+
+		"FROM instances WHERE serviceId = ? AND subjectId = ? AND instance = ?",
+		[]any{instance.ServiceID, instance.SubjectID, instance.Instance},
+		&instanceInfo.NodeID, &instanceInfo.PrevNodeID, &instanceInfo.UID,
+		&instanceInfo.Timestamp, &instanceInfo.Cached); err != nil {
+		if errors.Is(err, errNotExist) {
+			return instanceInfo, launcher.ErrNotExist
+		}
+
+		return instanceInfo, err
+	}
+
+	return instanceInfo, nil
 }
 
 // GetInstances gets all instances.
@@ -554,8 +574,8 @@ func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
 	for rows.Next() {
 		var instance launcher.InstanceInfo
 
-		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.UID,
-			&instance.Timestamp, &instance.Cached); err != nil {
+		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.NodeID,
+			&instance.PrevNodeID, &instance.UID, &instance.Timestamp, &instance.Cached); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -569,13 +589,6 @@ func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
 func (db *Database) RemoveInstance(instance aostypes.InstanceIdent) error {
 	return db.executeQuery("DELETE FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
 		instance.ServiceID, instance.SubjectID, instance.Instance)
-}
-
-// SetInstanceCached sets cached status for the instance.
-func (db *Database) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
-	return db.executeQuery(
-		"UPDATE instances SET cached = ?, timestamp = ? WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
-		cached, time.Now().UTC(), instance.ServiceID, instance.SubjectID, instance.Instance)
 }
 
 // GetStorageStateInfo returns storage and state info by instance ident.
@@ -873,6 +886,8 @@ func (db *Database) createInstancesTable() (err error) {
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS instances (serviceId TEXT,
                                                                 subjectId TEXT,
                                                                 instance INTEGER,
+                                                                nodeID TEXT,
+                                                                prevNodeID TEXT,
                                                                 uid integer,
                                                                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                                 cached INTEGER DEFAULT 0,
