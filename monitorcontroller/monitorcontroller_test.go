@@ -183,7 +183,7 @@ func getTestMonitoringData() (aostypes.NodeMonitoring, cloudprotocol.Monitoring)
 		NodeID: "mainNode",
 		Items: []aostypes.MonitoringData{
 			{
-				RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Timestamp: timestamp,
+				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Timestamp: timestamp,
 				Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 			},
 		},
