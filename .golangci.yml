@@ -37,13 +37,17 @@ linters-settings:
 
   funlen:
     lines: 100
+    statements: 50
+
+  gocognit:
+    min-complexity: 40
 
   gosec:
     excludes:
       - G204
 
   mnd:
-    ignored-numbers: 0o600,0o755,0o644,5,10,16,32,64,128,100,0xff,3
+    ignored-numbers: 0o600,0o755,0o644,0.5,3,5,10,16,32,64,128,100,100.0,0xff
     ignored-files: config/config.go,fcrypt/utils.go
 
   interfacebloat:

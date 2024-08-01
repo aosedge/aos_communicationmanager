@@ -471,7 +471,6 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 	}
 }
 
-//nolint:gocognit
 func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.InstanceInfo, rebalancing bool) {
 	for _, instance := range instances {
 		log.WithFields(log.Fields{
