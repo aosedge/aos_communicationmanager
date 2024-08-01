@@ -121,7 +121,8 @@ func init() {
  * CommunicationManager
  **********************************************************************************************************************/
 
-func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) { //nolint:gocognit,funlen
+//nolint:funlen
+func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) {
 	defer func() {
 		if err != nil {
 			cm.close()
@@ -342,7 +343,6 @@ func (cm *communicationManager) close() {
 	}
 }
 
-//nolint:funlen
 func (cm *communicationManager) processMessage(message amqp.Message) (err error) {
 	switch data := message.(type) {
 	case *cloudprotocol.DesiredStatus:
