@@ -545,7 +545,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 			expectedMonitoring: aostypes.NodeMonitoring{
 				NodeID: nodeID,
 				NodeData: aostypes.MonitoringData{
-					RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
+					RAM: 10, CPU: 20, Download: 40, Upload: 50,
 					Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 					Timestamp: now,
 				},
@@ -553,7 +553,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 			},
 			sendMonitoring: &pbsm.InstantMonitoring{
 				NodeMonitoring: &pbsm.MonitoringData{
-					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
+					Ram: 10, Cpu: 20, Download: 40, Upload: 50,
 					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
 					Timestamp: timestamppb.New(now),
 				},
@@ -563,7 +563,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 			expectedMonitoring: aostypes.NodeMonitoring{
 				NodeID: nodeID,
 				NodeData: aostypes.MonitoringData{
-					RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
+					RAM: 10, CPU: 20, Download: 40, Upload: 50,
 					Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 					Timestamp: now,
 				},
@@ -571,7 +571,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
 						MonitoringData: aostypes.MonitoringData{
-							RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 0,
+							RAM: 10, CPU: 20, Download: 40, Upload: 0,
 							Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 							Timestamp: now,
 						},
@@ -579,7 +579,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
 						MonitoringData: aostypes.MonitoringData{
-							RAM: 20, CPU: 30, InTraffic: 50, OutTraffic: 10,
+							RAM: 20, CPU: 30, Download: 50, Upload: 10,
 							Disk:      []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
 							Timestamp: now,
 						},
@@ -588,7 +588,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 			},
 			sendMonitoring: &pbsm.InstantMonitoring{
 				NodeMonitoring: &pbsm.MonitoringData{
-					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
+					Ram: 10, Cpu: 20, Download: 40, Upload: 50,
 					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
 					Timestamp: timestamppb.New(now),
 				},
@@ -596,7 +596,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
-							Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 0,
+							Ram: 10, Cpu: 20, Download: 40, Upload: 0,
 							Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
 							Timestamp: timestamppb.New(now),
 						},
@@ -604,7 +604,7 @@ func TestSMMonitoringNotifications(t *testing.T) {
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
-							Ram: 20, Cpu: 30, InTraffic: 50, OutTraffic: 10,
+							Ram: 20, Cpu: 30, Download: 50, Upload: 10,
 							Disk:      []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
 							Timestamp: timestamppb.New(now),
 						},
@@ -1144,7 +1144,7 @@ func TestGetAverageMonitoring(t *testing.T) {
 		expectedMonitoring = aostypes.NodeMonitoring{
 			NodeID: nodeID,
 			NodeData: aostypes.MonitoringData{
-				RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 50,
+				RAM: 10, CPU: 20, Download: 40, Upload: 50,
 				Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 				Timestamp: currentTime,
 			},
@@ -1152,7 +1152,7 @@ func TestGetAverageMonitoring(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
 					MonitoringData: aostypes.MonitoringData{
-						RAM: 10, CPU: 20, InTraffic: 40, OutTraffic: 0,
+						RAM: 10, CPU: 20, Download: 40, Upload: 0,
 						Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 						Timestamp: currentTime,
 					},
@@ -1160,7 +1160,7 @@ func TestGetAverageMonitoring(t *testing.T) {
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
 					MonitoringData: aostypes.MonitoringData{
-						RAM: 20, CPU: 30, InTraffic: 50, OutTraffic: 10,
+						RAM: 20, CPU: 30, Download: 50, Upload: 10,
 						Disk:      []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
 						Timestamp: currentTime,
 					},
@@ -1170,7 +1170,7 @@ func TestGetAverageMonitoring(t *testing.T) {
 		sendMonitoring = &pbsm.SMOutgoingMessages{SMOutgoingMessage: &pbsm.SMOutgoingMessages_AverageMonitoring{
 			AverageMonitoring: &pbsm.AverageMonitoring{
 				NodeMonitoring: &pbsm.MonitoringData{
-					Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 50,
+					Ram: 10, Cpu: 20, Download: 40, Upload: 50,
 					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
 					Timestamp: timestamppb.New(currentTime),
 				},
@@ -1178,7 +1178,7 @@ func TestGetAverageMonitoring(t *testing.T) {
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
-							Ram: 10, Cpu: 20, InTraffic: 40, OutTraffic: 0,
+							Ram: 10, Cpu: 20, Download: 40, Upload: 0,
 							Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
 							Timestamp: timestamppb.New(currentTime),
 						},
@@ -1186,7 +1186,7 @@ func TestGetAverageMonitoring(t *testing.T) {
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
-							Ram: 20, Cpu: 30, InTraffic: 50, OutTraffic: 10,
+							Ram: 20, Cpu: 30, Download: 50, Upload: 10,
 							Disk:      []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
 							Timestamp: timestamppb.New(currentTime),
 						},

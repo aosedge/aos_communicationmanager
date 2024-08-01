@@ -469,7 +469,7 @@ func TestSendMessages(t *testing.T) {
 	nodeMonitoring := cloudprotocol.NodeMonitoringData{
 		Items: []aostypes.MonitoringData{
 			{
-				RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []aostypes.PartitionUsage{{
+				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Disk: []aostypes.PartitionUsage{{
 					Name: "p1", UsedSize: 100,
 				}},
 				Timestamp: time.Now().UTC(),
