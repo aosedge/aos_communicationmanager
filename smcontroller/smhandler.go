@@ -466,7 +466,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 
 	var alertItem interface{}
 
-	switch data := alert.GetPayload().(type) {
+	switch data := alert.GetAlertItem().(type) {
 	case *pb.Alert_SystemAlert:
 		alertItem = cloudprotocol.SystemAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},

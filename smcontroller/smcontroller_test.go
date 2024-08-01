@@ -355,7 +355,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagSystemError,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_SystemAlert{
+				AlertItem: &pbsm.Alert_SystemAlert{
 					SystemAlert: &pbsm.SystemAlert{Message: "SystemAlertMessage"},
 				},
 			},
@@ -368,7 +368,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagAosCore,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_CoreAlert{
+				AlertItem: &pbsm.Alert_CoreAlert{
 					CoreAlert: &pbsm.CoreAlert{CoreComponent: "SM", Message: "CoreAlertMessage"},
 				},
 			},
@@ -386,7 +386,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagResourceValidate,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_ResourceValidateAlert{
+				AlertItem: &pbsm.Alert_ResourceValidateAlert{
 					ResourceValidateAlert: &pbsm.ResourceValidateAlert{
 						Name: "someName",
 						Errors: []*pbcommon.ErrorInfo{
@@ -407,7 +407,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagDeviceAllocate,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_DeviceAllocateAlert{
+				AlertItem: &pbsm.Alert_DeviceAllocateAlert{
 					DeviceAllocateAlert: &pbsm.DeviceAllocateAlert{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
 						Device:   "someDevice", Message: "someMessage",
@@ -423,7 +423,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagSystemQuota,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_SystemQuotaAlert{
+				AlertItem: &pbsm.Alert_SystemQuotaAlert{
 					SystemQuotaAlert: &pbsm.SystemQuotaAlert{
 						Parameter: "cpu", Value: 42, Status: resourcemonitor.AlertStatusRaise,
 					},
@@ -438,7 +438,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagSystemQuota,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_SystemQuotaAlert{
+				AlertItem: &pbsm.Alert_SystemQuotaAlert{
 					SystemQuotaAlert: &pbsm.SystemQuotaAlert{
 						Parameter: "ram", Value: 99, Status: resourcemonitor.AlertStatusRaise,
 					},
@@ -454,7 +454,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagInstanceQuota,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_InstanceQuotaAlert{
+				AlertItem: &pbsm.Alert_InstanceQuotaAlert{
 					InstanceQuotaAlert: &pbsm.InstanceQuotaAlert{
 						Instance:  &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
 						Parameter: "param1", Value: 42, Status: resourcemonitor.AlertStatusRaise,
@@ -471,7 +471,7 @@ func TestSMAlertNotifications(t *testing.T) {
 			sendAlert: &pbsm.Alert{
 				Tag:       cloudprotocol.AlertTagServiceInstance,
 				Timestamp: timestamppb.New(now),
-				Payload: &pbsm.Alert_InstanceAlert{
+				AlertItem: &pbsm.Alert_InstanceAlert{
 					InstanceAlert: &pbsm.InstanceAlert{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "id1", SubjectId: "s1", Instance: 1},
 						Message:  "ServiceInstanceAlert", ServiceVersion: "42.0.0",
