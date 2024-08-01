@@ -124,8 +124,7 @@ func TestSendInitialStatus(t *testing.T) {
 		t.Fatalf("Can't send unit status: %v", err)
 	}
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{UnitSubjects: []string{"subject1"}}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -140,8 +139,7 @@ func TestSendInitialStatus(t *testing.T) {
 
 	sender.Consumer.CloudDisconnected()
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{UnitSubjects: []string{"subject10"}}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -171,7 +169,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -198,7 +196,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -228,7 +226,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -266,7 +264,7 @@ func TestUpdateComponents(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -373,7 +371,7 @@ func TestUpdateLayers(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -417,7 +415,7 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -531,7 +529,7 @@ func TestUpdateServices(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -574,7 +572,7 @@ func TestUpdateServices(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -690,8 +688,7 @@ func TestRunInstances(t *testing.T) {
 		},
 	}
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{Instances: initialInstancesStatus}); err != nil {
+	if err := statusHandler.ProcessRunStatus(initialInstancesStatus); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -753,8 +750,7 @@ func TestRunInstances(t *testing.T) {
 		},
 	}
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{Instances: updatedInstancesStatus}); err != nil {
+	if err := statusHandler.ProcessRunStatus(updatedInstancesStatus); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -782,6 +778,120 @@ func TestRunInstances(t *testing.T) {
 	}
 }
 
+func TestRevertServices(t *testing.T) {
+	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
+		cloudprotocol.UnitConfigStatus{Version: "1.0.0", Status: cloudprotocol.InstalledStatus})
+	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
+	instanceRunner := unitstatushandler.NewTestInstanceRunner()
+	sender := unitstatushandler.NewTestSender()
+
+	statusHandler, err := unitstatushandler.New(
+		cfg, unitstatushandler.NewTestNodeManager(nil), unitConfigUpdater, firmwareUpdater, softwareUpdater,
+		instanceRunner, unitstatushandler.NewTestDownloader(), unitstatushandler.NewTestStorage(), sender,
+		unitstatushandler.NewTestSystemQuotaAlertProvider())
+	if err != nil {
+		t.Fatalf("Can't create unit status handler: %v", err)
+	}
+	defer statusHandler.Close()
+
+	sender.Consumer.CloudConnected()
+
+	go handleUpdateStatus(statusHandler)
+
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	if _, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	// success run
+
+	expectedRunInstances := []cloudprotocol.InstanceInfo{
+		{ServiceID: "service0", SubjectID: "subject0", NumInstances: 3},
+	}
+
+	statusHandler.ProcessDesiredStatus(cloudprotocol.DesiredStatus{
+		Instances: expectedRunInstances,
+		Services: []cloudprotocol.ServiceInfo{
+			{
+				ServiceID: "service0", Version: "1.0.0",
+				DownloadInfo: cloudprotocol.DownloadInfo{Sha256: []byte{0}},
+			},
+		},
+	})
+
+	instancesStatus := []cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subject0", Instance: 0},
+			ServiceVersion: "1.0.0",
+			Status:         cloudprotocol.InstanceStateFailed,
+		},
+		{
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subject0", Instance: 1},
+			ServiceVersion: "1.0.0",
+			Status:         cloudprotocol.InstanceStateFailed,
+		},
+		{
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subject0", Instance: 2},
+			ServiceVersion: "1.0.0",
+			Status:         cloudprotocol.InstanceStateFailed,
+		},
+	}
+
+	receivedRunInstances, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive run instances: %v", err)
+	}
+
+	if !reflect.DeepEqual(receivedRunInstances, expectedRunInstances) {
+		t.Error("Incorrect run instances")
+	}
+
+	if err := statusHandler.ProcessRunStatus(instancesStatus); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	receivedRunInstances, err = instanceRunner.WaitForRunInstance(waitRunInstanceTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive run instances: %v", err)
+	}
+
+	if !reflect.DeepEqual(receivedRunInstances, expectedRunInstances) {
+		t.Error("Incorrect run instances")
+	}
+
+	if err := statusHandler.ProcessRunStatus(instancesStatus); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
+	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
+	if err != nil {
+		t.Fatalf("Can't receive unit status: %v", err)
+	}
+
+	expectedUnitStatus := cloudprotocol.UnitStatus{
+		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
+		Services: []cloudprotocol.ServiceStatus{
+			{
+				ServiceID: "service0", Version: "1.0.0", Status: cloudprotocol.ErrorStatus,
+				ErrorInfo: &cloudprotocol.ErrorInfo{Message: "can't run any instances of service"},
+			},
+		},
+		Instances: instancesStatus,
+	}
+
+	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
+		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
+	}
+
+	if !reflect.DeepEqual(softwareUpdater.RevertedServices, []string{"service0"}) {
+		t.Errorf("Incorrect reverted services: %v", softwareUpdater.RevertedServices)
+	}
+}
+
 func TestUpdateInstancesStatus(t *testing.T) {
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
 		cloudprotocol.UnitConfigStatus{Version: "1.0.0", Status: cloudprotocol.InstalledStatus})
@@ -803,21 +913,20 @@ func TestUpdateInstancesStatus(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{
-			{
-				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0},
-				ServiceVersion: "1.0.0",
-			},
-			{
-				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1},
-				ServiceVersion: "1.0.0",
-			},
-			{
-				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1},
-				ServiceVersion: "1.0.0",
-			},
-		}}); err != nil {
+	if err := statusHandler.ProcessRunStatus([]cloudprotocol.InstanceStatus{
+		{
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0},
+			ServiceVersion: "1.0.0",
+		},
+		{
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1},
+			ServiceVersion: "1.0.0",
+		},
+		{
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1},
+			ServiceVersion: "1.0.0",
+		},
+	}); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -921,7 +1030,7 @@ func TestUpdateCachedSOTA(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(unitstatushandler.RunInstancesStatus{}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -1036,8 +1145,7 @@ func TestNewComponents(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{}}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -1113,8 +1221,7 @@ func TestNodeInfoChanged(t *testing.T) {
 
 	go handleUpdateStatus(statusHandler)
 
-	if err := statusHandler.ProcessRunStatus(
-		unitstatushandler.RunInstancesStatus{Instances: []cloudprotocol.InstanceStatus{}}); err != nil {
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
 
@@ -1225,6 +1332,9 @@ func compareUnitStatus(status1, status2 cloudprotocol.UnitStatus) (err error) {
 
 	if err = compareStatus(len(status1.Services), len(status2.Services),
 		func(index1, index2 int) (result bool) {
+			status1.Services[index1].ErrorInfo = nil
+			status2.Services[index2].ErrorInfo = nil
+
 			return reflect.DeepEqual(status1.Services[index1], status2.Services[index2])
 		}); err != nil {
 		return aoserrors.Wrap(err)

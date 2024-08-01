@@ -79,7 +79,7 @@ type softwareUpdate struct {
 
 type softwareManager struct {
 	sync.Mutex
-	runCond *sync.Cond
+	runStatusCV *sync.Cond
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
@@ -95,6 +95,9 @@ type softwareManager struct {
 	actionHandler *action.Handler
 	statusMutex   sync.RWMutex
 	pendingUpdate *softwareUpdate
+
+	newServices    []string
+	revertServices []string
 
 	LayerStatuses    map[string]*cloudprotocol.LayerStatus   `json:"layerStatuses,omitempty"`
 	ServiceStatuses  map[string]*cloudprotocol.ServiceStatus `json:"serviceStatuses,omitempty"`
@@ -128,7 +131,7 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		CurrentState:      stateNoUpdate,
 	}
 
-	manager.runCond = sync.NewCond(&manager.Mutex)
+	manager.runStatusCV = sync.NewCond(&manager.Mutex)
 
 	if err = manager.loadState(); err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -162,7 +165,8 @@ func (manager *softwareManager) close() (err error) {
 
 	log.Debug("Close software manager")
 
-	manager.runCond.Broadcast()
+	manager.runStatusCV.Signal()
+
 	close(manager.statusChannel)
 
 	manager.Unlock()
@@ -215,22 +219,20 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 	return status
 }
 
-func (manager *softwareManager) processRunStatus(status RunInstancesStatus) {
+func (manager *softwareManager) processRunStatus(instances []cloudprotocol.InstanceStatus) bool {
 	manager.Lock()
 	defer manager.Unlock()
 
-	manager.InstanceStatuses = status.Instances
+	manager.InstanceStatuses = instances
 
-	for _, errStatus := range status.ErrorServices {
-		if _, ok := manager.ServiceStatuses[errStatus.ServiceID]; !ok {
-			status := errStatus
-			manager.ServiceStatuses[errStatus.ServiceID] = &status
-		}
-
-		manager.updateServiceStatusByID(errStatus.ServiceID, errStatus.Status, errStatus.ErrorInfo)
+	if len(manager.newServices) != 0 && len(manager.CurrentUpdate.RunInstances) != 0 {
+		manager.checkNewServices()
+		manager.newServices = nil
 	}
 
-	manager.runCond.Broadcast()
+	manager.runStatusCV.Signal()
+
+	return len(manager.revertServices) == 0
 }
 
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
@@ -815,6 +817,9 @@ func (manager *softwareManager) update(ctx context.Context) {
 		updateErr = err
 	}
 
+	manager.newServices = newServices
+	manager.revertServices = nil
+
 	if err := manager.removeLayers(); err != nil && updateErr == nil {
 		updateErr = err
 	}
@@ -823,11 +828,72 @@ func (manager *softwareManager) update(ctx context.Context) {
 		updateErr = err
 	}
 
-	if err := manager.runInstances(newServices); err != nil && updateErr == nil {
+	if err := manager.runInstances(); err != nil && updateErr == nil {
 		updateErr = err
 	}
 
-	manager.runCond.Wait()
+	manager.runStatusCV.Wait()
+
+	if len(manager.revertServices) != 0 {
+		manager.doRevertServices()
+		manager.revertServices = nil
+
+		if err := manager.runInstances(); err != nil && updateErr == nil {
+			updateErr = err
+		}
+
+		manager.runStatusCV.Wait()
+	}
+}
+
+func (manager *softwareManager) doRevertServices() {
+	for _, serviceID := range manager.revertServices {
+		log.WithField("id", serviceID).Debug("Revert service")
+
+		manager.actionHandler.Execute(serviceID, func(serviceID string) error {
+			err := manager.softwareUpdater.RevertService(serviceID)
+			if err != nil {
+				log.WithField("id", serviceID).Errorf("Can't revert service: %v", err)
+
+				return aoserrors.Wrap(err)
+			}
+
+			log.WithField("id", serviceID).Debug("Service reverted")
+
+			return nil
+		})
+	}
+
+	manager.actionHandler.Wait()
+}
+
+func (manager *softwareManager) checkNewServices() {
+serviceLoop:
+	for _, serviceID := range manager.newServices {
+		for _, instanceStatus := range manager.InstanceStatuses {
+			if instanceStatus.ServiceID == serviceID && instanceStatus.Status != cloudprotocol.InstanceStateFailed {
+				continue serviceLoop
+			}
+		}
+
+		log.WithField("serviceID", serviceID).Error("Can't run any instances of service")
+
+		updateErr := aoserrors.New("can't run any instances of service")
+
+		if _, ok := manager.ServiceStatuses[serviceID]; !ok {
+			log.Errorf("Service status not found: %s", serviceID)
+
+			manager.ServiceStatuses[serviceID] = &cloudprotocol.ServiceStatus{
+				ServiceID: serviceID,
+			}
+		}
+
+		manager.ServiceStatuses[serviceID].Status = cloudprotocol.ErrorStatus
+		manager.updateServiceStatusByID(serviceID, cloudprotocol.ErrorStatus,
+			&cloudprotocol.ErrorInfo{Message: updateErr.Error()})
+
+		manager.revertServices = append(manager.revertServices, serviceID)
+	}
 }
 
 func (manager *softwareManager) updateTimeout() {
@@ -840,7 +906,7 @@ func (manager *softwareManager) updateTimeout() {
 		}
 	}
 
-	manager.runCond.Broadcast()
+	manager.runStatusCV.Signal()
 }
 
 /***********************************************************************************************************************
@@ -1370,7 +1436,7 @@ func (manager *softwareManager) removeServices() (removeErr error) {
 	return removeErr
 }
 
-func (manager *softwareManager) runInstances(newServices []string) (runErr error) {
+func (manager *softwareManager) runInstances() (runErr error) {
 	manager.InstanceStatuses = []cloudprotocol.InstanceStatus{}
 
 	for _, instance := range manager.CurrentUpdate.RunInstances {
@@ -1397,7 +1463,8 @@ func (manager *softwareManager) runInstances(newServices []string) (runErr error
 
 	manager.statusHandler.setInstancesStatus(manager.InstanceStatuses)
 
-	if err := manager.instanceRunner.RunInstances(manager.CurrentUpdate.RunInstances, newServices); err != nil {
+	if err := manager.instanceRunner.RunInstances(
+		manager.CurrentUpdate.RunInstances, manager.CurrentUpdate.RebalanceRequest); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
