@@ -21,8 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -78,14 +76,14 @@ type TestFirmwareUpdater struct {
 }
 
 type TestSoftwareUpdater struct {
-	AllServices []ServiceStatus
-	AllLayers   []LayerStatus
-	UpdateError error
+	AllServices      []ServiceStatus
+	AllLayers        []LayerStatus
+	RevertedServices []string
+	UpdateError      error
 }
 
 type TestInstanceRunner struct {
 	runInstanceChan chan []cloudprotocol.InstanceInfo
-	newServices     []string
 }
 
 type TestSystemQuotaAlertProvider struct {
@@ -924,7 +922,6 @@ func TestSoftwareManager(t *testing.T) {
 		triggerUpdate      bool
 		updateError        error
 		updateWaitStatuses []cmserver.UpdateStatus
-		newServices        []string
 		requestRebalancing bool
 	}
 
@@ -984,7 +981,6 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.Updating},
 				{State: cmserver.NoUpdate},
 			},
-			newServices: []string{"service1", "service2"},
 		},
 		{
 			testID:     "new services",
@@ -1042,7 +1038,6 @@ func TestSoftwareManager(t *testing.T) {
 				{State: cmserver.Updating},
 				{State: cmserver.NoUpdate},
 			},
-			newServices: []string{"service3", "service4"},
 		},
 		{
 			testID:     "one item download error",
@@ -1353,17 +1348,7 @@ func TestSoftwareManager(t *testing.T) {
 					t.Errorf("Wait run instances error: %v", err)
 				}
 
-				if item.newServices != nil {
-					sort.Slice(instanceRunner.newServices, func(i, j int) bool {
-						return instanceRunner.newServices[j] > instanceRunner.newServices[i]
-					})
-
-					if !reflect.DeepEqual(instanceRunner.newServices, item.newServices) {
-						t.Errorf("Wrong new services: %v", instanceRunner.newServices)
-					}
-				}
-
-				softwareManager.processRunStatus(RunInstancesStatus{})
+				softwareManager.processRunStatus(nil)
 			}
 
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
@@ -1850,6 +1835,12 @@ func (updater *TestSoftwareUpdater) RemoveService(serviceID string) error {
 	return updater.UpdateError
 }
 
+func (updater *TestSoftwareUpdater) RevertService(serviceID string) error {
+	updater.RevertedServices = append(updater.RevertedServices, serviceID)
+
+	return updater.UpdateError
+}
+
 func (updater *TestSoftwareUpdater) InstallLayer(layerInfo cloudprotocol.LayerInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
@@ -1872,8 +1863,7 @@ func NewTestInstanceRunner() *TestInstanceRunner {
 	return &TestInstanceRunner{runInstanceChan: make(chan []cloudprotocol.InstanceInfo, 1)}
 }
 
-func (runner *TestInstanceRunner) RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error {
-	runner.newServices = newServices
+func (runner *TestInstanceRunner) RunInstances(instances []cloudprotocol.InstanceInfo, rebalancing bool) error {
 	runner.runInstanceChan <- instances
 
 	return nil

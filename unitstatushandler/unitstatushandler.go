@@ -81,7 +81,7 @@ type FirmwareUpdater interface {
 
 // InstanceRunner instances runner.
 type InstanceRunner interface {
-	RunInstances(instances []cloudprotocol.InstanceInfo, newServices []string) error
+	RunInstances(instances []cloudprotocol.InstanceInfo, rebalancing bool) error
 }
 
 // SystemQuotaAlertProvider provides system quota alerts.
@@ -96,6 +96,7 @@ type SoftwareUpdater interface {
 	InstallService(serviceInfo cloudprotocol.ServiceInfo,
 		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error
 	RestoreService(serviceID string) error
+	RevertService(serviceID string) error
 	RemoveService(serviceID string) error
 	InstallLayer(layerInfo cloudprotocol.LayerInfo,
 		chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate) error
@@ -121,13 +122,6 @@ type ServiceStatus struct {
 type LayerStatus struct {
 	cloudprotocol.LayerStatus
 	Cached bool
-}
-
-// RunInstancesStatus run instances status.
-type RunInstancesStatus struct {
-	UnitSubjects  []string
-	Instances     []cloudprotocol.InstanceStatus
-	ErrorServices []cloudprotocol.ServiceStatus
 }
 
 // Instance instance of unit status handler.
@@ -265,16 +259,19 @@ func (instance *Instance) SendUnitStatus() error {
 }
 
 // ProcessRunStatus process current run instances status.
-func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
+func (instance *Instance) ProcessRunStatus(instances []cloudprotocol.InstanceStatus) error {
 	instance.Lock()
 	defer instance.Unlock()
+
+	if !instance.softwareManager.processRunStatus(instances) {
+		return nil
+	}
 
 	if err := instance.initCurrentStatus(); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	instance.unitStatus.subjects = status.UnitSubjects
-	instance.unitStatus.instances = status.Instances
+	instance.unitStatus.instances = instances
 
 	nodesInfo, err := instance.getAllNodesInfo()
 	if err != nil {
@@ -283,7 +280,6 @@ func (instance *Instance) ProcessRunStatus(status RunInstancesStatus) error {
 
 	instance.unitStatus.nodes = nodesInfo
 
-	instance.softwareManager.processRunStatus(status)
 	instance.sendCurrentStatus()
 
 	return nil
