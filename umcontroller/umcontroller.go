@@ -307,7 +307,7 @@ func (umCtrl *Controller) GetStatus() ([]cloudprotocol.ComponentStatus, error) {
 
 // UpdateComponents updates components.
 //
-//nolint:funlen,gocognit
+//nolint:funlen
 func (umCtrl *Controller) UpdateComponents(
 	components []cloudprotocol.ComponentInfo, chains []cloudprotocol.CertificateChain,
 	certs []cloudprotocol.Certificate,
@@ -464,7 +464,6 @@ func (umCtrl *Controller) processInternalMessages() {
 	}
 }
 
-//nolint:funlen
 func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, status umStatus) {
 	if handler == nil {
 		log.Error("Handler is nil")
