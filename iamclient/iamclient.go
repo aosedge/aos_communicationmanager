@@ -358,7 +358,7 @@ func (client *Client) FinishProvisioning(
 
 	defer func() {
 		errSend := client.sender.SendFinishProvisioningResponse(cloudprotocol.FinishProvisioningResponse{
-			MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+			MessageType: cloudprotocol.FinishProvisioningResponseMessageType,
 			NodeID:      nodeID,
 			ErrorInfo:   errorInfo,
 		})
@@ -388,7 +388,7 @@ func (client *Client) Deprovision(nodeID, password string) (err error) {
 
 	defer func() {
 		errSend := client.sender.SendDeprovisioningResponse(cloudprotocol.DeprovisioningResponse{
-			MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+			MessageType: cloudprotocol.DeprovisioningResponseMessageType,
 			NodeID:      nodeID,
 			ErrorInfo:   errorInfo,
 		})
