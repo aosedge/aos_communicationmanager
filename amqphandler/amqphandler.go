@@ -236,7 +236,7 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 
 	unitStatus.MessageType = cloudprotocol.UnitStatusMessageType
 
-	return handler.scheduleMessage(cloudprotocol.UnitStatusMessageType, unitStatus, false)
+	return handler.scheduleMessage(unitStatus, false)
 }
 
 // SendMonitoringData sends monitoring data.
@@ -246,7 +246,7 @@ func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.Moni
 
 	monitoringData.MessageType = cloudprotocol.MonitoringMessageType
 
-	return handler.scheduleMessage(cloudprotocol.MonitoringMessageType, monitoringData, false)
+	return handler.scheduleMessage(monitoringData, false)
 }
 
 // SendServiceNewState sends new state message.
@@ -256,7 +256,7 @@ func (handler *AmqpHandler) SendInstanceNewState(newState cloudprotocol.NewState
 
 	newState.MessageType = cloudprotocol.NewStateMessageType
 
-	return handler.scheduleMessage(cloudprotocol.NewStateMessageType, newState, false)
+	return handler.scheduleMessage(newState, false)
 }
 
 // SendServiceStateRequest sends state request message.
@@ -266,7 +266,7 @@ func (handler *AmqpHandler) SendInstanceStateRequest(request cloudprotocol.State
 
 	request.MessageType = cloudprotocol.StateRequestMessageType
 
-	return handler.scheduleMessage(cloudprotocol.StateRequestMessageType, request, true)
+	return handler.scheduleMessage(request, true)
 }
 
 // SendLog sends system or service logs.
@@ -276,7 +276,7 @@ func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) error {
 
 	serviceLog.MessageType = cloudprotocol.PushLogMessageType
 
-	return handler.scheduleMessage(cloudprotocol.PushLogMessageType, serviceLog, true)
+	return handler.scheduleMessage(serviceLog, true)
 }
 
 // SendAlerts sends alerts message.
@@ -286,7 +286,7 @@ func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) error {
 
 	alerts.MessageType = cloudprotocol.AlertsMessageType
 
-	return handler.scheduleMessage(cloudprotocol.AlertsMessageType, alerts, true)
+	return handler.scheduleMessage(alerts, true)
 }
 
 // SendIssueUnitCerts sends request to issue new certificates.
@@ -298,7 +298,7 @@ func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCer
 		MessageType: cloudprotocol.IssueUnitCertsMessageType, Requests: requests,
 	}
 
-	return handler.scheduleMessage(cloudprotocol.IssueUnitCertsMessageType, issueUnitCerts, true)
+	return handler.scheduleMessage(issueUnitCerts, true)
 }
 
 // SendInstallCertsConfirmation sends install certificates confirmation.
@@ -310,7 +310,7 @@ func (handler *AmqpHandler) SendInstallCertsConfirmation(confirmations []cloudpr
 		MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType, Certificates: confirmations,
 	}
 
-	return handler.scheduleMessage(cloudprotocol.InstallUnitCertsConfirmationMessageType, request, true)
+	return handler.scheduleMessage(request, true)
 }
 
 // SendOverrideEnvVarsStatus overrides env vars status.
@@ -320,7 +320,7 @@ func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs cloudprotocol.Overrid
 
 	envs.MessageType = cloudprotocol.OverrideEnvVarsStatusMessageType
 
-	return handler.scheduleMessage(cloudprotocol.OverrideEnvVarsStatusMessageType, envs, true)
+	return handler.scheduleMessage(envs, true)
 }
 
 // SendStartProvisioningResponse sends start provisioning response.
@@ -328,7 +328,7 @@ func (handler *AmqpHandler) SendStartProvisioningResponse(response cloudprotocol
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.StartProvisioningResponseMessageType, response, true)
+	return handler.scheduleMessage(response, true)
 }
 
 // SendFinishProvisioningResponse sends finish provisioning response.
@@ -336,7 +336,7 @@ func (handler *AmqpHandler) SendFinishProvisioningResponse(response cloudprotoco
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.FinishProvisioningResponseMessageType, response, true)
+	return handler.scheduleMessage(response, true)
 }
 
 // SendDeprovisioningResponse sends deprovisioning response.
@@ -344,7 +344,7 @@ func (handler *AmqpHandler) SendDeprovisioningResponse(response cloudprotocol.De
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.DeprovisioningResponseMessageType, response, true)
+	return handler.scheduleMessage(response, true)
 }
 
 // SubscribeForConnectionEvents subscribes for connection events.
@@ -762,7 +762,7 @@ func (handler *AmqpHandler) notifyCloudDisconnected() {
 	}
 }
 
-func (handler *AmqpHandler) scheduleMessage(messageType string, data interface{}, important bool) error {
+func (handler *AmqpHandler) scheduleMessage(data interface{}, important bool) error {
 	if !important && !handler.isConnected {
 		return ErrNotConnected
 	}
