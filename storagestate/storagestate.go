@@ -128,7 +128,6 @@ type StorageState struct {
 }
 
 type stateParams struct {
-	instanceID         string
 	stateFilePath      string
 	quota              uint64
 	checksum           []byte
@@ -409,7 +408,7 @@ func (storageState *StorageState) initStateWatching() error {
 	}
 
 	for _, info := range infos {
-		if err = storageState.startStateWatching(info.InstanceIdent, info.InstanceID,
+		if err = storageState.startStateWatching(info.InstanceIdent,
 			storageState.getStatePath(info.InstanceID), info.StateQuota); err != nil {
 			log.WithField("instanceID", info.InstanceID).Errorf("Can't setup state watching: %v", err)
 		}
@@ -431,7 +430,7 @@ func (storageState *StorageState) prepareState(
 
 	stateFilePath = storageState.getStatePath(instanceID)
 
-	if err = storageState.setupStateWatching(instanceID, stateFilePath, params); err != nil {
+	if err = storageState.setupStateWatching(stateFilePath, params); err != nil {
 		return "", aoserrors.Wrap(err)
 	}
 
@@ -499,13 +498,13 @@ func (storageState *StorageState) checkChecksumAndSendUpdateRequest(
 	return nil
 }
 
-func (storageState *StorageState) setupStateWatching(instanceID, stateFilePath string, params SetupParams) error {
+func (storageState *StorageState) setupStateWatching(stateFilePath string, params SetupParams) error {
 	if err := createStateFileIfNotExist(stateFilePath, params.UID, params.GID); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	if err := storageState.startStateWatching(
-		params.InstanceIdent, instanceID, stateFilePath, params.StateQuota); err != nil {
+		params.InstanceIdent, stateFilePath, params.StateQuota); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -513,14 +512,13 @@ func (storageState *StorageState) setupStateWatching(instanceID, stateFilePath s
 }
 
 func (storageState *StorageState) startStateWatching(
-	instanceIdent aostypes.InstanceIdent, instanceID string, stateFilePath string, quota uint64,
+	instanceIdent aostypes.InstanceIdent, stateFilePath string, quota uint64,
 ) (err error) {
 	if err = storageState.watcher.Add(stateFilePath); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	storageState.statesMap[instanceIdent] = &stateParams{
-		instanceID:         instanceID,
 		stateFilePath:      stateFilePath,
 		quota:              quota,
 		changeTimerChannel: make(chan bool, 1),
