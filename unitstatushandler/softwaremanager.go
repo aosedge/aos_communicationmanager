@@ -492,6 +492,12 @@ func (manager *softwareManager) getServiceStatus() (serviceStatuses []cloudproto
 }
 
 func (manager *softwareManager) getLayersStatus() (layerStatuses []cloudprotocol.LayerStatus, err error) {
+	manager.Lock()
+	defer manager.Unlock()
+
+	manager.statusMutex.RLock()
+	defer manager.statusMutex.RUnlock()
+
 	layersStatus, err := manager.softwareUpdater.GetLayersStatus()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -537,6 +543,16 @@ func (manager *softwareManager) getUnitConfigStatuses() (status []cloudprotocol.
 	status = append(status, manager.UnitConfigStatus)
 
 	return status, nil
+}
+
+func (manager *softwareManager) getInstancesStatus() ([]cloudprotocol.InstanceStatus, error) {
+	manager.Lock()
+	defer manager.Unlock()
+
+	manager.statusMutex.RLock()
+	defer manager.statusMutex.RUnlock()
+
+	return manager.InstanceStatuses, nil
 }
 
 /***********************************************************************************************************************
