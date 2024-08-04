@@ -275,14 +275,13 @@ func TestUpdateComponents(t *testing.T) {
 	// success update
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{
 			{ComponentID: "comp0", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{ComponentID: "comp2", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 		},
-		Layers:   []cloudprotocol.LayerStatus{},
-		Services: []cloudprotocol.ServiceStatus{},
+		Layers:      []cloudprotocol.LayerStatus{},
+		Services:    []cloudprotocol.ServiceStatus{},
+		IsDeltaInfo: true,
 	}
 
 	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
@@ -308,18 +307,15 @@ func TestUpdateComponents(t *testing.T) {
 	firmwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{
-			{ComponentID: "comp0", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
-			{ComponentID: "comp1", ComponentType: "type-1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
 				ComponentID: "comp1", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: firmwareUpdater.UpdateError.Error()},
 			},
-			{ComponentID: "comp2", ComponentType: "type-1", Version: "2.0.0", Status: cloudprotocol.InstalledStatus},
 		},
-		Layers:   []cloudprotocol.LayerStatus{},
-		Services: []cloudprotocol.ServiceStatus{},
+		Layers:      []cloudprotocol.LayerStatus{},
+		Services:    []cloudprotocol.ServiceStatus{},
+		IsDeltaInfo: true,
 	}
 
 	firmwareUpdater.UpdateComponentsInfo = expectedUnitStatus.Components
@@ -340,21 +336,10 @@ func TestUpdateComponents(t *testing.T) {
 }
 
 func TestUpdateLayers(t *testing.T) {
-	layerStatuses := []unitstatushandler.LayerStatus{
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer0", Digest: "digest0", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer1", Digest: "digest1", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer2", Digest: "digest2", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
 		cloudprotocol.UnitConfigStatus{Version: "1.0.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, layerStatuses)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
@@ -370,6 +355,18 @@ func TestUpdateLayers(t *testing.T) {
 	sender.Consumer.CloudConnected()
 
 	go handleUpdateStatus(statusHandler)
+
+	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer0", Digest: "digest0", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer1", Digest: "digest1", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer2", Digest: "digest2", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+	}
 
 	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
@@ -415,6 +412,18 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
+	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer1", Digest: "digest1", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer3", Digest: "digest3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer4", Digest: "digest4", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+	}
+
 	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
@@ -428,24 +437,6 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wrong unit status received: %v, expected: %v", receivedUnitStatus, expectedUnitStatus)
 	}
 
-	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer0", Digest: "digest0", Version: "0.0.0", Status: cloudprotocol.RemovedStatus,
-		}},
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer1", Digest: "digest1", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer2", Digest: "digest2", Version: "0.0.0", Status: cloudprotocol.RemovedStatus,
-		}},
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer3", Digest: "digest3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{LayerStatus: cloudprotocol.LayerStatus{
-			LayerID: "layer4", Digest: "digest4", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-	}
-
 	// failed update
 
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
@@ -454,9 +445,7 @@ func TestUpdateLayers(t *testing.T) {
 		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Components: []cloudprotocol.ComponentStatus{},
 		Layers: []cloudprotocol.LayerStatus{
-			{LayerID: "layer0", Digest: "digest0", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
 			{LayerID: "layer1", Digest: "digest1", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
-			{LayerID: "layer2", Digest: "digest2", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
 			{LayerID: "layer3", Digest: "digest3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{LayerID: "layer4", Digest: "digest4", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
@@ -488,6 +477,19 @@ func TestUpdateLayers(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
+	softwareUpdater.AllLayers = []unitstatushandler.LayerStatus{
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer3", Digest: "digest3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{LayerStatus: cloudprotocol.LayerStatus{
+			LayerID: "layer4", Digest: "digest4", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+	}
+
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
 	}
@@ -498,21 +500,10 @@ func TestUpdateLayers(t *testing.T) {
 }
 
 func TestUpdateServices(t *testing.T) {
-	serviceStatuses := []unitstatushandler.ServiceStatus{
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service0", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service1", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service2", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-	}
 	unitConfigUpdater := unitstatushandler.NewTestUnitConfigUpdater(
 		cloudprotocol.UnitConfigStatus{Version: "1.0.0", Status: cloudprotocol.InstalledStatus})
 	firmwareUpdater := unitstatushandler.NewTestFirmwareUpdater(nil)
-	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(serviceStatuses, nil)
+	softwareUpdater := unitstatushandler.NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := unitstatushandler.NewTestInstanceRunner()
 	sender := unitstatushandler.NewTestSender()
 
@@ -528,6 +519,18 @@ func TestUpdateServices(t *testing.T) {
 	sender.Consumer.CloudConnected()
 
 	go handleUpdateStatus(statusHandler)
+
+	softwareUpdater.AllServices = []unitstatushandler.ServiceStatus{
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ServiceID: "service0", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ServiceID: "service1", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ServiceID: "service2", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+	}
 
 	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
@@ -572,6 +575,18 @@ func TestUpdateServices(t *testing.T) {
 		t.Errorf("Wait run instances error: %v", err)
 	}
 
+	softwareUpdater.AllServices = []unitstatushandler.ServiceStatus{
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ServiceID: "service0", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ServiceID: "service1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+		{ServiceStatus: cloudprotocol.ServiceStatus{
+			ServiceID: "service3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
+		}},
+	}
+
 	if err := statusHandler.ProcessRunStatus(nil); err != nil {
 		t.Fatalf("Can't process run status: %v", err)
 	}
@@ -587,20 +602,6 @@ func TestUpdateServices(t *testing.T) {
 
 	// failed update
 
-	softwareUpdater.AllServices = []unitstatushandler.ServiceStatus{
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service0", Version: "0.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service2", Version: "0.0.0", Status: cloudprotocol.RemovedStatus,
-		}},
-		{ServiceStatus: cloudprotocol.ServiceStatus{
-			ServiceID: "service3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus,
-		}},
-	}
 	softwareUpdater.UpdateError = aoserrors.New("some error occurs")
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
@@ -613,7 +614,6 @@ func TestUpdateServices(t *testing.T) {
 				ErrorInfo: &cloudprotocol.ErrorInfo{Message: softwareUpdater.UpdateError.Error()},
 			},
 			{ServiceID: "service1", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
-			{ServiceID: "service2", Version: "0.0.0", Status: cloudprotocol.RemovedStatus},
 			{ServiceID: "service3", Version: "1.0.0", Status: cloudprotocol.InstalledStatus},
 			{
 				ServiceID: "service3", Version: "2.0.0", Status: cloudprotocol.ErrorStatus,
@@ -645,6 +645,10 @@ func TestUpdateServices(t *testing.T) {
 
 	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
 		t.Errorf("Wait run instances error: %v", err)
+	}
+
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
 	}
 
 	if receivedUnitStatus, err = sender.WaitForStatus(waitStatusTimeout); err != nil {
@@ -935,7 +939,6 @@ func TestUpdateInstancesStatus(t *testing.T) {
 	}
 
 	expectedUnitStatus := cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
 		Instances: []cloudprotocol.InstanceStatus{
 			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 0},
@@ -943,15 +946,12 @@ func TestUpdateInstancesStatus(t *testing.T) {
 				Status:         "fail", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "someError"},
 			},
 			{
-				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv1", SubjectID: "Subj1", Instance: 1},
-				ServiceVersion: "1.0.0",
-			},
-			{
 				InstanceIdent:  aostypes.InstanceIdent{ServiceID: "Serv2", SubjectID: "Subj2", Instance: 1},
 				ServiceVersion: "1.0.0",
 				StateChecksum:  "newState",
 			},
 		},
+		IsDeltaInfo: true,
 	}
 
 	statusHandler.ProcessUpdateInstanceStatus([]cloudprotocol.InstanceStatus{
@@ -1104,6 +1104,14 @@ func TestUpdateCachedSOTA(t *testing.T) {
 		},
 	})
 
+	if _, err := instanceRunner.WaitForRunInstance(waitRunInstanceTimeout); err != nil {
+		t.Errorf("Wait run instances error: %v", err)
+	}
+
+	if err := statusHandler.ProcessRunStatus(nil); err != nil {
+		t.Fatalf("Can't process run status: %v", err)
+	}
+
 	receivedUnitStatus, err := sender.WaitForStatus(waitStatusTimeout)
 	if err != nil {
 		t.Fatalf("Can't receive unit status: %s", err)
@@ -1187,8 +1195,8 @@ func TestNewComponents(t *testing.T) {
 	}
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
-		Components: newComponents,
+		Components:  newComponents,
+		IsDeltaInfo: true,
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
@@ -1257,8 +1265,8 @@ func TestNodeInfoChanged(t *testing.T) {
 	}
 
 	expectedUnitStatus = cloudprotocol.UnitStatus{
-		UnitConfig: []cloudprotocol.UnitConfigStatus{unitConfigUpdater.UnitConfigStatus},
-		Nodes:      nodeInfoProvider.GetAllNodesInfo(),
+		Nodes:       newNodesInfo,
+		IsDeltaInfo: true,
 	}
 
 	if err = compareUnitStatus(receivedUnitStatus, expectedUnitStatus); err != nil {
@@ -1352,6 +1360,10 @@ func compareUnitStatus(status1, status2 cloudprotocol.UnitStatus) (err error) {
 			return reflect.DeepEqual(status1.Nodes[index1], status2.Nodes[index2])
 		}); err != nil {
 		return aoserrors.Wrap(err)
+	}
+
+	if status1.IsDeltaInfo != status2.IsDeltaInfo {
+		return aoserrors.New("IsDeltaInfo mismatch")
 	}
 
 	return nil
