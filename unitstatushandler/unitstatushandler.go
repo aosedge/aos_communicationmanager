@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -145,7 +144,7 @@ type Instance struct {
 	systemQuotaAlertChannel <-chan cloudprotocol.SystemQuotaAlert
 
 	initDone    bool
-	isConnected int32
+	isConnected bool
 }
 
 type unitStatus struct {
@@ -354,12 +353,18 @@ func (instance *Instance) StartSOTAUpdate() (err error) {
 
 // CloudConnected indicates unit connected to cloud.
 func (instance *Instance) CloudConnected() {
-	atomic.StoreInt32(&instance.isConnected, 1)
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	instance.isConnected = true
 }
 
 // CloudDisconnected indicates unit disconnected from cloud.
 func (instance *Instance) CloudDisconnected() {
-	atomic.StoreInt32(&instance.isConnected, 0)
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	instance.isConnected = false
 }
 
 /***********************************************************************************************************************
@@ -782,7 +787,7 @@ func (instance *Instance) sendCurrentStatus() {
 		return
 	}
 
-	if atomic.LoadInt32(&instance.isConnected) != 1 {
+	if !instance.isConnected {
 		return
 	}
 
