@@ -132,7 +132,7 @@ type Instance struct {
 
 	statusMutex sync.Mutex
 
-	unitStatus       unitStatus
+	unitStatus       cloudprotocol.UnitStatus
 	statusTimer      *time.Timer
 	sendStatusPeriod time.Duration
 
@@ -146,22 +146,6 @@ type Instance struct {
 	initDone    bool
 	isConnected bool
 }
-
-type unitStatus struct {
-	subjects   []string
-	unitConfig itemStatus
-	components map[string]*itemStatus
-	layers     map[string]*itemStatus
-	services   map[string]*itemStatus
-	instances  []cloudprotocol.InstanceStatus
-	nodes      []cloudprotocol.NodeInfo
-}
-
-type statusDescriptor struct {
-	amqpStatus interface{}
-}
-
-type itemStatus []statusDescriptor
 
 /***********************************************************************************************************************
  * Public
@@ -190,11 +174,6 @@ func New(
 		nodeChangedChannel:      nodeManager.SubscribeNodeInfoChange(),
 		systemQuotaAlertChannel: systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
 	}
-
-	// Initialize maps of statuses for avoiding situation of adding values to uninitialized map on go routine
-	instance.unitStatus.components = make(map[string]*itemStatus)
-	instance.unitStatus.layers = make(map[string]*itemStatus)
-	instance.unitStatus.services = make(map[string]*itemStatus)
 
 	groupDownloader := newGroupDownloader(downloader)
 
@@ -256,7 +235,7 @@ func (instance *Instance) SendUnitStatus() error {
 		return aoserrors.Wrap(err)
 	}
 
-	instance.sendCurrentStatus()
+	instance.sendCurrentStatus(false)
 
 	return nil
 }
@@ -265,6 +244,8 @@ func (instance *Instance) SendUnitStatus() error {
 func (instance *Instance) ProcessRunStatus(instances []cloudprotocol.InstanceStatus) error {
 	instance.Lock()
 	defer instance.Unlock()
+
+	log.Debug("Process run status")
 
 	if !instance.softwareManager.processRunStatus(instances) {
 		return nil
@@ -276,17 +257,19 @@ func (instance *Instance) ProcessRunStatus(instances []cloudprotocol.InstanceSta
 
 	instance.initDone = true
 
-	instance.sendCurrentStatus()
+	instance.sendCurrentStatus(false)
 
 	return nil
 }
 
 // ProcessUpdateInstanceStatus process update instances status.
-func (instance *Instance) ProcessUpdateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+func (instance *Instance) ProcessUpdateInstanceStatus(statuses []cloudprotocol.InstanceStatus) {
 	instance.Lock()
 	defer instance.Unlock()
 
-	instance.updateInstanceStatus(status)
+	for _, status := range statuses {
+		instance.updateInstanceStatus(status)
+	}
 }
 
 // ProcessDesiredStatus processes desired status.
@@ -371,126 +354,71 @@ func (instance *Instance) CloudDisconnected() {
  * Private
  **********************************************************************************************************************/
 
+func (instance *Instance) resetUnitStatus() {
+	instance.unitStatus = cloudprotocol.UnitStatus{}
+}
+
 func (instance *Instance) initUnitConfigStatus() error {
-	instance.unitStatus.unitConfig = nil
-
-	// Get initial unit config info
-
 	unitConfigStatuses, err := instance.softwareManager.getUnitConfigStatuses()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, status := range unitConfigStatuses {
-		log.WithFields(log.Fields{
-			"status":  status.Status,
-			"version": status.Version,
-			"error":   status.ErrorInfo,
-		}).Debug("Initial unit config status")
-
-		instance.processUnitConfigStatus(status)
+		instance.updateUnitConfigStatus(status)
 	}
 
 	return nil
 }
 
 func (instance *Instance) initComponentsStatus() error {
-	instance.unitStatus.components = make(map[string]*itemStatus)
-	// Get initial components info
-
 	componentStatuses, err := instance.firmwareManager.getComponentStatuses()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, status := range componentStatuses {
-		log.WithFields(log.Fields{
-			"id":      status.ComponentID,
-			"type":    status.ComponentType,
-			"status":  status.Status,
-			"version": status.Version,
-			"error":   status.ErrorInfo,
-		}).Debug("Initial component status")
-
-		instance.processComponentStatus(status)
+		instance.setComponentStatus(status)
 	}
 
 	return nil
 }
 
 func (instance *Instance) initServicesStatus() error {
-	instance.unitStatus.services = make(map[string]*itemStatus)
-
-	// Get initial services and layers info
-
 	serviceStatuses, err := instance.softwareManager.getServiceStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, status := range serviceStatuses {
-		if _, ok := instance.unitStatus.services[status.ServiceID]; !ok {
-			instance.unitStatus.services[status.ServiceID] = &itemStatus{}
-		}
-
-		log.WithFields(log.Fields{
-			"id":      status.ServiceID,
-			"status":  status.Status,
-			"version": status.Version,
-			"error":   status.ErrorInfo,
-		}).Debug("Initial service status")
-
-		instance.processServiceStatus(status)
+		instance.setServiceStatus(status)
 	}
 
 	return nil
 }
 
 func (instance *Instance) initLayersStatus() error {
-	instance.unitStatus.layers = make(map[string]*itemStatus)
-
 	layerStatuses, err := instance.softwareManager.getLayersStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, status := range layerStatuses {
-		if _, ok := instance.unitStatus.layers[status.Digest]; !ok {
-			instance.unitStatus.layers[status.Digest] = &itemStatus{}
-		}
-
-		log.WithFields(log.Fields{
-			"id":      status.LayerID,
-			"digest":  status.Digest,
-			"status":  status.Status,
-			"version": status.Version,
-			"error":   status.ErrorInfo,
-		}).Debug("Initial layer status")
-
-		instance.processLayerStatus(status)
+		instance.setLayerStatus(status)
 	}
 
 	return nil
 }
 
 func (instance *Instance) initInstancesStatus() error {
-	instancesStatus, err := instance.softwareManager.getInstancesStatus()
+	instances, err := instance.softwareManager.getInstancesStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	for _, status := range instance.unitStatus.instances {
-		log.WithFields(log.Fields{
-			"serviceID": status.InstanceIdent.ServiceID,
-			"subjectID": status.InstanceIdent.SubjectID,
-			"instance":  status.InstanceIdent.Instance,
-			"version":   status.ServiceVersion,
-			"status":    status.Status,
-			"error":     status.ErrorInfo,
-		}).Debug("Initial instance status")
+	for _, status := range instances {
+		instance.setInstanceStatus(status)
 	}
-
-	instance.unitStatus.instances = instancesStatus
 
 	return nil
 }
@@ -501,15 +429,9 @@ func (instance *Instance) initNodesStatus() error {
 		log.Errorf("Can't get nodes info: %v", err)
 	}
 
-	for _, status := range nodesInfo {
-		log.WithFields(log.Fields{
-			"nodeID":   status.NodeID,
-			"nodeType": status.NodeType,
-			"status":   status.Status,
-		}).Debug("Initial node status")
+	for _, info := range nodesInfo {
+		instance.setNodeInfo(info)
 	}
-
-	instance.unitStatus.nodes = nodesInfo
 
 	return nil
 }
@@ -542,45 +464,7 @@ func (instance *Instance) initCurrentStatus() error {
 	return nil
 }
 
-func (descriptor *statusDescriptor) getStatus() (status string) {
-	switch amqpStatus := descriptor.amqpStatus.(type) {
-	case *cloudprotocol.UnitConfigStatus:
-		return amqpStatus.Status
-
-	case *cloudprotocol.ComponentStatus:
-		return amqpStatus.Status
-
-	case *cloudprotocol.LayerStatus:
-		return amqpStatus.Status
-
-	case *cloudprotocol.ServiceStatus:
-		return amqpStatus.Status
-
-	default:
-		return cloudprotocol.UnknownStatus
-	}
-}
-
-func (descriptor *statusDescriptor) getVersion() (version string) {
-	switch amqpStatus := descriptor.amqpStatus.(type) {
-	case *cloudprotocol.UnitConfigStatus:
-		return amqpStatus.Version
-
-	case *cloudprotocol.ComponentStatus:
-		return amqpStatus.Version
-
-	case *cloudprotocol.LayerStatus:
-		return amqpStatus.Version
-
-	case *cloudprotocol.ServiceStatus:
-		return amqpStatus.Version
-
-	default:
-		return ""
-	}
-}
-
-func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
+func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -588,17 +472,26 @@ func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfig
 		"status":  status.Status,
 		"version": status.Version,
 		"error":   status.ErrorInfo,
-	}).Debug("Update unit config status")
+	}).Debug("Set unit config status")
 
-	instance.processUnitConfigStatus(status)
+	index := slices.IndexFunc(instance.unitStatus.UnitConfig, func(unitConfigStatus cloudprotocol.UnitConfigStatus) bool {
+		return unitConfigStatus.Version == status.Version
+	})
+	if index < 0 {
+		instance.unitStatus.UnitConfig = append(instance.unitStatus.UnitConfig, status)
+	} else {
+		instance.unitStatus.UnitConfig[index] = status
+	}
+
 	instance.statusChanged()
 }
 
-func (instance *Instance) processUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
-	instance.updateStatus(&instance.unitStatus.unitConfig, statusDescriptor{&status})
+func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
+	instance.setUnitConfigStatus(status)
+	instance.statusChanged()
 }
 
-func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentStatus) {
+func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -608,23 +501,24 @@ func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentSt
 		"status":  status.Status,
 		"version": status.Version,
 		"error":   status.ErrorInfo,
-	}).Debug("Update component status")
+	}).Debug("Set component status")
 
-	instance.processComponentStatus(status)
+	index := slices.IndexFunc(instance.unitStatus.Components, func(componentStatus cloudprotocol.ComponentStatus) bool {
+		return componentStatus.ComponentID == status.ComponentID && componentStatus.Version == status.Version
+	})
+	if index < 0 {
+		instance.unitStatus.Components = append(instance.unitStatus.Components, status)
+	} else {
+		instance.unitStatus.Components[index] = status
+	}
+}
+
+func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentStatus) {
+	instance.setComponentStatus(status)
 	instance.statusChanged()
 }
 
-func (instance *Instance) processComponentStatus(status cloudprotocol.ComponentStatus) {
-	componentStatus, ok := instance.unitStatus.components[status.ComponentID]
-	if !ok {
-		componentStatus = &itemStatus{}
-		instance.unitStatus.components[status.ComponentID] = componentStatus
-	}
-
-	instance.updateStatus(componentStatus, statusDescriptor{&status})
-}
-
-func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) {
+func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -634,93 +528,78 @@ func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) {
 		"status":  status.Status,
 		"version": status.Version,
 		"error":   status.ErrorInfo,
-	}).Debug("Update layer status")
+	}).Debug("Set layer status")
 
-	instance.processLayerStatus(status)
+	index := slices.IndexFunc(instance.unitStatus.Layers, func(layerStatus cloudprotocol.LayerStatus) bool {
+		return layerStatus.LayerID == status.LayerID && layerStatus.Version == status.Version
+	})
+	if index < 0 {
+		instance.unitStatus.Layers = append(instance.unitStatus.Layers, status)
+	} else {
+		instance.unitStatus.Layers[index] = status
+	}
+}
+
+func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) {
+	instance.setLayerStatus(status)
 	instance.statusChanged()
 }
 
-func (instance *Instance) processLayerStatus(status cloudprotocol.LayerStatus) {
-	layerStatus, ok := instance.unitStatus.layers[status.Digest]
-	if !ok {
-		layerStatus = &itemStatus{}
-		instance.unitStatus.layers[status.Digest] = layerStatus
-	}
-
-	instance.updateStatus(layerStatus, statusDescriptor{&status})
-}
-
-func (instance *Instance) updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus) {
+func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
 	log.WithFields(log.Fields{
-		"id":      serviceInfo.ServiceID,
-		"status":  serviceInfo.Status,
-		"version": serviceInfo.Version,
-		"error":   serviceInfo.ErrorInfo,
-	}).Debug("Update service status")
+		"id":      status.ServiceID,
+		"status":  status.Status,
+		"version": status.Version,
+		"error":   status.ErrorInfo,
+	}).Debug("Set service status")
 
-	instance.processServiceStatus(serviceInfo)
+	index := slices.IndexFunc(instance.unitStatus.Services, func(serviceStatus cloudprotocol.ServiceStatus) bool {
+		return serviceStatus.ServiceID == status.ServiceID && serviceStatus.Version == status.Version
+	})
+	if index < 0 {
+		instance.unitStatus.Services = append(instance.unitStatus.Services, status)
+	} else {
+		instance.unitStatus.Services[index] = status
+	}
+}
+
+func (instance *Instance) updateServiceStatus(status cloudprotocol.ServiceStatus) {
+	instance.setServiceStatus(status)
 	instance.statusChanged()
 }
 
-func (instance *Instance) processServiceStatus(status cloudprotocol.ServiceStatus) {
-	serviceStatus, ok := instance.unitStatus.services[status.ServiceID]
-	if !ok {
-		serviceStatus = &itemStatus{}
-		instance.unitStatus.services[status.ServiceID] = serviceStatus
-	}
-
-	instance.updateStatus(serviceStatus, statusDescriptor{&status})
-}
-
-func (instance *Instance) updateInstanceStatus(status []cloudprotocol.InstanceStatus) {
+func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
-	newStatuses := []cloudprotocol.InstanceStatus{}
+	log.WithFields(log.Fields{
+		"serviceID": status.InstanceIdent.ServiceID,
+		"subjectID": status.InstanceIdent.SubjectID,
+		"instance":  status.InstanceIdent.Instance,
+		"version":   status.ServiceVersion,
+		"status":    status.Status,
+		"error":     status.ErrorInfo,
+	}).Debug("Set instance status")
 
-foundLoop:
-	for _, instanceStatus := range status {
-		for i := range instance.unitStatus.instances {
-			if instanceStatus.InstanceIdent == instance.unitStatus.instances[i].InstanceIdent &&
-				instanceStatus.ServiceVersion == instance.unitStatus.instances[i].ServiceVersion {
-				log.WithFields(log.Fields{
-					"serviceID": instanceStatus.InstanceIdent.ServiceID,
-					"subjectID": instanceStatus.InstanceIdent.SubjectID,
-					"instance":  instanceStatus.InstanceIdent.Instance,
-					"version":   instanceStatus.ServiceVersion,
-					"status":    instanceStatus.Status,
-					"error":     instanceStatus.ErrorInfo,
-				}).Debug("Update instance status")
-
-				instance.unitStatus.instances[i].StateChecksum = instanceStatus.StateChecksum
-				instance.unitStatus.instances[i].Status = instanceStatus.Status
-				instance.unitStatus.instances[i].ErrorInfo = instanceStatus.ErrorInfo
-
-				continue foundLoop
-			}
-		}
-
-		newStatuses = append(newStatuses, instanceStatus)
+	index := slices.IndexFunc(instance.unitStatus.Instances, func(instanceStatus cloudprotocol.InstanceStatus) bool {
+		return instanceStatus.InstanceIdent == status.InstanceIdent
+	})
+	if index < 0 {
+		instance.unitStatus.Instances = append(instance.unitStatus.Instances, status)
+	} else {
+		instance.unitStatus.Instances[index] = status
 	}
+}
 
-	instance.unitStatus.instances = append(instance.unitStatus.instances, newStatuses...)
-
+func (instance *Instance) updateInstanceStatus(status cloudprotocol.InstanceStatus) {
+	instance.setInstanceStatus(status)
 	instance.statusChanged()
 }
 
-func (instance *Instance) setInstancesStatus(statuses []cloudprotocol.InstanceStatus) {
-	instance.statusMutex.Lock()
-	defer instance.statusMutex.Unlock()
-
-	instance.unitStatus.instances = statuses
-
-	instance.statusChanged()
-}
-
-func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
+func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -728,23 +607,20 @@ func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 		"nodeID":   nodeInfo.NodeID,
 		"nodeType": nodeInfo.NodeType,
 		"status":   nodeInfo.Status,
-	}).Debug("Node info changed")
+	}).Debug("Set node info")
 
-	nodeInfoFound := false
-
-	for i, curNodeInfo := range instance.unitStatus.nodes {
-		if curNodeInfo.NodeID == nodeInfo.NodeID {
-			instance.unitStatus.nodes[i] = nodeInfo
-			nodeInfoFound = true
-
-			break
-		}
+	index := slices.IndexFunc(instance.unitStatus.Nodes, func(node cloudprotocol.NodeInfo) bool {
+		return node.NodeID == nodeInfo.NodeID
+	})
+	if index < 0 {
+		instance.unitStatus.Nodes = append(instance.unitStatus.Nodes, nodeInfo)
+	} else {
+		instance.unitStatus.Nodes[index] = nodeInfo
 	}
+}
 
-	if !nodeInfoFound {
-		instance.unitStatus.nodes = append(instance.unitStatus.nodes, nodeInfo)
-	}
-
+func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
+	instance.setNodeInfo(nodeInfo)
 	instance.statusChanged()
 }
 
@@ -757,31 +633,19 @@ func (instance *Instance) statusChanged() {
 		instance.statusMutex.Lock()
 		defer instance.statusMutex.Unlock()
 
-		instance.sendCurrentStatus()
+		instance.sendCurrentStatus(true)
 	})
 }
 
-func (instance *Instance) updateStatus(status *itemStatus, descriptor statusDescriptor) {
-	if descriptor.getStatus() == cloudprotocol.InstalledStatus {
-		*status = itemStatus{descriptor}
-		return
-	}
-
-	for i, element := range *status {
-		if element.getVersion() == descriptor.getVersion() {
-			(*status)[i] = descriptor
-			return
-		}
-	}
-
-	*status = append(*status, descriptor)
-}
-
-func (instance *Instance) sendCurrentStatus() {
+func (instance *Instance) sendCurrentStatus(deltaStatus bool) {
 	if instance.statusTimer != nil {
 		instance.statusTimer.Stop()
 		instance.statusTimer = nil
 	}
+
+	defer instance.resetUnitStatus()
+
+	log.WithField("deltaStatus", deltaStatus).Debug("Send current status")
 
 	if !instance.initDone {
 		return
@@ -791,63 +655,9 @@ func (instance *Instance) sendCurrentStatus() {
 		return
 	}
 
-	unitStatus := cloudprotocol.UnitStatus{
-		UnitSubjects: instance.unitStatus.subjects,
-		Components:   make([]cloudprotocol.ComponentStatus, 0, len(instance.unitStatus.components)),
-		Layers:       make([]cloudprotocol.LayerStatus, 0, len(instance.unitStatus.layers)),
-		Services:     make([]cloudprotocol.ServiceStatus, 0, len(instance.unitStatus.services)),
-		Instances:    instance.unitStatus.instances,
-		Nodes:        instance.unitStatus.nodes,
-	}
-
-	for _, status := range instance.unitStatus.unitConfig {
-		unitConfig, ok := status.amqpStatus.(*cloudprotocol.UnitConfigStatus)
-		if !ok {
-			log.Error("Incorrect unit config type")
-			continue
-		}
-
-		unitStatus.UnitConfig = append(unitStatus.UnitConfig, *unitConfig)
-	}
-
-	for _, componentStatus := range instance.unitStatus.components {
-		for _, status := range *componentStatus {
-			status, ok := status.amqpStatus.(*cloudprotocol.ComponentStatus)
-			if !ok {
-				log.Error("Incorrect component status type")
-				continue
-			}
-
-			unitStatus.Components = append(unitStatus.Components, *status)
-		}
-	}
-
-	for _, layerStatus := range instance.unitStatus.layers {
-		for _, status := range *layerStatus {
-			status, ok := status.amqpStatus.(*cloudprotocol.LayerStatus)
-			if !ok {
-				log.Error("Incorrect layer status type")
-				continue
-			}
-
-			unitStatus.Layers = append(unitStatus.Layers, *status)
-		}
-	}
-
-	for _, serviceStatus := range instance.unitStatus.services {
-		for _, status := range *serviceStatus {
-			status, ok := status.amqpStatus.(*cloudprotocol.ServiceStatus)
-			if !ok {
-				log.Error("Incorrect service status type")
-				continue
-			}
-
-			unitStatus.Services = append(unitStatus.Services, *status)
-		}
-	}
-
+	instance.unitStatus.IsDeltaInfo = deltaStatus
 	if err := instance.statusSender.SendUnitStatus(
-		unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+		instance.unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
 		log.Errorf("Can't send unit status: %s", err)
 	}
 }

@@ -2037,53 +2037,51 @@ func newTestStatusHandler() *testStatusHandler {
 	return &testStatusHandler{}
 }
 
-func (statusHandler *testStatusHandler) updateComponentStatus(componentInfo cloudprotocol.ComponentStatus) {
+func (statusHandler *testStatusHandler) updateComponentStatus(status cloudprotocol.ComponentStatus) {
 	log.WithFields(log.Fields{
-		"id":      componentInfo.ComponentID,
-		"version": componentInfo.Version,
-		"status":  componentInfo.Status,
-		"error":   componentInfo.ErrorInfo,
+		"id":      status.ComponentID,
+		"version": status.Version,
+		"status":  status.Status,
+		"error":   status.ErrorInfo,
 	}).Debug("Update component status")
 }
 
-func (statusHandler *testStatusHandler) updateUnitConfigStatus(unitConfigInfo cloudprotocol.UnitConfigStatus) {
+func (statusHandler *testStatusHandler) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
 	log.WithFields(log.Fields{
-		"version": unitConfigInfo.Version,
-		"status":  unitConfigInfo.Status,
-		"error":   unitConfigInfo.ErrorInfo,
+		"version": status.Version,
+		"status":  status.Status,
+		"error":   status.ErrorInfo,
 	}).Debug("Update unit config status")
 }
 
-func (statusHandler *testStatusHandler) updateLayerStatus(layerInfo cloudprotocol.LayerStatus) {
+func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.LayerStatus) {
 	log.WithFields(log.Fields{
-		"id":      layerInfo.LayerID,
-		"digest":  layerInfo.Digest,
-		"version": layerInfo.Version,
-		"status":  layerInfo.Status,
-		"error":   layerInfo.ErrorInfo,
+		"id":      status.LayerID,
+		"digest":  status.Digest,
+		"version": status.Version,
+		"status":  status.Status,
+		"error":   status.ErrorInfo,
 	}).Debug("Update layer status")
 }
 
-func (statusHandler *testStatusHandler) updateServiceStatus(serviceInfo cloudprotocol.ServiceStatus) {
+func (statusHandler *testStatusHandler) updateServiceStatus(status cloudprotocol.ServiceStatus) {
 	log.WithFields(log.Fields{
-		"id":      serviceInfo.ServiceID,
-		"version": serviceInfo.Version,
-		"status":  serviceInfo.Status,
-		"error":   serviceInfo.ErrorInfo,
+		"id":      status.ServiceID,
+		"version": status.Version,
+		"status":  status.Status,
+		"error":   status.ErrorInfo,
 	}).Debug("Update service status")
 }
 
-func (statusHandler *testStatusHandler) setInstancesStatus(statuses []cloudprotocol.InstanceStatus) {
-	for _, instanceStatus := range statuses {
-		log.WithFields(log.Fields{
-			"serviceID":  instanceStatus.ServiceID,
-			"subjectID":  instanceStatus.SubjectID,
-			"instanceID": instanceStatus.Instance,
-			"version":    instanceStatus.ServiceVersion,
-			"error":      instanceStatus.ErrorInfo,
-			"nodeID":     instanceStatus.NodeID,
-		}).Debug("Update instance status")
-	}
+func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotocol.InstanceStatus) {
+	log.WithFields(log.Fields{
+		"serviceID":  status.ServiceID,
+		"subjectID":  status.SubjectID,
+		"instanceID": status.Instance,
+		"version":    status.ServiceVersion,
+		"error":      status.ErrorInfo,
+		"nodeID":     status.NodeID,
+	}).Debug("Update instance status")
 }
 
 func (statusHandler *testStatusHandler) getNodesStatus() ([]cloudprotocol.NodeStatus, error) {
