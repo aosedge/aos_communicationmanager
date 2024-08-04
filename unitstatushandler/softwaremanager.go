@@ -57,7 +57,7 @@ type softwareStatusHandler interface {
 	updateLayerStatus(status cloudprotocol.LayerStatus)
 	updateServiceStatus(status cloudprotocol.ServiceStatus)
 	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus)
-	setInstancesStatus(statuses []cloudprotocol.InstanceStatus)
+	updateInstanceStatus(status cloudprotocol.InstanceStatus)
 	getNodesStatus() ([]cloudprotocol.NodeStatus, error)
 }
 
@@ -485,7 +485,9 @@ func (manager *softwareManager) getServiceStatus() (serviceStatuses []cloudproto
 	// Append currently processing info
 
 	for _, service := range manager.ServiceStatuses {
-		serviceStatuses = append(serviceStatuses, *service)
+		if service.Status != cloudprotocol.InstalledStatus {
+			serviceStatuses = append(serviceStatuses, *service)
+		}
 	}
 
 	return serviceStatuses, nil
@@ -514,7 +516,9 @@ func (manager *softwareManager) getLayersStatus() (layerStatuses []cloudprotocol
 	}
 
 	for _, layer := range manager.LayerStatuses {
-		layerStatuses = append(layerStatuses, *layer)
+		if layer.Status != cloudprotocol.InstalledStatus {
+			layerStatuses = append(layerStatuses, *layer)
+		}
 	}
 
 	return layerStatuses, nil
@@ -540,7 +544,9 @@ func (manager *softwareManager) getUnitConfigStatuses() (status []cloudprotocol.
 		return status, nil
 	}
 
-	status = append(status, manager.UnitConfigStatus)
+	if manager.UnitConfigStatus.Status != cloudprotocol.InstalledStatus {
+		status = append(status, manager.UnitConfigStatus)
+	}
 
 	return status, nil
 }
@@ -1162,12 +1168,12 @@ func (manager *softwareManager) installLayers() (installErr error) {
 
 func (manager *softwareManager) removeLayers() (removeErr error) {
 	return manager.processRemoveRestoreLayers(
-		manager.CurrentUpdate.RemoveLayers, "remove", cloudprotocol.RemovedStatus, manager.softwareUpdater.RemoveLayer)
+		manager.CurrentUpdate.RemoveLayers, "Remove", cloudprotocol.RemovedStatus, manager.softwareUpdater.RemoveLayer)
 }
 
 func (manager *softwareManager) restoreLayers() (restoreErr error) {
 	return manager.processRemoveRestoreLayers(
-		manager.CurrentUpdate.RestoreLayers, "restore", cloudprotocol.InstalledStatus, manager.softwareUpdater.RestoreLayer)
+		manager.CurrentUpdate.RestoreLayers, "Restore", cloudprotocol.InstalledStatus, manager.softwareUpdater.RestoreLayer)
 }
 
 func (manager *softwareManager) processRemoveRestoreLayers(
@@ -1391,7 +1397,7 @@ func (manager *softwareManager) removeServices() (removeErr error) {
 		log.WithFields(log.Fields{
 			"id":      service.ServiceID,
 			"version": service.Version,
-		}).Errorf("Can't install service: %v", serviceErr)
+		}).Errorf("Can't remove service: %v", serviceErr)
 
 		if errors.Is(serviceErr, context.Canceled) {
 			return
@@ -1469,15 +1475,16 @@ func (manager *softwareManager) runInstances() (runErr error) {
 		for i := uint64(0); i < instance.NumInstances; i++ {
 			ident.Instance = i
 
-			manager.InstanceStatuses = append(manager.InstanceStatuses, cloudprotocol.InstanceStatus{
+			instanceStatus := cloudprotocol.InstanceStatus{
 				InstanceIdent:  ident,
 				ServiceVersion: version,
 				Status:         cloudprotocol.InstanceStateActivating,
-			})
+			}
+
+			manager.InstanceStatuses = append(manager.InstanceStatuses, instanceStatus)
+			manager.statusHandler.updateInstanceStatus(instanceStatus)
 		}
 	}
-
-	manager.statusHandler.setInstancesStatus(manager.InstanceStatuses)
 
 	if err := manager.instanceRunner.RunInstances(
 		manager.CurrentUpdate.RunInstances, manager.CurrentUpdate.RebalanceRequest); err != nil {
