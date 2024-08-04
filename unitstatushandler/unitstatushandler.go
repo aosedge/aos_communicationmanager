@@ -253,6 +253,10 @@ func (instance *Instance) SendUnitStatus() error {
 	instance.Lock()
 	defer instance.Unlock()
 
+	if err := instance.initCurrentStatus(); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
 	instance.sendCurrentStatus()
 
 	return nil
@@ -271,14 +275,7 @@ func (instance *Instance) ProcessRunStatus(instances []cloudprotocol.InstanceSta
 		return aoserrors.Wrap(err)
 	}
 
-	instance.unitStatus.instances = instances
-
-	nodesInfo, err := instance.getAllNodesInfo()
-	if err != nil {
-		log.Errorf("Can't get nodes info: %v", err)
-	}
-
-	instance.unitStatus.nodes = nodesInfo
+	instance.initDone = true
 
 	instance.sendCurrentStatus()
 
@@ -369,11 +366,8 @@ func (instance *Instance) CloudDisconnected() {
  * Private
  **********************************************************************************************************************/
 
-func (instance *Instance) initCurrentStatus() error {
+func (instance *Instance) initUnitConfigStatus() error {
 	instance.unitStatus.unitConfig = nil
-	instance.unitStatus.components = make(map[string]*itemStatus)
-	instance.unitStatus.services = make(map[string]*itemStatus)
-	instance.unitStatus.layers = make(map[string]*itemStatus)
 
 	// Get initial unit config info
 
@@ -392,6 +386,11 @@ func (instance *Instance) initCurrentStatus() error {
 		instance.processUnitConfigStatus(status)
 	}
 
+	return nil
+}
+
+func (instance *Instance) initComponentsStatus() error {
+	instance.unitStatus.components = make(map[string]*itemStatus)
 	// Get initial components info
 
 	componentStatuses, err := instance.firmwareManager.getComponentStatuses()
@@ -410,6 +409,12 @@ func (instance *Instance) initCurrentStatus() error {
 
 		instance.processComponentStatus(status)
 	}
+
+	return nil
+}
+
+func (instance *Instance) initServicesStatus() error {
+	instance.unitStatus.services = make(map[string]*itemStatus)
 
 	// Get initial services and layers info
 
@@ -433,6 +438,12 @@ func (instance *Instance) initCurrentStatus() error {
 		instance.processServiceStatus(status)
 	}
 
+	return nil
+}
+
+func (instance *Instance) initLayersStatus() error {
+	instance.unitStatus.layers = make(map[string]*itemStatus)
+
 	layerStatuses, err := instance.softwareManager.getLayersStatus()
 	if err != nil {
 		return aoserrors.Wrap(err)
@@ -454,7 +465,74 @@ func (instance *Instance) initCurrentStatus() error {
 		instance.processLayerStatus(status)
 	}
 
-	instance.initDone = true
+	return nil
+}
+
+func (instance *Instance) initInstancesStatus() error {
+	instancesStatus, err := instance.softwareManager.getInstancesStatus()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, status := range instance.unitStatus.instances {
+		log.WithFields(log.Fields{
+			"serviceID": status.InstanceIdent.ServiceID,
+			"subjectID": status.InstanceIdent.SubjectID,
+			"instance":  status.InstanceIdent.Instance,
+			"version":   status.ServiceVersion,
+			"status":    status.Status,
+			"error":     status.ErrorInfo,
+		}).Debug("Initial instance status")
+	}
+
+	instance.unitStatus.instances = instancesStatus
+
+	return nil
+}
+
+func (instance *Instance) initNodesStatus() error {
+	nodesInfo, err := instance.getAllNodesInfo()
+	if err != nil {
+		log.Errorf("Can't get nodes info: %v", err)
+	}
+
+	for _, status := range nodesInfo {
+		log.WithFields(log.Fields{
+			"nodeID":   status.NodeID,
+			"nodeType": status.NodeType,
+			"status":   status.Status,
+		}).Debug("Initial node status")
+	}
+
+	instance.unitStatus.nodes = nodesInfo
+
+	return nil
+}
+
+func (instance *Instance) initCurrentStatus() error {
+	if err := instance.initUnitConfigStatus(); err != nil {
+		return err
+	}
+
+	if err := instance.initComponentsStatus(); err != nil {
+		return err
+	}
+
+	if err := instance.initServicesStatus(); err != nil {
+		return err
+	}
+
+	if err := instance.initLayersStatus(); err != nil {
+		return err
+	}
+
+	if err := instance.initInstancesStatus(); err != nil {
+		return err
+	}
+
+	if err := instance.initNodesStatus(); err != nil {
+		return err
+	}
 
 	return nil
 }
