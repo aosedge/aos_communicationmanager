@@ -52,10 +52,11 @@ type Controller struct {
 	storage storage
 	server  *umCtrlServer
 
-	eventChannel    chan umCtrlInternalMsg
-	nodeInfoChannel <-chan cloudprotocol.NodeInfo
-	stopChannel     chan bool
-	componentDir    string
+	eventChannel     chan umCtrlInternalMsg
+	nodeInfoProvider NodeInfoProvider
+	nodeInfoChannel  <-chan cloudprotocol.NodeInfo
+	stopChannel      chan bool
+	componentDir     string
 
 	decrypter Decrypter
 
@@ -226,6 +227,7 @@ func New(config *config.Config, storage storage, certProvider CertificateProvide
 	umCtrl = &Controller{
 		storage:              storage,
 		eventChannel:         make(chan umCtrlInternalMsg),
+		nodeInfoProvider:     nodeInfoProvider,
 		nodeInfoChannel:      nodeInfoProvider.SubscribeNodeInfoChange(),
 		stopChannel:          make(chan bool),
 		componentDir:         config.ComponentsDir,
@@ -548,12 +550,19 @@ func (umCtrl *Controller) handleCloseConnection(umID string, reason closeReason)
 	for i, value := range umCtrl.connections {
 		if value.umID == umID {
 			if reason == ConnectionClose {
-				umCtrl.connections[i].handler = nil
+				nodeInfo, err := umCtrl.nodeInfoProvider.GetNodeInfo(umID)
+				provisionedNode := err == nil && nodeInfo.Status != cloudprotocol.NodeStatusUnprovisioned
 
-				umCtrl.fsm.SetState(stateInit)
-				umCtrl.connectionMonitor.wg.Add(1)
+				if provisionedNode {
+					umCtrl.connections[i].handler = nil
 
-				go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
+					umCtrl.fsm.SetState(stateInit)
+					umCtrl.connectionMonitor.wg.Add(1)
+
+					go umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
+				} else {
+					umCtrl.connections = append(umCtrl.connections[:i], umCtrl.connections[i+1:]...)
+				}
 			}
 
 			return
