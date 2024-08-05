@@ -568,6 +568,32 @@ func TestDeprovisioning(t *testing.T) {
 	}
 }
 
+func TestFailDeprovisionMainNode(t *testing.T) {
+	sender := &testSender{}
+
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, sender, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	err = client.Deprovision(publicServer.currentID, "password")
+	if err == nil {
+		t.Errorf("Deprovisioning main node should fail")
+	}
+}
+
 func TestPauseNode(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
