@@ -397,6 +397,15 @@ func (client *Client) Deprovision(nodeID, password string) (err error) {
 		}
 	}()
 
+	if nodeID == client.GetNodeID() {
+		err = aoserrors.New("Can't deprovision main node")
+		errorInfo = &cloudprotocol.ErrorInfo{
+			Message: err.Error(),
+		}
+
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
