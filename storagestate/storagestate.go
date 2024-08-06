@@ -408,6 +408,10 @@ func (storageState *StorageState) initStateWatching() error {
 	}
 
 	for _, info := range infos {
+		if info.StateQuota == 0 {
+			continue
+		}
+
 		if err = storageState.startStateWatching(info.InstanceIdent,
 			storageState.getStatePath(info.InstanceID), info.StateQuota); err != nil {
 			log.WithField("instanceID", info.InstanceID).Errorf("Can't setup state watching: %v", err)
