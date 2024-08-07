@@ -188,11 +188,12 @@ func TestRenewCertificatesNotification(t *testing.T) {
 	defer client.Close()
 
 	certInfo := []cloudprotocol.RenewCertData{
-		{Type: "online", Serial: "serail1", ValidTill: time.Now()},
-		{Type: "offline", Serial: "serail2", ValidTill: time.Now()},
+		{NodeID: "node0", Type: "online", Serial: "serial1", ValidTill: time.Now()},
+		{NodeID: "node0", Type: "offline", Serial: "serial2", ValidTill: time.Now()},
 	}
+	secrets := cloudprotocol.UnitSecrets{Nodes: map[string]string{"node0": "pwd"}}
 
-	if err = client.RenewCertificatesNotification("pwd", certInfo); err != nil {
+	if err = client.RenewCertificatesNotification(secrets, certInfo); err != nil {
 		t.Fatalf("Can't process renew certificate notification: %s", err)
 	}
 

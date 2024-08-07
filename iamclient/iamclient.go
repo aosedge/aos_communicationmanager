@@ -211,7 +211,9 @@ func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
 }
 
 // RenewCertificatesNotification renew certificates notification.
-func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloudprotocol.RenewCertData) (err error) {
+func (client *Client) RenewCertificatesNotification(secrets cloudprotocol.UnitSecrets,
+	certInfo []cloudprotocol.RenewCertData,
+) (err error) {
 	newCerts := make([]cloudprotocol.IssueCertData, 0, len(certInfo))
 
 	for _, cert := range certInfo {
@@ -221,6 +223,11 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
+
+		pwd, ok := secrets.Nodes[cert.NodeID]
+		if !ok {
+			return aoserrors.New("not found password for node: " + cert.NodeID)
+		}
 
 		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd, NodeId: cert.NodeID}
 
