@@ -32,7 +32,7 @@ const (
 )
 
 // UnitSecretVersion specifies supported version of UnitSecret message.
-const UnitSecretVersion = 2
+const UnitSecretVersion = "2.0.0"
 
 /***********************************************************************************************************************
  * Types
@@ -62,12 +62,10 @@ type RenewCertData struct {
 	ValidTill time.Time `json:"validTill"`
 }
 
-// UnitSecret keeps unit secret used to decode secure device password.
-type UnitSecret struct {
-	Version int `json:"version"`
-	Data    struct {
-		OwnerPassword string `json:"ownerPassword"`
-	} `json:"data"`
+// UnitSecrets keeps secrets for nodes.
+type UnitSecrets struct {
+	Version string            `json:"version"`
+	Nodes   map[string]string `json:"nodes"`
 }
 
 // IssueCertData issue certificate data.
@@ -81,7 +79,7 @@ type IssueCertData struct {
 type RenewCertsNotification struct {
 	MessageType  string          `json:"messageType"`
 	Certificates []RenewCertData `json:"certificates"`
-	UnitSecret   UnitSecret      `json:"unitSecret"`
+	UnitSecrets  UnitSecrets     `json:"unitSecrets"`
 }
 
 // IssuedUnitCerts issued unit certificates info.
