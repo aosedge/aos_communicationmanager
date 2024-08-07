@@ -299,11 +299,9 @@ func TestReceiveMessages(t *testing.T) {
 			expectedData: &cloudprotocol.RenewCertsNotification{
 				MessageType: cloudprotocol.RenewCertsNotificationMessageType,
 				Certificates: []cloudprotocol.RenewCertData{
-					{Type: "online", Serial: "1234", ValidTill: testTime},
+					{NodeID: "node0", Type: "online", Serial: "1234", ValidTill: testTime},
 				},
-				UnitSecret: cloudprotocol.UnitSecret{Version: 1, Data: struct {
-					OwnerPassword string `json:"ownerPassword"`
-				}{OwnerPassword: "pwd"}},
+				UnitSecrets: cloudprotocol.UnitSecrets{Version: "1.0.0", Nodes: map[string]string{"node0": "pwd"}},
 			},
 		},
 		{
