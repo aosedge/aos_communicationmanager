@@ -394,12 +394,12 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.RenewCertsNotification:
 		log.Info("Receive renew certificates notification message")
 
-		if data.UnitSecret.Version != cloudprotocol.UnitSecretVersion {
+		if data.UnitSecrets.Version != cloudprotocol.UnitSecretVersion {
 			return aoserrors.New("unit secure version mismatch")
 		}
 
 		if err = cm.iam.RenewCertificatesNotification(
-			data.UnitSecret.Data.OwnerPassword, data.Certificates); err != nil {
+			data.UnitSecrets, data.Certificates); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
