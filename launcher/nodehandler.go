@@ -20,7 +20,8 @@ package launcher
 import (
 	"errors"
 	"math"
-	"slices"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
@@ -558,16 +559,16 @@ func getInstanceNode(
 		return nil, aoserrors.Errorf("can't get top priority nodes")
 	}
 
-	slices.SortStableFunc(resultNodes, func(node1, node2 *nodeHandler) int {
+	slices.SortStableFunc(resultNodes, func(node1, node2 *nodeHandler) bool {
 		if node1.availableCPU < node2.availableCPU {
-			return 1
+			return false
 		}
 
 		if node1.availableCPU > node2.availableCPU {
-			return -1
+			return true
 		}
 
-		return 0
+		return false
 	})
 
 	return resultNodes[0], nil
