@@ -344,7 +344,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 }
 
 func (launcher *Launcher) sendCurrentStatus() {
-	var instancesStatus []cloudprotocol.InstanceStatus
+	instancesStatus := make([]cloudprotocol.InstanceStatus, 0)
 
 	for _, node := range launcher.getNodesByPriorities() {
 		if node.waitStatus {

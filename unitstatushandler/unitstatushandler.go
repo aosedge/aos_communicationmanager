@@ -175,6 +175,8 @@ func New(
 		systemQuotaAlertChannel: systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
 	}
 
+	instance.resetUnitStatus()
+
 	groupDownloader := newGroupDownloader(downloader)
 
 	if instance.firmwareManager, err = newFirmwareManager(instance, groupDownloader, firmwareUpdater,
@@ -355,7 +357,13 @@ func (instance *Instance) CloudDisconnected() {
  **********************************************************************************************************************/
 
 func (instance *Instance) resetUnitStatus() {
-	instance.unitStatus = cloudprotocol.UnitStatus{}
+	instance.unitStatus = cloudprotocol.UnitStatus{
+		Components:   make([]cloudprotocol.ComponentStatus, 0),
+		Layers:       make([]cloudprotocol.LayerStatus, 0),
+		Services:     make([]cloudprotocol.ServiceStatus, 0),
+		Instances:    make([]cloudprotocol.InstanceStatus, 0),
+		UnitSubjects: make([]string, 0),
+	}
 }
 
 func (instance *Instance) initUnitConfigStatus() error {
