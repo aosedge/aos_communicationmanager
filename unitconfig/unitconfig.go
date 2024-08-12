@@ -191,6 +191,10 @@ func (instance *Instance) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) 
 	instance.Lock()
 	defer instance.Unlock()
 
+	defer func() {
+		instance.unitConfigError = err
+	}()
+
 	if instance.unitConfigError != nil && instance.unitConfig.Version == "" {
 		log.Warnf("Skip unit config version check due to error: %v", instance.unitConfigError)
 	} else if err := instance.checkVersion(unitConfig.Version); err != nil {
