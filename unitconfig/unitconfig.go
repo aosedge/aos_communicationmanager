@@ -250,7 +250,10 @@ func (instance *Instance) load() (err error) {
 
 	byteValue, err := os.ReadFile(instance.unitConfigFile)
 	if err != nil {
-		return aoserrors.Wrap(err)
+		// Don't treat absent config as an error.
+		instance.unitConfig = cloudprotocol.UnitConfig{Version: "0.0.0"}
+
+		return nil
 	}
 
 	if err = json.Unmarshal(byteValue, &instance.unitConfig); err != nil {
