@@ -360,7 +360,12 @@ func (node *nodeHandler) getRequestedRAM(
 func getNodesByStaticResources(nodes []*nodeHandler,
 	serviceConfig aostypes.ServiceConfig, instanceInfo cloudprotocol.InstanceInfo,
 ) ([]*nodeHandler, error) {
-	resultNodes := getNodeByRunners(nodes, serviceConfig.Runners)
+	resultNodes := getActiveNodes(nodes)
+	if len(resultNodes) == 0 {
+		return resultNodes, aoserrors.Errorf("no active nodes")
+	}
+
+	resultNodes = getNodeByRunners(nodes, serviceConfig.Runners)
 	if len(resultNodes) == 0 {
 		return resultNodes, aoserrors.Errorf("no nodes with runner: %s", serviceConfig.Runners)
 	}
@@ -376,6 +381,18 @@ func getNodesByStaticResources(nodes []*nodeHandler,
 	}
 
 	return resultNodes, nil
+}
+
+func getActiveNodes(nodes []*nodeHandler) []*nodeHandler {
+	resultNodes := make([]*nodeHandler, 0)
+
+	for _, node := range nodes {
+		if node.nodeInfo.Status == cloudprotocol.NodeStatusProvisioned {
+			resultNodes = append(resultNodes, node)
+		}
+	}
+
+	return resultNodes
 }
 
 func getNodesByDevices(nodes []*nodeHandler, desiredDevices []aostypes.ServiceDevice) []*nodeHandler {
