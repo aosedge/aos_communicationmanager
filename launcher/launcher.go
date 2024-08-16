@@ -260,7 +260,7 @@ func (launcher *Launcher) initNodes(rebalancing bool) error {
 			continue
 		}
 
-		if nodeInfo.Status != cloudprotocol.NodeStatusProvisioned {
+		if nodeInfo.Status == cloudprotocol.NodeStatusUnprovisioned {
 			log.WithField("nodeID", nodeID).Debug("Skip not provisioned node")
 
 			continue
