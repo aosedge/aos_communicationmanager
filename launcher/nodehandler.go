@@ -365,7 +365,7 @@ func getNodesByStaticResources(nodes []*nodeHandler,
 		return resultNodes, aoserrors.Errorf("no active nodes")
 	}
 
-	resultNodes = getNodeByRunners(nodes, serviceConfig.Runners)
+	resultNodes = getNodeByRunners(resultNodes, serviceConfig.Runners)
 	if len(resultNodes) == 0 {
 		return resultNodes, aoserrors.Errorf("no nodes with runner: %s", serviceConfig.Runners)
 	}
