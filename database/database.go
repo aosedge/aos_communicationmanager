@@ -348,7 +348,7 @@ func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err e
 
 // GetServicesInfo returns services info.
 func (db *Database) GetServicesInfo() ([]imagemanager.ServiceInfo, error) {
-	allServiceVersions, err := db.getServicesFromQuery(`SELECT * FROM services GROUP BY id`)
+	allServiceVersions, err := db.getServicesFromQuery(`SELECT * FROM services`)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func (db *Database) RemoveService(serviceID string, version string) (err error) 
 // GetAllServiceVersions returns all service versions.
 func (db *Database) GetServiceVersions(serviceID string) (services []imagemanager.ServiceInfo, err error) {
 	if services, err = db.getServicesFromQuery(
-		"SELECT * FROM services WHERE id = ? GROUP BY version", serviceID); err != nil {
+		"SELECT * FROM services WHERE id = ?", serviceID); err != nil {
 		return nil, err
 	}
 
@@ -992,10 +992,6 @@ func (db *Database) getServicesFromQuery(
 	}
 	defer rows.Close()
 
-	if rows.Err() != nil {
-		return nil, aoserrors.Wrap(rows.Err())
-	}
-
 	for rows.Next() {
 		var (
 			service      imagemanager.ServiceInfo
@@ -1023,6 +1019,10 @@ func (db *Database) getServicesFromQuery(
 		}
 
 		services = append(services, service)
+	}
+
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
 	}
 
 	return services, nil
