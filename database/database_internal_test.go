@@ -379,6 +379,70 @@ func TestServiceStore(t *testing.T) {
 	}
 }
 
+func TestGetServiceInfo(t *testing.T) {
+	serviceID := "service2"
+	services := []imagemanager.ServiceInfo{
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				ServiceID: serviceID,
+				Version:   "1.1",
+				URL:       "file:///path/service2",
+				Size:      60,
+				GID:       2000,
+			},
+			RemoteURL: "http://path/service2",
+			Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true,
+			Config: aostypes.ServiceConfig{
+				Hostname: allocateString("service2"),
+				Author:   "test1",
+				Quotas: aostypes.ServiceQuotas{
+					UploadSpeed:   allocateUint64(500),
+					DownloadSpeed: allocateUint64(500),
+				},
+				Resources: []string{"resource1", "resource2"},
+			},
+		},
+
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				ServiceID: serviceID,
+				Version:   "2.1",
+				URL:       "file:///path/service2/new",
+				Size:      20,
+				GID:       1000,
+			},
+			RemoteURL: "http://path/service2/new",
+			Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
+		},
+	}
+
+	latestService := services[1]
+
+	for _, service := range services {
+		if err := testDB.AddService(service); err != nil {
+			t.Errorf("Can't add service: %v", err)
+		}
+	}
+
+	service, err := testDB.GetServiceInfo(serviceID)
+	if err != nil {
+		t.Errorf("Can't get service info: %v", err)
+	}
+
+	if !reflect.DeepEqual(service, latestService) {
+		t.Errorf("Wrong service info: actual %v != expected %v", service, latestService)
+	}
+
+	serviceInfo, err := testDB.GetServicesInfo()
+	if err != nil {
+		t.Errorf("Can't get services info: %v", err)
+	}
+
+	if len(serviceInfo) != 1 || !reflect.DeepEqual(serviceInfo[0], latestService) {
+		t.Errorf("Wrong service info: actual %v != expected %v", serviceInfo[0], latestService)
+	}
+}
+
 func TestLayerStore(t *testing.T) {
 	cases := []struct {
 		layer              imagemanager.LayerInfo
