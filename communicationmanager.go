@@ -539,7 +539,7 @@ func (hook *journalHook) Fire(entry *log.Entry) (err error) {
 		return aoserrors.Wrap(err)
 	}
 
-	err = journal.Print(hook.severityMap[entry.Level], logMessage)
+	err = journal.Print(hook.severityMap[entry.Level], "%s", logMessage)
 
 	return aoserrors.Wrap(err)
 }
