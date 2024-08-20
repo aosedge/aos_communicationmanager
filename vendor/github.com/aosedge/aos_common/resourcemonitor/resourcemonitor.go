@@ -83,7 +83,7 @@ type NodeInfoProvider interface {
 // NodeConfigProvider interface to get node config.
 type NodeConfigProvider interface {
 	GetCurrentNodeConfig() (cloudprotocol.NodeConfig, error)
-	CurrentNodeConfigChannel() <-chan cloudprotocol.NodeConfig
+	SubscribeCurrentNodeConfigChange() <-chan cloudprotocol.NodeConfig
 }
 
 // TrafficMonitoring interface to get network traffic.
@@ -117,6 +117,7 @@ type ResourceMonitor struct {
 	nodeAverageData       averageMonitoring
 	instanceMonitoringMap map[string]*instanceMonitoring
 	alertProcessors       *list.List
+	curNodeConfigListener <-chan cloudprotocol.NodeConfig
 
 	cancelFunction context.CancelFunc
 }
@@ -184,12 +185,13 @@ func New(
 	log.Debug("Create monitor")
 
 	monitor := &ResourceMonitor{
-		nodeInfoProvider:   nodeInfoProvider,
-		nodeConfigProvider: nodeConfigProvider,
-		alertSender:        alertsSender,
-		trafficMonitoring:  trafficMonitoring,
-		sourceSystemUsage:  getSourceSystemUsage(config.Source),
-		monitoringChannel:  make(chan aostypes.NodeMonitoring, monitoringChannelSize),
+		nodeInfoProvider:      nodeInfoProvider,
+		nodeConfigProvider:    nodeConfigProvider,
+		alertSender:           alertsSender,
+		trafficMonitoring:     trafficMonitoring,
+		sourceSystemUsage:     getSourceSystemUsage(config.Source),
+		monitoringChannel:     make(chan aostypes.NodeMonitoring, monitoringChannelSize),
+		curNodeConfigListener: nodeConfigProvider.SubscribeCurrentNodeConfigChange(),
 	}
 
 	nodeInfo, err := nodeInfoProvider.GetCurrentNodeInfo()
@@ -474,7 +476,7 @@ func (monitor *ResourceMonitor) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 
-		case nodeConfig := <-monitor.nodeConfigProvider.CurrentNodeConfigChannel():
+		case nodeConfig := <-monitor.curNodeConfigListener:
 			if err := monitor.setupSystemAlerts(nodeConfig); err != nil {
 				log.Errorf("Can't setup system alerts: %v", err)
 			}
