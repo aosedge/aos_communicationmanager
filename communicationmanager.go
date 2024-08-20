@@ -179,6 +179,15 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	if cm.smController, err = smcontroller.New(
+		cfg, cm.amqp, cm.alerts, cm.monitorcontroller, cm.iam, cm.cryptoContext, false); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	if cm.unitConfig, err = unitconfig.New(cfg, cm.iam, cm.smController); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	if cfg.Monitoring.MonitorConfig != nil {
 		if cm.resourcemonitor, err = resourcemonitor.New(*cfg.Monitoring.MonitorConfig, cm.iam, cm.unitConfig,
 			nil, cm.alerts); err != nil {
@@ -201,16 +210,7 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.smController, err = smcontroller.New(
-		cfg, cm.amqp, cm.alerts, cm.monitorcontroller, cm.iam, cm.cryptoContext, false); err != nil {
-		return cm, aoserrors.Wrap(err)
-	}
-
 	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.iam, cm.iam, cm.cryptoContext, cm.crypt, false); err != nil {
-		return cm, aoserrors.Wrap(err)
-	}
-
-	if cm.unitConfig, err = unitconfig.New(cfg, cm.iam, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
