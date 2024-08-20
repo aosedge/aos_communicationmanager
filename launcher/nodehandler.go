@@ -312,8 +312,8 @@ func (node *nodeHandler) getRequestedCPU(
 ) uint64 {
 	requestedCPU := uint64(0)
 
-	if serviceConfig.Quotas.CPULimit != nil {
-		requestedCPU = uint64(float64(*serviceConfig.Quotas.CPULimit)*getCPURequestRatio(
+	if serviceConfig.Quotas.CPUDMIPSLimit != nil {
+		requestedCPU = uint64(float64(*serviceConfig.Quotas.CPUDMIPSLimit)*getCPURequestRatio(
 			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
 	}
 
