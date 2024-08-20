@@ -46,13 +46,13 @@ var ErrNotFound = errors.New("not found")
 type Instance struct {
 	sync.Mutex
 
-	client                   Client
-	curNodeID                string
-	curNodeType              string
-	unitConfigFile           string
-	unitConfig               cloudprotocol.UnitConfig
-	currentNodeConfigChannel chan cloudprotocol.NodeConfig
-	unitConfigError          error
+	client                     Client
+	curNodeID                  string
+	curNodeType                string
+	unitConfigFile             string
+	unitConfig                 cloudprotocol.UnitConfig
+	currentNodeConfigListeners []chan cloudprotocol.NodeConfig
+	unitConfigError            error
 }
 
 // NodeInfoProvider node info provider interface.
@@ -86,9 +86,9 @@ var ErrAlreadyInstalled = errors.New("already installed")
 // New creates new unit config instance.
 func New(cfg *config.Config, nodeInfoProvider NodeInfoProvider, client Client) (instance *Instance, err error) {
 	instance = &Instance{
-		client:                   client,
-		unitConfigFile:           cfg.UnitConfigFile,
-		currentNodeConfigChannel: make(chan cloudprotocol.NodeConfig, 1),
+		client:                     client,
+		unitConfigFile:             cfg.UnitConfigFile,
+		currentNodeConfigListeners: make([]chan cloudprotocol.NodeConfig, 0),
 	}
 
 	var nodeInfo cloudprotocol.NodeInfo
@@ -181,9 +181,17 @@ func (instance *Instance) GetCurrentNodeConfig() (cloudprotocol.NodeConfig, erro
 	return instance.GetNodeConfig(instance.curNodeID, instance.curNodeType)
 }
 
-// CurrentNodeConfigChannel returns channel of current node config updates.
-func (instance *Instance) CurrentNodeConfigChannel() <-chan cloudprotocol.NodeConfig {
-	return instance.currentNodeConfigChannel
+// SubscribeCurrentNodeConfigChange subscribes new current node config listener.
+func (instance *Instance) SubscribeCurrentNodeConfigChange() <-chan cloudprotocol.NodeConfig {
+	instance.Lock()
+	defer instance.Unlock()
+
+	log.Debug("Subscribe to current node config change event")
+
+	ch := make(chan cloudprotocol.NodeConfig, 1)
+	instance.currentNodeConfigListeners = append(instance.currentNodeConfigListeners, ch)
+
+	return ch
 }
 
 // UpdateUnitConfig updates unit config.
@@ -222,7 +230,7 @@ func (instance *Instance) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) 
 			}
 
 			if nodeConfigStatus.NodeID == instance.curNodeID {
-				instance.currentNodeConfigChannel <- *nodeConfig
+				instance.updateCurrentNodeConfigListeners(*nodeConfig)
 			}
 		}
 	}
@@ -313,7 +321,7 @@ func (instance *Instance) handleNodeConfigStatus() {
 		}
 
 		if nodeConfigStatus.NodeID == instance.curNodeID {
-			instance.currentNodeConfigChannel <- *nodeConfig
+			instance.updateCurrentNodeConfigListeners(*nodeConfig)
 		}
 	}
 }
@@ -332,4 +340,10 @@ func findNodeConfig(nodeID, nodeType string, unitConfig *cloudprotocol.UnitConfi
 	}
 
 	return nil
+}
+
+func (instance *Instance) updateCurrentNodeConfigListeners(curNodeConfig cloudprotocol.NodeConfig) {
+	for _, listener := range instance.currentNodeConfigListeners {
+		listener <- curNodeConfig
+	}
 }

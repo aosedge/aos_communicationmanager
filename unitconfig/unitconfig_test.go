@@ -350,14 +350,18 @@ func TestCurrentNodeConfigUpdate(t *testing.T) {
 		t.Fatalf("Can't create unit config file: %v", err)
 	}
 
-	client := newTestClient()
-	nodeInfoProvider := newTestInfoProvider("node0", "type1")
+	var (
+		client           = newTestClient()
+		nodeInfoProvider = newTestInfoProvider("node0", "type1")
+	)
 
 	instance, err := unitconfig.New(
 		&config.Config{UnitConfigFile: path.Join(tmpDir, "aos_unit.cfg")}, nodeInfoProvider, client)
 	if err != nil {
 		t.Fatalf("Can't create unit config instance: %v", err)
 	}
+
+	curNodeConfigListener := instance.SubscribeCurrentNodeConfigChange()
 
 	client.nodeConfigStatusChannel <- unitconfig.NodeConfigStatus{
 		NodeID:   "node0",
@@ -373,7 +377,7 @@ func TestCurrentNodeConfigUpdate(t *testing.T) {
 				t.Errorf("Wrong node config: %v", nodeConfig)
 			}
 
-		case curNodeConfig := <-instance.CurrentNodeConfigChannel():
+		case curNodeConfig := <-curNodeConfigListener:
 			if !reflect.DeepEqual(curNodeConfig, cloudprotocol.NodeConfig{NodeID: &node0, NodeType: "type1"}) {
 				t.Errorf("Wrong node config: %v", curNodeConfig)
 			}
