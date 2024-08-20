@@ -288,7 +288,7 @@ func (manager *softwareManager) requestRebalancing() error {
 	log.Debug("Request rebalancing")
 
 	if manager.CurrentUpdate == nil || len(manager.CurrentUpdate.RunInstances) == 0 {
-		return aoserrors.New("no previous update")
+		return nil
 	}
 
 	update := &softwareUpdate{
