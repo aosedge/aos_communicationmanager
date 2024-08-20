@@ -145,7 +145,7 @@ type ServiceDevice struct {
 
 // ServiceQuotas service quotas representation.
 type ServiceQuotas struct {
-	CPULimit      *uint64 `json:"cpuLimit,omitempty"`
+	CPUDMIPSLimit *uint64 `json:"cpuDmipsLimit,omitempty"`
 	RAMLimit      *uint64 `json:"ramLimit,omitempty"`
 	PIDsLimit     *uint64 `json:"pidsLimit,omitempty"`
 	NoFileLimit   *uint64 `json:"noFileLimit,omitempty"`
