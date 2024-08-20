@@ -1635,7 +1635,7 @@ func testItemCPURatio() testData {
 		serviceConfigs: map[string]aostypes.ServiceConfig{
 			service1: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 				Runners: []string{runnerRunc},
 			},
@@ -1841,17 +1841,17 @@ func testItemRebalancing() testData {
 		serviceConfigs: map[string]aostypes.ServiceConfig{
 			service1: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 			service2: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 			service3: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 		},
@@ -1956,17 +1956,17 @@ func testItemRebalancingPolicy() testData {
 		serviceConfigs: map[string]aostypes.ServiceConfig{
 			service1: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 			service2: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 			service3: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 				BalancingPolicy: aostypes.BalancingDisabled,
 			},
@@ -2072,17 +2072,17 @@ func testItemRebalancingPrevNode() testData {
 		serviceConfigs: map[string]aostypes.ServiceConfig{
 			service1: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 			service2: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 			service3: {
 				Quotas: aostypes.ServiceQuotas{
-					CPULimit: newQuota(1000),
+					CPUDMIPSLimit: newQuota(1000),
 				},
 			},
 		},
