@@ -815,14 +815,15 @@ func TestLogMessages(t *testing.T) {
 		ErrorInfo: &cloudprotocol.ErrorInfo{
 			Message: "this is error",
 		},
-		Status: "ok",
+		Status: cloudprotocol.LogStatusError,
 	}
 
 	smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
 		SMOutgoingMessage: &pbsm.SMOutgoingMessages_Log{
 			Log: &pbsm.LogData{
 				LogId: "log0", PartCount: 2, Part: 1, Data: []byte("this is log"),
-				Error: &pbcommon.ErrorInfo{Message: "this is error"},
+				Error:  &pbcommon.ErrorInfo{Message: "this is error"},
+				Status: cloudprotocol.LogStatusError,
 			},
 		},
 	}
