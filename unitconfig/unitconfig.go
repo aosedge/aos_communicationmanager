@@ -62,8 +62,8 @@ type NodeInfoProvider interface {
 
 // Client client unit config interface.
 type Client interface {
-	CheckNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error
-	SetNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error
+	CheckNodeConfig(nodeID, version string, nodeConfig cloudprotocol.NodeConfig) error
+	SetNodeConfig(nodeID, version string, nodeConfig cloudprotocol.NodeConfig) error
 	GetNodeConfigStatuses() ([]NodeConfigStatus, error)
 	NodeConfigStatusChannel() <-chan NodeConfigStatus
 }
@@ -143,14 +143,12 @@ func (instance *Instance) CheckUnitConfig(unitConfig cloudprotocol.UnitConfig) e
 
 	for i, nodeConfigStatus := range nodeConfigStatuses {
 		if nodeConfigStatus.Version != unitConfig.Version || nodeConfigStatus.Error != nil {
-			nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, &unitConfig)
-			if nodeConfig == nil {
-				continue
-			}
+			nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, unitConfig)
 
 			nodeConfig.NodeID = &nodeConfigStatuses[i].NodeID
 
-			if err := instance.client.CheckNodeConfig(unitConfig.Version, *nodeConfig); err != nil {
+			if err := instance.client.CheckNodeConfig(
+				nodeConfigStatus.NodeID, unitConfig.Version, nodeConfig); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
@@ -216,21 +214,17 @@ func (instance *Instance) UpdateUnitConfig(unitConfig cloudprotocol.UnitConfig) 
 		log.Errorf("Error getting node config statuses: %v", err)
 	}
 
-	for i, nodeConfigStatus := range nodeConfigStatuses {
+	for _, nodeConfigStatus := range nodeConfigStatuses {
 		if nodeConfigStatus.Version != unitConfig.Version || nodeConfigStatus.Error != nil {
-			nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, &unitConfig)
-			if nodeConfig == nil {
-				continue
-			}
+			nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, unitConfig)
 
-			nodeConfig.NodeID = &nodeConfigStatuses[i].NodeID
-
-			if err := instance.client.SetNodeConfig(unitConfig.Version, *nodeConfig); err != nil {
+			if err := instance.client.SetNodeConfig(
+				nodeConfigStatus.NodeID, unitConfig.Version, nodeConfig); err != nil {
 				return aoserrors.Wrap(err)
 			}
 
 			if nodeConfigStatus.NodeID == instance.curNodeID {
-				instance.updateCurrentNodeConfigListeners(*nodeConfig)
+				instance.updateCurrentNodeConfigListeners(nodeConfig)
 			}
 		}
 	}
@@ -313,37 +307,33 @@ func (instance *Instance) handleNodeConfigStatus() {
 			continue
 		}
 
-		nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, &instance.unitConfig)
-		if nodeConfig == nil {
-			continue
-		}
+		nodeConfig := findNodeConfig(nodeConfigStatus.NodeID, nodeConfigStatus.NodeType, instance.unitConfig)
 
-		nodeConfig.NodeID = &nodeConfigStatus.NodeID
-
-		if err := instance.client.SetNodeConfig(instance.unitConfig.Version, *nodeConfig); err != nil {
+		if err := instance.client.SetNodeConfig(
+			nodeConfigStatus.NodeID, instance.unitConfig.Version, nodeConfig); err != nil {
 			log.WithField("NodeID", nodeConfigStatus.NodeID).Errorf("Can't update node config: %v", err)
 		}
 
 		if nodeConfigStatus.NodeID == instance.curNodeID {
-			instance.updateCurrentNodeConfigListeners(*nodeConfig)
+			instance.updateCurrentNodeConfigListeners(nodeConfig)
 		}
 	}
 }
 
-func findNodeConfig(nodeID, nodeType string, unitConfig *cloudprotocol.UnitConfig) *cloudprotocol.NodeConfig {
+func findNodeConfig(nodeID, nodeType string, unitConfig cloudprotocol.UnitConfig) cloudprotocol.NodeConfig {
 	for i, nodeConfig := range unitConfig.Nodes {
 		if nodeConfig.NodeID != nil && *nodeConfig.NodeID == nodeID {
-			return &unitConfig.Nodes[i]
+			return unitConfig.Nodes[i]
 		}
 	}
 
 	for i, nodeConfig := range unitConfig.Nodes {
 		if nodeConfig.NodeType == nodeType {
-			return &unitConfig.Nodes[i]
+			return unitConfig.Nodes[i]
 		}
 	}
 
-	return nil
+	return cloudprotocol.NodeConfig{}
 }
 
 func (instance *Instance) updateCurrentNodeConfigListeners(curNodeConfig cloudprotocol.NodeConfig) {
