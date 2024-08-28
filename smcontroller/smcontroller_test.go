@@ -207,7 +207,7 @@ func TestNodeConfigMessages(t *testing.T) {
 			NodeConfigStatus: &pbsm.NodeConfigStatus{Version: originalVersion},
 		}}
 		newVersion = "2.0.0"
-		nodeConfig = fmt.Sprintf(`{"nodeId":"%s","nodeType":"%s"}`, nodeID, nodeType)
+		nodeConfig = fmt.Sprintf(`{"nodeType":"%s"}`, nodeType)
 	)
 
 	controller, err := smcontroller.New(&config, messageSender, nil, nil, nil, nil, true)
@@ -254,8 +254,8 @@ func TestNodeConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.CheckNodeConfig(newVersion,
-			cloudprotocol.NodeConfig{NodeID: &nodeID, NodeType: nodeType}); err != nil {
+		if err := controller.CheckNodeConfig(nodeID, newVersion,
+			cloudprotocol.NodeConfig{NodeType: nodeType}); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
 
@@ -279,8 +279,8 @@ func TestNodeConfigMessages(t *testing.T) {
 	<-testWaitChan
 
 	go func() {
-		if err := controller.SetNodeConfig(newVersion,
-			cloudprotocol.NodeConfig{NodeID: &nodeID, NodeType: nodeType}); err != nil {
+		if err := controller.SetNodeConfig(nodeID, newVersion,
+			cloudprotocol.NodeConfig{NodeType: nodeType}); err != nil {
 			t.Errorf("Error check unit config: %v", err)
 		}
 

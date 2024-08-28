@@ -399,9 +399,9 @@ func newTestClient() *testClient {
 	}
 }
 
-func (client *testClient) CheckNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
+func (client *testClient) CheckNodeConfig(nodeID string, version string, nodeConfig cloudprotocol.NodeConfig) error {
 	client.nodeConfigSetCheckChannel <- testNodeConfig{
-		NodeID:   *nodeConfig.NodeID,
+		NodeID:   nodeID,
 		NodeType: nodeConfig.NodeType,
 		Version:  version,
 	}
@@ -409,9 +409,9 @@ func (client *testClient) CheckNodeConfig(version string, nodeConfig cloudprotoc
 	return nil
 }
 
-func (client *testClient) SetNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
+func (client *testClient) SetNodeConfig(nodeID string, version string, nodeConfig cloudprotocol.NodeConfig) error {
 	client.nodeConfigSetCheckChannel <- testNodeConfig{
-		NodeID:   *nodeConfig.NodeID,
+		NodeID:   nodeID,
 		NodeType: nodeConfig.NodeType,
 		Version:  version,
 	}

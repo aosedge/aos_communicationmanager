@@ -189,12 +189,8 @@ func (controller *Controller) GetNodeConfigStatus(nodeID string) (unitconfig.Nod
 }
 
 // CheckNodeConfig checks node config.
-func (controller *Controller) CheckNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
-	if nodeConfig.NodeID == nil {
-		return aoserrors.Errorf("node ID is not set")
-	}
-
-	handler, err := controller.getNodeHandlerByID(*nodeConfig.NodeID)
+func (controller *Controller) CheckNodeConfig(nodeID, version string, nodeConfig cloudprotocol.NodeConfig) error {
+	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
 		return err
 	}
@@ -207,12 +203,8 @@ func (controller *Controller) CheckNodeConfig(version string, nodeConfig cloudpr
 }
 
 // SetNodeConfig sets node config.
-func (controller *Controller) SetNodeConfig(version string, nodeConfig cloudprotocol.NodeConfig) error {
-	if nodeConfig.NodeID == nil {
-		return aoserrors.Errorf("node ID is not set")
-	}
-
-	handler, err := controller.getNodeHandlerByID(*nodeConfig.NodeID)
+func (controller *Controller) SetNodeConfig(nodeID, version string, nodeConfig cloudprotocol.NodeConfig) error {
+	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
 		return err
 	}
