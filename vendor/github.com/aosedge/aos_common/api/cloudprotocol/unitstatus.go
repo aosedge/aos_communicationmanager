@@ -120,7 +120,7 @@ type NodeInfo struct {
 	NodeType   string                 `json:"type"`
 	Name       string                 `json:"name"`
 	Status     string                 `json:"status"`
-	CPUs       []CPUInfo              `json:"cpus"`
+	CPUs       []CPUInfo              `json:"cpus,omitempty"`
 	OSType     string                 `json:"osType"`
 	MaxDMIPs   uint64                 `json:"maxDmips"`
 	TotalRAM   uint64                 `json:"totalRam"`
