@@ -549,22 +549,8 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		return
 	}
 
-	for _, value := range umCtrl.connections {
-		if value.handler == nil {
-			return
-		}
-	}
-
-	if umCtrl.fsm.Current() == stateInit {
-		log.Debug("All connection to Ums established")
-
-		umCtrl.connectionMonitor.stopConnectionTimer()
-
-		if err := umCtrl.getUpdateComponentsFromStorage(); err != nil {
-			log.Error("Can't read update components from storage: ", err)
-		}
-
-		umCtrl.generateFSMEvent(evAllClientsConnected)
+	if umCtrl.isAllNodesConnected() {
+		umCtrl.processAllNodesConnected()
 	}
 }
 
@@ -1213,29 +1199,48 @@ func (umCtrl *Controller) createConnections() error {
 }
 
 func (umCtrl *Controller) handleNodeInfoChange(nodeInfo cloudprotocol.NodeInfo) {
-	if nodeInfo.Status == "unprovisioned" {
+	switch nodeInfo.Status {
+	case cloudprotocol.NodeStatusPaused:
 		return
-	}
 
-	nodeHasUM, err := umCtrl.nodeHasUMComponent(nodeInfo)
-	if err != nil {
-		log.WithField("nodeID", nodeInfo.NodeID).Errorf("Failed to check UM component: %v", err)
-	}
+	case cloudprotocol.NodeStatusUnprovisioned:
+		ind := slices.IndexFunc(umCtrl.connections, func(conn umConnection) bool {
+			return nodeInfo.NodeID == conn.umID
+		})
 
-	if !nodeHasUM {
-		return
-	}
+		if ind >= 0 {
+			if umCtrl.connections[ind].handler != nil {
+				umCtrl.connections[ind].handler.Close(ConnectionClose)
+			}
 
-	for _, connection := range umCtrl.connections {
-		if connection.umID == nodeInfo.NodeID {
+			umCtrl.connections = append(umCtrl.connections[:ind], umCtrl.connections[ind+1:]...)
+		}
+
+		if umCtrl.isAllNodesConnected() {
+			umCtrl.processAllNodesConnected()
+		}
+
+	case cloudprotocol.NodeStatusProvisioned:
+		nodeHasUM, err := umCtrl.nodeHasUMComponent(nodeInfo)
+		if err != nil {
+			log.WithField("nodeID", nodeInfo.NodeID).Errorf("Failed to check UM component: %v", err)
+		}
+
+		if !nodeHasUM {
 			return
 		}
-	}
 
-	umCtrl.connections = append(umCtrl.connections, umConnection{
-		umID:          nodeInfo.NodeID,
-		isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: lowestUpdatePriority, handler: nil,
-	})
+		for _, connection := range umCtrl.connections {
+			if connection.umID == nodeInfo.NodeID {
+				return
+			}
+		}
+
+		umCtrl.connections = append(umCtrl.connections, umConnection{
+			umID:          nodeInfo.NodeID,
+			isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: lowestUpdatePriority, handler: nil,
+		})
+	}
 }
 
 func (umCtrl *Controller) handleCertChange() {
@@ -1311,4 +1316,28 @@ func (umCtrl *Controller) closeUMServer() {
 	umCtrl.connectionMonitor.stopConnectionTimer()
 
 	umCtrl.server.Stop()
+}
+
+func (umCtrl *Controller) isAllNodesConnected() bool {
+	notConnectedNodeInd := slices.IndexFunc(umCtrl.connections, func(conn umConnection) bool {
+		return conn.handler == nil
+	})
+
+	return notConnectedNodeInd < 0
+}
+
+func (umCtrl *Controller) processAllNodesConnected() {
+	if umCtrl.fsm.Current() != stateInit {
+		return
+	}
+
+	log.Debug("All connection to Ums established")
+
+	umCtrl.connectionMonitor.stopConnectionTimer()
+
+	if err := umCtrl.getUpdateComponentsFromStorage(); err != nil {
+		log.Error("Can't read update components from storage: ", err)
+	}
+
+	umCtrl.generateFSMEvent(evAllClientsConnected)
 }
