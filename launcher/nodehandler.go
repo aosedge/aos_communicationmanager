@@ -118,7 +118,7 @@ func (node *nodeHandler) initAvailableResources(nodeManager NodeManager, rebalan
 	totalCPU := node.nodeInfo.MaxDMIPs
 	totalRAM := node.nodeInfo.TotalRAM
 
-	// For nodes required rebalancing, we need to increase resource consumption below the low	threshold
+	// For nodes required rebalancing, we need to decrease resource consumption below the low threshold
 	if node.needRebalancing {
 		if node.nodeConfig.AlertRules.CPU != nil {
 			totalCPU = uint64(math.Round(float64(node.nodeInfo.MaxDMIPs) *
