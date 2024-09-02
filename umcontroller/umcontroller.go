@@ -196,6 +196,7 @@ const (
 	evAllClientsDisconnected = "allClientsDisconnected"
 
 	evConnectionTimeout   = "connectionTimeout"
+	evConnectionClose     = "connectionClose"
 	evUpdateRequest       = "updateRequest"
 	evContinue            = "continue"
 	evUpdatePrepared      = "updatePrepared"
@@ -599,7 +600,8 @@ func (umCtrl *Controller) handleCloseConnection(umID string, reason closeReason)
 				if provisionedNode {
 					umCtrl.connections[i].handler = nil
 
-					umCtrl.fsm.SetState(stateInit)
+					umCtrl.generateFSMEvent(evConnectionClose)
+					umCtrl.connectionMonitor.wg.Add(1)
 
 					umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
 				} else {
@@ -857,6 +859,12 @@ func (umCtrl *Controller) createStateMachine() (string, []fsm.EventDesc, map[str
 			{Name: evUpdateStatusUpdated, Src: []string{stateStartRevert}, Dst: stateUpdateUmStatusOnRevert},
 			{Name: evContinue, Src: []string{stateUpdateUmStatusOnRevert}, Dst: stateStartRevert},
 			{Name: evSystemReverted, Src: []string{stateStartRevert}, Dst: stateIdle},
+			// process close connection
+			{Name: evConnectionClose, Src: []string{
+				stateIdle, statePrepareUpdate, stateUpdateUmStatusOnPrepareUpdate, stateStartUpdate,
+				stateUpdateUmStatusOnStartUpdate, stateStartApply, stateUpdateUmStatusOnStartApply, stateStartRevert,
+				stateUpdateUmStatusOnRevert, stateFaultState,
+			}, Dst: stateInit},
 
 			{Name: evConnectionTimeout, Src: []string{stateInit}, Dst: stateFaultState},
 		},
