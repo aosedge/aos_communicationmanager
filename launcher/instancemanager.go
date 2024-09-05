@@ -216,9 +216,9 @@ func (im *instanceManager) setupInstance(
 	}
 
 	instanceInfo.UID = uint32(storedInstance.UID)
+	requestedState, requestedStorage := getReqDiskSize(service.Config, node.nodeConfig.ResourceRatios)
 
-	if err = im.setupInstanceStateStorage(&instanceInfo, service,
-		getStorageRequestRatio(service.Config.ResourceRatios, node.nodeConfig.ResourceRatios)); err != nil {
+	if err = im.setupInstanceStateStorage(&instanceInfo, service, requestedState, requestedStorage); err != nil {
 		return aostypes.InstanceInfo{}, err
 	}
 
@@ -278,7 +278,7 @@ func (im *instanceManager) getInstanceCheckSum(instance aostypes.InstanceIdent) 
 
 func (im *instanceManager) setupInstanceStateStorage(
 	instanceInfo *aostypes.InstanceInfo, serviceInfo imagemanager.ServiceInfo,
-	requestRation float64,
+	requestedState, requestedStorage uint64,
 ) error {
 	stateStorageParams := storagestate.SetupParams{
 		InstanceIdent: instanceInfo.InstanceIdent,
@@ -292,9 +292,6 @@ func (im *instanceManager) setupInstanceStateStorage(
 	if serviceInfo.Config.Quotas.StorageLimit != nil {
 		stateStorageParams.StorageQuota = *serviceInfo.Config.Quotas.StorageLimit
 	}
-
-	requestedStorage := uint64(float64(stateStorageParams.StorageQuota)*requestRation + 0.5)
-	requestedState := uint64(float64(stateStorageParams.StateQuota)*requestRation + 0.5)
 
 	if requestedStorage > im.availableStorage {
 		return aoserrors.Errorf("not enough storage space")
