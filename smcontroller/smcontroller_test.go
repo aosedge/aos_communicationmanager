@@ -546,16 +546,16 @@ func TestSMMonitoringNotifications(t *testing.T) {
 				NodeID: nodeID,
 				NodeData: aostypes.MonitoringData{
 					RAM: 10, CPU: 20, Download: 40, Upload: 50,
-					Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
-					Timestamp: now,
+					Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp:  now,
 				},
 				InstancesData: []aostypes.InstanceMonitoring{},
 			},
 			sendMonitoring: &pbsm.InstantMonitoring{
 				NodeMonitoring: &pbsm.MonitoringData{
 					Ram: 10, Cpu: 20, Download: 40, Upload: 50,
-					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
-					Timestamp: timestamppb.New(now),
+					Partitions: []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp:  timestamppb.New(now),
 				},
 			},
 		},
@@ -564,24 +564,24 @@ func TestSMMonitoringNotifications(t *testing.T) {
 				NodeID: nodeID,
 				NodeData: aostypes.MonitoringData{
 					RAM: 10, CPU: 20, Download: 40, Upload: 50,
-					Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
-					Timestamp: now,
+					Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp:  now,
 				},
 				InstancesData: []aostypes.InstanceMonitoring{
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
 						MonitoringData: aostypes.MonitoringData{
 							RAM: 10, CPU: 20, Download: 40, Upload: 0,
-							Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
-							Timestamp: now,
+							Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Timestamp:  now,
 						},
 					},
 					{
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
 						MonitoringData: aostypes.MonitoringData{
 							RAM: 20, CPU: 30, Download: 50, Upload: 10,
-							Disk:      []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
-							Timestamp: now,
+							Partitions: []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Timestamp:  now,
 						},
 					},
 				},
@@ -589,24 +589,24 @@ func TestSMMonitoringNotifications(t *testing.T) {
 			sendMonitoring: &pbsm.InstantMonitoring{
 				NodeMonitoring: &pbsm.MonitoringData{
 					Ram: 10, Cpu: 20, Download: 40, Upload: 50,
-					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
-					Timestamp: timestamppb.New(now),
+					Partitions: []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp:  timestamppb.New(now),
 				},
 				InstancesMonitoring: []*pbsm.InstanceMonitoring{
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
 							Ram: 10, Cpu: 20, Download: 40, Upload: 0,
-							Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
-							Timestamp: timestamppb.New(now),
+							Partitions: []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Timestamp:  timestamppb.New(now),
 						},
 					},
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
 							Ram: 20, Cpu: 30, Download: 50, Upload: 10,
-							Disk:      []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
-							Timestamp: timestamppb.New(now),
+							Partitions: []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Timestamp:  timestamppb.New(now),
 						},
 					},
 				},
@@ -1146,24 +1146,24 @@ func TestGetAverageMonitoring(t *testing.T) {
 			NodeID: nodeID,
 			NodeData: aostypes.MonitoringData{
 				RAM: 10, CPU: 20, Download: 40, Upload: 50,
-				Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
-				Timestamp: currentTime,
+				Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				Timestamp:  currentTime,
 			},
 			InstancesData: []aostypes.InstanceMonitoring{
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "s1", Instance: 1},
 					MonitoringData: aostypes.MonitoringData{
 						RAM: 10, CPU: 20, Download: 40, Upload: 0,
-						Disk:      []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
-						Timestamp: currentTime,
+						Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+						Timestamp:  currentTime,
 					},
 				},
 				{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "s1", Instance: 1},
 					MonitoringData: aostypes.MonitoringData{
 						RAM: 20, CPU: 30, Download: 50, Upload: 10,
-						Disk:      []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
-						Timestamp: currentTime,
+						Partitions: []aostypes.PartitionUsage{{Name: "p2", UsedSize: 50}},
+						Timestamp:  currentTime,
 					},
 				},
 			},
@@ -1172,24 +1172,24 @@ func TestGetAverageMonitoring(t *testing.T) {
 			AverageMonitoring: &pbsm.AverageMonitoring{
 				NodeMonitoring: &pbsm.MonitoringData{
 					Ram: 10, Cpu: 20, Download: 40, Upload: 50,
-					Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
-					Timestamp: timestamppb.New(currentTime),
+					Partitions: []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+					Timestamp:  timestamppb.New(currentTime),
 				},
 				InstancesMonitoring: []*pbsm.InstanceMonitoring{
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service1", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
 							Ram: 10, Cpu: 20, Download: 40, Upload: 0,
-							Disk:      []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
-							Timestamp: timestamppb.New(currentTime),
+							Partitions: []*pbsm.PartitionUsage{{Name: "p1", UsedSize: 100}},
+							Timestamp:  timestamppb.New(currentTime),
 						},
 					},
 					{
 						Instance: &pbcommon.InstanceIdent{ServiceId: "service2", SubjectId: "s1", Instance: 1},
 						MonitoringData: &pbsm.MonitoringData{
 							Ram: 20, Cpu: 30, Download: 50, Upload: 10,
-							Disk:      []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
-							Timestamp: timestamppb.New(currentTime),
+							Partitions: []*pbsm.PartitionUsage{{Name: "p2", UsedSize: 50}},
+							Timestamp:  timestamppb.New(currentTime),
 						},
 					},
 				},

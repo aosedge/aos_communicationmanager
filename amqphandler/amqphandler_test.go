@@ -467,7 +467,7 @@ func TestSendMessages(t *testing.T) {
 	nodeMonitoring := cloudprotocol.NodeMonitoringData{
 		Items: []aostypes.MonitoringData{
 			{
-				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Disk: []aostypes.PartitionUsage{{
+				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Partitions: []aostypes.PartitionUsage{{
 					Name: "p1", UsedSize: 100,
 				}},
 				Timestamp: time.Now().UTC(),
@@ -479,25 +479,25 @@ func TestSendMessages(t *testing.T) {
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 1024, CPU: 50, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 1024, CPU: 50, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 128, CPU: 60, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 128, CPU: 60, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 256, CPU: 70, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 256, CPU: 70, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 512, CPU: 80, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 512, CPU: 80, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 	}
