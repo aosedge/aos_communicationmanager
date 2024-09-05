@@ -311,10 +311,12 @@ func (node *nodeHandler) getRequestedCPU(
 	instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
 ) uint64 {
 	requestedCPU := uint64(0)
+	cpuQuota := serviceConfig.Quotas.CPUDMIPSLimit
 
-	if serviceConfig.Quotas.CPUDMIPSLimit != nil {
-		requestedCPU = uint64(float64(*serviceConfig.Quotas.CPUDMIPSLimit)*getCPURequestRatio(
-			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
+	if serviceConfig.RequestedResources != nil && serviceConfig.RequestedResources.CPU != nil {
+		requestedCPU = clampResource(*serviceConfig.RequestedResources.CPU, cpuQuota)
+	} else {
+		requestedCPU = getReqCPUFromNodeConf(cpuQuota, node.nodeConfig.ResourceRatios)
 	}
 
 	if node.needRebalancing {
@@ -336,10 +338,12 @@ func (node *nodeHandler) getRequestedRAM(
 	instanceIdent aostypes.InstanceIdent, serviceConfig aostypes.ServiceConfig,
 ) uint64 {
 	requestedRAM := uint64(0)
+	ramQuota := serviceConfig.Quotas.RAMLimit
 
-	if serviceConfig.Quotas.RAMLimit != nil {
-		requestedRAM = uint64(float64(*serviceConfig.Quotas.RAMLimit)*getRAMRequestRatio(
-			serviceConfig.ResourceRatios, node.nodeConfig.ResourceRatios) + 0.5)
+	if serviceConfig.RequestedResources != nil && serviceConfig.RequestedResources.RAM != nil {
+		requestedRAM = clampResource(*serviceConfig.RequestedResources.RAM, ramQuota)
+	} else {
+		requestedRAM = getReqRAMFromNodeConf(ramQuota, node.nodeConfig.ResourceRatios)
 	}
 
 	if node.needRebalancing {

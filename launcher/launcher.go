@@ -687,46 +687,104 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	return layers, nil
 }
 
-func getStorageRequestRatio(
-	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
-) float64 {
-	if serviceRatios != nil && serviceRatios.Storage != nil {
-		return float64(*serviceRatios.Storage) / 100
+func getReqDiskSize(serviceConfig aostypes.ServiceConfig, nodeRatios *aostypes.ResourceRatiosInfo,
+) (stateSize, storageSize uint64) {
+	stateQuota := serviceConfig.Quotas.StateLimit
+	storageQuota := serviceConfig.Quotas.StorageLimit
+
+	if serviceConfig.RequestedResources != nil && serviceConfig.RequestedResources.State != nil {
+		stateSize = clampResource(*serviceConfig.RequestedResources.State, stateQuota)
+	} else {
+		stateSize = getReqStateFromNodeConf(stateQuota, nodeRatios)
 	}
+
+	if serviceConfig.RequestedResources != nil && serviceConfig.RequestedResources.Storage != nil {
+		storageSize = clampResource(*serviceConfig.RequestedResources.Storage, storageQuota)
+	} else {
+		storageSize = getReqStorageFromNodeConf(storageQuota, nodeRatios)
+	}
+
+	return stateSize, storageSize
+}
+
+func getReqCPUFromNodeConf(cpuQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
+
+	if nodeRatios != nil && nodeRatios.CPU != nil {
+		ratio = float64(*nodeRatios.CPU) / 100.0
+	}
+
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	if cpuQuota != nil {
+		return uint64(float64(*cpuQuota)*ratio + 0.5)
+	}
+
+	return 0
+}
+
+func getReqRAMFromNodeConf(ramQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
+
+	if nodeRatios != nil && nodeRatios.RAM != nil {
+		ratio = float64(*nodeRatios.RAM) / 100.0
+	}
+
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	if ramQuota != nil {
+		return uint64(float64(*ramQuota)*ratio + 0.5)
+	}
+
+	return 0
+}
+
+func getReqStorageFromNodeConf(storageQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
 
 	if nodeRatios != nil && nodeRatios.Storage != nil {
-		return float64(*nodeRatios.Storage) / 100
+		ratio = float64(*nodeRatios.Storage) / 100.0
 	}
 
-	return defaultResourceRation / 100
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	if storageQuota != nil {
+		return uint64(float64(*storageQuota)*ratio + 0.5)
+	}
+
+	return 0
 }
 
-func getCPURequestRatio(
-	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
-) float64 {
-	if serviceRatios != nil && serviceRatios.CPU != nil {
-		return float64(*serviceRatios.CPU) / 100
+func getReqStateFromNodeConf(stateQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
+
+	if nodeRatios != nil && nodeRatios.State != nil {
+		ratio = float64(*nodeRatios.State) / 100.0
 	}
 
-	if nodeRatios != nil && nodeRatios.CPU != nil {
-		return float64(*nodeRatios.CPU) / 100
+	if ratio > 1.0 {
+		ratio = 1.0
 	}
 
-	return defaultResourceRation / 100
+	if stateQuota != nil {
+		return uint64(float64(*stateQuota)*ratio + 0.5)
+	}
+
+	return 0
 }
 
-func getRAMRequestRatio(
-	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
-) float64 {
-	if serviceRatios != nil && serviceRatios.RAM != nil {
-		return float64(*serviceRatios.RAM) / 100
+func clampResource(value uint64, quota *uint64) uint64 {
+	if quota != nil && value > *quota {
+		return *quota
 	}
 
-	if nodeRatios != nil && nodeRatios.CPU != nil {
-		return float64(*nodeRatios.CPU) / 100
-	}
-
-	return defaultResourceRation / 100
+	return value
 }
 
 func instanceIdentLogFields(instance aostypes.InstanceIdent, extraFields log.Fields) log.Fields {
