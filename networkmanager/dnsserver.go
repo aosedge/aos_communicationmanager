@@ -21,7 +21,6 @@ package networkmanager
 
 import (
 	"bytes"
-	"fmt"
 	"html/template"
 	"os"
 	"os/exec"
@@ -154,7 +153,7 @@ func (dns *dnsServer) rewriteHostsFile() error {
 		entry := ip
 
 		for _, alias := range hosts {
-			entry += fmt.Sprintf("\t%s", alias)
+			entry += "\t" + alias
 		}
 
 		entry += "\n"
@@ -251,7 +250,7 @@ func (dns *dnsServer) start() error {
 	args := []string{
 		"-u",
 		"root",
-		fmt.Sprintf("--conf-file=%s", dns.configFile),
+		"--conf-file=" + dns.configFile,
 	}
 
 	output, err := ExecContext(dns.binary, args...)

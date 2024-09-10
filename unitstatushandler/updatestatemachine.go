@@ -45,6 +45,7 @@ const (
 const (
 	eventStartDownload  = "startDownload"
 	eventFinishDownload = "finishDownload"
+	eventReadyToUpdate  = "readyToUpdate"
 	eventStartUpdate    = "startUpdate"
 	eventFinishUpdate   = "finishUpdate"
 	eventCancel         = "cancel"
@@ -68,7 +69,7 @@ type updateStateMachine struct {
 }
 
 type updateManager interface {
-	stateChanged(event, state, updateErr string)
+	stateChanged(event, state string, updateErr error)
 	download(ctx context.Context)
 	readyToUpdate()
 	update(ctx context.Context)
@@ -145,13 +146,13 @@ func (stateMachine *updateStateMachine) canTransit(event string) (result bool) {
 	return stateMachine.fsm.Can(event)
 }
 
-func (stateMachine *updateStateMachine) sendEvent(event string, managerErr string) (err error) {
+func (stateMachine *updateStateMachine) sendEvent(event string, managerErr error) (err error) {
 	if stateMachine.canTransit(event) {
 		stateMachine.cancel()
 	}
 
 	if err = stateMachine.fsm.Event(context.Background(), event, managerErr); err != nil {
-		log.Errorf("Can't send event: %s", err)
+		log.Errorf("Can't send event: %v", err)
 		return aoserrors.Wrap(err)
 	}
 
@@ -180,23 +181,25 @@ func (stateMachine *updateStateMachine) scheduleUpdate(schedule cloudprotocol.Sc
 
 	stateMachine.updateTimer = time.AfterFunc(updateTime, func() {
 		if err := stateMachine.manager.startUpdate(); err != nil {
-			log.Errorf("Can't start update: %s", err)
+			log.Errorf("Can't start update: %v", err)
 		}
 	})
 }
 
-func (stateMachine *updateStateMachine) finishOperation(ctx context.Context, finishEvent string, operationErr string) {
+func (stateMachine *updateStateMachine) finishOperation(ctx context.Context, finishEvent string, operationErr error) {
 	// Do nothing if context canceled
 	if ctx.Err() != nil {
 		return
 	}
 
 	if err := stateMachine.sendEvent(finishEvent, operationErr); err != nil {
-		log.Errorf("Can't send finish event: %s", err)
+		log.Errorf("Can't send finish event: %v", err)
 	}
 }
 
-func (stateMachine *updateStateMachine) startNewUpdate(ttlTime time.Duration) (ttlDate time.Time, err error) {
+func (stateMachine *updateStateMachine) startNewUpdate(
+	ttlTime time.Duration, downloadRequired bool,
+) (ttlDate time.Time, err error) {
 	if ttlTime == 0 {
 		ttlTime = stateMachine.defaultTTL
 	}
@@ -207,8 +210,14 @@ func (stateMachine *updateStateMachine) startNewUpdate(ttlTime time.Duration) (t
 		stateMachine.setTTLTimer(ttlTime)
 	}
 
-	if err = stateMachine.sendEvent(eventStartDownload, ""); err != nil {
-		return ttlDate, aoserrors.Wrap(err)
+	if downloadRequired {
+		if err = stateMachine.sendEvent(eventStartDownload, nil); err != nil {
+			return ttlDate, aoserrors.Wrap(err)
+		}
+	} else {
+		if err = stateMachine.sendEvent(eventReadyToUpdate, nil); err != nil {
+			return ttlDate, aoserrors.Wrap(err)
+		}
 	}
 
 	return ttlDate, nil
@@ -249,11 +258,11 @@ func (stateMachine *updateStateMachine) cancel() {
 }
 
 func (stateMachine *updateStateMachine) onBeforeEvent(ctx context.Context, event *fsm.Event) {
-	var managerErr string
+	var managerErr error
 
 	if len(event.Args) != 0 {
-		if errorStr, ok := event.Args[0].(string); ok {
-			managerErr = errorStr
+		if err, ok := event.Args[0].(error); ok {
+			managerErr = err
 		}
 	}
 

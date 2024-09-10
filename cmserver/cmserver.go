@@ -24,8 +24,9 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
-	pb "github.com/aosedge/aos_common/api/communicationmanager/v2"
+	pb "github.com/aosedge/aos_common/api/communicationmanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
+	"github.com/aosedge/aos_common/utils/pbconvert"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -61,22 +62,23 @@ type UpdateState int
 // UpdateStatus represents SOTA/FOTA status.
 type UpdateStatus struct {
 	State UpdateState
-	Error string
+	Error *cloudprotocol.ErrorInfo
 }
 
 // UpdateFOTAStatus FOTA update status for update scheduler service.
 type UpdateFOTAStatus struct {
 	Components []cloudprotocol.ComponentStatus
-	UnitConfig *cloudprotocol.UnitConfigStatus
 	UpdateStatus
 }
 
 // UpdateSOTAStatus SOTA update status for update scheduler service.
 type UpdateSOTAStatus struct {
-	InstallServices []cloudprotocol.ServiceStatus
-	RemoveServices  []cloudprotocol.ServiceStatus
-	InstallLayers   []cloudprotocol.LayerStatus
-	RemoveLayers    []cloudprotocol.LayerStatus
+	UnitConfig       *cloudprotocol.UnitConfigStatus
+	InstallServices  []cloudprotocol.ServiceStatus
+	RemoveServices   []cloudprotocol.ServiceStatus
+	InstallLayers    []cloudprotocol.LayerStatus
+	RemoveLayers     []cloudprotocol.LayerStatus
+	RebalanceRequest bool
 	UpdateStatus
 }
 
@@ -185,7 +187,7 @@ func (server *CMServer) Close() {
 	server.stopChannel <- true
 }
 
-// SubscribeNotifications sunscribes on SOTA FOTA packages status changes.
+// SubscribeNotifications subscribes on SOTA FOTA packages status changes.
 func (server *CMServer) SubscribeNotifications(
 	req *empty.Empty, stream pb.UpdateSchedulerService_SubscribeNotificationsServer,
 ) (err error) {
@@ -316,37 +318,43 @@ func (server *CMServer) notifyAllClients(notification *pb.SchedulerNotifications
 }
 
 func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSOTAStatus) {
-	pbStatus = new(pb.UpdateSOTAStatus)
+	pbStatus = &pb.UpdateSOTAStatus{
+		Error:            pbconvert.ErrorInfoToPB(updateStatus.Error),
+		State:            updateStatus.State.getPbState(),
+		RebalanceRequest: updateStatus.RebalanceRequest,
+	}
 
-	pbStatus.Error = updateStatus.Error
-
-	pbStatus.State = updateStatus.State.getPbState()
+	if updateStatus.UnitConfig != nil {
+		pbStatus.UnitConfig = &pb.UnitConfigInfo{Version: updateStatus.UnitConfig.Version}
+	}
 
 	for _, layer := range updateStatus.InstallLayers {
 		pbStatus.InstallLayers = append(pbStatus.GetInstallLayers(), &pb.LayerInfo{
-			Id:         layer.ID,
-			AosVersion: layer.AosVersion, Digest: layer.Digest,
+			LayerId: layer.LayerID,
+			Digest:  layer.Digest,
+			Version: layer.Version,
 		})
 	}
 
 	for _, layer := range updateStatus.RemoveLayers {
 		pbStatus.RemoveLayers = append(pbStatus.GetRemoveLayers(), &pb.LayerInfo{
-			Id:         layer.ID,
-			AosVersion: layer.AosVersion, Digest: layer.Digest,
+			LayerId: layer.LayerID,
+			Digest:  layer.Digest,
+			Version: layer.Version,
 		})
 	}
 
 	for _, service := range updateStatus.InstallServices {
 		pbStatus.InstallServices = append(pbStatus.GetInstallServices(), &pb.ServiceInfo{
-			Id:         service.ID,
-			AosVersion: service.AosVersion,
+			ServiceId: service.ServiceID,
+			Version:   service.Version,
 		})
 	}
 
 	for _, service := range updateStatus.RemoveServices {
 		pbStatus.RemoveServices = append(pbStatus.GetRemoveServices(), &pb.ServiceInfo{
-			Id:         service.ID,
-			AosVersion: service.AosVersion,
+			ServiceId: service.ServiceID,
+			Version:   service.Version,
 		})
 	}
 
@@ -354,19 +362,17 @@ func (updateStatus *UpdateSOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateSO
 }
 
 func (updateStatus *UpdateFOTAStatus) convertToPBStatus() (pbStatus *pb.UpdateFOTAStatus) {
-	pbStatus = new(pb.UpdateFOTAStatus)
-	pbStatus.Error = updateStatus.Error
-	pbStatus.State = updateStatus.State.getPbState()
+	pbStatus = &pb.UpdateFOTAStatus{
+		Error: pbconvert.ErrorInfoToPB(updateStatus.Error),
+		State: updateStatus.State.getPbState(),
+	}
 
 	for _, component := range updateStatus.Components {
 		pbStatus.Components = append(pbStatus.GetComponents(), &pb.ComponentInfo{
-			Id:         component.ID,
-			AosVersion: component.AosVersion, VendorVersion: component.VendorVersion,
+			ComponentId:   component.ComponentID,
+			ComponentType: component.ComponentType,
+			Version:       component.Version,
 		})
-	}
-
-	if updateStatus.UnitConfig != nil {
-		pbStatus.UnitConfig = &pb.UnitConfigInfo{VendorVersion: updateStatus.UnitConfig.VendorVersion}
 	}
 
 	return pbStatus

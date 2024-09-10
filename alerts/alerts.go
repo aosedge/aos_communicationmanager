@@ -21,7 +21,6 @@ package alerts
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"sync"
 	"time"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aosedge/aos_common/utils/alertutils"
 	"github.com/aosedge/aos_communicationmanager/amqphandler"
 	"github.com/aosedge/aos_communicationmanager/config"
 )
@@ -56,7 +56,7 @@ type Sender interface {
 // Alerts instance.
 type Alerts struct {
 	sync.RWMutex
-	alertsChannel        chan cloudprotocol.AlertItem
+	alertsChannel        chan interface{}
 	alertsPackageChannel chan cloudprotocol.Alerts
 	currentAlerts        cloudprotocol.Alerts
 	senderCancelFunction context.CancelFunc
@@ -79,7 +79,7 @@ func New(config config.Alerts, sender Sender) (instance *Alerts, err error) {
 	instance = &Alerts{
 		config:               config,
 		sender:               sender,
-		alertsChannel:        make(chan cloudprotocol.AlertItem, alertChannelSize),
+		alertsChannel:        make(chan interface{}, alertChannelSize),
 		alertsPackageChannel: make(chan cloudprotocol.Alerts, config.MaxOfflineMessages),
 	}
 
@@ -110,7 +110,7 @@ func (instance *Alerts) Close() {
 }
 
 // SendAlert sends alert.
-func (instance *Alerts) SendAlert(alert cloudprotocol.AlertItem) {
+func (instance *Alerts) SendAlert(alert interface{}) {
 	select {
 	case instance.alertsChannel <- alert:
 
@@ -190,12 +190,12 @@ func (instance *Alerts) processAlertChannels(ctx context.Context) {
 	}
 }
 
-func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) (bufferIsFull bool) {
+func (instance *Alerts) addAlert(item interface{}) (bufferIsFull bool) {
 	instance.Lock()
 	defer instance.Unlock()
 
-	if len(instance.currentAlerts) != 0 &&
-		reflect.DeepEqual(instance.currentAlerts[len(instance.currentAlerts)-1].Payload, item.Payload) {
+	if len(instance.currentAlerts.Items) != 0 &&
+		alertutils.AlertsPayloadEqual(instance.currentAlerts.Items[len(instance.currentAlerts.Items)-1], item) {
 		instance.duplicatedAlerts++
 		return
 	}
@@ -206,7 +206,7 @@ func (instance *Alerts) addAlert(item cloudprotocol.AlertItem) (bufferIsFull boo
 	}
 
 	instance.alertsSize += len(data)
-	instance.currentAlerts = append(instance.currentAlerts, item)
+	instance.currentAlerts.Items = append(instance.currentAlerts.Items, item)
 
 	return instance.alertsSize >= instance.config.MaxMessageSize
 }
@@ -233,7 +233,7 @@ func (instance *Alerts) prepareAlertsPackage() {
 		log.Warn("Skip sending alerts due to channel is full")
 	}
 
-	instance.currentAlerts = []cloudprotocol.AlertItem{}
+	instance.currentAlerts.Items = make([]interface{}, 0)
 	instance.skippedAlerts = 0
 	instance.duplicatedAlerts = 0
 	instance.alertsSize = 0

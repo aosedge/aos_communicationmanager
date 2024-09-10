@@ -20,23 +20,22 @@ package smcontroller
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"io"
 	"reflect"
 	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
-	pb "github.com/aosedge/aos_common/api/servicemanager/v3"
+	"github.com/aosedge/aos_common/api/common"
+	pb "github.com/aosedge/aos_common/api/servicemanager"
+	"github.com/aosedge/aos_common/resourcemonitor"
 	"github.com/aosedge/aos_common/utils/pbconvert"
 	"github.com/aosedge/aos_common/utils/syncstream"
 	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/aosedge/aos_communicationmanager/launcher"
+	"github.com/aosedge/aos_communicationmanager/unitconfig"
 )
 
 /***********************************************************************************************************************
@@ -50,15 +49,17 @@ const waitMessageTimeout = 5 * time.Second
  **********************************************************************************************************************/
 
 type smHandler struct {
+	nodeID                 string
+	nodeType               string
 	stream                 pb.SMService_RegisterSMServer
 	messageSender          MessageSender
 	alertSender            AlertSender
 	monitoringSender       MonitoringSender
 	syncstream             *syncstream.SyncStream
-	config                 launcher.NodeInfo
+	nodeConfigStatus       unitconfig.NodeConfigStatus
 	runStatusCh            chan<- launcher.NodeRunInstanceStatus
 	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus
-	systemLimitAlertCh     chan<- cloudprotocol.SystemQuotaAlert
+	systemQuotasAlertCh    chan<- cloudprotocol.SystemQuotaAlert
 }
 
 /***********************************************************************************************************************
@@ -66,89 +67,96 @@ type smHandler struct {
  **********************************************************************************************************************/
 
 func newSMHandler(
+	nodeID, nodeType string,
 	stream pb.SMService_RegisterSMServer, messageSender MessageSender, alertSender AlertSender,
-	monitoringSender MonitoringSender, config launcher.NodeInfo,
-	runStatusCh chan<- launcher.NodeRunInstanceStatus, updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus,
-	systemLimitAlertCh chan<- cloudprotocol.SystemQuotaAlert,
+	monitoringSender MonitoringSender, runStatusCh chan<- launcher.NodeRunInstanceStatus,
+	updateInstanceStatusCh chan<- []cloudprotocol.InstanceStatus,
+	systemQuotasAlertCh chan<- cloudprotocol.SystemQuotaAlert,
 ) (*smHandler, error) {
 	handler := smHandler{
+		nodeID:                 nodeID,
+		nodeType:               nodeType,
 		stream:                 stream,
 		messageSender:          messageSender,
 		alertSender:            alertSender,
 		monitoringSender:       monitoringSender,
 		syncstream:             syncstream.New(),
-		config:                 config,
 		runStatusCh:            runStatusCh,
 		updateInstanceStatusCh: updateInstanceStatusCh,
-		systemLimitAlertCh:     systemLimitAlertCh,
+		systemQuotasAlertCh:    systemQuotasAlertCh,
 	}
 
 	return &handler, nil
 }
 
-func (handler *smHandler) getUnitConfigState() (vendorVersion string, err error) {
+func (handler *smHandler) getNodeConfigStatus() (unitconfig.NodeConfigStatus, error) {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), waitMessageTimeout)
 	defer cancelFunc()
 
 	status, err := handler.syncstream.Send(
-		ctx, handler.sendGetUnitConfigStatus, reflect.TypeOf(&pb.SMOutgoingMessages_UnitConfigStatus{}))
+		ctx, handler.sendGetNodeConfigStatus, reflect.TypeOf(&pb.SMOutgoingMessages_NodeConfigStatus{}))
 	if err != nil {
-		return vendorVersion, aoserrors.Wrap(err)
+		return unitconfig.NodeConfigStatus{}, aoserrors.Wrap(err)
 	}
 
-	pbStatus, ok := status.(*pb.SMOutgoingMessages_UnitConfigStatus)
+	pbStatus, ok := status.(*pb.SMOutgoingMessages_NodeConfigStatus)
 	if !ok {
-		return "", aoserrors.New("incorrect type")
+		return unitconfig.NodeConfigStatus{}, aoserrors.New("incorrect type")
 	}
 
-	if pbStatus.UnitConfigStatus.GetError() != "" {
-		return vendorVersion, aoserrors.New(pbStatus.UnitConfigStatus.GetError())
+	if pbStatus.NodeConfigStatus.GetError().GetMessage() != "" {
+		return unitconfig.NodeConfigStatus{}, aoserrors.New(pbStatus.NodeConfigStatus.GetError().GetMessage())
 	}
 
-	return pbStatus.UnitConfigStatus.GetVendorVersion(), nil
+	nodeConfigStatus := nodeConfigStatusFromPB(pbStatus.NodeConfigStatus)
+
+	nodeConfigStatus.NodeID = handler.nodeID
+	nodeConfigStatus.NodeType = handler.nodeType
+
+	return nodeConfigStatus, nil
 }
 
-func (handler *smHandler) checkUnitConfigState(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
+func (handler *smHandler) checkNodeConfig(version string, unitConfig cloudprotocol.NodeConfig) error {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), waitMessageTimeout)
 	defer cancelFunc()
 
 	status, err := handler.syncstream.Send(ctx, func() error {
-		return handler.sendCheckUnitConfig(cfg, vendorVersion)
-	}, reflect.TypeOf(&pb.SMOutgoingMessages_UnitConfigStatus{}))
+		return handler.sendCheckNodeConfig(unitConfig, version)
+	}, reflect.TypeOf(&pb.SMOutgoingMessages_NodeConfigStatus{}))
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	pbStatus, ok := status.(*pb.SMOutgoingMessages_UnitConfigStatus)
+	pbStatus, ok := status.(*pb.SMOutgoingMessages_NodeConfigStatus)
 	if !ok {
 		return aoserrors.New("incorrect type")
 	}
 
-	if pbStatus.UnitConfigStatus.GetError() != "" {
-		return aoserrors.New(pbStatus.UnitConfigStatus.GetError())
+	if pbStatus.NodeConfigStatus.GetError() != nil {
+		return aoserrors.New(pbStatus.NodeConfigStatus.GetError().GetMessage())
 	}
 
 	return nil
 }
 
-func (handler *smHandler) setUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
+func (handler *smHandler) setNodeConfig(version string, cfg cloudprotocol.NodeConfig) error {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), waitMessageTimeout)
 	defer cancelFunc()
 
 	status, err := handler.syncstream.Send(ctx, func() error {
-		return handler.sendSetUnitConfig(cfg, vendorVersion)
-	}, reflect.TypeOf(&pb.SMOutgoingMessages_UnitConfigStatus{}))
+		return handler.sendSetNodeConfig(cfg, version)
+	}, reflect.TypeOf(&pb.SMOutgoingMessages_NodeConfigStatus{}))
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	pbStatus, ok := status.(*pb.SMOutgoingMessages_UnitConfigStatus)
+	pbStatus, ok := status.(*pb.SMOutgoingMessages_NodeConfigStatus)
 	if !ok {
 		return aoserrors.New("incorrect type")
 	}
 
-	if pbStatus.UnitConfigStatus.GetError() != "" {
-		return aoserrors.New(pbStatus.UnitConfigStatus.GetError())
+	if pbStatus.NodeConfigStatus.GetError() != nil {
+		return aoserrors.New(pbStatus.NodeConfigStatus.GetError().GetMessage())
 	}
 
 	return nil
@@ -156,7 +164,8 @@ func (handler *smHandler) setUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersi
 
 func (handler *smHandler) updateNetworks(networkParameters []aostypes.NetworkParameters) error {
 	log.WithFields(log.Fields{
-		"nodeID": handler.config.NodeID,
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
 	}).Debug("CM update networks")
 
 	pbNetworkParameters := make([]*pb.NetworkParameters, len(networkParameters))
@@ -185,7 +194,8 @@ func (handler *smHandler) runInstances(
 	services []aostypes.ServiceInfo, layers []aostypes.LayerInfo, instances []aostypes.InstanceInfo, forceRestart bool,
 ) error {
 	log.WithFields(log.Fields{
-		"nodeID": handler.config.NodeID,
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
 	}).Debug("SM run instances")
 
 	pbRunInstances := &pb.RunInstances{
@@ -197,33 +207,23 @@ func (handler *smHandler) runInstances(
 
 	for i, serviceInfo := range services {
 		pbRunInstances.Services[i] = &pb.ServiceInfo{
-			VersionInfo: &pb.VersionInfo{
-				AosVersion:    serviceInfo.AosVersion,
-				VendorVersion: serviceInfo.VendorVersion,
-				Description:   serviceInfo.Description,
-			},
+			Version:    serviceInfo.Version,
 			Url:        serviceInfo.URL,
-			ServiceId:  serviceInfo.ID,
+			ServiceId:  serviceInfo.ServiceID,
 			ProviderId: serviceInfo.ProviderID,
 			Gid:        serviceInfo.GID,
 			Sha256:     serviceInfo.Sha256,
-			Sha512:     serviceInfo.Sha512,
 			Size:       serviceInfo.Size,
 		}
 	}
 
 	for i, layerInfo := range layers {
 		pbRunInstances.Layers[i] = &pb.LayerInfo{
-			VersionInfo: &pb.VersionInfo{
-				AosVersion:    layerInfo.AosVersion,
-				VendorVersion: layerInfo.VendorVersion,
-				Description:   layerInfo.Description,
-			},
+			Version: layerInfo.Version,
 			Url:     layerInfo.URL,
-			LayerId: layerInfo.ID,
+			LayerId: layerInfo.LayerID,
 			Digest:  layerInfo.Digest,
 			Sha256:  layerInfo.Sha256,
-			Sha512:  layerInfo.Sha512,
 			Size:    layerInfo.Size,
 		}
 	}
@@ -250,10 +250,11 @@ func (handler *smHandler) runInstances(
 
 func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
-		"nodeID": handler.config.NodeID,
-		"logID":  logRequest.LogID,
-		"from":   logRequest.Filter.From,
-		"till":   logRequest.Filter.Till,
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+		"logID":    logRequest.LogID,
+		"from":     logRequest.Filter.From,
+		"till":     logRequest.Filter.Till,
 	}).Debug("Get SM system log")
 
 	request := &pb.SystemLogRequest{LogId: logRequest.LogID}
@@ -278,7 +279,8 @@ func (handler *smHandler) getSystemLog(logRequest cloudprotocol.RequestLog) (err
 //nolint:dupl
 func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
+		"nodeID":    handler.nodeID,
+		"nodeType":  handler.nodeType,
 		"logID":     logRequest.LogID,
 		"serviceID": logRequest.Filter.ServiceID,
 		"from":      logRequest.Filter.From,
@@ -286,7 +288,7 @@ func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (e
 	}).Debug("Get instance log")
 
 	request := &pb.InstanceLogRequest{
-		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
+		LogId: logRequest.LogID, InstanceFilter: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
 	}
 
 	if logRequest.Filter.From != nil {
@@ -309,7 +311,8 @@ func (handler *smHandler) getInstanceLog(logRequest cloudprotocol.RequestLog) (e
 //nolint:dupl
 func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLog) (err error) {
 	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
+		"nodeID":    handler.nodeID,
+		"nodeType":  handler.nodeType,
 		"logID":     logRequest.LogID,
 		"serviceID": logRequest.Filter.ServiceID,
 		"from":      logRequest.Filter.From,
@@ -317,7 +320,7 @@ func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLo
 	}).Debug("Get instance crash log")
 
 	request := &pb.InstanceCrashLogRequest{
-		LogId: logRequest.LogID, Instance: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
+		LogId: logRequest.LogID, InstanceFilter: pbconvert.InstanceFilterToPB(logRequest.Filter.InstanceFilter),
 	}
 
 	if logRequest.Filter.From != nil {
@@ -340,24 +343,27 @@ func (handler *smHandler) getInstanceCrashLog(logRequest cloudprotocol.RequestLo
 }
 
 func (handler *smHandler) overrideEnvVars(envVars cloudprotocol.OverrideEnvVars) (err error) {
-	log.WithFields(log.Fields{"nodeID": handler.config.NodeID}).Debug("Override env vars SM ")
+	log.WithFields(log.Fields{
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+	}).Debug("Override env vars SM ")
 
-	request := &pb.OverrideEnvVars{EnvVars: make([]*pb.OverrideInstanceEnvVar, len(envVars.OverrideEnvVars))}
+	request := &pb.OverrideEnvVars{EnvVars: make([]*pb.OverrideInstanceEnvVar, len(envVars.Items))}
 
-	for i, item := range envVars.OverrideEnvVars {
+	for i, item := range envVars.Items {
 		requestItem := &pb.OverrideInstanceEnvVar{
-			Instance: pbconvert.InstanceFilterToPB(item.InstanceFilter),
-			Vars:     make([]*pb.EnvVarInfo, len(item.EnvVars)),
+			InstanceFilter: pbconvert.InstanceFilterToPB(item.InstanceFilter),
+			Variables:      make([]*pb.EnvVarInfo, len(item.Variables)),
 		}
 
-		for j, envVar := range item.EnvVars {
-			requestVar := &pb.EnvVarInfo{VarId: envVar.ID, Variable: envVar.Variable}
+		for j, envVar := range item.Variables {
+			requestVar := &pb.EnvVarInfo{Name: envVar.Name, Value: envVar.Value}
 
 			if envVar.TTL != nil {
 				requestVar.Ttl = timestamppb.New(*envVar.TTL)
 			}
 
-			requestItem.Vars[j] = requestVar
+			requestItem.Variables[j] = requestVar
 		}
 
 		request.EnvVars[i] = requestItem
@@ -372,165 +378,171 @@ func (handler *smHandler) overrideEnvVars(envVars cloudprotocol.OverrideEnvVars)
 	return nil
 }
 
-func (handler *smHandler) getNodeMonitoring() (data cloudprotocol.NodeMonitoringData, err error) {
+func (handler *smHandler) getAverageMonitoring() (monitoring aostypes.NodeMonitoring, err error) {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), waitMessageTimeout)
 	defer cancelFunc()
 
 	status, err := handler.syncstream.Send(
-		ctx, handler.sendGetNodeMonitoring, reflect.TypeOf(&pb.SMOutgoingMessages_NodeMonitoring{}))
+		ctx, handler.sendGetAverageMonitoring, reflect.TypeOf(&pb.SMOutgoingMessages_AverageMonitoring{}))
 	if err != nil {
-		return data, aoserrors.Wrap(err)
+		return monitoring, aoserrors.Wrap(err)
 	}
 
-	pbMonitoring, ok := status.(*pb.SMOutgoingMessages_NodeMonitoring)
+	pbMonitoring, ok := status.(*pb.SMOutgoingMessages_AverageMonitoring)
 	if !ok {
-		return data, aoserrors.New("incorrect type")
+		return monitoring, aoserrors.New("incorrect type")
 	}
 
-	data = nodeMonitoringFromPb(pbMonitoring.NodeMonitoring)
-	data.NodeID = handler.config.NodeID
+	monitoring = averageMonitoringFromPB(pbMonitoring.AverageMonitoring)
+	monitoring.NodeID = handler.nodeID
 
-	return data, nil
+	return monitoring, nil
 }
 
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
-func (handler *smHandler) processSMMessages() {
-	for {
-		message, err := handler.stream.Recv()
-		if err != nil {
-			if !errors.Is(err, io.EOF) && codes.Canceled != status.Code(err) {
-				log.Errorf("Close SM client connection error: %v", err)
-			}
+func (handler *smHandler) processSMMessages(message *pb.SMOutgoingMessages) {
+	if handler.syncstream.ProcessMessages(message.GetSMOutgoingMessage()) {
+		return
+	}
 
-			return
-		}
+	switch data := message.GetSMOutgoingMessage().(type) {
+	case *pb.SMOutgoingMessages_InstantMonitoring:
+		handler.processInstantMonitoring(data.InstantMonitoring)
 
-		if handler.syncstream.ProcessMessages(message.GetSMOutgoingMessage()) {
-			continue
-		}
+	case *pb.SMOutgoingMessages_Alert:
+		handler.processAlert(data.Alert)
 
-		switch data := message.GetSMOutgoingMessage().(type) {
-		case *pb.SMOutgoingMessages_NodeMonitoring:
-			handler.processMonitoring(data.NodeMonitoring)
+	case *pb.SMOutgoingMessages_RunInstancesStatus:
+		handler.processRunInstanceStatus(data.RunInstancesStatus)
 
-		case *pb.SMOutgoingMessages_Alert:
-			handler.processAlert(data.Alert)
+	case *pb.SMOutgoingMessages_UpdateInstancesStatus:
+		handler.processUpdateInstancesStatus(data.UpdateInstancesStatus)
 
-		case *pb.SMOutgoingMessages_NodeConfiguration:
-			log.Errorf("Unexpected node configuration msg from %s", data.NodeConfiguration.GetNodeId())
+	case *pb.SMOutgoingMessages_Log:
+		handler.processLogMessage(data.Log)
 
-		case *pb.SMOutgoingMessages_RunInstancesStatus:
-			handler.processRunInstanceStatus(data.RunInstancesStatus)
+	case *pb.SMOutgoingMessages_OverrideEnvVarStatus:
+		handler.processOverrideEnvVarsStatus(data.OverrideEnvVarStatus)
 
-		case *pb.SMOutgoingMessages_UpdateInstancesStatus:
-			handler.processUpdateInstancesStatus(data.UpdateInstancesStatus)
+	case *pb.SMOutgoingMessages_ClockSyncRequest:
+		handler.sendClockSyncResponse()
 
-		case *pb.SMOutgoingMessages_Log:
-			handler.processLogMessage(data.Log)
-
-		case *pb.SMOutgoingMessages_OverrideEnvVarStatus:
-			handler.processOverrideEnvVarsStatus(data.OverrideEnvVarStatus)
-
-		case *pb.SMOutgoingMessages_ClockSyncRequest:
-			handler.sendClockSyncResponse()
-
-		default:
-			log.Warn("Received unprocessed message")
-		}
+	default:
+		log.Warnf("Received unprocessed message: %v", data)
 	}
 }
 
 func (handler *smHandler) processRunInstanceStatus(status *pb.RunInstancesStatus) {
 	runStatus := launcher.NodeRunInstanceStatus{
-		NodeID: handler.config.NodeID, NodeType: handler.config.NodeType,
-		Instances: instancesStatusFromPB(status.GetInstances(), handler.config.NodeID),
+		NodeID:    handler.nodeID,
+		NodeType:  handler.nodeType,
+		Instances: instancesStatusFromPB(status.GetInstances(), handler.nodeID),
 	}
 
 	handler.runStatusCh <- runStatus
 }
 
 func (handler *smHandler) processUpdateInstancesStatus(data *pb.UpdateInstancesStatus) {
-	log.WithFields(log.Fields{"nodeID": handler.config.NodeID}).Debug("Receive SM update instances status")
+	log.WithFields(log.Fields{
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+	}).Debug("Receive SM update instances status")
 
-	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.GetInstances(), handler.config.NodeID)
+	handler.updateInstanceStatusCh <- instancesStatusFromPB(data.GetInstances(), handler.nodeID)
 }
 
 func (handler *smHandler) processAlert(alert *pb.Alert) {
 	log.WithFields(log.Fields{
-		"nodeID": handler.config.NodeID,
-		"tag":    alert.GetTag(),
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+		"tag":      alert.GetTag(),
 	}).Debug("Receive SM alert")
 
-	alertItem := cloudprotocol.AlertItem{
-		Timestamp: alert.GetTimestamp().AsTime(),
-		Tag:       alert.GetTag(),
-	}
+	timestamp := alert.GetTimestamp().AsTime()
+	tag := alert.GetTag()
 
-	switch data := alert.GetPayload().(type) {
+	var alertItem interface{}
+
+	switch data := alert.GetAlertItem().(type) {
 	case *pb.Alert_SystemAlert:
-		alertItem.Payload = cloudprotocol.SystemAlert{
-			Message: data.SystemAlert.GetMessage(),
-			NodeID:  handler.config.NodeID,
+		alertItem = cloudprotocol.SystemAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			Message:   data.SystemAlert.GetMessage(),
+			NodeID:    handler.nodeID,
 		}
 
 	case *pb.Alert_CoreAlert:
-		alertItem.Payload = cloudprotocol.CoreAlert{
+		alertItem = cloudprotocol.CoreAlert{
+			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			CoreComponent: data.CoreAlert.GetCoreComponent(),
 			Message:       data.CoreAlert.GetMessage(),
-			NodeID:        handler.config.NodeID,
+			NodeID:        handler.nodeID,
 		}
 
 	case *pb.Alert_ResourceValidateAlert:
-		resourceValidate := cloudprotocol.ResourceValidateAlert{
-			ResourcesErrors: make([]cloudprotocol.ResourceValidateError, len(data.ResourceValidateAlert.GetErrors())),
-			NodeID:          handler.config.NodeID,
+		concreteAlert := cloudprotocol.ResourceValidateAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			Errors:    make([]cloudprotocol.ErrorInfo, len(data.ResourceValidateAlert.GetErrors())),
+			NodeID:    handler.nodeID,
+			Name:      data.ResourceValidateAlert.GetName(),
 		}
 
-		for i, resourceError := range data.ResourceValidateAlert.GetErrors() {
-			resourceValidate.ResourcesErrors[i] = cloudprotocol.ResourceValidateError{
-				Name:   resourceError.GetName(),
-				Errors: resourceError.GetErrorMsg(),
-			}
+		for i, error := range data.ResourceValidateAlert.GetErrors() {
+			concreteAlert.Errors[i] = *pbconvert.ErrorInfoFromPB(error)
 		}
 
-		alertItem.Payload = resourceValidate
+		alertItem = concreteAlert
 
 	case *pb.Alert_DeviceAllocateAlert:
-		alertItem.Payload = cloudprotocol.DeviceAllocateAlert{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.DeviceAllocateAlert.GetInstance()),
+		alertItem = cloudprotocol.DeviceAllocateAlert{
+			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			InstanceIdent: pbconvert.InstanceIdentFromPB(data.DeviceAllocateAlert.GetInstance()),
 			Device:        data.DeviceAllocateAlert.GetDevice(),
 			Message:       data.DeviceAllocateAlert.GetMessage(),
-			NodeID:        handler.config.NodeID,
+			NodeID:        handler.nodeID,
 		}
 
 	case *pb.Alert_SystemQuotaAlert:
-		alertPayload := cloudprotocol.SystemQuotaAlert{
+		concreteAlert := cloudprotocol.SystemQuotaAlert{
+			AlertItem: cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
 			Parameter: data.SystemQuotaAlert.GetParameter(),
 			Value:     data.SystemQuotaAlert.GetValue(),
-			NodeID:    handler.config.NodeID,
+			NodeID:    handler.nodeID,
+			Status:    data.SystemQuotaAlert.GetStatus(),
 		}
 
-		if alertPayload.Parameter == "cpu" || alertPayload.Parameter == "ram" {
-			handler.systemLimitAlertCh <- alertPayload
+		handler.systemQuotasAlertCh <- concreteAlert
+
+		if concreteAlert.Status != resourcemonitor.AlertStatusRaise {
+			return
 		}
 
-		alertItem.Payload = alertPayload
+		alertItem = concreteAlert
 
 	case *pb.Alert_InstanceQuotaAlert:
-		alertItem.Payload = cloudprotocol.InstanceQuotaAlert{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.InstanceQuotaAlert.GetInstance()),
+		concreteAlert := cloudprotocol.InstanceQuotaAlert{
+			AlertItem:     cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			InstanceIdent: pbconvert.InstanceIdentFromPB(data.InstanceQuotaAlert.GetInstance()),
 			Parameter:     data.InstanceQuotaAlert.GetParameter(),
 			Value:         data.InstanceQuotaAlert.GetValue(),
+			Status:        data.InstanceQuotaAlert.GetStatus(),
 		}
 
+		if concreteAlert.Status != resourcemonitor.AlertStatusRaise {
+			return
+		}
+
+		alertItem = concreteAlert
+
 	case *pb.Alert_InstanceAlert:
-		alertItem.Payload = cloudprotocol.ServiceInstanceAlert{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(data.InstanceAlert.GetInstance()),
-			AosVersion:    data.InstanceAlert.GetAosVersion(),
-			Message:       data.InstanceAlert.GetMessage(),
+		alertItem = cloudprotocol.ServiceInstanceAlert{
+			AlertItem:      cloudprotocol.AlertItem{Timestamp: timestamp, Tag: tag},
+			InstanceIdent:  pbconvert.InstanceIdentFromPB(data.InstanceAlert.GetInstance()),
+			ServiceVersion: data.InstanceAlert.GetServiceVersion(),
+			Message:        data.InstanceAlert.GetMessage(),
 		}
 
 	default:
@@ -542,55 +554,65 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 
 func (handler *smHandler) processLogMessage(data *pb.LogData) {
 	log.WithFields(log.Fields{
-		"nodeID":    handler.config.NodeID,
+		"nodeID":    handler.nodeID,
+		"nodeType":  handler.nodeType,
 		"logID":     data.GetLogId(),
 		"part":      data.GetPart(),
 		"partCount": data.GetPartCount(),
 	}).Debug("Receive SM push log")
 
 	if err := handler.messageSender.SendLog(cloudprotocol.PushLog{
-		NodeID:     handler.config.NodeID,
+		NodeID:     handler.nodeID,
 		LogID:      data.GetLogId(),
 		PartsCount: data.GetPartCount(),
 		Part:       data.GetPart(),
 		Content:    data.GetData(),
 		ErrorInfo: &cloudprotocol.ErrorInfo{
-			Message: data.GetError(),
+			AosCode:  int(data.GetError().GetAosCode()),
+			ExitCode: int(data.GetError().GetExitCode()),
+			Message:  data.GetError().GetMessage(),
 		},
+		Status: data.GetStatus(),
 	}); err != nil {
 		log.Errorf("Can't send log: %v", err)
 	}
 }
 
-func (handler *smHandler) processMonitoring(data *pb.NodeMonitoring) {
-	log.WithFields(log.Fields{"nodeID": handler.config.NodeID}).Debug("Receive SM monitoring")
+func (handler *smHandler) processInstantMonitoring(instantMonitoring *pb.InstantMonitoring) {
+	log.WithFields(log.Fields{
+		"nodeID":   handler.nodeID,
+		"nodeType": handler.nodeType,
+	}).Debug("Receive SM monitoring")
 
-	nodeMonitoring := nodeMonitoringFromPb(data)
+	nodeMonitoring := instantMonitoringFromPB(instantMonitoring)
 
-	nodeMonitoring.NodeID = handler.config.NodeID
+	nodeMonitoring.NodeID = handler.nodeID
 
-	handler.monitoringSender.SendMonitoringData(nodeMonitoring)
+	handler.monitoringSender.SendNodeMonitoring(nodeMonitoring)
 }
 
 func (handler *smHandler) processOverrideEnvVarsStatus(envVarStatus *pb.OverrideEnvVarStatus) {
-	response := make([]cloudprotocol.EnvVarsInstanceStatus, len(envVarStatus.GetEnvVarsStatus()))
+	statuses := make([]cloudprotocol.EnvVarsInstanceStatus, len(envVarStatus.GetEnvVarsStatus()))
 
 	for i, item := range envVarStatus.GetEnvVarsStatus() {
-		responseItem := cloudprotocol.EnvVarsInstanceStatus{
-			InstanceFilter: cloudprotocol.NewInstanceFilter(item.GetInstance().GetServiceId(),
-				item.GetInstance().GetSubjectId(), item.GetInstance().GetInstance()),
-			Statuses: make([]cloudprotocol.EnvVarStatus, len(item.GetVarsStatus())),
+		statusItem := cloudprotocol.EnvVarsInstanceStatus{
+			InstanceFilter: cloudprotocol.NewInstanceFilter(item.GetInstanceFilter().GetServiceId(),
+				item.GetInstanceFilter().GetSubjectId(), item.GetInstanceFilter().GetInstance()),
+			Statuses: make([]cloudprotocol.EnvVarStatus, len(item.GetStatuses())),
 		}
 
-		for j, varStatus := range item.GetVarsStatus() {
-			responseItem.Statuses[j] = cloudprotocol.EnvVarStatus{ID: varStatus.GetVarId(), Error: varStatus.GetError()}
+		for j, varStatus := range item.GetStatuses() {
+			statusItem.Statuses[j] = cloudprotocol.EnvVarStatus{
+				Name:      varStatus.GetName(),
+				ErrorInfo: pbconvert.ErrorInfoFromPB(varStatus.GetError()),
+			}
 		}
 
-		response[i] = responseItem
+		statuses[i] = statusItem
 	}
 
 	if err := handler.messageSender.SendOverrideEnvVarsStatus(
-		cloudprotocol.OverrideEnvVarsStatus{OverrideEnvVarsStatus: response}); err != nil {
+		cloudprotocol.OverrideEnvVarsStatus{Statuses: statuses}); err != nil {
 		log.Errorf("Can't send override env ears status: %v", err.Error())
 	}
 }
@@ -608,23 +630,23 @@ func (handler *smHandler) sendClockSyncResponse() {
 	}
 }
 
-func (handler *smHandler) sendGetUnitConfigStatus() error {
+func (handler *smHandler) sendGetNodeConfigStatus() error {
 	if err := handler.stream.Send(
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetUnitConfigStatus{}}); err != nil {
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetNodeConfigStatus{}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	return nil
 }
 
-func (handler *smHandler) sendCheckUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
-	configJSON, err := json.Marshal(cfg)
+func (handler *smHandler) sendCheckNodeConfig(nodeConfig cloudprotocol.NodeConfig, version string) error {
+	configJSON, err := json.Marshal(nodeConfig)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckUnitConfig{
-		CheckUnitConfig: &pb.CheckUnitConfig{UnitConfig: string(configJSON), VendorVersion: vendorVersion},
+	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_CheckNodeConfig{
+		CheckNodeConfig: &pb.CheckNodeConfig{NodeConfig: string(configJSON), Version: version},
 	}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -632,14 +654,14 @@ func (handler *smHandler) sendCheckUnitConfig(cfg aostypes.NodeUnitConfig, vendo
 	return nil
 }
 
-func (handler *smHandler) sendSetUnitConfig(cfg aostypes.NodeUnitConfig, vendorVersion string) error {
-	configJSON, err := json.Marshal(cfg)
+func (handler *smHandler) sendSetNodeConfig(nodeConfig cloudprotocol.NodeConfig, version string) error {
+	configJSON, err := json.Marshal(nodeConfig)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetUnitConfig{
-		SetUnitConfig: &pb.SetUnitConfig{UnitConfig: string(configJSON), VendorVersion: vendorVersion},
+	if err := handler.stream.Send(&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_SetNodeConfig{
+		SetNodeConfig: &pb.SetNodeConfig{NodeConfig: string(configJSON), Version: version},
 	}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -647,9 +669,9 @@ func (handler *smHandler) sendSetUnitConfig(cfg aostypes.NodeUnitConfig, vendorV
 	return nil
 }
 
-func (handler *smHandler) sendGetNodeMonitoring() error {
+func (handler *smHandler) sendGetAverageMonitoring() error {
 	if err := handler.stream.Send(
-		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetNodeMonitoring{}}); err != nil {
+		&pb.SMIncomingMessages{SMIncomingMessage: &pb.SMIncomingMessages_GetAverageMonitoring{}}); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -678,57 +700,81 @@ func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus, nodeID string) []clo
 
 	for i, status := range pbStatuses {
 		instancesStatus[i] = cloudprotocol.InstanceStatus{
-			InstanceIdent: pbconvert.NewInstanceIdentFromPB(status.GetInstance()),
-			NodeID:        nodeID,
-			AosVersion:    status.GetAosVersion(),
-			RunState:      status.GetRunState(),
-			ErrorInfo:     errorInfoFromPB(status.GetErrorInfo()),
+			InstanceIdent:  pbconvert.InstanceIdentFromPB(status.GetInstance()),
+			NodeID:         nodeID,
+			ServiceVersion: status.GetServiceVersion(),
+			Status:         status.GetRunState(),
+			ErrorInfo:      errorInfoFromPB(status.GetErrorInfo()),
 		}
 	}
 
 	return instancesStatus
 }
 
-func errorInfoFromPB(pbError *pb.ErrorInfo) *cloudprotocol.ErrorInfo {
+func errorInfoFromPB(pbError *common.ErrorInfo) *cloudprotocol.ErrorInfo {
 	if pbError == nil {
 		return nil
 	}
 
 	return &cloudprotocol.ErrorInfo{
-		AosCode:  int(pbError.GetAosCode()),
-		ExitCode: int(pbError.GetExitCode()), Message: pbError.GetMessage(),
+		AosCode: int(pbError.GetAosCode()), ExitCode: int(pbError.GetExitCode()), Message: pbError.GetMessage(),
 	}
 }
 
-func nodeMonitoringFromPb(pbNodeMonitoring *pb.NodeMonitoring) cloudprotocol.NodeMonitoringData {
-	nodeMonitoringData := cloudprotocol.NodeMonitoringData{
-		Timestamp:        pbNodeMonitoring.GetTimestamp().AsTime(),
-		MonitoringData:   monitoringDataFromPb(pbNodeMonitoring.GetMonitoringData()),
-		ServiceInstances: make([]cloudprotocol.InstanceMonitoringData, len(pbNodeMonitoring.GetInstanceMonitoring())),
+func averageMonitoringFromPB(averageMonitoring *pb.AverageMonitoring) aostypes.NodeMonitoring {
+	nodeMonitoringData := aostypes.NodeMonitoring{
+		NodeData:      monitoringDataFromPB(averageMonitoring.GetNodeMonitoring()),
+		InstancesData: make([]aostypes.InstanceMonitoring, len(averageMonitoring.GetInstancesMonitoring())),
 	}
 
-	for i, pbInstanceMonitoring := range pbNodeMonitoring.GetInstanceMonitoring() {
-		nodeMonitoringData.ServiceInstances[i] = cloudprotocol.InstanceMonitoringData{
-			InstanceIdent:  pbconvert.NewInstanceIdentFromPB(pbInstanceMonitoring.GetInstance()),
-			MonitoringData: monitoringDataFromPb(pbInstanceMonitoring.GetMonitoringData()),
+	for i, pbInstanceMonitoring := range averageMonitoring.GetInstancesMonitoring() {
+		nodeMonitoringData.InstancesData[i] = aostypes.InstanceMonitoring{
+			InstanceIdent:  pbconvert.InstanceIdentFromPB(pbInstanceMonitoring.GetInstance()),
+			MonitoringData: monitoringDataFromPB(pbInstanceMonitoring.GetMonitoringData()),
 		}
 	}
 
 	return nodeMonitoringData
 }
 
-func monitoringDataFromPb(pbMonitoring *pb.MonitoringData) cloudprotocol.MonitoringData {
-	monitoringData := cloudprotocol.MonitoringData{
-		RAM:        pbMonitoring.GetRam(),
-		CPU:        pbMonitoring.GetCpu(),
-		InTraffic:  pbMonitoring.GetInTraffic(),
-		OutTraffic: pbMonitoring.GetOutTraffic(),
-		Disk:       make([]cloudprotocol.PartitionUsage, len(pbMonitoring.GetDisk())),
+func instantMonitoringFromPB(instantMonitoring *pb.InstantMonitoring) aostypes.NodeMonitoring {
+	nodeMonitoringData := aostypes.NodeMonitoring{
+		NodeData:      monitoringDataFromPB(instantMonitoring.GetNodeMonitoring()),
+		InstancesData: make([]aostypes.InstanceMonitoring, len(instantMonitoring.GetInstancesMonitoring())),
+	}
+
+	for i, pbInstanceMonitoring := range instantMonitoring.GetInstancesMonitoring() {
+		nodeMonitoringData.InstancesData[i] = aostypes.InstanceMonitoring{
+			InstanceIdent:  pbconvert.InstanceIdentFromPB(pbInstanceMonitoring.GetInstance()),
+			MonitoringData: monitoringDataFromPB(pbInstanceMonitoring.GetMonitoringData()),
+		}
+	}
+
+	return nodeMonitoringData
+}
+
+func monitoringDataFromPB(pbMonitoring *pb.MonitoringData) aostypes.MonitoringData {
+	monitoringData := aostypes.MonitoringData{
+		Timestamp: pbMonitoring.GetTimestamp().AsTime(),
+		RAM:       pbMonitoring.GetRam(),
+		CPU:       pbMonitoring.GetCpu(),
+		Download:  pbMonitoring.GetDownload(),
+		Upload:    pbMonitoring.GetUpload(),
+		Disk:      make([]aostypes.PartitionUsage, len(pbMonitoring.GetDisk())),
 	}
 
 	for i, pbData := range pbMonitoring.GetDisk() {
-		monitoringData.Disk[i] = cloudprotocol.PartitionUsage{Name: pbData.GetName(), UsedSize: pbData.GetUsedSize()}
+		monitoringData.Disk[i] = aostypes.PartitionUsage{Name: pbData.GetName(), UsedSize: pbData.GetUsedSize()}
 	}
 
 	return monitoringData
+}
+
+func nodeConfigStatusFromPB(pbStatus *pb.NodeConfigStatus) unitconfig.NodeConfigStatus {
+	return unitconfig.NodeConfigStatus{
+		NodeID:   pbStatus.GetNodeId(),
+		NodeType: pbStatus.GetNodeType(),
+		Version:  pbStatus.GetVersion(),
+		Error:    pbconvert.ErrorInfoFromPB(pbStatus.GetError()),
+	}
 }

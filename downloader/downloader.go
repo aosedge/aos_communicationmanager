@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -79,14 +78,12 @@ type DownloadInfo struct {
 
 // PackageInfo struct contains package info data.
 type PackageInfo struct {
-	URLs                []string
-	Sha256              []byte
-	Sha512              []byte
-	Size                uint64
-	TargetType          string
-	TargetID            string
-	TargetAosVersion    uint64
-	TargetVendorVersion string
+	URLs          []string
+	Sha256        []byte
+	Size          uint64
+	TargetType    string
+	TargetID      string
+	TargetVersion string
 }
 
 // Storage provides API to add, remove, update or access download info data.
@@ -99,7 +96,7 @@ type Storage interface {
 
 // AlertSender provides alert sender interface.
 type AlertSender interface {
-	SendAlert(alert cloudprotocol.AlertItem)
+	SendAlert(alert interface{})
 }
 
 var (
@@ -514,7 +511,6 @@ func (downloader *Downloader) downloadPackage(result *downloadResult) (err error
 
 			if err = image.CheckFileInfo(result.ctx, result.downloadFileName, image.FileInfo{
 				Sha256: result.packageInfo.Sha256,
-				Sha512: result.packageInfo.Sha512,
 				Size:   result.packageInfo.Size,
 			}); err != nil {
 				if removeErr := os.RemoveAll(result.downloadFileName); removeErr != nil {
@@ -645,20 +641,16 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 
 func (downloader *Downloader) prepareDownloadAlert(
 	resp *grab.Response, result *downloadResult, msg string,
-) cloudprotocol.AlertItem {
-	return cloudprotocol.AlertItem{
-		Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress,
-		Payload: cloudprotocol.DownloadAlert{
-			TargetType:          result.packageInfo.TargetType,
-			TargetID:            result.packageInfo.TargetID,
-			TargetAosVersion:    result.packageInfo.TargetAosVersion,
-			TargetVendorVersion: result.packageInfo.TargetVendorVersion,
-			Progress:            fmt.Sprintf("%.2f%%", resp.Progress()*100),
-			URL:                 resp.Request.HTTPRequest.URL.String(),
-			DownloadedBytes:     bytefmt.ByteSize(uint64(resp.BytesComplete())),
-			TotalBytes:          bytefmt.ByteSize(uint64(resp.Size())),
-			Message:             msg,
-		},
+) cloudprotocol.DownloadAlert {
+	return cloudprotocol.DownloadAlert{
+		AlertItem:       cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagDownloadProgress},
+		TargetType:      result.packageInfo.TargetType,
+		TargetID:        result.packageInfo.TargetID,
+		Version:         result.packageInfo.TargetVersion,
+		Message:         msg,
+		URL:             resp.Request.HTTPRequest.URL.String(),
+		DownloadedBytes: bytefmt.ByteSize(uint64(resp.BytesComplete())),
+		TotalBytes:      bytefmt.ByteSize(uint64(resp.Size())),
 	}
 }
 

@@ -757,8 +757,8 @@ func TestReleaseByType(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
-func (instance *testAlertSender) SendAlert(alert cloudprotocol.AlertItem) {
-	downloadAlert, ok := alert.Payload.(cloudprotocol.DownloadAlert)
+func (instance *testAlertSender) SendAlert(alert interface{}) {
+	downloadAlert, ok := alert.(cloudprotocol.DownloadAlert)
 	if !ok {
 		log.Error("Received not download alert")
 	}
@@ -984,12 +984,10 @@ func preparePackageInfo(host, fileName, targetType string) (packageInfo download
 	}
 
 	packageInfo.Sha256 = imageFileInfo.Sha256
-	packageInfo.Sha512 = imageFileInfo.Sha512
 	packageInfo.Size = imageFileInfo.Size
 	packageInfo.TargetType = targetType
 	packageInfo.TargetID = "targetID"
-	packageInfo.TargetAosVersion = 1
-	packageInfo.TargetVendorVersion = "vendorVersion1"
+	packageInfo.TargetVersion = "1.0"
 
 	return packageInfo
 }

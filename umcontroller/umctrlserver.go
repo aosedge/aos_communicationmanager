@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	pb "github.com/aosedge/aos_common/api/updatemanager/v1"
+	pb "github.com/aosedge/aos_common/api/updatemanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
 
 	"github.com/aosedge/aos_communicationmanager/config"
@@ -126,15 +126,15 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 		return aoserrors.Wrap(err)
 	}
 
-	log.Debugf("Register UM id %s status %s", statusMsg.GetUmId(), statusMsg.GetUmState().String())
+	log.Debugf("Register UM id %s status %s", statusMsg.GetNodeId(), statusMsg.GetUpdateState().String())
 
-	handler, ch, err := newUmHandler(statusMsg.GetUmId(), stream, server.controllerCh, statusMsg.GetUmState())
+	handler, ch, err := newUmHandler(statusMsg.GetNodeId(), stream, server.controllerCh, statusMsg.GetUpdateState())
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	openConnectionMsg := umCtrlInternalMsg{
-		umID:        statusMsg.GetUmId(),
+		umID:        statusMsg.GetNodeId(),
 		handler:     handler,
 		requestType: openConnection,
 		status:      getUmStatusFromUmMessage(statusMsg),
@@ -143,11 +143,12 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 	server.controllerCh <- openConnectionMsg
 
 	// wait for close
-	<-ch
+	reason := <-ch
 
 	closeConnectionMsg := umCtrlInternalMsg{
-		umID:        statusMsg.GetUmId(),
+		umID:        statusMsg.GetNodeId(),
 		requestType: closeConnection,
+		close:       reason,
 	}
 	server.controllerCh <- closeConnectionMsg
 
@@ -155,19 +156,20 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 }
 
 func getUmStatusFromUmMessage(msg *pb.UpdateStatus) (status umStatus) {
-	status.umState = msg.GetUmState().String()
+	status.updateStatus = msg.GetUpdateState().String()
+	status.nodePriority = msg.GetPriority()
 
 	for _, component := range msg.GetComponents() {
-		if component.GetId() == "" {
+		if component.GetComponentId() == "" {
 			continue
 		}
 
 		status.componsStatus = append(status.componsStatus, systemComponentStatus{
-			id:            component.GetId(),
-			vendorVersion: component.GetVendorVersion(),
-			aosVersion:    component.GetAosVersion(),
-			status:        strings.ToLower(component.GetStatus().String()),
-			err:           component.GetError(),
+			componentID:   component.GetComponentId(),
+			componentType: component.GetComponentType(),
+			version:       component.GetVersion(),
+			status:        strings.ToLower(component.GetState().String()),
+			err:           component.GetError().GetMessage(),
 		})
 	}
 

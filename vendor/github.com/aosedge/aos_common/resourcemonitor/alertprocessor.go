@@ -18,65 +18,158 @@
 package resourcemonitor
 
 import (
+	"math"
 	"time"
 
 	"github.com/aosedge/aos_common/aostypes"
 	log "github.com/sirupsen/logrus"
 )
 
-type alertCallback func(time time.Time, value uint64)
+/***********************************************************************************************************************
+ * Consts
+ **********************************************************************************************************************/
+
+const (
+	AlertStatusRaise    = "raise"
+	AlertStatusContinue = "continue"
+	AlertStatusFall     = "fall"
+)
+
+/***********************************************************************************************************************
+ * Private
+ **********************************************************************************************************************/
+
+type alertCallback func(time time.Time, value uint64, status string)
 
 // alertProcessor object for detection alerts.
 type alertProcessor struct {
-	name              string
-	source            *uint64
-	callback          alertCallback
-	rule              aostypes.AlertRuleParam
-	thresholdTime     time.Time
-	thresholdDetected bool
+	name     string
+	source   *uint64
+	callback alertCallback
+
+	minTimeout       time.Duration
+	minThreshold     uint64
+	maxThreshold     uint64
+	minThresholdTime time.Time
+	maxThresholdTime time.Time
+	alertCondition   bool
 }
 
-// createAlertProcessor creates alert processor based on configuration.
-func createAlertProcessor(name string, source *uint64,
-	callback alertCallback, rule aostypes.AlertRuleParam,
+// createAlertProcessorPercents creates alert processor based on percents configuration.
+func createAlertProcessorPercents(name string, source *uint64, maxValue uint64,
+	callback alertCallback, rule aostypes.AlertRulePercents,
 ) (alert *alertProcessor) {
-	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert processor")
+	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert percents processor")
 
-	return &alertProcessor{name: name, source: source, callback: callback, rule: rule}
+	return &alertProcessor{
+		name:         name,
+		source:       source,
+		callback:     callback,
+		minTimeout:   rule.MinTimeout.Duration,
+		minThreshold: uint64(math.Round(float64(maxValue) * rule.MinThreshold / 100.0)),
+		maxThreshold: uint64(math.Round(float64(maxValue) * rule.MaxThreshold / 100.0)),
+	}
+}
+
+// createAlertProcessorPoints creates alert processor based on points configuration.
+func createAlertProcessorPoints(name string, source *uint64,
+	callback alertCallback, rule aostypes.AlertRulePoints,
+) (alert *alertProcessor) {
+	log.WithFields(log.Fields{"rule": rule, "name": name}).Debugf("Create alert points processor")
+
+	return &alertProcessor{
+		name:         name,
+		source:       source,
+		callback:     callback,
+		minTimeout:   rule.MinTimeout.Duration,
+		minThreshold: rule.MinThreshold,
+		maxThreshold: rule.MaxThreshold,
+	}
 }
 
 // checkAlertDetection checks if alert was detected.
 func (alert *alertProcessor) checkAlertDetection(currentTime time.Time) {
 	value := *alert.source
 
-	if value >= alert.rule.MaxThreshold && alert.thresholdTime.IsZero() {
+	if !alert.alertCondition {
+		alert.handleMaxThreshold(currentTime, value)
+	} else {
+		alert.handleMinThreshold(currentTime, value)
+	}
+}
+
+func (alert *alertProcessor) handleMaxThreshold(currentTime time.Time, value uint64) {
+	if value >= alert.maxThreshold && alert.maxThresholdTime.IsZero() {
 		log.WithFields(log.Fields{
-			"name": alert.name, "maxThreshold": alert.rule.MaxThreshold, "value": value,
+			"name":         alert.name,
+			"maxThreshold": alert.maxThreshold,
+			"value":        value,
+			"currentTime":  currentTime.Format("Jan 2 15:04:05.000"),
 		}).Debugf("Max threshold crossed")
 
-		alert.thresholdTime = currentTime
+		alert.maxThresholdTime = currentTime
 	}
 
-	if value < alert.rule.MinThreshold && !alert.thresholdTime.IsZero() {
-		log.WithFields(log.Fields{
-			"name": alert.name, "minThreshold": alert.rule.MinThreshold, "value": value,
-		}).Debugf("Min threshold crossed")
+	if value >= alert.maxThreshold && !alert.maxThresholdTime.IsZero() &&
+		currentTime.Sub(alert.maxThresholdTime) >= alert.minTimeout && !alert.alertCondition {
+		alert.alertCondition = true
+		alert.maxThresholdTime = currentTime
+		alert.minThresholdTime = time.Time{}
 
-		alert.thresholdTime = time.Time{}
-		alert.thresholdDetected = false
-	}
-
-	if !alert.thresholdTime.IsZero() &&
-		currentTime.Sub(alert.thresholdTime) >= alert.rule.MinTimeout.Duration &&
-		!alert.thresholdDetected {
 		log.WithFields(log.Fields{
 			"name":        alert.name,
 			"value":       value,
-			"currentTime": currentTime.Format("Jan 2 15:04:05"),
+			"status":      AlertStatusRaise,
+			"currentTime": currentTime.Format("Jan 2 15:04:05.000"),
 		}).Debugf("Resource alert")
 
-		alert.thresholdDetected = true
+		alert.callback(currentTime, value, AlertStatusRaise)
+	}
 
-		alert.callback(currentTime, value)
+	if value < alert.maxThreshold && !alert.maxThresholdTime.IsZero() {
+		alert.maxThresholdTime = time.Time{}
+	}
+}
+
+func (alert *alertProcessor) handleMinThreshold(currentTime time.Time, value uint64) {
+	if value <= alert.minThreshold && !alert.minThresholdTime.IsZero() &&
+		currentTime.Sub(alert.minThresholdTime) >= alert.minTimeout {
+		alert.alertCondition = false
+		alert.minThresholdTime = currentTime
+		alert.maxThresholdTime = time.Time{}
+
+		log.WithFields(log.Fields{
+			"name":        alert.name,
+			"value":       value,
+			"status":      AlertStatusFall,
+			"currentTime": currentTime.Format("Jan 2 15:04:05.000"),
+		}).Debugf("Resource alert")
+
+		alert.callback(currentTime, value, AlertStatusFall)
+	}
+
+	if currentTime.Sub(alert.maxThresholdTime) >= alert.minTimeout && alert.alertCondition {
+		alert.maxThresholdTime = currentTime
+
+		log.WithFields(log.Fields{
+			"name":        alert.name,
+			"value":       value,
+			"status":      AlertStatusContinue,
+			"currentTime": currentTime.Format("Jan 2 15:04:05.000"),
+		}).Debugf("Resource alert")
+
+		alert.callback(currentTime, value, AlertStatusContinue)
+	}
+
+	if value <= alert.minThreshold && alert.minThresholdTime.IsZero() {
+		log.WithFields(log.Fields{
+			"name": alert.name, "minThreshold": alert.minThreshold, "value": value,
+		}).Debugf("Min threshold crossed")
+
+		alert.minThresholdTime = currentTime
+	}
+
+	if value > alert.maxThreshold && !alert.minThresholdTime.IsZero() {
+		alert.minThresholdTime = time.Time{}
 	}
 }

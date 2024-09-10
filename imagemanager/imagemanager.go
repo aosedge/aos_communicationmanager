@@ -40,6 +40,7 @@ import (
 	"github.com/aosedge/aos_communicationmanager/fileserver"
 	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 	"github.com/aosedge/aos_communicationmanager/utils/uidgidpool"
+	semver "github.com/hashicorp/go-version"
 )
 
 /***********************************************************************************************************************
@@ -71,7 +72,7 @@ type Storage interface {
 	AddService(service ServiceInfo) error
 	SetLayerCached(digest string, cached bool) error
 	SetServiceCached(serviceID string, cached bool) error
-	RemoveService(serviceID string, aosVersion uint64) error
+	RemoveService(serviceID string, version string) error
 	RemoveLayer(digest string) error
 }
 
@@ -244,9 +245,9 @@ func (imagemanager *Imagemanager) GetServicesStatus() ([]unitstatushandler.Servi
 	for i, service := range servicesInfo {
 		servicesStatus[i] = unitstatushandler.ServiceStatus{
 			ServiceStatus: cloudprotocol.ServiceStatus{
-				ID:         service.ID,
-				AosVersion: service.AosVersion,
-				Status:     cloudprotocol.InstalledStatus,
+				ServiceID: service.ServiceID,
+				Version:   service.Version,
+				Status:    cloudprotocol.InstalledStatus,
 			}, Cached: service.Cached,
 		}
 	}
@@ -268,10 +269,10 @@ func (imagemanager *Imagemanager) GetLayersStatus() ([]unitstatushandler.LayerSt
 	for i, layer := range layersInfo {
 		layersStatus[i] = unitstatushandler.LayerStatus{
 			LayerStatus: cloudprotocol.LayerStatus{
-				ID:         layer.ID,
-				AosVersion: layer.AosVersion,
-				Digest:     layer.Digest,
-				Status:     cloudprotocol.InstalledStatus,
+				LayerID: layer.LayerID,
+				Version: layer.Version,
+				Digest:  layer.Digest,
+				Status:  cloudprotocol.InstalledStatus,
 			}, Cached: layer.Cached,
 		}
 	}
@@ -287,9 +288,9 @@ func (imagemanager *Imagemanager) GetRemoveServiceChannel() (channel <-chan stri
 func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.ServiceInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
-	log.WithFields(log.Fields{"id": serviceInfo.ID}).Debug("Install service")
+	log.WithFields(log.Fields{"id": serviceInfo.ServiceID}).Debug("Install service")
 
-	serviceFromStorage, err := imagemanager.storage.GetServiceInfo(serviceInfo.ID)
+	serviceFromStorage, err := imagemanager.storage.GetServiceInfo(serviceInfo.ServiceID)
 	if err != nil && !errors.Is(err, ErrNotExist) {
 		return aoserrors.Wrap(err)
 	}
@@ -299,7 +300,17 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 	if err == nil {
 		isServiceExist = true
 
-		if serviceInfo.AosVersion <= serviceFromStorage.AosVersion {
+		version, err := semver.NewSemver(serviceInfo.Version)
+		if err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		versionInStorage, err := semver.NewSemver(serviceFromStorage.Version)
+		if err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+		if version.LessThanOrEqual(versionInStorage) {
 			return ErrVersionMismatch
 		}
 	}
@@ -316,9 +327,9 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 			releaseAllocatedSpace(decryptedFile, space)
 
 			log.WithFields(log.Fields{
-				"id":         serviceInfo.ID,
-				"aosVersion": serviceInfo.AosVersion,
-				"imagePath":  decryptedFile,
+				"id":        serviceInfo.ServiceID,
+				"version":   serviceInfo.Version,
+				"imagePath": decryptedFile,
 			}).Errorf("Can't install service: %v", err)
 
 			return
@@ -385,14 +396,13 @@ func (imagemanager *Imagemanager) addService(
 
 	if err = imagemanager.storage.AddService(ServiceInfo{
 		ServiceInfo: aostypes.ServiceInfo{
-			VersionInfo: serviceInfo.VersionInfo,
-			ID:          serviceInfo.ID,
-			ProviderID:  serviceInfo.ProviderID,
-			URL:         createLocalURL(decryptedFile),
-			Size:        fileInfo.Size,
-			GID:         uint32(gid),
-			Sha256:      fileInfo.Sha256,
-			Sha512:      fileInfo.Sha512,
+			Version:    serviceInfo.Version,
+			ServiceID:  serviceInfo.ServiceID,
+			ProviderID: serviceInfo.ProviderID,
+			URL:        createLocalURL(decryptedFile),
+			Size:       fileInfo.Size,
+			GID:        uint32(gid),
+			Sha256:     fileInfo.Sha256,
 		},
 		RemoteURL:    remoteURL,
 		Path:         decryptedFile,
@@ -456,8 +466,8 @@ func (imagemanager *Imagemanager) RemoveService(serviceID string) error {
 
 	if err = imagemanager.setServiceCached(ServiceInfo{
 		ServiceInfo: aostypes.ServiceInfo{
-			ID:   serviceID,
-			Size: serviceSize,
+			ServiceID: serviceID,
+			Size:      serviceSize,
 		},
 		Timestamp: services[len(services)-1].Timestamp,
 	}, true); err != nil {
@@ -471,7 +481,7 @@ func (imagemanager *Imagemanager) RemoveService(serviceID string) error {
 func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
-	log.WithFields(log.Fields{"id": layerInfo.ID, "digest": layerInfo.Digest}).Debug("Install layer")
+	log.WithFields(log.Fields{"id": layerInfo.LayerID, "digest": layerInfo.Digest}).Debug("Install layer")
 
 	if layerInfo, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest); err == nil {
 		if layerInfo.Cached {
@@ -497,9 +507,9 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 			releaseAllocatedSpace(decryptedFile, space)
 
 			log.WithFields(log.Fields{
-				"id":         layerInfo.ID,
-				"aosVersion": layerInfo.AosVersion,
-				"imagePath":  decryptedFile,
+				"id":        layerInfo.LayerID,
+				"version":   layerInfo.Version,
+				"imagePath": decryptedFile,
 			}).Errorf("Can't install layer: %v", err)
 
 			return
@@ -537,13 +547,12 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 
 	if err := imagemanager.storage.AddLayer(LayerInfo{
 		LayerInfo: aostypes.LayerInfo{
-			VersionInfo: layerInfo.VersionInfo,
-			ID:          layerInfo.ID,
-			Digest:      layerInfo.Digest,
-			URL:         createLocalURL(decryptedFile),
-			Sha256:      fileInfo.Sha256,
-			Sha512:      fileInfo.Sha512,
-			Size:        fileInfo.Size,
+			Version: layerInfo.Version,
+			LayerID: layerInfo.LayerID,
+			Digest:  layerInfo.Digest,
+			URL:     createLocalURL(decryptedFile),
+			Sha256:  fileInfo.Sha256,
+			Size:    fileInfo.Size,
 		},
 		Path:      decryptedFile,
 		RemoteURL: remoteURL,
@@ -644,20 +653,20 @@ func (imagemanager *Imagemanager) RevertService(serviceID string) error {
 **********************************************************************************************************************/
 
 func (imagemanager *Imagemanager) setServiceCached(service ServiceInfo, cached bool) error {
-	if err := imagemanager.storage.SetServiceCached(service.ID, cached); err != nil {
+	if err := imagemanager.storage.SetServiceCached(service.ServiceID, cached); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	if cached {
 		if err := imagemanager.serviceAllocator.AddOutdatedItem(
-			service.ID, service.Size, service.Timestamp); err != nil {
+			service.ServiceID, service.Size, service.Timestamp); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
 		return nil
 	}
 
-	imagemanager.serviceAllocator.RestoreOutdatedItem(service.ID)
+	imagemanager.serviceAllocator.RestoreOutdatedItem(service.ServiceID)
 
 	return nil
 }
@@ -682,17 +691,17 @@ func (imagemanager *Imagemanager) setLayerCached(layer LayerInfo, cached bool) e
 }
 
 func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceInfo) error {
-	services, err := imagemanager.storage.GetServiceVersions(service.ID)
+	services, err := imagemanager.storage.GetServiceVersions(service.ServiceID)
 	if err != nil && !errors.Is(err, ErrNotExist) {
 		return aoserrors.Wrap(err)
 	}
 
 	for _, storageService := range services {
-		if service.AosVersion != storageService.AosVersion {
+		if service.Version != storageService.Version {
 			if removeErr := imagemanager.removeService(storageService); removeErr != nil {
 				log.WithFields(log.Fields{
-					"serviceID":  storageService.ID,
-					"AosVersion": storageService.AosVersion,
+					"serviceID": storageService.ServiceID,
+					"version":   storageService.Version,
 				}).Errorf("Can't remove service: %v", removeErr)
 
 				if err == nil {
@@ -704,7 +713,7 @@ func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceI
 
 	if service.Cached {
 		if cacheErr := imagemanager.setServiceCached(service, false); cacheErr != nil {
-			log.WithField("serviceID", service.ID).Errorf("Can't cached service: %v", cacheErr)
+			log.WithField("serviceID", service.ServiceID).Errorf("Can't cached service: %v", cacheErr)
 
 			if err == nil {
 				err = cacheErr
@@ -790,7 +799,7 @@ func (imagemanager *Imagemanager) clearServiceResource(service ServiceInfo) erro
 	}
 
 	if service.Cached {
-		imagemanager.serviceAllocator.RestoreOutdatedItem(service.ID)
+		imagemanager.serviceAllocator.RestoreOutdatedItem(service.ServiceID)
 	}
 
 	imagemanager.serviceAllocator.FreeSpace(service.Size)
@@ -817,11 +826,11 @@ func (imagemanager *Imagemanager) removeService(service ServiceInfo) error {
 		return err
 	}
 
-	if err := imagemanager.storage.RemoveService(service.ID, service.AosVersion); err != nil {
+	if err := imagemanager.storage.RemoveService(service.ServiceID, service.Version); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	log.WithFields(log.Fields{"serviceID": service.ID}).Info("Service successfully removed")
+	log.WithFields(log.Fields{"serviceID": service.ServiceID}).Info("Service successfully removed")
 
 	return nil
 }
@@ -885,7 +894,7 @@ func (imagemanager *Imagemanager) removeOutdatedService(serviceID string) error 
 			err = errRem
 		}
 
-		if errRem = imagemanager.storage.RemoveService(service.ID, service.AosVersion); errRem != nil && err == nil {
+		if errRem = imagemanager.storage.RemoveService(service.ServiceID, service.Version); errRem != nil && err == nil {
 			err = errRem
 		}
 	}
@@ -911,13 +920,13 @@ func (imagemanager *Imagemanager) setOutdatedServices() error {
 		}
 
 		if service.Cached {
-			size, err := imagemanager.getServiceSize(service.ID)
+			size, err := imagemanager.getServiceSize(service.ServiceID)
 			if err != nil {
 				return err
 			}
 
 			if err = imagemanager.serviceAllocator.AddOutdatedItem(
-				service.ID, size, service.Timestamp); err != nil {
+				service.ServiceID, size, service.Timestamp); err != nil {
 				return aoserrors.Wrap(err)
 			}
 		}
@@ -967,7 +976,7 @@ func (imagemanager *Imagemanager) removeOutdatedServices() error {
 		if service.Cached &&
 			service.Timestamp.Add(time.Hour*24*time.Duration(imagemanager.serviceTTLDays)).Before(time.Now()) {
 			if removeErr := imagemanager.removeService(service); removeErr != nil {
-				log.WithField("serviceID", service.ID).Errorf("Can't remove outdated service: %v", removeErr)
+				log.WithField("serviceID", service.ServiceID).Errorf("Can't remove outdated service: %v", removeErr)
 
 				if err == nil {
 					err = removeErr

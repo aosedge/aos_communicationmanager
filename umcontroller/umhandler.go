@@ -26,29 +26,36 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	pb "github.com/aosedge/aos_common/api/updatemanager/v1"
+	pb "github.com/aosedge/aos_common/api/updatemanager"
 )
 
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
 
+type closeReason int
+
 type umHandler struct {
-	umID           string
-	stream         pb.UMService_RegisterUMServer
-	messageChannel chan umCtrlInternalMsg
-	closeChannel   chan bool
-	FSM            *fsm.FSM
-	initialUmState string
+	umID                string
+	stream              pb.UMService_RegisterUMServer
+	messageChannel      chan umCtrlInternalMsg
+	closeChannel        chan closeReason
+	FSM                 *fsm.FSM
+	initialUpdateStatus string
 }
 
 type prepareRequest struct {
-	components []SystemComponent
+	components []ComponentStatus
 }
 
 /***********************************************************************************************************************
  * Consts
  **********************************************************************************************************************/
+
+const (
+	Reconnect closeReason = iota
+	ConnectionClose
+)
 
 const (
 	hStateIdle                = "Idle"
@@ -78,22 +85,22 @@ const (
 
 // NewUmHandler create update manager connection handler.
 func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
-	messageChannel chan umCtrlInternalMsg, state pb.UmState) (handler *umHandler, closeChannel chan bool, err error,
-) {
+	messageChannel chan umCtrlInternalMsg, state pb.UpdateState,
+) (handler *umHandler, closeChannel chan closeReason, err error) {
 	handler = &umHandler{umID: id, stream: umStream, messageChannel: messageChannel}
-	handler.closeChannel = make(chan bool)
-	handler.initialUmState = state.String()
+	handler.closeChannel = make(chan closeReason)
+	handler.initialUpdateStatus = state.String()
 
 	initFsmState := hStateIdle
 
 	switch state {
-	case pb.UmState_IDLE:
+	case pb.UpdateState_IDLE:
 		initFsmState = hStateIdle
-	case pb.UmState_PREPARED:
+	case pb.UpdateState_PREPARED:
 		initFsmState = hStateWaitForStartUpdate
-	case pb.UmState_UPDATED:
+	case pb.UpdateState_UPDATED:
 		initFsmState = hStateWaitForApply
-	case pb.UmState_FAILED:
+	case pb.UpdateState_FAILED:
 		log.Error("UM in failure state")
 
 		initFsmState = hStateWaitForRevert
@@ -141,17 +148,17 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 }
 
 // Close close connection.
-func (handler *umHandler) Close() {
+func (handler *umHandler) Close(reason closeReason) {
 	log.Debug("Close umhandler with UMID = ", handler.umID)
-	handler.closeChannel <- true
+	handler.closeChannel <- reason
 }
 
 func (handler *umHandler) GetInitialState() (state string) {
-	return handler.initialUmState
+	return handler.initialUpdateStatus
 }
 
 // Close close connection.
-func (handler *umHandler) PrepareUpdate(prepareComponents []SystemComponent) (err error) {
+func (handler *umHandler) PrepareUpdate(prepareComponents []ComponentStatus) (err error) {
 	log.Debug("PrepareUpdate for UMID ", handler.umID)
 
 	request := prepareRequest{components: prepareComponents}
@@ -181,7 +188,7 @@ func (handler *umHandler) StartRevert() (err error) {
  **********************************************************************************************************************/
 
 func (handler *umHandler) receiveData() {
-	defer func() { handler.closeChannel <- true }()
+	defer func() { handler.closeChannel <- ConnectionClose }()
 
 	for {
 		statusMsg, err := handler.stream.Recv()
@@ -197,15 +204,15 @@ func (handler *umHandler) receiveData() {
 
 		var evt string
 
-		state := statusMsg.GetUmState()
+		state := statusMsg.GetUpdateState()
 		switch state {
-		case pb.UmState_IDLE:
+		case pb.UpdateState_IDLE:
 			evt = eventIdleState
-		case pb.UmState_PREPARED:
+		case pb.UpdateState_PREPARED:
 			evt = eventPrepareSuccess
-		case pb.UmState_UPDATED:
+		case pb.UpdateState_UPDATED:
 			evt = eventUpdateSuccess
-		case pb.UmState_FAILED:
+		case pb.UpdateState_FAILED:
 			log.Error("Update failure status: ", statusMsg.GetError())
 
 			evt = eventUpdateError
@@ -233,13 +240,12 @@ func (handler *umHandler) sendPrepareUpdateRequest(ctx context.Context, e *fsm.E
 
 	for _, value := range request.components {
 		componetInfo := pb.PrepareComponentInfo{
-			Id:            value.ID,
-			VendorVersion: value.VendorVersion,
-			AosVersion:    value.AosVersion,
+			ComponentId:   value.ComponentID,
+			ComponentType: value.ComponentType,
+			Version:       value.Version,
 			Annotations:   value.Annotations,
 			Url:           value.URL,
 			Sha256:        value.Sha256,
-			Sha512:        value.Sha512,
 			Size:          value.Size,
 		}
 

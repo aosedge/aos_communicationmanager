@@ -48,8 +48,8 @@ func (xen *xenSystemUsage) CacheSystemInfos() {
 func (xen *xenSystemUsage) FillSystemInfo(instanceID string, instance *instanceMonitoring) error {
 	systemInfo, ok := xen.systemInfos[instanceID]
 	if ok {
-		instance.monitoringData.CPU = uint64(systemInfo.CPUFraction)
-		instance.monitoringData.RAM = uint64(systemInfo.Memory) * 1024 //nolint:gomnd
+		instance.monitoring.CPU = uint64(systemInfo.CPUFraction)
+		instance.monitoring.RAM = uint64(systemInfo.Memory) * 1024 //nolint:mnd
 	}
 
 	return nil

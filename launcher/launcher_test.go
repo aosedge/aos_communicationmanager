@@ -18,7 +18,6 @@
 package launcher_test
 
 import (
-	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -39,7 +38,6 @@ import (
 	"github.com/aosedge/aos_communicationmanager/launcher"
 	"github.com/aosedge/aos_communicationmanager/networkmanager"
 	"github.com/aosedge/aos_communicationmanager/storagestate"
-	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 )
 
 /***********************************************************************************************************************
@@ -92,29 +90,29 @@ type runRequest struct {
 	forceRestart bool
 }
 
+type testNodeInfoProvider struct {
+	nodeID   string
+	nodeInfo map[string]cloudprotocol.NodeInfo
+}
+
 type testNodeManager struct {
-	runStatusChan   chan launcher.NodeRunInstanceStatus
-	alertsChannel   chan cloudprotocol.SystemQuotaAlert
-	nodeInformation map[string]launcher.NodeInfo
-	runRequest      map[string]runRequest
+	runStatusChan chan launcher.NodeRunInstanceStatus
+	runRequest    map[string]runRequest
+	monitoring    map[string]aostypes.NodeMonitoring
 }
 
 type testImageProvider struct {
 	services                      map[string]imagemanager.ServiceInfo
 	layers                        map[string]imagemanager.LayerInfo
-	revertedServices              []string
 	removeServiceInstancesChannel chan string
 }
 
 type testResourceManager struct {
-	nodeResources map[string]aostypes.NodeUnitConfig
+	nodeConfigs map[string]cloudprotocol.NodeConfig
 }
 
 type testStorage struct {
-	instanceInfo     []launcher.InstanceInfo
-	desiredInstances json.RawMessage
-	nodeState        map[string]json.RawMessage
-	services         map[string][]imagemanager.ServiceInfo
+	instanceInfo map[aostypes.InstanceIdent]*launcher.InstanceInfo
 }
 
 type testStateStorage struct {
@@ -126,6 +124,18 @@ type testNetworkManager struct {
 	currentIP   net.IP
 	subnet      net.IPNet
 	networkInfo map[string]map[aostypes.InstanceIdent]struct{}
+}
+
+type testData struct {
+	testCaseName        string
+	nodeConfigs         map[string]cloudprotocol.NodeConfig
+	serviceConfigs      map[string]aostypes.ServiceConfig
+	desiredInstances    []cloudprotocol.InstanceInfo
+	storedInstances     []launcher.InstanceInfo
+	expectedRunRequests map[string]runRequest
+	expectedRunStatus   []cloudprotocol.InstanceStatus
+	monitoring          map[string]aostypes.NodeMonitoring
+	rebalancing         bool
 }
 
 /***********************************************************************************************************************
@@ -150,13 +160,13 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager  = newTestNodeManager()
-		imageManager = &testImageProvider{}
-		testStorage  = newTestStorage()
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		imageManager     = newTestImageProvider()
+		testStorage      = newTestStorage(nil)
 	)
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
@@ -166,8 +176,8 @@ func TestInstancesWithRemovedServiceInfoAreRemovedOnStart(t *testing.T) {
 		t.Fatalf("Can't add instance %v", err)
 	}
 
-	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
-		&testStateStorage{}, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, imageManager,
+		&testResourceManager{}, &testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -187,14 +197,14 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 			ServiceTTLDays: 1,
 		}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
-		imageManager     = &testImageProvider{}
-		testStorage      = newTestStorage()
+		imageManager     = newTestImageProvider()
+		testStorage      = newTestStorage(nil)
 		testStateStorage = &testStateStorage{}
 	)
 
@@ -202,6 +212,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
 		Cached:        true,
 		Timestamp:     time.Now().Add(-time.Hour * 25).UTC(),
+		UID:           5000,
 	})
 	if err != nil {
 		t.Fatalf("Can't add instance %v", err)
@@ -211,20 +222,23 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service2},
 		Cached:        true,
 		Timestamp:     time.Now().UTC(),
+		UID:           5001,
 	})
 	if err != nil {
 		t.Fatalf("Can't add instance %v", err)
 	}
 
 	// add a service to the storage
-	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service1][0].ServiceInfo.ID = service1
 
-	testStorage.services[service2] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service2][0].ServiceInfo.ID = service2
+	imageManager.services[service1] = imagemanager.ServiceInfo{
+		ServiceInfo: createServiceInfo(service1, 0, ""),
+	}
+	imageManager.services[service2] = imagemanager.ServiceInfo{
+		ServiceInfo: createServiceInfo(service2, 0, ""),
+	}
 
-	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, imageManager, &testResourceManager{},
-		testStateStorage, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, imageManager,
+		&testResourceManager{}, testStateStorage, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
@@ -256,14 +270,14 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 			ServiceTTLDays: 1,
 		}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
 		testImageManager = newTestImageProvider()
-		testStorage      = newTestStorage()
+		testStorage      = newTestStorage(nil)
 		testStateStorage = &testStateStorage{}
 	)
 
@@ -275,18 +289,12 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 		t.Fatalf("Can't add instance %v", err)
 	}
 
-	// add a service to the storage
-	testStorage.services[service1] = make([]imagemanager.ServiceInfo, 1)
-	testStorage.services[service1][0].ServiceInfo.ID = service1
-
-	launcherInstance, err := launcher.New(cfg, testStorage, nodeManager, testImageManager, &testResourceManager{},
-		testStateStorage, newTestNetworkManager(""))
+	launcherInstance, err := launcher.New(cfg, testStorage, nodeInfoProvider, nodeManager, testImageManager,
+		&testResourceManager{}, testStateStorage, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
-
-	defer testImageManager.close()
 
 	testImageManager.removeServiceInstancesChannel <- service1
 
@@ -330,45 +338,49 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 func TestInitialStatus(t *testing.T) {
 	var (
-		cfg = &config.Config{
+		nodeIDs = []string{nodeIDLocalSM, nodeIDRemoteSM1}
+		cfg     = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{"localSM", "remoteSM"},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
+		nodeInfoProvider  = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager       = newTestNodeManager()
-		expectedRunStatus = unitstatushandler.RunInstancesStatus{}
-		expectedNodeInfo  = []cloudprotocol.NodeInfo{}
-		imageManager      = &testImageProvider{}
+		expectedRunStatus = []cloudprotocol.InstanceStatus{}
+		imageManager      = newTestImageProvider()
 	)
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, &testResourceManager{},
-		&testStateStorage{}, newTestNetworkManager(""))
+	for _, id := range nodeIDs {
+		nodeInfo := cloudprotocol.NodeInfo{
+			NodeID: id, NodeType: "nodeType",
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			TotalRAM: 100,
+			CPUs: []cloudprotocol.CPUInfo{
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
+			},
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "id", TotalSize: 200},
+			},
+		}
+
+		nodeInfoProvider.nodeInfo[id] = nodeInfo
+	}
+
+	launcherInstance, err := launcher.New(cfg, newTestStorage(nil), nodeInfoProvider, nodeManager, imageManager,
+		&testResourceManager{}, &testStateStorage{}, newTestNetworkManager(""))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
 
-	for i, id := range cfg.SMController.NodeIDs {
+	for i, id := range nodeIDs {
 		instances := []cloudprotocol.InstanceStatus{{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
-			AosVersion:    1, StateChecksum: magicSum, RunState: "running",
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "s1", SubjectID: "subj1", Instance: uint64(i)},
+			ServiceVersion: "1.0", StateChecksum: magicSum, Status: "running",
 			NodeID: id,
 		}}
 
-		nodeInfo := cloudprotocol.NodeInfo{
-			NodeID: id, NodeType: "nodeType", SystemInfo: cloudprotocol.SystemInfo{
-				NumCPUs: 1, TotalRAM: 100,
-				Partitions: []cloudprotocol.PartitionInfo{
-					{Name: "id", TotalSize: 200},
-				},
-			},
-		}
-
-		nodeManager.nodeInformation[id] = launcher.NodeInfo{NodeInfo: nodeInfo}
-
-		expectedNodeInfo = append(expectedNodeInfo, nodeInfo)
-		expectedRunStatus.Instances = append(expectedRunStatus.Instances, instances...)
+		expectedRunStatus = append(expectedRunStatus, instances...)
 
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{NodeID: id, Instances: instances}
 	}
@@ -377,42 +389,53 @@ func TestInitialStatus(t *testing.T) {
 		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
 		t.Errorf("Incorrect run status: %v", err)
 	}
-
-	nodesInfo := launcherInstance.GetNodesConfiguration()
-	if !reflect.DeepEqual(expectedNodeInfo, nodesInfo) {
-		t.Error("Incorrect nodes info")
-	}
 }
 
 func TestBalancing(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1, nodeIDRemoteSM2, nodeIDRunxSM},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = newTestImageProvider()
 	)
 
-	nodeManager.nodeInformation = map[string]launcher.NodeInfo{
+	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
 		nodeIDLocalSM: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-			RemoteNode: false, RunnerFeature: []string{runnerRunc},
+			NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "storages", Types: []string{aostypes.StoragesPartition}, TotalSize: 1024},
+				{Name: "states", Types: []string{aostypes.StatesPartition}, TotalSize: 1024},
+			},
 		},
 		nodeIDRemoteSM1: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-			RemoteNode: true, RunnerFeature: []string{runnerRunc},
+			NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 		},
 		nodeIDRemoteSM2: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM},
-			RemoteNode: true, RunnerFeature: []string{runnerRunc},
+			NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 		},
 		nodeIDRunxSM: {
-			NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM},
-			RemoteNode: true, RunnerFeature: []string{runnerRunx},
+			NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
 		},
 	}
 
@@ -444,392 +467,21 @@ func TestBalancing(t *testing.T) {
 		},
 	}
 
-	type testData struct {
-		nodeResources       map[string]aostypes.NodeUnitConfig
-		serviceConfigs      map[string]aostypes.ServiceConfig
-		desiredInstances    []cloudprotocol.InstanceInfo
-		expectedRunRequests map[string]runRequest
-		expectedRunStatus   unitstatushandler.RunInstancesStatus
-	}
-
 	testItems := []testData{
-		// Check node priority and runner: all service instances should be start on higher priority node according to
-		// supported runner
-		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
-				nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100},
-				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
-				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
-			},
-			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc},
-				service2: {Runner: runnerRunc},
-				service3: {Runner: runnerRunx},
-			},
-			desiredInstances: []cloudprotocol.InstanceInfo{
-				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
-				{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
-				{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2},
-			},
-			expectedRunRequests: map[string]runRequest{
-				nodeIDLocalSM: {
-					services: []aostypes.ServiceInfo{
-						createServiceInfo(service1, 5000, service1LocalURL),
-						createServiceInfo(service2, 5001, service2LocalURL),
-					},
-					layers: []aostypes.LayerInfo{
-						createLayerInfo(layer1, layer1LocalURL),
-						createLayerInfo(layer2, layer2LocalURL),
-					},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 0,
-						}, 100),
-						createInstanceInfo(5001, 3, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 1,
-						}, 100),
-						createInstanceInfo(5002, 4, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 0,
-						}, 50),
-						createInstanceInfo(5003, 5, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 1,
-						}, 50),
-					},
-				},
-				nodeIDRemoteSM1: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-				nodeIDRemoteSM2: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-				nodeIDRunxSM: {
-					services: []aostypes.ServiceInfo{createServiceInfo(service3, 5002, service3RemoteURL)},
-					layers:   []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5004, 6, aostypes.InstanceIdent{
-							ServiceID: service3, SubjectID: subject1, Instance: 0,
-						}, 0),
-						createInstanceInfo(5005, 7, aostypes.InstanceIdent{
-							ServiceID: service3, SubjectID: subject1, Instance: 1,
-						}, 0),
-					},
-				},
-			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, nodeIDRunxSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, nodeIDRunxSM, nil),
-				},
-			},
-		},
-		// Check labels: label low priority service to run on high priority node
-		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
-				nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100, Labels: []string{"label1"}},
-				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"}},
-				nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
-			},
-			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc},
-				service2: {Runner: runnerRunc},
-				service3: {Runner: runnerRunx},
-			},
-			desiredInstances: []cloudprotocol.InstanceInfo{
-				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2, Labels: []string{"label2"}},
-				{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2, Labels: []string{"label1"}},
-				{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2, Labels: []string{"label1"}},
-			},
-			expectedRunRequests: map[string]runRequest{
-				nodeIDLocalSM: {
-					services: []aostypes.ServiceInfo{createServiceInfo(service2, 5001, service2LocalURL)},
-					layers:   []aostypes.LayerInfo{createLayerInfo(layer1, layer1LocalURL)},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5002, 2, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 0,
-						}, 50),
-						createInstanceInfo(5003, 3, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 1,
-						}, 50),
-					},
-				},
-				nodeIDRemoteSM1: {
-					services: []aostypes.ServiceInfo{createServiceInfo(service1, 5000, service1RemoteURL)},
-					layers: []aostypes.LayerInfo{
-						createLayerInfo(layer1, layer1RemoteURL),
-						createLayerInfo(layer2, layer2RemoteURL),
-					},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5000, 4, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 0,
-						}, 100),
-						createInstanceInfo(5001, 5, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 1,
-						}, 100),
-					},
-				},
-				nodeIDRemoteSM2: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-				nodeIDRunxSM: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, "", errors.New("no node with labels [label1]")), //nolint:goerr113
-				},
-			},
-		},
-		// Check available resources
-		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
-				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Resources: []aostypes.ResourceInfo{
-					{Name: "resource1"},
-					{Name: "resource3"},
-				}},
-				nodeTypeRemoteSM: {
-					NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"},
-					Resources: []aostypes.ResourceInfo{
-						{Name: "resource1"},
-						{Name: "resource2"},
-					},
-				},
-				nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0},
-			},
-			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc, Resources: []string{"resource1", "resource2"}},
-				service2: {Runner: runnerRunc, Resources: []string{"resource1"}},
-				service3: {Runner: runnerRunc, Resources: []string{"resource3"}},
-			},
-			desiredInstances: []cloudprotocol.InstanceInfo{
-				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
-				{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
-				{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2, Labels: []string{"label2"}},
-			},
-			expectedRunRequests: map[string]runRequest{
-				nodeIDLocalSM: {
-					services: []aostypes.ServiceInfo{createServiceInfo(service2, 5001, service2LocalURL)},
-					layers:   []aostypes.LayerInfo{createLayerInfo(layer1, layer1LocalURL)},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5002, 2, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 0,
-						}, 50),
-						createInstanceInfo(5003, 3, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 1,
-						}, 50),
-					},
-				},
-				nodeIDRemoteSM1: {
-					services: []aostypes.ServiceInfo{createServiceInfo(service1, 5000, service1RemoteURL)},
-					layers: []aostypes.LayerInfo{
-						createLayerInfo(layer1, layer1RemoteURL),
-						createLayerInfo(layer2, layer2RemoteURL),
-					},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5000, 4, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 0,
-						}, 100),
-						createInstanceInfo(5001, 5, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 1,
-						}, 100),
-					},
-				},
-				nodeIDRemoteSM2: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-				nodeIDRunxSM: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, "", errors.New("no node with resources [resource3]")), //nolint:goerr113
-				},
-			},
-		},
-		// Check available devices
-		{
-			nodeResources: map[string]aostypes.NodeUnitConfig{
-				nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Devices: []aostypes.DeviceInfo{
-					{Name: "dev1", SharedCount: 1},
-					{Name: "dev2", SharedCount: 2},
-					{Name: "dev3"},
-				}},
-				nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Devices: []aostypes.DeviceInfo{
-					{Name: "dev1", SharedCount: 1},
-					{Name: "dev2", SharedCount: 3},
-				}, Labels: []string{"label2"}},
-				nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0, Devices: []aostypes.DeviceInfo{
-					{Name: "dev1", SharedCount: 1},
-					{Name: "dev2", SharedCount: 2},
-				}},
-			},
-			serviceConfigs: map[string]aostypes.ServiceConfig{
-				service1: {Runner: runnerRunc, Devices: []aostypes.ServiceDevice{{Name: "dev1"}, {Name: "dev2"}}},
-				service2: {Runner: runnerRunc, Devices: []aostypes.ServiceDevice{{Name: "dev2"}}},
-				service3: {Runner: runnerRunc, Devices: []aostypes.ServiceDevice{{Name: "dev3"}}},
-			},
-			desiredInstances: []cloudprotocol.InstanceInfo{
-				{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 4},
-				{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 3},
-				{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2, Labels: []string{"label2"}},
-			},
-			expectedRunRequests: map[string]runRequest{
-				nodeIDLocalSM: {
-					services: []aostypes.ServiceInfo{
-						createServiceInfo(service1, 5000, service1LocalURL),
-						createServiceInfo(service2, 5001, service2LocalURL),
-					},
-					layers: []aostypes.LayerInfo{
-						createLayerInfo(layer1, layer1LocalURL),
-						createLayerInfo(layer2, layer2LocalURL),
-					},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 0,
-						}, 100),
-						createInstanceInfo(5003, 3, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 0,
-						}, 50),
-					},
-				},
-				nodeIDRemoteSM1: {
-					services: []aostypes.ServiceInfo{
-						createServiceInfo(service1, 5000, service1RemoteURL),
-						createServiceInfo(service2, 5001, service2RemoteURL),
-					},
-					layers: []aostypes.LayerInfo{
-						createLayerInfo(layer1, layer1RemoteURL),
-						createLayerInfo(layer2, layer2RemoteURL),
-					},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5001, 4, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 1,
-						}, 100),
-						createInstanceInfo(5004, 5, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 1,
-						}, 50),
-						createInstanceInfo(5005, 6, aostypes.InstanceIdent{
-							ServiceID: service2, SubjectID: subject1, Instance: 2,
-						}, 50),
-					},
-				},
-				nodeIDRemoteSM2: {
-					services: []aostypes.ServiceInfo{createServiceInfo(service1, 5000, service1RemoteURL)},
-					layers: []aostypes.LayerInfo{
-						createLayerInfo(layer1, layer1RemoteURL),
-						createLayerInfo(layer2, layer2RemoteURL),
-					},
-					instances: []aostypes.InstanceInfo{
-						createInstanceInfo(5002, 7, aostypes.InstanceIdent{
-							ServiceID: service1, SubjectID: subject1, Instance: 2,
-						}, 100),
-					},
-				},
-				nodeIDRunxSM: {
-					services:  []aostypes.ServiceInfo{},
-					layers:    []aostypes.LayerInfo{},
-					instances: []aostypes.InstanceInfo{},
-				},
-			},
-			expectedRunStatus: unitstatushandler.RunInstancesStatus{
-				Instances: []cloudprotocol.InstanceStatus{
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 2,
-					}, nodeIDRemoteSM2, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service1, SubjectID: subject1, Instance: 3,
-					}, "", errors.New("no available device found")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 0,
-					}, nodeIDLocalSM, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 1,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service2, SubjectID: subject1, Instance: 2,
-					}, nodeIDRemoteSM1, nil),
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 0,
-					}, "", errors.New("no available device found")), //nolint:goerr113
-					createInstanceStatus(aostypes.InstanceIdent{
-						ServiceID: service3, SubjectID: subject1, Instance: 1,
-					}, "", errors.New("no available device found")), //nolint:goerr113
-				},
-			},
-		},
+		testItemNodePriority(),
+		testItemLabels(),
+		testItemResources(),
+		testItemDevices(),
+		testItemStorageRatio(),
+		testItemStateRatio(),
+		testItemCPURatio(),
+		testItemRAMRatio(),
 	}
 
 	for _, testItem := range testItems {
-		resourceManager.nodeResources = testItem.nodeResources
+		t.Logf("Test case: %s", testItem.testCaseName)
+
+		resourceManager.nodeConfigs = testItem.nodeConfigs
 
 		for serviceID, config := range testItem.serviceConfigs {
 			service := imageManager.services[serviceID]
@@ -837,28 +489,30 @@ func TestBalancing(t *testing.T) {
 			imageManager.services[serviceID] = service
 		}
 
-		launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-			&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+		storage := newTestStorage(testItem.storedInstances)
+
+		launcherInstance, err := launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager,
+			resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
 		if err != nil {
 			t.Fatalf("Can't create launcher %v", err)
 		}
 
 		// Wait initial run status
 
-		for nodeID, info := range nodeManager.nodeInformation {
+		for nodeID, info := range nodeInfoProvider.nodeInfo {
 			nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 				NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 			}
 		}
 
 		if err := waitRunInstancesStatus(
-			launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+			launcherInstance.GetRunStatusesChannel(), []cloudprotocol.InstanceStatus{}, time.Second); err != nil {
 			t.Errorf("Incorrect run status: %v", err)
 		}
 
 		// Run instances
 
-		if err := launcherInstance.RunInstances(testItem.desiredInstances, nil); err != nil {
+		if err := launcherInstance.RunInstances(testItem.desiredInstances, testItem.rebalancing); err != nil {
 			t.Fatalf("Can't run instances %v", err)
 		}
 
@@ -875,102 +529,117 @@ func TestBalancing(t *testing.T) {
 	}
 }
 
-func TestServiceRevert(t *testing.T) {
+func TestRebalancing(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
-		nodeManager     = newTestNodeManager()
-		imageManager    = &testImageProvider{}
-		resourceManager = newTestResourceManager()
+		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
+		nodeManager      = newTestNodeManager()
+		resourceManager  = newTestResourceManager()
+		imageManager     = newTestImageProvider()
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false,
+	nodeInfoProvider.nodeInfo = map[string]cloudprotocol.NodeInfo{
+		nodeIDLocalSM: {
+			NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+			Partitions: []cloudprotocol.PartitionInfo{
+				{Name: "storages", Types: []string{aostypes.StoragesPartition}, TotalSize: 1024},
+				{Name: "states", Types: []string{aostypes.StatesPartition}, TotalSize: 1024},
+			},
+		},
+		nodeIDRemoteSM1: {
+			NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+		},
+		nodeIDRemoteSM2: {
+			NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM,
+			Status:   cloudprotocol.NodeStatusProvisioned,
+			Attrs:    map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
+			MaxDMIPs: 1000,
+			TotalRAM: 1024,
+		},
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{NodeType: nodeTypeLocalSM, Priority: 100}
 
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
 			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
 			RemoteURL:   service1RemoteURL,
-			Layers:      []string{layer1},
 		},
 		service2: {
 			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
 			RemoteURL:   service2RemoteURL,
-			Layers:      []string{layer2},
+		},
+		service3: {
+			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
+			RemoteURL:   service3RemoteURL,
 		},
 	}
 
-	imageManager.layers = map[string]imagemanager.LayerInfo{
-		layer1: {
-			LayerInfo: createLayerInfo(layer1, layer1LocalURL),
-			RemoteURL: layer1RemoteURL,
-		},
+	testItems := []testData{
+		testItemRebalancing(),
+		testItemRebalancingPolicy(),
+		testItemRebalancingPrevNode(),
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
-	if err != nil {
-		t.Fatalf("Can't create launcher %v", err)
-	}
+	for _, testItem := range testItems {
+		t.Logf("Test case: %s", testItem.testCaseName)
 
-	// Wait initial run status
+		resourceManager.nodeConfigs = testItem.nodeConfigs
+		nodeManager.monitoring = testItem.monitoring
 
-	for nodeID, info := range nodeManager.nodeInformation {
-		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
-			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+		for serviceID, config := range testItem.serviceConfigs {
+			service := imageManager.services[serviceID]
+			service.Config = config
+			imageManager.services[serviceID] = service
 		}
-	}
 
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
+		storage := newTestStorage(testItem.storedInstances)
 
-	// Run instances
+		launcherInstance, err := launcher.New(cfg, storage, nodeInfoProvider, nodeManager, imageManager,
+			resourceManager, &testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
+		if err != nil {
+			t.Fatalf("Can't create launcher %v", err)
+		}
 
-	desiredInstances := []cloudprotocol.InstanceInfo{
-		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
-		{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
-	}
+		// Wait initial run status
 
-	if err := launcherInstance.RunInstances(desiredInstances, []string{service2}); err != nil {
-		t.Fatalf("Can't run instances %v", err)
-	}
+		for nodeID, info := range nodeInfoProvider.nodeInfo {
+			nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
+				NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
+			}
+		}
 
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 1,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, "", errors.New("layer does't exist")), //nolint:goerr113
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 1,
-			}, "", errors.New("layer does't exist")), //nolint:goerr113
-		},
-		ErrorServices: []cloudprotocol.ServiceStatus{
-			{ID: service2, AosVersion: 1, Status: cloudprotocol.ErrorStatus},
-		},
-	}
+		if err := waitRunInstancesStatus(
+			launcherInstance.GetRunStatusesChannel(), []cloudprotocol.InstanceStatus{}, time.Second); err != nil {
+			t.Errorf("Incorrect run status: %v", err)
+		}
 
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
+		// Run instances
 
-	if !reflect.DeepEqual([]string{service2}, imageManager.revertedServices) {
-		t.Errorf("Incorrect reverted services: %v", imageManager.revertedServices)
+		if err := launcherInstance.RunInstances(testItem.desiredInstances, testItem.rebalancing); err != nil {
+			t.Fatalf("Can't run instances %v", err)
+		}
+
+		if err := waitRunInstancesStatus(
+			launcherInstance.GetRunStatusesChannel(), testItem.expectedRunStatus, time.Second); err != nil {
+			t.Errorf("Incorrect run status: %v", err)
+		}
+
+		if err := nodeManager.compareRunRequests(testItem.expectedRunRequests); err != nil {
+			t.Errorf("Incorrect run request: %v", err)
+		}
+
+		launcherInstance.Close()
 	}
 }
 
@@ -978,59 +647,60 @@ func TestStorageCleanup(t *testing.T) {
 	var (
 		cfg = &config.Config{
 			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRunxSM},
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
 		}
+		nodeInfoProvider     = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager          = newTestNodeManager()
 		resourceManager      = newTestResourceManager()
-		imageManager         = &testImageProvider{}
+		imageManager         = newTestImageProvider()
 		stateStorageProvider = &testStateStorage{}
 	)
 
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:      cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode:    false,
-		RunnerFeature: []string{runnerRunc},
+	nodeInfoProvider.nodeInfo[nodeIDLocalSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM,
+		Status: cloudprotocol.NodeStatusProvisioned,
+		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunc},
 	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{Priority: 100}
+	resourceManager.nodeConfigs[nodeTypeLocalSM] = cloudprotocol.NodeConfig{Priority: 100}
 
-	nodeManager.nodeInformation[nodeIDRunxSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeRunxSM},
-		RemoteNode: true, RunnerFeature: []string{runnerRunx},
+	nodeInfoProvider.nodeInfo[nodeIDRunxSM] = cloudprotocol.NodeInfo{
+		NodeID: nodeIDRunxSM, NodeType: nodeTypeRunxSM,
+		Status: cloudprotocol.NodeStatusProvisioned,
+		Attrs:  map[string]interface{}{cloudprotocol.NodeAttrRunners: runnerRunx},
 	}
-	resourceManager.nodeResources[nodeTypeRunxSM] = aostypes.NodeUnitConfig{Priority: 0}
+	resourceManager.nodeConfigs[nodeTypeRunxSM] = cloudprotocol.NodeConfig{Priority: 0}
 
 	imageManager.services = map[string]imagemanager.ServiceInfo{
 		service1: {
 			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
-			RemoteURL:   service1RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunc},
+			RemoteURL:   service1RemoteURL, Config: aostypes.ServiceConfig{Runners: []string{runnerRunc}},
 		},
 		service2: {
 			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
-			RemoteURL:   service2RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunc},
+			RemoteURL:   service2RemoteURL, Config: aostypes.ServiceConfig{Runners: []string{runnerRunc}},
 		},
 		service3: {
 			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
-			RemoteURL:   service3RemoteURL, Config: aostypes.ServiceConfig{Runner: runnerRunx},
+			RemoteURL:   service3RemoteURL, Config: aostypes.ServiceConfig{Runners: []string{runnerRunx}},
 		},
 	}
 
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-		stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
+	launcherInstance, err := launcher.New(cfg, newTestStorage(nil), nodeInfoProvider, nodeManager, imageManager,
+		resourceManager, stateStorageProvider, newTestNetworkManager("172.17.0.1/16"))
 	if err != nil {
 		t.Fatalf("Can't create launcher %v", err)
 	}
 	defer launcherInstance.Close()
 
-	for nodeID, info := range nodeManager.nodeInformation {
+	for nodeID, info := range nodeInfoProvider.nodeInfo {
 		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
 			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
 		}
 	}
 
 	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
+		launcherInstance.GetRunStatusesChannel(), []cloudprotocol.InstanceStatus{}, time.Second); err != nil {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
@@ -1040,7 +710,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service3, SubjectID: subject1, Priority: 100, NumInstances: 1},
 	}
 
-	if err := launcherInstance.RunInstances(desiredInstances, nil); err != nil {
+	if err := launcherInstance.RunInstances(desiredInstances, false); err != nil {
 		t.Fatalf("Can't run instances %v", err)
 	}
 
@@ -1075,26 +745,24 @@ func TestStorageCleanup(t *testing.T) {
 		},
 	}
 
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 1,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDRunxSM, nil),
-		},
+	expectedRunStatus := []cloudprotocol.InstanceStatus{
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service1, SubjectID: subject1, Instance: 0,
+		}, nodeIDLocalSM, nil),
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service1, SubjectID: subject1, Instance: 1,
+		}, nodeIDLocalSM, nil),
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service2, SubjectID: subject1, Instance: 0,
+		}, nodeIDLocalSM, nil),
+		createInstanceStatus(aostypes.InstanceIdent{
+			ServiceID: service3, SubjectID: subject1, Instance: 0,
+		}, nodeIDRunxSM, nil),
 	}
 
 	if err := waitRunInstancesStatus(
 		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
+		t.Errorf("Error waiting for run instances status: %v", err)
 	}
 
 	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
@@ -1105,7 +773,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
 	}
 
-	expectedRunStatus.Instances = []cloudprotocol.InstanceStatus{
+	expectedRunStatus = []cloudprotocol.InstanceStatus{
 		createInstanceStatus(aostypes.InstanceIdent{
 			ServiceID: service1, SubjectID: subject1, Instance: 0,
 		}, nodeIDLocalSM, nil),
@@ -1117,7 +785,7 @@ func TestStorageCleanup(t *testing.T) {
 		{ServiceID: service3, SubjectID: subject1, Instance: 0},
 	}
 
-	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
+	if err := launcherInstance.RunInstances(desiredInstances, false); err != nil {
 		t.Fatalf("Can't run instances %v", err)
 	}
 
@@ -1126,699 +794,8 @@ func TestStorageCleanup(t *testing.T) {
 		t.Errorf("Incorrect run status: %v", err)
 	}
 
-	if !reflect.DeepEqual(expectedCleanInstances, stateStorageProvider.cleanedInstances) {
-		t.Errorf("Incorrect state storage cleanup: %v", stateStorageProvider.cleanedInstances)
-	}
-}
-
-func TestRebalancing(t *testing.T) {
-	var (
-		cfg = &config.Config{
-			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1, nodeIDRemoteSM2},
-				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
-			},
-		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
-	)
-
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false, RunnerFeature: []string{runnerRunc, "crun"},
-	}
-
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
-		Priority: 100,
-		NodeType: nodeTypeLocalSM, Devices: []aostypes.DeviceInfo{
-			{Name: "dev1", SharedCount: 1},
-		},
-	}
-
-	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true, RunnerFeature: []string{runnerRunc},
-	}
-
-	nodeManager.nodeInformation[nodeIDRemoteSM2] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM2, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true, RunnerFeature: []string{runnerRunc},
-	}
-
-	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
-		Priority: 50,
-		NodeType: nodeTypeRemoteSM,
-		Devices: []aostypes.DeviceInfo{
-			{Name: "dev1", SharedCount: 2},
-		},
-		Resources: []aostypes.ResourceInfo{{Name: "resource1"}},
-	}
-
-	launcherInstance, err := launcher.New(cfg, newTestStorage(), nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
-	if err != nil {
-		t.Fatalf("Can't create launcher %v", err)
-	}
-	defer launcherInstance.Close()
-
-	for nodeID, info := range nodeManager.nodeInformation {
-		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
-			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
-		}
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	imageManager.services = map[string]imagemanager.ServiceInfo{
-		service1: {
-			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
-			RemoteURL:   service1RemoteURL,
-			Config: aostypes.ServiceConfig{
-				Runner:    runnerRunc,
-				Resources: []string{"resource1"},
-			},
-		},
-		service2: {
-			ServiceInfo: createServiceInfo(service2, 5001, service1LocalURL),
-			RemoteURL:   service2RemoteURL,
-			Config: aostypes.ServiceConfig{
-				Runner: runnerRunc,
-			},
-		},
-		service3: {
-			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
-			RemoteURL:   service3RemoteURL,
-			Config: aostypes.ServiceConfig{
-				Runner: runnerRunc,
-				Devices: []aostypes.ServiceDevice{
-					{Name: "dev1"},
-				},
-			},
-		},
-	}
-
-	desiredInstances := []cloudprotocol.InstanceInfo{
-		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
-		{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
-		{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 3},
-	}
-
-	expectedRunRequests := map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service1LocalURL),
-				createServiceInfo(service3, 5002, service3LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 2, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 50),
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1RemoteURL),
-				createServiceInfo(service3, 5002, service3RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 4, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5003, 5, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 1,
-				}, 0),
-				createInstanceInfo(5004, 6, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 2,
-				}, 0),
-			},
-		},
-		nodeIDRemoteSM2: {
-			services:  []aostypes.ServiceInfo{},
-			layers:    []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{},
-		},
-	}
-
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 1,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 2,
-			}, nodeIDRemoteSM1, nil),
-		},
-	}
-
-	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
-		t.Fatalf("Can't run instances %v", err)
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("Incorrect run request: %v", err)
-	}
-
-	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: nodeIDLocalSM, Parameter: "cpu"}
-
-	expectedRunRequests = map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service1LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 2, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 50),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1RemoteURL),
-				createServiceInfo(service3, 5002, service3RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 4, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5003, 5, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 1,
-				}, 0),
-				createInstanceInfo(5004, 6, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 2,
-				}, 0),
-			},
-		},
-		nodeIDRemoteSM2: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service3, 5002, service3RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-	}
-
-	expectedRunStatus = unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 1,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 2,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM2, nil),
-		},
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("incorrect run request: %v", err)
-	}
-
-	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: nodeIDRemoteSM2, Parameter: "cpu"}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err == nil ||
-		!strings.Contains(err.Error(), "message timeout") {
-		t.Error("Timeout expected")
-	}
-}
-
-func TestRebalancingSameNodePriority(t *testing.T) {
-	var (
-		cfg = &config.Config{
-			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
-				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
-			},
-		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
-		storage         = newTestStorage()
-	)
-
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false,
-	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
-		NodeType: nodeTypeLocalSM,
-		Labels:   []string{"label1"},
-	}
-
-	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true,
-	}
-	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
-		NodeType: nodeTypeRemoteSM,
-		Labels:   []string{"label2"},
-	}
-
-	launcherInstance, err := launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
-	if err != nil {
-		t.Fatalf("Can't create launcher %v", err)
-	}
-	defer launcherInstance.Close()
-
-	for nodeID, info := range nodeManager.nodeInformation {
-		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
-			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
-		}
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	imageManager.services = map[string]imagemanager.ServiceInfo{
-		service1: {
-			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
-			RemoteURL:   service1RemoteURL,
-		},
-		service2: {
-			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
-			RemoteURL:   service2RemoteURL,
-		},
-		service3: {
-			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
-			RemoteURL:   service3RemoteURL,
-		},
-	}
-
-	desiredInstances := []cloudprotocol.InstanceInfo{
-		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1, Labels: []string{"label1"}},
-		{ServiceID: service2, SubjectID: subject1, Priority: 100, NumInstances: 1, Labels: []string{"label2"}},
-		{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
-	}
-
-	expectedRunRequests := map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1LocalURL),
-				createServiceInfo(service3, 5002, service3LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service2RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 100),
-			},
-		},
-	}
-
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-		},
-	}
-
-	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
-		t.Fatalf("Can't run instances %v", err)
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("Incorrect run request: %v", err)
-	}
-
-	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: nodeIDLocalSM, Parameter: "cpu"}
-
-	expectedRunRequests = map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service2RemoteURL),
-				createServiceInfo(service3, 5002, service3RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-	}
-
-	expectedRunStatus = unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-		},
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("Incorrect run request: %v", err)
-	}
-
-	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: nodeIDRemoteSM1, Parameter: "cpu"}
-
-	expectedRunRequests = map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1LocalURL),
-				createServiceInfo(service3, 5002, service3LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service2RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 100),
-			},
-		},
-	}
-
-	expectedRunStatus = unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-		},
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("Incorrect run request: %v", err)
-	}
-}
-
-func TestRebalancingAfterRestart(t *testing.T) {
-	var (
-		cfg = &config.Config{
-			SMController: config.SMController{
-				NodeIDs:                []string{nodeIDLocalSM, nodeIDRemoteSM1},
-				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
-			},
-		}
-		nodeManager     = newTestNodeManager()
-		resourceManager = newTestResourceManager()
-		imageManager    = &testImageProvider{}
-		storage         = newTestStorage()
-	)
-
-	nodeManager.nodeInformation[nodeIDLocalSM] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDLocalSM, NodeType: nodeTypeLocalSM},
-		RemoteNode: false,
-	}
-	resourceManager.nodeResources[nodeTypeLocalSM] = aostypes.NodeUnitConfig{
-		NodeType: nodeTypeLocalSM,
-		Labels:   []string{"label1"},
-	}
-
-	nodeManager.nodeInformation[nodeIDRemoteSM1] = launcher.NodeInfo{
-		NodeInfo:   cloudprotocol.NodeInfo{NodeID: nodeIDRemoteSM1, NodeType: nodeTypeRemoteSM},
-		RemoteNode: true,
-	}
-	resourceManager.nodeResources[nodeTypeRemoteSM] = aostypes.NodeUnitConfig{
-		NodeType: nodeTypeRemoteSM,
-		Labels:   []string{"label2"},
-	}
-
-	launcherInstance, err := launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
-	if err != nil {
-		t.Fatalf("Can't create launcher %v", err)
-	}
-
-	for nodeID, info := range nodeManager.nodeInformation {
-		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
-			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
-		}
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	imageManager.services = map[string]imagemanager.ServiceInfo{
-		service1: {
-			ServiceInfo: createServiceInfo(service1, 5000, service1LocalURL),
-			RemoteURL:   service1RemoteURL,
-		},
-		service2: {
-			ServiceInfo: createServiceInfo(service2, 5001, service2LocalURL),
-			RemoteURL:   service2RemoteURL,
-		},
-		service3: {
-			ServiceInfo: createServiceInfo(service3, 5002, service3LocalURL),
-			RemoteURL:   service3RemoteURL,
-		},
-	}
-
-	desiredInstances := []cloudprotocol.InstanceInfo{
-		{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1, Labels: []string{"label1"}},
-		{ServiceID: service2, SubjectID: subject1, Priority: 100, NumInstances: 1, Labels: []string{"label2"}},
-		{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
-	}
-
-	expectedRunRequests := map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1LocalURL),
-				createServiceInfo(service3, 5002, service3LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service2RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 100),
-			},
-		},
-	}
-
-	expectedRunStatus := unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-		},
-	}
-
-	if err := launcherInstance.RunInstances(desiredInstances, []string{}); err != nil {
-		t.Fatalf("Can't run instances %v", err)
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("Incorrect run request: %v", err)
-	}
-
-	launcherInstance.Close()
-
-	// Restart
-
-	launcherInstance, err = launcher.New(cfg, storage, nodeManager, imageManager, resourceManager,
-		&testStateStorage{}, newTestNetworkManager("172.17.0.1/16"))
-	if err != nil {
-		t.Fatalf("Can't create launcher %v", err)
-	}
-
-	for nodeID, info := range nodeManager.nodeInformation {
-		nodeManager.runStatusChan <- launcher.NodeRunInstanceStatus{
-			NodeID: nodeID, NodeType: info.NodeType, Instances: []cloudprotocol.InstanceStatus{},
-		}
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), unitstatushandler.RunInstancesStatus{}, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	nodeManager.alertsChannel <- cloudprotocol.SystemQuotaAlert{NodeID: nodeIDLocalSM, Parameter: "cpu"}
-
-	expectedRunRequests = map[string]runRequest{
-		nodeIDLocalSM: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service1, 5000, service1LocalURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5000, 2, aostypes.InstanceIdent{
-					ServiceID: service1, SubjectID: subject1, Instance: 0,
-				}, 100),
-			},
-		},
-		nodeIDRemoteSM1: {
-			services: []aostypes.ServiceInfo{
-				createServiceInfo(service2, 5001, service2RemoteURL),
-				createServiceInfo(service3, 5002, service3RemoteURL),
-			},
-			layers: []aostypes.LayerInfo{},
-			instances: []aostypes.InstanceInfo{
-				createInstanceInfo(5001, 4, aostypes.InstanceIdent{
-					ServiceID: service2, SubjectID: subject1, Instance: 0,
-				}, 100),
-				createInstanceInfo(5002, 3, aostypes.InstanceIdent{
-					ServiceID: service3, SubjectID: subject1, Instance: 0,
-				}, 0),
-			},
-		},
-	}
-
-	expectedRunStatus = unitstatushandler.RunInstancesStatus{
-		Instances: []cloudprotocol.InstanceStatus{
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service1, SubjectID: subject1, Instance: 0,
-			}, nodeIDLocalSM, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service2, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-			createInstanceStatus(aostypes.InstanceIdent{
-				ServiceID: service3, SubjectID: subject1, Instance: 0,
-			}, nodeIDRemoteSM1, nil),
-		},
-	}
-
-	if err := waitRunInstancesStatus(
-		launcherInstance.GetRunStatusesChannel(), expectedRunStatus, time.Second); err != nil {
-		t.Errorf("Incorrect run status: %v", err)
-	}
-
-	if err := nodeManager.compareRunRequests(expectedRunRequests); err != nil {
-		t.Errorf("Incorrect run request: %v", err)
+	if err := deepSlicesCompare(expectedCleanInstances, stateStorageProvider.cleanedInstances); err != nil {
+		t.Errorf("Incorrect state storage cleanup: %v", err)
 	}
 }
 
@@ -1826,28 +803,51 @@ func TestRebalancingAfterRestart(t *testing.T) {
  * Interfaces
  **********************************************************************************************************************/
 
+// testNodeInfoProvider
+
+func newTestNodeInfoProvider(nodeID string) *testNodeInfoProvider {
+	return &testNodeInfoProvider{
+		nodeID:   nodeID,
+		nodeInfo: make(map[string]cloudprotocol.NodeInfo),
+	}
+}
+
+func (provider *testNodeInfoProvider) GetAllNodeIDs() (nodeIDs []string, err error) {
+	if provider.nodeInfo == nil {
+		return nil, aoserrors.New("node info not found")
+	}
+
+	nodeIDs = make([]string, 0, len(provider.nodeInfo))
+	for nodeID := range provider.nodeInfo {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+
+	return nodeIDs, nil
+}
+
+func (provider *testNodeInfoProvider) GetNodeID() string {
+	return provider.nodeID
+}
+
+func (provider *testNodeInfoProvider) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
+	nodeInfo, ok := provider.nodeInfo[nodeID]
+	if !ok {
+		return cloudprotocol.NodeInfo{}, aoserrors.New("node info not found")
+	}
+
+	return nodeInfo, nil
+}
+
 // testNodeManager
 
 func newTestNodeManager() *testNodeManager {
 	nodeManager := &testNodeManager{
-		runStatusChan:   make(chan launcher.NodeRunInstanceStatus, 10),
-		nodeInformation: make(map[string]launcher.NodeInfo),
-		runRequest:      make(map[string]runRequest),
-		alertsChannel:   make(chan cloudprotocol.SystemQuotaAlert, 10),
+		runStatusChan: make(chan launcher.NodeRunInstanceStatus, 10),
+		runRequest:    make(map[string]runRequest),
+		monitoring:    make(map[string]aostypes.NodeMonitoring),
 	}
 
 	return nodeManager
-}
-
-func (nodeManager *testNodeManager) GetNodeConfiguration(nodeID string) (launcher.NodeInfo, error) {
-	config, ok := nodeManager.nodeInformation[nodeID]
-	if !ok {
-		return launcher.NodeInfo{}, aoserrors.New("node config doesn't exist")
-	}
-
-	config.NodeID = nodeID
-
-	return config, nil
 }
 
 func (nodeManager *testNodeManager) RunInstances(nodeID string,
@@ -1865,9 +865,9 @@ func (nodeManager *testNodeManager) RunInstances(nodeID string,
 
 	for i, instance := range instances {
 		successStatus.Instances[i] = cloudprotocol.InstanceStatus{
-			InstanceIdent: instance.InstanceIdent,
-			AosVersion:    1,
-			RunState:      cloudprotocol.InstanceStateActive, NodeID: nodeID,
+			InstanceIdent:  instance.InstanceIdent,
+			ServiceVersion: "1.0",
+			Status:         cloudprotocol.InstanceStateActive, NodeID: nodeID,
 		}
 	}
 
@@ -1884,12 +884,13 @@ func (nodeManager *testNodeManager) GetUpdateInstancesStatusChannel() <-chan []c
 	return nil
 }
 
-func (nodeManager *testNodeManager) GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
-	return nodeManager.alertsChannel
-}
+func (nodeManager *testNodeManager) GetAverageMonitoring(nodeID string) (aostypes.NodeMonitoring, error) {
+	monitoring, ok := nodeManager.monitoring[nodeID]
+	if ok {
+		return monitoring, nil
+	}
 
-func (nodeManager *testNodeManager) GetNodeMonitoringData(nodeID string) (cloudprotocol.NodeMonitoringData, error) {
-	return cloudprotocol.NodeMonitoringData{}, nil
+	return aostypes.NodeMonitoring{}, nil
 }
 
 func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[string]runRequest) error {
@@ -1918,113 +919,81 @@ func (nodeManager *testNodeManager) compareRunRequests(expectedRunRequests map[s
 
 func newTestResourceManager() *testResourceManager {
 	resourceManager := &testResourceManager{
-		nodeResources: make(map[string]aostypes.NodeUnitConfig),
+		nodeConfigs: make(map[string]cloudprotocol.NodeConfig),
 	}
 
 	return resourceManager
 }
 
-func (resourceManager *testResourceManager) GetUnitConfiguration(nodeType string) aostypes.NodeUnitConfig {
-	resource := resourceManager.nodeResources[nodeType]
+func (resourceManager *testResourceManager) GetNodeConfig(nodeID, nodeType string) (cloudprotocol.NodeConfig, error) {
+	resource := resourceManager.nodeConfigs[nodeType]
 	resource.NodeType = nodeType
 
-	return resource
+	return resource, nil
 }
 
 // testStorage
 
-func newTestStorage() *testStorage {
-	return &testStorage{
-		desiredInstances: json.RawMessage("[]"),
-		nodeState:        make(map[string]json.RawMessage),
-		services:         make(map[string][]imagemanager.ServiceInfo),
+func newTestStorage(instances []launcher.InstanceInfo) *testStorage {
+	storage := &testStorage{
+		instanceInfo: make(map[aostypes.InstanceIdent]*launcher.InstanceInfo),
 	}
+
+	for _, instance := range instances {
+		storage.instanceInfo[instance.InstanceIdent] = &launcher.InstanceInfo{}
+		*storage.instanceInfo[instance.InstanceIdent] = instance
+	}
+
+	return storage
 }
 
 func (storage *testStorage) AddInstance(instanceInfo launcher.InstanceInfo) error {
-	for _, uid := range storage.instanceInfo {
-		if uid.InstanceIdent == instanceInfo.InstanceIdent {
-			return aoserrors.New("uid for instance already exist")
-		}
+	if _, ok := storage.instanceInfo[instanceInfo.InstanceIdent]; ok {
+		return aoserrors.New("instance already exist")
 	}
 
-	storage.instanceInfo = append(storage.instanceInfo, instanceInfo)
+	storage.instanceInfo[instanceInfo.InstanceIdent] = &instanceInfo
 
 	return nil
 }
 
-func (storage *testStorage) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
-	for _, instanceInfo := range storage.instanceInfo {
-		if instanceInfo.InstanceIdent == instance {
-			return instanceInfo.UID, nil
-		}
+func (storage *testStorage) UpdateInstance(instanceInfo launcher.InstanceInfo) error {
+	if _, ok := storage.instanceInfo[instanceInfo.InstanceIdent]; !ok {
+		return launcher.ErrNotExist
 	}
 
-	return 0, launcher.ErrNotExist
+	storage.instanceInfo[instanceInfo.InstanceIdent] = &instanceInfo
+
+	return nil
+}
+
+func (storage *testStorage) GetInstance(instanceIdent aostypes.InstanceIdent) (launcher.InstanceInfo, error) {
+	instanceInfo, ok := storage.instanceInfo[instanceIdent]
+	if !ok {
+		return launcher.InstanceInfo{}, launcher.ErrNotExist
+	}
+
+	return *instanceInfo, nil
 }
 
 func (storage *testStorage) GetInstances() ([]launcher.InstanceInfo, error) {
-	instances := make([]launcher.InstanceInfo, len(storage.instanceInfo))
-	copy(instances, storage.instanceInfo)
+	instances := make([]launcher.InstanceInfo, 0, len(storage.instanceInfo))
+
+	for _, instanceInfo := range storage.instanceInfo {
+		instances = append(instances, *instanceInfo)
+	}
 
 	return instances, nil
 }
 
 func (storage *testStorage) RemoveInstance(instanceIdent aostypes.InstanceIdent) error {
-	for i, instanceInfo := range storage.instanceInfo {
-		if instanceInfo.InstanceIdent == instanceIdent {
-			storage.instanceInfo = append(storage.instanceInfo[:i], storage.instanceInfo[i+1:]...)
-
-			return nil
-		}
+	if _, ok := storage.instanceInfo[instanceIdent]; !ok {
+		return launcher.ErrNotExist
 	}
 
-	return launcher.ErrNotExist
-}
-
-func (storage *testStorage) SetDesiredInstances(instances json.RawMessage) error {
-	storage.desiredInstances = instances
-	return nil
-}
-
-func (storage *testStorage) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
-	for i, instanceInfo := range storage.instanceInfo {
-		if instanceInfo.InstanceIdent == instance {
-			storage.instanceInfo[i].Cached = cached
-
-			return nil
-		}
-	}
-
-	return launcher.ErrNotExist
-}
-
-func (storage *testStorage) GetDesiredInstances() (instances json.RawMessage, err error) {
-	return storage.desiredInstances, nil
-}
-
-func (storage *testStorage) SetNodeState(nodeID string, runRequest json.RawMessage) error {
-	storage.nodeState[nodeID] = runRequest
+	delete(storage.instanceInfo, instanceIdent)
 
 	return nil
-}
-
-func (storage *testStorage) GetNodeState(nodeID string) (json.RawMessage, error) {
-	runRequestJSON, ok := storage.nodeState[nodeID]
-	if !ok {
-		return nil, launcher.ErrNotExist
-	}
-
-	return runRequestJSON, nil
-}
-
-func (storage *testStorage) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
-	services, ok := storage.services[serviceID]
-	if !ok {
-		return imagemanager.ServiceInfo{}, imagemanager.ErrNotExist
-	}
-
-	return services[len(services)-1], nil
 }
 
 // testStateStorage
@@ -2061,10 +1030,6 @@ func newTestImageProvider() *testImageProvider {
 	}
 }
 
-func (testProvider *testImageProvider) close() {
-	close(testProvider.removeServiceInstancesChannel)
-}
-
 func (testProvider *testImageProvider) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
 	if service, ok := testProvider.services[serviceID]; ok {
 		return service, nil
@@ -2083,12 +1048,6 @@ func (testProvider *testImageProvider) GetLayerInfo(digest string) (imagemanager
 
 func (testProvider *testImageProvider) GetRemoveServiceChannel() (channel <-chan string) {
 	return testProvider.removeServiceInstancesChannel
-}
-
-func (testProvider *testImageProvider) RevertService(serviceID string) error {
-	testProvider.revertedServices = append(testProvider.revertedServices, serviceID)
-
-	return nil
 }
 
 // testNetworkManager
@@ -2155,36 +1114,1096 @@ func (network *testNetworkManager) RestartDNSServer() error {
 }
 
 /***********************************************************************************************************************
+ * Balancing test items
+ **********************************************************************************************************************/
+
+func testItemNodePriority() testData {
+	return testData{
+		testCaseName: "node priority",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+			nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {Runners: []string{runnerRunc}},
+			service2: {Runners: []string{runnerRunc}},
+			service3: {Runners: []string{runnerRunx}},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+					createServiceInfo(service2, 5001, service2LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+					createInstanceInfo(5003, 5, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 1,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+			nodeIDRemoteSM2: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+			nodeIDRunxSM: {
+				services: []aostypes.ServiceInfo{createServiceInfo(service3, 5002, service3RemoteURL)},
+				layers:   []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5004, 6, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+					createInstanceInfo(5005, 7, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 1,
+					}, 0),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRunxSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 1,
+			}, nodeIDRunxSM, nil),
+		},
+	}
+}
+
+func testItemLabels() testData {
+	return testData{
+		testCaseName: "labels",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM:  {NodeType: nodeTypeLocalSM, Priority: 100, Labels: []string{"label1"}},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"}},
+			nodeTypeRunxSM:   {NodeType: nodeTypeRunxSM, Priority: 0},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {Runners: []string{runnerRunc}},
+			service2: {Runners: []string{runnerRunc}},
+			service3: {Runners: []string{runnerRunx}},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2, Labels: []string{"label2"}},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2, Labels: []string{"label1"}},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2, Labels: []string{"label1"}},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{createServiceInfo(service2, 5001, service2LocalURL)},
+				layers:   []aostypes.LayerInfo{createLayerInfo(layer1, layer1LocalURL)},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 2, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+					createInstanceInfo(5003, 3, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 1,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{createServiceInfo(service1, 5000, service1RemoteURL)},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+			nodeIDRunxSM: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, "", errors.New("no nodes with labels [label1]")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 1,
+			}, "", errors.New("no nodes with labels [label1]")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemResources() testData {
+	return testData{
+		testCaseName: "resources",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Resources: []cloudprotocol.ResourceInfo{
+				{Name: "resource1"},
+				{Name: "resource3"},
+			}},
+			nodeTypeRemoteSM: {
+				NodeType: nodeTypeRemoteSM, Priority: 50, Labels: []string{"label2"},
+				Resources: []cloudprotocol.ResourceInfo{
+					{Name: "resource1"},
+					{Name: "resource2"},
+				},
+			},
+			nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {Runners: []string{runnerRunc}, Resources: []string{"resource1", "resource2"}},
+			service2: {Runners: []string{runnerRunc}, Resources: []string{"resource1"}},
+			service3: {Runners: []string{runnerRunc}, Resources: []string{"resource3"}},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 2},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 2},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2, Labels: []string{"label2"}},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{createServiceInfo(service2, 5001, service2LocalURL)},
+				layers:   []aostypes.LayerInfo{createLayerInfo(layer1, layer1LocalURL)},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 2, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+					createInstanceInfo(5003, 3, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 1,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{createServiceInfo(service1, 5000, service1RemoteURL)},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+			nodeIDRunxSM: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, "", errors.New("no nodes with resources [resource3]")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 1,
+			}, "", errors.New("no nodes with resources [resource3]")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemDevices() testData {
+	return testData{
+		testCaseName: "devices",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100, Devices: []cloudprotocol.DeviceInfo{
+				{Name: "dev1", SharedCount: 1},
+				{Name: "dev2", SharedCount: 2},
+				{Name: "dev3"},
+			}},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50, Devices: []cloudprotocol.DeviceInfo{
+				{Name: "dev1", SharedCount: 1},
+				{Name: "dev2", SharedCount: 3},
+			}, Labels: []string{"label2"}},
+			nodeTypeRunxSM: {NodeType: nodeTypeRunxSM, Priority: 0, Devices: []cloudprotocol.DeviceInfo{
+				{Name: "dev1", SharedCount: 1},
+				{Name: "dev2", SharedCount: 2},
+			}},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Runners: []string{runnerRunc},
+				Devices: []aostypes.ServiceDevice{{Name: "dev1"}, {Name: "dev2"}},
+			},
+			service2: {
+				Runners: []string{runnerRunc},
+				Devices: []aostypes.ServiceDevice{{Name: "dev2"}},
+			},
+			service3: {
+				Runners: []string{runnerRunc},
+				Devices: []aostypes.ServiceDevice{{Name: "dev3"}},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 4},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 3},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 2, Labels: []string{"label2"}},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+					createServiceInfo(service2, 5001, service2LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5003, 3, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+					createInstanceInfo(5004, 5, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 1,
+					}, 50),
+					createInstanceInfo(5005, 6, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 2,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{createServiceInfo(service1, 5000, service1RemoteURL)},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 7, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+				},
+			},
+			nodeIDRunxSM: {
+				services:  []aostypes.ServiceInfo{},
+				layers:    []aostypes.LayerInfo{},
+				instances: []aostypes.InstanceInfo{},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, "", errors.New("no nodes with devices")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 1,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 2,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, "", errors.New("no nodes with devices")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 1,
+			}, "", errors.New("no nodes with devices")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemStorageRatio() testData {
+	return testData{
+		testCaseName: "storage ratio",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					StorageLimit: newQuota(500),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 5},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+					createInstanceInfo(5003, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 3,
+					}, 100),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 4,
+			}, "", errors.New("not enough storage space")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemStateRatio() testData {
+	return testData{
+		testCaseName: "state ratio",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					StateLimit: newQuota(500),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 5},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+					createInstanceInfo(5003, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 3,
+					}, 100),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 4,
+			}, "", errors.New("not enough state space")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemCPURatio() testData {
+	return testData{
+		testCaseName: "CPU ratio",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 8},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+					createInstanceInfo(5004, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 4,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5003, 6, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 3,
+					}, 100),
+					createInstanceInfo(5005, 7, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 5,
+					}, 100),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 4,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 5,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 6,
+			}, "", errors.New("no nodes with available CPU")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 7,
+			}, "", errors.New("no nodes with available CPU")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemRAMRatio() testData {
+	return testData{
+		testCaseName: "RAM ratio",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					RAMLimit: newQuota(1024),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 8},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+					createLayerInfo(layer2, layer2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 1,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 2,
+					}, 100),
+					createInstanceInfo(5003, 5, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 3,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1RemoteURL),
+				},
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1RemoteURL),
+					createLayerInfo(layer2, layer2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5004, 6, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 4,
+					}, 100),
+					createInstanceInfo(5005, 7, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 5,
+					}, 100),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 1,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 2,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 3,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 4,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 5,
+			}, nodeIDRemoteSM2, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 6,
+			}, "", errors.New("no nodes with available RAM")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 7,
+			}, "", errors.New("no nodes with available RAM")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemRebalancing() testData {
+	return testData{
+		testCaseName: "rebalancing",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {
+				NodeType: nodeTypeLocalSM, Priority: 100,
+				AlertRules: &aostypes.AlertRules{
+					CPU: &aostypes.AlertRulePercents{
+						MinThreshold: 75.0, MaxThreshold: 85.0,
+					},
+				},
+			},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+			service2: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+			service3: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+		},
+		monitoring: map[string]aostypes.NodeMonitoring{
+			nodeIDLocalSM: {
+				NodeData: aostypes.MonitoringData{CPU: 1000},
+				InstancesData: []aostypes.InstanceMonitoring{
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+				},
+			},
+		},
+		storedInstances: []launcher.InstanceInfo{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5000,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5001,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service3, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDRemoteSM1,
+				UID:           5002,
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 3, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service3, 5002, service3RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 4, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM2, nil),
+		},
+		rebalancing: true,
+	}
+}
+
+func testItemRebalancingPolicy() testData {
+	return testData{
+		testCaseName: "rebalancing policy",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {
+				NodeType: nodeTypeLocalSM, Priority: 100,
+				AlertRules: &aostypes.AlertRules{
+					CPU: &aostypes.AlertRulePercents{
+						MinThreshold: 75.0, MaxThreshold: 85.0,
+					},
+				},
+			},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+			service2: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+			service3: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+				BalancingPolicy: aostypes.BalancingDisabled,
+			},
+		},
+		monitoring: map[string]aostypes.NodeMonitoring{
+			nodeIDLocalSM: {
+				NodeData: aostypes.MonitoringData{CPU: 1000},
+				InstancesData: []aostypes.InstanceMonitoring{
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+				},
+			},
+		},
+		storedInstances: []launcher.InstanceInfo{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5000,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5001,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service3, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDRemoteSM1,
+				UID:           5002,
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service3, 5002, service3RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 3, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM2, nil),
+		},
+		rebalancing: true,
+	}
+}
+
+func testItemRebalancingPrevNode() testData {
+	return testData{
+		testCaseName: "rebalancing prev node",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {
+				NodeType: nodeTypeLocalSM, Priority: 100,
+				AlertRules: &aostypes.AlertRules{
+					CPU: &aostypes.AlertRulePercents{
+						MinThreshold: 75.0, MaxThreshold: 85.0,
+					},
+				},
+			},
+			nodeTypeRemoteSM: {NodeType: nodeTypeRemoteSM, Priority: 50},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+			service2: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+			service3: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(1000),
+				},
+			},
+		},
+		monitoring: map[string]aostypes.NodeMonitoring{
+			nodeIDLocalSM: {
+				NodeData: aostypes.MonitoringData{CPU: 1000},
+				InstancesData: []aostypes.InstanceMonitoring{
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+					{
+						InstanceIdent:  aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+						MonitoringData: aostypes.MonitoringData{CPU: 500},
+					},
+				},
+			},
+		},
+		storedInstances: []launcher.InstanceInfo{
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service1, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5000,
+				PrevNodeID:    nodeIDLocalSM,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service2, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDLocalSM,
+				UID:           5001,
+				PrevNodeID:    nodeIDRemoteSM1,
+			},
+			{
+				InstanceIdent: aostypes.InstanceIdent{ServiceID: service3, SubjectID: subject1, Instance: 0},
+				NodeID:        nodeIDRemoteSM1,
+				UID:           5002,
+				PrevNodeID:    nodeIDRemoteSM2,
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, Priority: 100, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, Priority: 50, NumInstances: 1},
+			{ServiceID: service3, SubjectID: subject1, Priority: 0, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service1, 5000, service1LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service1, SubjectID: subject1, Instance: 0,
+					}, 100),
+				},
+			},
+			nodeIDRemoteSM1: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service3, 5002, service3RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5002, 3, aostypes.InstanceIdent{
+						ServiceID: service3, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+			nodeIDRemoteSM2: {
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2RemoteURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5001, 4, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 50),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service3, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM1, nil),
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDRemoteSM2, nil),
+		},
+		rebalancing: true,
+	}
+}
+
+/***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
 func createServiceInfo(id string, gid uint32, url string) aostypes.ServiceInfo {
 	return aostypes.ServiceInfo{
-		ID:          id,
-		VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-		URL:         url,
-		GID:         gid,
+		ServiceID: id,
+		Version:   "1.0",
+		URL:       url,
+		GID:       gid,
 	}
 }
 
 func createLayerInfo(digest string, url string) aostypes.LayerInfo {
 	return aostypes.LayerInfo{
-		Digest:      digest,
-		VersionInfo: aostypes.VersionInfo{AosVersion: 1},
-		URL:         url,
+		Digest:  digest,
+		Version: "1.0",
+		URL:     url,
 	}
 }
 
 func createInstanceStatus(ident aostypes.InstanceIdent, nodeID string, err error) cloudprotocol.InstanceStatus {
 	status := cloudprotocol.InstanceStatus{
-		InstanceIdent: ident,
-		RunState:      cloudprotocol.InstanceStateActive,
-		AosVersion:    1,
-		NodeID:        nodeID,
+		InstanceIdent:  ident,
+		Status:         cloudprotocol.InstanceStateActive,
+		ServiceVersion: "1.0",
+		NodeID:         nodeID,
 	}
 
 	if err != nil {
-		status.RunState = cloudprotocol.InstanceStateFailed
+		status.Status = cloudprotocol.InstanceStateFailed
 		status.ErrorInfo = &cloudprotocol.ErrorInfo{
 			Message: err.Error(),
 		}
@@ -2208,63 +2227,48 @@ func createInstanceInfo(uid uint32, ip int, ident aostypes.InstanceIdent, priori
 	}
 }
 
-func waitRunInstancesStatus(
-	messageChannel <-chan unitstatushandler.RunInstancesStatus, expectedMsg unitstatushandler.RunInstancesStatus,
-	timeout time.Duration,
-) (err error) {
-	var message unitstatushandler.RunInstancesStatus
-
+func waitRunInstancesStatus(runStatusChannel <-chan []cloudprotocol.InstanceStatus,
+	expectedStatus []cloudprotocol.InstanceStatus, timeout time.Duration,
+) error {
 	select {
 	case <-time.After(timeout):
 		return aoserrors.New("wait message timeout")
 
-	case message = <-messageChannel:
-		if len(message.Instances) != len(expectedMsg.Instances) {
+	case receivedStatus := <-runStatusChannel:
+		if len(receivedStatus) != len(expectedStatus) {
 			return aoserrors.New("incorrect length")
 		}
 
 	topLoop:
-		for _, receivedEl := range message.Instances {
-			for _, expectedEl := range expectedMsg.Instances {
-				if receivedEl.ErrorInfo == nil && expectedEl.ErrorInfo != nil {
+		for _, receivedItem := range receivedStatus {
+			for _, expectedItem := range expectedStatus {
+				if receivedItem.ErrorInfo == nil && expectedItem.ErrorInfo != nil {
 					continue
 				}
 
-				if receivedEl.ErrorInfo != nil && expectedEl.ErrorInfo == nil {
+				if receivedItem.ErrorInfo != nil && expectedItem.ErrorInfo == nil {
 					continue
 				}
 
-				if receivedEl.ErrorInfo != nil && expectedEl.ErrorInfo != nil {
-					if receivedEl.ErrorInfo.AosCode != expectedEl.ErrorInfo.AosCode ||
-						receivedEl.ErrorInfo.ExitCode != expectedEl.ErrorInfo.ExitCode ||
-						!strings.Contains(receivedEl.ErrorInfo.Message, expectedEl.ErrorInfo.Message) {
+				if receivedItem.ErrorInfo != nil && expectedItem.ErrorInfo != nil {
+					if receivedItem.ErrorInfo.AosCode != expectedItem.ErrorInfo.AosCode ||
+						receivedItem.ErrorInfo.ExitCode != expectedItem.ErrorInfo.ExitCode ||
+						!strings.Contains(receivedItem.ErrorInfo.Message, expectedItem.ErrorInfo.Message) {
 						continue
 					}
 				}
 
-				receivedForCheck := receivedEl
+				receivedForCheck := receivedItem
 
 				receivedForCheck.ErrorInfo = nil
-				expectedEl.ErrorInfo = nil
+				expectedItem.ErrorInfo = nil
 
-				if reflect.DeepEqual(receivedForCheck, expectedEl) {
+				if reflect.DeepEqual(receivedForCheck, expectedItem) {
 					continue topLoop
 				}
 			}
 
 			return aoserrors.New("incorrect instances in run status")
-		}
-
-		if err := deepSlicesCompare(expectedMsg.UnitSubjects, message.UnitSubjects); err != nil {
-			return aoserrors.New("incorrect subjects in run status")
-		}
-
-		for i := range message.ErrorServices {
-			message.ErrorServices[i].ErrorInfo = nil
-		}
-
-		if err := deepSlicesCompare(expectedMsg.ErrorServices, message.ErrorServices); err != nil {
-			return aoserrors.New("incorrect error services in run status")
 		}
 
 		return nil
@@ -2288,4 +2292,8 @@ topLabel:
 	}
 
 	return nil
+}
+
+func newQuota(value uint64) *uint64 {
+	return &value
 }

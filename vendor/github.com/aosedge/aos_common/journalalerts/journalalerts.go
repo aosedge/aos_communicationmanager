@@ -55,12 +55,12 @@ const microSecondsInSecond = 1000000
 
 // AlertSender alerts sender.
 type AlertSender interface {
-	SendAlert(alerts cloudprotocol.AlertItem)
+	SendAlert(alert interface{})
 }
 
 // InstanceInfoProvider provides instance info.
 type InstanceInfoProvider interface {
-	GetInstanceInfoByID(instanceID string) (ident aostypes.InstanceIdent, aosVersion uint64, err error)
+	GetInstanceInfoByID(instanceID string) (ident aostypes.InstanceIdent, version string, err error)
 }
 
 // CursorStorage provides API to set and get journal cursor.
@@ -305,25 +305,18 @@ func (instance *JournalAlerts) processJournal() (err error) {
 			unit = systemdCgroup
 		}
 
-		alert := cloudprotocol.AlertItem{
-			Timestamp: time.Unix(int64(entry.RealtimeTimestamp/microSecondsInSecond),
-				int64((entry.RealtimeTimestamp%microSecondsInSecond)*1000)),
-		}
-
-		if payload := instance.getServiceInstanceAlert(entry, unit); payload != nil {
-			alert.Tag = cloudprotocol.AlertTagServiceInstance
-			alert.Payload = *payload
-		} else if payload := instance.getCoreComponentAlert(entry, unit); payload != nil {
-			alert.Tag = cloudprotocol.AlertTagAosCore
-			alert.Payload = *payload
-		} else if payload := instance.getSystemAlert(entry); payload != nil {
-			alert.Tag = cloudprotocol.AlertTagSystemError
-			alert.Payload = *payload
+		if alert := instance.getServiceInstanceAlert(entry, unit); alert != nil {
+			alert.AlertItem = createAlertItem(entry, cloudprotocol.AlertTagServiceInstance)
+			instance.sender.SendAlert(*alert)
+		} else if alert := instance.getCoreComponentAlert(entry, unit); alert != nil {
+			alert.AlertItem = createAlertItem(entry, cloudprotocol.AlertTagAosCore)
+			instance.sender.SendAlert(*alert)
+		} else if alert := instance.getSystemAlert(entry); alert != nil {
+			alert.AlertItem = createAlertItem(entry, cloudprotocol.AlertTagSystemError)
+			instance.sender.SendAlert(*alert)
 		} else {
 			continue
 		}
-
-		instance.sender.SendAlert(alert)
 	}
 }
 
@@ -352,17 +345,23 @@ func (instance *JournalAlerts) getServiceInstanceAlert(
 		instanceID = strings.TrimPrefix(instanceID, aosServicePrefix)
 		instanceID = strings.TrimSuffix(instanceID, ".service")
 
-		instanceIdent, aosVersion, err := instance.instanceProvider.GetInstanceInfoByID(instanceID)
+		instanceIdent, version, err := instance.instanceProvider.GetInstanceInfoByID(instanceID)
 		if err != nil {
 			log.Errorf("Can't get instance info: %s", err)
 
 			return nil
 		}
 
+		alertItem := cloudprotocol.AlertItem{
+			Timestamp: time.Now(),
+			Tag:       cloudprotocol.AlertTagServiceInstance,
+		}
+
 		return &cloudprotocol.ServiceInstanceAlert{
-			Message:       entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE],
-			InstanceIdent: instanceIdent,
-			AosVersion:    aosVersion,
+			AlertItem:      alertItem,
+			InstanceIdent:  instanceIdent,
+			Message:        entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE],
+			ServiceVersion: version,
 		}
 	}
 
@@ -392,4 +391,12 @@ func (instance *JournalAlerts) getSystemAlert(entry *sdjournal.JournalEntry) *cl
 	}
 
 	return &cloudprotocol.SystemAlert{Message: entry.Fields[sdjournal.SD_JOURNAL_FIELD_MESSAGE]}
+}
+
+func createAlertItem(entry *sdjournal.JournalEntry, tag string) cloudprotocol.AlertItem {
+	return cloudprotocol.AlertItem{
+		Tag: tag,
+		Timestamp: time.Unix(int64(entry.RealtimeTimestamp/microSecondsInSecond),
+			int64((entry.RealtimeTimestamp%microSecondsInSecond)*1000)),
+	}
 }

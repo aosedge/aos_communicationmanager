@@ -19,6 +19,7 @@ package amqphandler_test
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"math/rand"
@@ -167,14 +168,14 @@ func cleanup() {
 }
 
 func sendCloudMessage(msgType string, message interface{}) error {
-	rawJSON, err := json.Marshal(message)
+	jsonMsg, err := json.Marshal(message)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
 	dataToSend := cloudprotocol.ReceivedMessage{
-		Header: cloudprotocol.MessageHeader{MessageType: msgType, Version: cloudprotocol.ProtocolVersion},
-		Data:   rawJSON,
+		Header: cloudprotocol.MessageHeader{Version: cloudprotocol.ProtocolVersion},
+		Data:   jsonMsg,
 	}
 
 	dataJSON, err := json.Marshal(dataToSend)
@@ -184,6 +185,8 @@ func sendCloudMessage(msgType string, message interface{}) error {
 
 	log.WithFields(log.Fields{"message": string(dataJSON)}).Debug("Send message")
 
+	encryptedData := []byte(base64.StdEncoding.EncodeToString(dataJSON))
+
 	return aoserrors.Wrap(testClient.channel.Publish(
 		"",
 		outQueueName,
@@ -191,7 +194,7 @@ func sendCloudMessage(msgType string, message interface{}) error {
 		false,
 		amqp.Publishing{
 			ContentType: "text/plain",
-			Body:        dataJSON,
+			Body:        encryptedData,
 		}))
 }
 
@@ -217,6 +220,7 @@ func TestMain(m *testing.M) {
 
 func TestReceiveMessages(t *testing.T) {
 	cryptoContext := &testCryptoContext{}
+	rootfs := "rootfs"
 
 	amqpHandler, err := amqphandler.New()
 	if err != nil {
@@ -240,24 +244,27 @@ func TestReceiveMessages(t *testing.T) {
 
 	testData := []testDataType{
 		{
-			messageType: cloudprotocol.StateAcceptanceType,
+			messageType: cloudprotocol.StateAcceptanceMessageType,
 			expectedData: &cloudprotocol.StateAcceptance{
+				MessageType:   cloudprotocol.StateAcceptanceMessageType,
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj0", Instance: 1},
 				Checksum:      "0123456890", Result: "accepted", Reason: "just because",
 			},
 		},
 		{
-			messageType: cloudprotocol.UpdateStateType,
+			messageType: cloudprotocol.UpdateStateMessageType,
 			expectedData: &cloudprotocol.UpdateState{
+				MessageType:   cloudprotocol.UpdateStateMessageType,
 				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 				Checksum:      "0993478847", State: "This is new state",
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestLogType,
+			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
-				LogID:   "someID",
-				LogType: cloudprotocol.ServiceLog,
+				MessageType: cloudprotocol.RequestLogMessageType,
+				LogID:       "someID",
+				LogType:     cloudprotocol.ServiceLog,
 				Filter: cloudprotocol.LogFilter{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service2", "", -1),
 					From:           nil, Till: nil,
@@ -265,10 +272,11 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestLogType,
+			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
-				LogID:   "someID",
-				LogType: cloudprotocol.CrashLog,
+				MessageType: cloudprotocol.RequestLogMessageType,
+				LogID:       "someID",
+				LogType:     cloudprotocol.CrashLog,
 				Filter: cloudprotocol.LogFilter{
 					InstanceFilter: cloudprotocol.NewInstanceFilter("service3", "", -1),
 					From:           nil, Till: nil,
@@ -276,54 +284,87 @@ func TestReceiveMessages(t *testing.T) {
 			},
 		},
 		{
-			messageType: cloudprotocol.RequestLogType,
+			messageType: cloudprotocol.RequestLogMessageType,
 			expectedData: &cloudprotocol.RequestLog{
-				LogID:   "someID",
-				LogType: cloudprotocol.SystemLog,
+				MessageType: cloudprotocol.RequestLogMessageType,
+				LogID:       "someID",
+				LogType:     cloudprotocol.SystemLog,
 				Filter: cloudprotocol.LogFilter{
 					From: nil, Till: nil,
 				},
 			},
 		},
 		{
-			messageType: cloudprotocol.RenewCertsNotificationType,
+			messageType: cloudprotocol.RenewCertsNotificationMessageType,
 			expectedData: &cloudprotocol.RenewCertsNotification{
+				MessageType: cloudprotocol.RenewCertsNotificationMessageType,
 				Certificates: []cloudprotocol.RenewCertData{
-					{Type: "online", Serial: "1234", ValidTill: testTime},
+					{NodeID: "node0", Type: "online", Serial: "1234", ValidTill: testTime},
 				},
-				UnitSecret: cloudprotocol.UnitSecret{Version: 1, Data: struct {
-					OwnerPassword string `json:"ownerPassword"`
-				}{OwnerPassword: "pwd"}},
+				UnitSecrets: cloudprotocol.UnitSecrets{Version: "1.0.0", Nodes: map[string]string{"node0": "pwd"}},
 			},
 		},
 		{
-			messageType: cloudprotocol.IssuedUnitCertsType,
+			messageType: cloudprotocol.IssuedUnitCertsMessageType,
 			expectedData: &cloudprotocol.IssuedUnitCerts{
+				MessageType: cloudprotocol.IssuedUnitCertsMessageType,
 				Certificates: []cloudprotocol.IssuedCertData{
 					{Type: "online", NodeID: "mainNode", CertificateChain: "123456"},
 				},
 			},
 		},
 		{
-			messageType:  cloudprotocol.OverrideEnvVarsType,
-			expectedData: &cloudprotocol.OverrideEnvVars{OverrideEnvVars: []cloudprotocol.EnvVarsInstanceInfo{}},
+			messageType: cloudprotocol.OverrideEnvVarsMessageType,
+			expectedData: &cloudprotocol.OverrideEnvVars{
+				MessageType: cloudprotocol.OverrideEnvVarsMessageType,
+				Items:       []cloudprotocol.EnvVarsInstanceInfo{},
+			},
 		},
 		{
-			messageType: cloudprotocol.DesiredStatusType,
+			messageType: cloudprotocol.DesiredStatusMessageType,
 			expectedData: &cloudprotocol.DesiredStatus{
-				UnitConfig: json.RawMessage([]byte("\"config\"")),
+				MessageType: cloudprotocol.DesiredStatusMessageType,
+				UnitConfig:  &cloudprotocol.UnitConfig{},
 				Components: []cloudprotocol.ComponentInfo{
-					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "rootfs"},
+					{Version: "1.0.0", ComponentID: &rootfs},
 				},
 				Layers: []cloudprotocol.LayerInfo{
-					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "l1", Digest: "digest"},
+					{Version: "1.0", LayerID: "l1", Digest: "digest"},
 				},
 				Services: []cloudprotocol.ServiceInfo{
-					{VersionInfo: aostypes.VersionInfo{AosVersion: 1}, ID: "serv1", ProviderID: "p1"},
+					{Version: "1.0", ServiceID: "serv1", ProviderID: "p1"},
 				},
 				Instances:    []cloudprotocol.InstanceInfo{{ServiceID: "s1", SubjectID: "subj1", NumInstances: 1}},
 				FOTASchedule: cloudprotocol.ScheduleRule{TTL: uint64(100), Type: "type"},
 				SOTASchedule: cloudprotocol.ScheduleRule{TTL: uint64(200), Type: "type2"},
+			},
+		},
+		{
+			messageType: cloudprotocol.StartProvisioningRequestMessageType,
+			expectedData: &cloudprotocol.StartProvisioningRequest{
+				MessageType: cloudprotocol.StartProvisioningRequestMessageType,
+				NodeID:      "node-1",
+				Password:    "password-1",
+			},
+		},
+		{
+			messageType: cloudprotocol.FinishProvisioningRequestMessageType,
+			expectedData: &cloudprotocol.FinishProvisioningRequest{
+				MessageType: cloudprotocol.FinishProvisioningRequestMessageType,
+				NodeID:      "node1",
+				Certificates: []cloudprotocol.IssuedCertData{
+					{NodeID: "node1", Type: "online", CertificateChain: "onlineCSR"},
+					{NodeID: "node1", Type: "offline", CertificateChain: "offlineCSR"},
+				},
+				Password: "password-1",
+			},
+		},
+		{
+			messageType: cloudprotocol.DeprovisioningRequestMessageType,
+			expectedData: &cloudprotocol.DeprovisioningRequest{
+				MessageType: cloudprotocol.DeprovisioningRequestMessageType,
+				NodeID:      "node-1",
+				Password:    "password-1",
 			},
 		},
 	}
@@ -373,141 +414,174 @@ func TestSendMessages(t *testing.T) {
 		getDataType func() interface{}
 	}
 
-	unitConfigData := []cloudprotocol.UnitConfigStatus{{VendorVersion: "1.0"}}
+	unitConfigData := []cloudprotocol.UnitConfigStatus{{Version: "1.0"}}
 
 	serviceSetupData := []cloudprotocol.ServiceStatus{
-		{ID: "service0", AosVersion: 1, Status: "running", ErrorInfo: nil},
+		{ServiceID: "service0", Version: "1.0", Status: "running", ErrorInfo: nil},
 		{
-			ID: "service1", AosVersion: 2, Status: "stopped",
+			ServiceID: "service1", Version: "2.0", Status: "stopped",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "crash"},
 		},
 		{
-			ID: "service2", AosVersion: 3, Status: "unknown",
+			ServiceID: "service2", Version: "3.0", Status: "unknown",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "unknown"},
 		},
 	}
 
 	instances := []cloudprotocol.InstanceStatus{
 		{
-			InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-			AosVersion:    1, StateChecksum: "12345", RunState: "running", NodeID: "mainNode",
+			InstanceIdent:  aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+			ServiceVersion: "1.0", StateChecksum: "12345", Status: "running", NodeID: "mainNode",
 		},
 	}
 
 	layersSetupData := []cloudprotocol.LayerStatus{
 		{
-			ID: "layer0", Digest: "sha256:0", Status: "failed", AosVersion: 1,
+			LayerID: "layer0", Digest: "sha256:0", Status: "failed", Version: "1.0",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "bad layer"},
 		},
-		{ID: "layer1", Digest: "sha256:1", Status: "installed", AosVersion: 2},
-		{ID: "layer2", Digest: "sha256:2", Status: "installed", AosVersion: 3},
+		{LayerID: "layer1", Digest: "sha256:1", Status: "installed", Version: "2.0"},
+		{LayerID: "layer2", Digest: "sha256:2", Status: "installed", Version: "3.0"},
 	}
 
 	componentSetupData := []cloudprotocol.ComponentStatus{
-		{ID: "rootfs", Status: "installed", VendorVersion: "1.0"},
-		{ID: "firmware", Status: "installed", VendorVersion: "5", AosVersion: 6},
+		{ComponentID: "rootfs", Status: "installed", Version: "1.0"},
+		{ComponentID: "firmware", Status: "installed", Version: "5.6"},
 		{
-			ID: "bootloader", Status: "error", VendorVersion: "100",
+			ComponentID: "bootloader", Status: "error", Version: "100",
 			ErrorInfo: &cloudprotocol.ErrorInfo{AosCode: 1, ExitCode: 100, Message: "install error"},
 		},
 	}
 
 	nodeConfiguration := []cloudprotocol.NodeInfo{
-		{NodeID: "main", NodeType: "mainType", SystemInfo: cloudprotocol.SystemInfo{
-			NumCPUs: 2, TotalRAM: 200,
-			Partitions: []cloudprotocol.PartitionInfo{
-				{Name: "p1", Types: []string{"t1"}, TotalSize: 200},
+		{
+			NodeID: "main", NodeType: "mainType", TotalRAM: 200,
+			CPUs: []cloudprotocol.CPUInfo{
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
+				{ModelName: "Intel(R) Core(TM) i7-1185G7"},
 			},
-		}},
+			Partitions: []cloudprotocol.PartitionInfo{{Name: "p1", Types: []string{"t1"}, TotalSize: 200}},
+		},
 	}
 
 	nodeMonitoring := cloudprotocol.NodeMonitoringData{
-		MonitoringData: cloudprotocol.MonitoringData{
-			RAM: 1024, CPU: 50, InTraffic: 8192, OutTraffic: 4096, Disk: []cloudprotocol.PartitionUsage{{
-				Name: "p1", UsedSize: 100,
-			}},
+		Items: []aostypes.MonitoringData{
+			{
+				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Disk: []aostypes.PartitionUsage{{
+					Name: "p1", UsedSize: 100,
+				}},
+				Timestamp: time.Now().UTC(),
+			},
 		},
-		NodeID:    "mainNode",
-		Timestamp: time.Now().UTC(),
-		ServiceInstances: []cloudprotocol.InstanceMonitoringData{
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 1024, CPU: 50, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+	}
+
+	instanceMonitoringData := []cloudprotocol.InstanceMonitoringData{
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 1024, CPU: 50, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 128, CPU: 60, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+		},
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 128, CPU: 60, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 256, CPU: 70, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+		},
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 256, CPU: 70, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
-			{
-				InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
-				MonitoringData: cloudprotocol.MonitoringData{RAM: 512, CPU: 80, Disk: []cloudprotocol.PartitionUsage{{
-					Name: "p1", UsedSize: 100,
-				}}},
+		},
+		{
+			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
+			Items: []aostypes.MonitoringData{
+				{RAM: 512, CPU: 80, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 	}
 
 	monitoringData := cloudprotocol.Monitoring{
-		Nodes: []cloudprotocol.NodeMonitoringData{nodeMonitoring},
+		MessageType:      cloudprotocol.MonitoringMessageType,
+		Nodes:            []cloudprotocol.NodeMonitoringData{nodeMonitoring},
+		ServiceInstances: instanceMonitoringData,
 	}
 
 	pushServiceLogData := cloudprotocol.PushLog{
-		LogID:      "log0",
-		PartsCount: 2,
-		Part:       1,
-		Content:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		MessageType: cloudprotocol.PushLogMessageType,
+		LogID:       "log0",
+		PartsCount:  2,
+		Part:        1,
+		Content:     []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		ErrorInfo: &cloudprotocol.ErrorInfo{
 			Message: "Error",
 		},
 	}
 
+	now := time.Now().UTC()
+	nowFormatted := now.Format(time.RFC3339Nano)
+
 	alertsData := cloudprotocol.Alerts{
-		cloudprotocol.AlertItem{
-			Timestamp: time.Now().UTC(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   map[string]interface{}{"Message": "System error", "nodeId": "mainNode"},
-		},
-		cloudprotocol.AlertItem{
-			Timestamp: time.Now().UTC(),
-			Tag:       cloudprotocol.AlertTagSystemError,
-			Payload:   map[string]interface{}{"Message": "Service crashed", "nodeId": "mainNode"},
-		},
-		cloudprotocol.AlertItem{
-			Timestamp: time.Now().UTC(),
-			Tag:       cloudprotocol.AlertTagResourceValidate,
-			Payload:   map[string]interface{}{"Parameter": "cpu", "Value": float64(100), "nodeId": "mainNode"},
+		MessageType: cloudprotocol.AlertsMessageType,
+		Items: []interface{}{
+			cloudprotocol.SystemAlert{
+				AlertItem: cloudprotocol.AlertItem{Timestamp: now, Tag: cloudprotocol.AlertTagSystemError},
+				Message:   "System error", NodeID: "mainNode",
+			},
+			cloudprotocol.SystemAlert{
+				AlertItem: cloudprotocol.AlertItem{Timestamp: now, Tag: cloudprotocol.AlertTagSystemError},
+				Message:   "Service crashed", NodeID: "mainNode",
+			},
+			cloudprotocol.SystemQuotaAlert{
+				AlertItem: cloudprotocol.AlertItem{Timestamp: now, Tag: cloudprotocol.AlertTagSystemQuota},
+				NodeID:    "mainNode",
+				Parameter: "cpu",
+				Value:     1000,
+			},
 		},
 	}
 
 	overrideEnvStatus := cloudprotocol.OverrideEnvVarsStatus{
-		OverrideEnvVarsStatus: []cloudprotocol.EnvVarsInstanceStatus{
+		MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType,
+		Statuses: []cloudprotocol.EnvVarsInstanceStatus{
 			{
 				InstanceFilter: cloudprotocol.NewInstanceFilter("service0", "subject0", -1),
 				Statuses: []cloudprotocol.EnvVarStatus{
-					{ID: "1234"},
-					{ID: "345", Error: "some error"},
+					{Name: "1234"},
+					{Name: "345", ErrorInfo: &cloudprotocol.ErrorInfo{Message: "some error"}},
 				},
 			},
 			{
 				InstanceFilter: cloudprotocol.NewInstanceFilter("service1", "subject1", -1),
 				Statuses: []cloudprotocol.EnvVarStatus{
-					{ID: "0000"},
+					{Name: "0000"},
 				},
 			},
 		},
 	}
 
+	startProvisioningResponse := cloudprotocol.StartProvisioningResponse{
+		MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+		NodeID:      "node-1",
+		ErrorInfo:   nil,
+		CSRs:        []cloudprotocol.IssueCertData{{Type: "online", Csr: "iam"}, {Type: "offline", Csr: "iam"}},
+	}
+
+	finishProvisioningResponse := cloudprotocol.FinishProvisioningResponse{
+		MessageType: cloudprotocol.FinishProvisioningResponseMessageType,
+		NodeID:      "node-1",
+		ErrorInfo:   nil,
+	}
+
+	deProvisioningResponse := cloudprotocol.DeprovisioningResponse{
+		MessageType: cloudprotocol.DeprovisioningResponseMessageType,
+		NodeID:      "node-1",
+		ErrorInfo:   nil,
+	}
+
 	issueCerts := cloudprotocol.IssueUnitCerts{
+		MessageType: cloudprotocol.IssueUnitCertsMessageType,
 		Requests: []cloudprotocol.IssueCertData{
 			{Type: "online", Csr: "This is online CSR", NodeID: "mainNode"},
 			{Type: "offline", Csr: "This is offline CSR", NodeID: "mainNode"},
@@ -515,6 +589,7 @@ func TestSendMessages(t *testing.T) {
 	}
 
 	installCertsConfirmation := cloudprotocol.InstallUnitCertsConfirmation{
+		MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType,
 		Certificates: []cloudprotocol.InstallCertData{
 			{Type: "online", Serial: "1234", Status: "ok", Description: "This is online cert", NodeID: "mainNode"},
 			{Type: "offline", Serial: "1234", Status: "ok", Description: "This is offline cert", NodeID: "mainNode"},
@@ -536,11 +611,11 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.UnitStatusType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.UnitStatus{
+					MessageType:  cloudprotocol.UnitStatusMessageType,
 					UnitConfig:   unitConfigData,
 					Components:   componentSetupData,
 					Layers:       layersSetupData,
@@ -551,7 +626,7 @@ func TestSendMessages(t *testing.T) {
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.UnitStatus{}
+				return &cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType}
 			},
 		},
 		{
@@ -560,14 +635,13 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.MonitoringDataType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &monitoringData,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.Monitoring{}
+				return &cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}
 			},
 		},
 		{
@@ -581,40 +655,41 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.NewStateType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.NewState{
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 					Checksum:      "12345679", State: "This is state",
+					MessageType: cloudprotocol.NewStateMessageType,
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.NewState{}
+				return &cloudprotocol.NewState{MessageType: cloudprotocol.NewStateMessageType}
 			},
 		},
 		{
 			call: func() error {
 				return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(
 					cloudprotocol.StateRequest{
+						MessageType:   cloudprotocol.StateRequestMessageType,
 						InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 						Default:       true,
 					}))
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.StateRequestType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.StateRequest{
+					MessageType:   cloudprotocol.StateRequestMessageType,
 					InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 					Default:       true,
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.StateRequest{}
+				return &cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType}
 			},
 		},
 		{
@@ -623,20 +698,20 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.PushLogType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &cloudprotocol.PushLog{
-					LogID:      pushServiceLogData.LogID,
-					PartsCount: pushServiceLogData.PartsCount,
-					Part:       pushServiceLogData.Part,
-					Content:    pushServiceLogData.Content,
-					ErrorInfo:  pushServiceLogData.ErrorInfo,
+					MessageType: cloudprotocol.PushLogMessageType,
+					LogID:       pushServiceLogData.LogID,
+					PartsCount:  pushServiceLogData.PartsCount,
+					Part:        pushServiceLogData.Part,
+					Content:     pushServiceLogData.Content,
+					ErrorInfo:   pushServiceLogData.ErrorInfo,
 				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.PushLog{}
+				return &cloudprotocol.PushLog{MessageType: cloudprotocol.PushLogMessageType}
 			},
 		},
 		{
@@ -645,14 +720,29 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.AlertsType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
-				Data: &alertsData,
+				Data: &cloudprotocol.Alerts{
+					MessageType: cloudprotocol.AlertsMessageType,
+					Items: []interface{}{
+						map[string]interface{}{
+							"timestamp": nowFormatted, "tag": "systemAlert",
+							"nodeId": "mainNode", "message": "System error",
+						},
+						map[string]interface{}{
+							"timestamp": nowFormatted, "tag": "systemAlert",
+							"nodeId": "mainNode", "message": "Service crashed",
+						},
+						map[string]interface{}{
+							"timestamp": nowFormatted, "tag": "systemQuotaAlert",
+							"nodeId": "mainNode", "parameter": "cpu", "value": float64(1000),
+						},
+					},
+				},
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.Alerts{}
+				return &cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}
 			},
 		},
 		{
@@ -661,14 +751,13 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.IssueUnitCertsType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &issueCerts,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.IssueUnitCerts{}
+				return &cloudprotocol.IssueUnitCerts{MessageType: cloudprotocol.IssueUnitCertsMessageType}
 			},
 		},
 		{
@@ -677,14 +766,15 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.InstallUnitCertsConfirmationType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &installCertsConfirmation,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.InstallUnitCertsConfirmation{}
+				return &cloudprotocol.InstallUnitCertsConfirmation{
+					MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType,
+				}
 			},
 		},
 		{
@@ -693,14 +783,58 @@ func TestSendMessages(t *testing.T) {
 			},
 			data: cloudprotocol.Message{
 				Header: cloudprotocol.MessageHeader{
-					MessageType: cloudprotocol.OverrideEnvVarsStatusType,
-					SystemID:    systemID,
-					Version:     cloudprotocol.ProtocolVersion,
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
 				},
 				Data: &overrideEnvStatus,
 			},
 			getDataType: func() interface{} {
-				return &cloudprotocol.OverrideEnvVarsStatus{}
+				return &cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}
+			},
+		},
+		{
+			call: func() error {
+				return aoserrors.Wrap(amqpHandler.SendStartProvisioningResponse(startProvisioningResponse))
+			},
+			data: cloudprotocol.Message{
+				Header: cloudprotocol.MessageHeader{
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
+				},
+				Data: &startProvisioningResponse,
+			},
+			getDataType: func() interface{} {
+				return &cloudprotocol.StartProvisioningResponse{MessageType: cloudprotocol.StartProvisioningResponseMessageType}
+			},
+		},
+		{
+			call: func() error {
+				return aoserrors.Wrap(amqpHandler.SendFinishProvisioningResponse(finishProvisioningResponse))
+			},
+			data: cloudprotocol.Message{
+				Header: cloudprotocol.MessageHeader{
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
+				},
+				Data: &finishProvisioningResponse,
+			},
+			getDataType: func() interface{} {
+				return &cloudprotocol.FinishProvisioningResponse{MessageType: cloudprotocol.FinishProvisioningResponseMessageType}
+			},
+		},
+		{
+			call: func() error {
+				return aoserrors.Wrap(amqpHandler.SendDeprovisioningResponse(deProvisioningResponse))
+			},
+			data: cloudprotocol.Message{
+				Header: cloudprotocol.MessageHeader{
+					SystemID: systemID,
+					Version:  cloudprotocol.ProtocolVersion,
+				},
+				Data: &deProvisioningResponse,
+			},
+			getDataType: func() interface{} {
+				return &cloudprotocol.DeprovisioningResponse{MessageType: cloudprotocol.DeprovisioningResponseMessageType}
 			},
 		},
 	}
@@ -713,30 +847,31 @@ func TestSendMessages(t *testing.T) {
 
 		select {
 		case delivery := <-testClient.delivery:
-			var (
-				rawData     json.RawMessage
-				receiveData = cloudprotocol.Message{Data: &rawData}
-			)
+			receivedHeader := cloudprotocol.Message{}
 
-			if err = json.Unmarshal(delivery.Body, &receiveData); err != nil {
+			if err = json.Unmarshal(delivery.Body, &receivedHeader); err != nil {
 				t.Errorf("Error parsing message: %v", err)
 				continue
 			}
 
-			if !reflect.DeepEqual(receiveData.Header, message.data.Header) {
-				t.Errorf("Wrong Header received: %v != %v", receiveData.Header, message.data.Header)
+			if !reflect.DeepEqual(receivedHeader.Header, message.data.Header) {
+				t.Errorf("Wrong Header received: %v != %v", receivedHeader.Header, message.data.Header)
 				continue
 			}
 
-			decodedMsg := message.getDataType()
+			var receivedData struct {
+				Data interface{} `json:"data"`
+			}
 
-			if err = json.Unmarshal(rawData, &decodedMsg); err != nil {
+			receivedData.Data = message.getDataType()
+
+			if err = json.Unmarshal(delivery.Body, &receivedData); err != nil {
 				t.Errorf("Error parsing message: %v", err)
 				continue
 			}
 
-			if !reflect.DeepEqual(message.data.Data, decodedMsg) {
-				t.Errorf("Wrong data received: %v != %v", decodedMsg, message.data.Data)
+			if !reflect.DeepEqual(message.data.Data, receivedData.Data) {
+				t.Errorf("Wrong data received: %v != %v", receivedData.Data, message.data.Data)
 			}
 
 		case err = <-testClient.errChannel:
@@ -840,22 +975,34 @@ func TestSendMultipleMessages(t *testing.T) {
 
 	testData := []func() error{
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{}))
+			return aoserrors.Wrap(amqpHandler.SendUnitStatus(
+				cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendMonitoringData(cloudprotocol.Monitoring{}))
+			return aoserrors.Wrap(amqpHandler.SendMonitoringData(
+				cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendInstanceNewState(cloudprotocol.NewState{}))
+			return aoserrors.Wrap(
+				amqpHandler.SendInstanceNewState(cloudprotocol.NewState{MessageType: cloudprotocol.NewStateMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(cloudprotocol.StateRequest{}))
+			return aoserrors.Wrap(amqpHandler.SendInstanceStateRequest(
+				cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendLog(cloudprotocol.PushLog{}))
+			return aoserrors.Wrap(
+				amqpHandler.SendLog(cloudprotocol.PushLog{MessageType: cloudprotocol.PushLogMessageType}),
+			)
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendAlerts(cloudprotocol.Alerts{}))
+			return aoserrors.Wrap(
+				amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}),
+			)
 		},
 		func() error {
 			return aoserrors.Wrap(amqpHandler.SendIssueUnitCerts(nil))
@@ -864,7 +1011,9 @@ func TestSendMultipleMessages(t *testing.T) {
 			return aoserrors.Wrap(amqpHandler.SendInstallCertsConfirmation(nil))
 		},
 		func() error {
-			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(cloudprotocol.OverrideEnvVarsStatus{}))
+			return aoserrors.Wrap(amqpHandler.SendOverrideEnvVarsStatus(
+				cloudprotocol.OverrideEnvVarsStatus{MessageType: cloudprotocol.OverrideEnvVarsStatusMessageType}),
+			)
 		},
 	}
 
@@ -899,23 +1048,24 @@ func TestSendDisconnectMessages(t *testing.T) {
 	defer amqpHandler.Close()
 
 	// Send unimportant message
-
-	if err := amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{}); !errors.Is(err, amqphandler.ErrNotConnected) {
+	err = amqpHandler.SendUnitStatus(cloudprotocol.UnitStatus{MessageType: cloudprotocol.UnitStatusMessageType})
+	if !errors.Is(err, amqphandler.ErrNotConnected) {
 		t.Errorf("Wrong error type: %v", err)
 	}
 
 	// Send number important messages equals to send channel size - should be accepted without error
 
 	for i := 0; i < sendQueueSize; i++ {
-		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{}); err != nil {
+		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}); err != nil {
 			t.Errorf("Can't send important message: %v", err)
 		}
 	}
 
 	// Next important message should fail due to send channel size
 
-	if err := amqpHandler.SendInstanceStateRequest(
-		cloudprotocol.StateRequest{}); !errors.Is(err, amqphandler.ErrSendChannelFull) {
+	err = amqpHandler.SendInstanceStateRequest(
+		cloudprotocol.StateRequest{MessageType: cloudprotocol.StateRequestMessageType})
+	if !errors.Is(err, amqphandler.ErrSendChannelFull) {
 		t.Errorf("Wrong error type: %v", err)
 	}
 
@@ -928,15 +1078,20 @@ func TestSendDisconnectMessages(t *testing.T) {
 	for i := 0; i < sendQueueSize; i++ {
 		select {
 		case delivery := <-testClient.delivery:
-			var message cloudprotocol.Message
+			// unmarshal type name
+			var message struct {
+				Data struct {
+					MessageType string `json:"messageType"`
+				} `json:"data"`
+			}
 
 			if err = json.Unmarshal(delivery.Body, &message); err != nil {
-				t.Errorf("Error parsing message: %v", err)
+				t.Errorf("Can't parse json message: %v", err)
 				continue
 			}
 
-			if message.Header.MessageType != cloudprotocol.AlertsType {
-				t.Errorf("Wrong message type: %s", message.Header.MessageType)
+			if message.Data.MessageType != cloudprotocol.AlertsMessageType {
+				t.Errorf("Wrong message type: %s", message.Data.MessageType)
 			}
 
 		case err = <-testClient.errChannel:
@@ -957,7 +1112,7 @@ func (context *testCryptoContext) GetTLSConfig() (config *tls.Config, err error)
 }
 
 func (context *testCryptoContext) DecryptMetadata(input []byte) (output []byte, err error) {
-	output, err = json.Marshal(context.currentMessage)
+	output, err = base64.StdEncoding.DecodeString(string(input))
 	if err != nil {
 		return output, aoserrors.Wrap(err)
 	}

@@ -18,21 +18,26 @@
 package smcontroller
 
 import (
+	"errors"
+	"io"
 	"net"
 	"sync"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
-	pb "github.com/aosedge/aos_common/api/servicemanager/v3"
+	pb "github.com/aosedge/aos_common/api/servicemanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	"github.com/aosedge/aos_communicationmanager/amqphandler"
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/launcher"
+	"github.com/aosedge/aos_communicationmanager/unitconfig"
 )
 
 /***********************************************************************************************************************
@@ -58,7 +63,8 @@ type Controller struct {
 	monitoringSender          MonitoringSender
 	updateInstancesStatusChan chan []cloudprotocol.InstanceStatus
 	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
-	systemLimitAlertChan      chan cloudprotocol.SystemQuotaAlert
+	systemQuotaAlertChan      chan cloudprotocol.SystemQuotaAlert
+	nodeConfigStatusChan      chan unitconfig.NodeConfigStatus
 
 	isCloudConnected bool
 	grpcServer       *grpc.Server
@@ -68,12 +74,12 @@ type Controller struct {
 
 // AlertSender sends alert.
 type AlertSender interface {
-	SendAlert(alert cloudprotocol.AlertItem)
+	SendAlert(alert interface{})
 }
 
 // MonitoringSender sends monitoring data.
 type MonitoringSender interface {
-	SendMonitoringData(monitoringData cloudprotocol.NodeMonitoringData)
+	SendNodeMonitoring(monitoring aostypes.NodeMonitoring)
 }
 
 // MessageSender sends messages to the cloud.
@@ -107,7 +113,8 @@ func New(
 		monitoringSender:          monitoringSender,
 		runInstancesStatusChan:    make(chan launcher.NodeRunInstanceStatus, statusChanSize),
 		updateInstancesStatusChan: make(chan []cloudprotocol.InstanceStatus, statusChanSize),
-		systemLimitAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
+		systemQuotaAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
+		nodeConfigStatusChan:      make(chan unitconfig.NodeConfigStatus, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
 	}
 
@@ -121,10 +128,6 @@ func New(
 		cloudprotocol.SystemLog:  controller.getSystemLog,
 		cloudprotocol.ServiceLog: controller.getServiceLog,
 		cloudprotocol.CrashLog:   controller.getCrashLog,
-	}
-
-	for _, nodeID := range cfg.SMController.NodeIDs {
-		controller.nodes[nodeID] = nil
 	}
 
 	var opts []grpc.ServerOption
@@ -170,67 +173,70 @@ func (controller *Controller) Close() error {
 		}
 	}
 
+	close(controller.nodeConfigStatusChan)
+
 	return nil
 }
 
-// GetNodeConfiguration gets node static configuration.
-func (controller *Controller) GetNodeConfiguration(nodeID string) (cfg launcher.NodeInfo, err error) {
+// GetNodeConfigStatus gets node configuration status.
+func (controller *Controller) GetNodeConfigStatus(nodeID string) (unitconfig.NodeConfigStatus, error) {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
-		return cfg, aoserrors.Wrap(err)
+		return unitconfig.NodeConfigStatus{}, err
 	}
 
-	return handler.config, nil
+	return handler.nodeConfigStatus, nil
 }
 
-// GetUnitConfigStatus gets unit configuration status fot he node.
-func (controller *Controller) GetUnitConfigStatus(nodeID string) (string, error) {
+// CheckNodeConfig checks node config.
+func (controller *Controller) CheckNodeConfig(nodeID, version string, nodeConfig cloudprotocol.NodeConfig) error {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
-		return "", aoserrors.Wrap(err)
+		return err
 	}
 
-	return handler.getUnitConfigState()
-}
-
-// CheckUnitConfig checks unit config for the node.
-func (controller *Controller) CheckUnitConfig(unitConfig aostypes.UnitConfig) error {
-	for _, nodeConfig := range unitConfig.Nodes {
-		for _, node := range controller.nodes {
-			if node == nil {
-				continue
-			}
-
-			if node.config.NodeType == nodeConfig.NodeType {
-				err := node.checkUnitConfigState(nodeConfig, unitConfig.VendorVersion)
-				if err != nil {
-					return err
-				}
-			}
-		}
+	if err = handler.checkNodeConfig(version, nodeConfig); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// SetUnitConfig sets unit config for the node.
-func (controller *Controller) SetUnitConfig(unitConfig aostypes.UnitConfig) error {
-	for _, nodeConfig := range unitConfig.Nodes {
-		for _, node := range controller.nodes {
-			if node == nil {
-				continue
-			}
+// SetNodeConfig sets node config.
+func (controller *Controller) SetNodeConfig(nodeID, version string, nodeConfig cloudprotocol.NodeConfig) error {
+	handler, err := controller.getNodeHandlerByID(nodeID)
+	if err != nil {
+		return err
+	}
 
-			if node.config.NodeType == nodeConfig.NodeType {
-				err := node.setUnitConfig(nodeConfig, unitConfig.VendorVersion)
-				if err != nil {
-					return err
-				}
-			}
-		}
+	if err = handler.setNodeConfig(version, nodeConfig); err != nil {
+		return err
+	}
+
+	if handler.nodeConfigStatus, err = handler.getNodeConfigStatus(); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+// GetNodeConfigStatuses returns node configuration statuses.
+func (controller *Controller) GetNodeConfigStatuses() ([]unitconfig.NodeConfigStatus, error) {
+	controller.Lock()
+	defer controller.Unlock()
+
+	statuses := make([]unitconfig.NodeConfigStatus, 0, len(controller.nodes))
+
+	for _, handler := range controller.nodes {
+		statuses = append(statuses, handler.nodeConfigStatus)
+	}
+
+	return statuses, nil
+}
+
+// NodeConfigStatusChannel returns channel used to send new node configuration statuses.
+func (controller *Controller) NodeConfigStatusChannel() <-chan unitconfig.NodeConfigStatus {
+	return controller.nodeConfigStatusChan
 }
 
 // RunInstances runs desired services instances.
@@ -279,14 +285,14 @@ func (controller *Controller) GetLog(logRequest cloudprotocol.RequestLog) error 
 	return handler(logRequest)
 }
 
-// GetNodeMonitoringData requests node monitoring data from SM.
-func (controller *Controller) GetNodeMonitoringData(nodeID string) (data cloudprotocol.NodeMonitoringData, err error) {
+// GetAverageMonitoring returns average monitoring data for the node.
+func (controller *Controller) GetAverageMonitoring(nodeID string) (aostypes.NodeMonitoring, error) {
 	handler, err := controller.getNodeHandlerByID(nodeID)
 	if err != nil {
-		return data, err
+		return aostypes.NodeMonitoring{}, err
 	}
 
-	return handler.getNodeMonitoring()
+	return handler.getAverageMonitoring()
 }
 
 // GetUpdateInstancesStatusChannel returns channel with update instances status.
@@ -299,67 +305,68 @@ func (controller *Controller) GetRunInstancesStatusChannel() <-chan launcher.Nod
 	return controller.runInstancesStatusChan
 }
 
-// GetSystemLimitAlertChannel returns channel with alerts about RAM CLU system limits.
-func (controller *Controller) GetSystemLimitAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
-	return controller.systemLimitAlertChan
+// GetSystemQuoteAlertChannel returns channel with alerts about RAM, CPU system limits.
+func (controller *Controller) GetSystemQuoteAlertChannel() <-chan cloudprotocol.SystemQuotaAlert {
+	return controller.systemQuotaAlertChan
 }
 
 // RegisterSM registers new SM client connection.
 func (controller *Controller) RegisterSM(stream pb.SMService_RegisterSMServer) error {
-	message, err := stream.Recv()
-	if err != nil {
-		log.Errorf("Error receive message from SM: %v", err)
+	var handler *smHandler
 
-		return aoserrors.Wrap(err)
-	}
+	for {
+		message, err := stream.Recv()
+		if err != nil {
+			if handler != nil {
+				controller.handleCloseConnection(handler.nodeID)
+			}
 
-	nodeConfig, ok := message.GetSMOutgoingMessage().(*pb.SMOutgoingMessages_NodeConfiguration)
-	if !ok {
-		log.Error("Unexpected first message from stream")
+			if !errors.Is(err, io.EOF) && codes.Canceled != status.Code(err) {
+				log.Errorf("Close SM client connection error: %v", err)
 
-		return aoserrors.New("unexpected first message from stream")
-	}
+				return aoserrors.Wrap(err)
+			}
 
-	log.WithFields(log.Fields{"nodeID": nodeConfig.NodeConfiguration.GetNodeId()}).Debug("Register SM")
-
-	nodeCfg := launcher.NodeInfo{
-		NodeInfo: cloudprotocol.NodeInfo{
-			NodeID: nodeConfig.NodeConfiguration.GetNodeId(), NodeType: nodeConfig.NodeConfiguration.GetNodeType(),
-			SystemInfo: cloudprotocol.SystemInfo{
-				NumCPUs: nodeConfig.NodeConfiguration.GetNumCpus(), TotalRAM: nodeConfig.NodeConfiguration.GetTotalRam(),
-				Partitions: make([]cloudprotocol.PartitionInfo, len(nodeConfig.NodeConfiguration.GetPartitions())),
-			},
-		},
-		RemoteNode:    nodeConfig.NodeConfiguration.GetRemoteNode(),
-		RunnerFeature: message.GetNodeConfiguration().GetRunnerFeatures(),
-	}
-
-	for i, pbPartition := range nodeConfig.NodeConfiguration.GetPartitions() {
-		nodeCfg.Partitions[i] = cloudprotocol.PartitionInfo{
-			Name:      pbPartition.GetName(),
-			Types:     pbPartition.GetTypes(),
-			TotalSize: pbPartition.GetTotalSize(),
+			return nil
 		}
+
+		if handler == nil {
+			nodeConfigStatus, ok := message.GetSMOutgoingMessage().(*pb.SMOutgoingMessages_NodeConfigStatus)
+			if !ok {
+				log.Error("Unexpected first message from stream")
+
+				continue
+			}
+
+			nodeID := nodeConfigStatus.NodeConfigStatus.GetNodeId()
+			nodeType := nodeConfigStatus.NodeConfigStatus.GetNodeType()
+
+			log.WithFields(log.Fields{
+				"nodeID":   nodeID,
+				"nodeType": nodeType,
+			}).Debug("Register SM")
+
+			handler, err = newSMHandler(nodeID, nodeType, stream, controller.messageSender, controller.alertSender,
+				controller.monitoringSender, controller.runInstancesStatusChan, controller.updateInstancesStatusChan,
+				controller.systemQuotaAlertChan)
+			if err != nil {
+				log.Errorf("Can't crate SM handler: %v", err)
+
+				return err
+			}
+
+			if err := controller.handleNewConnection(
+				nodeConfigStatusFromPB(nodeConfigStatus.NodeConfigStatus), handler); err != nil {
+				log.Errorf("Can't register new SM connection: %v", err)
+
+				return err
+			}
+
+			continue
+		}
+
+		handler.processSMMessages(message)
 	}
-
-	handler, err := newSMHandler(
-		stream, controller.messageSender, controller.alertSender, controller.monitoringSender, nodeCfg,
-		controller.runInstancesStatusChan, controller.updateInstancesStatusChan, controller.systemLimitAlertChan)
-	if err != nil {
-		return err
-	}
-
-	if err := controller.handleNewConnection(nodeConfig.NodeConfiguration.GetNodeId(), handler); err != nil {
-		log.Errorf("Can't register new SM connection: %v", err)
-
-		return err
-	}
-
-	handler.processSMMessages()
-
-	controller.handleCloseConnection(nodeConfig.NodeConfiguration.GetNodeId())
-
-	return nil
 }
 
 /***********************************************************************************************************************
@@ -486,31 +493,23 @@ func (controller *Controller) stopServer() {
 	}
 }
 
-func (controller *Controller) handleNewConnection(nodeID string, newHandler *smHandler) error {
+func (controller *Controller) handleNewConnection(
+	nodeConfigStatus unitconfig.NodeConfigStatus, newHandler *smHandler,
+) error {
 	controller.Lock()
 	defer controller.Unlock()
 
-	if handler, ok := controller.nodes[nodeID]; ok {
-		if handler != nil {
-			return aoserrors.Errorf("connection for nodeID %s already exist", nodeID)
-		}
-	} else {
-		return aoserrors.Errorf("unknown nodeID connection with nodeID %s", nodeID)
+	if _, ok := controller.nodes[nodeConfigStatus.NodeID]; ok {
+		return aoserrors.Errorf("connection for node ID %s already exist", nodeConfigStatus.NodeID)
 	}
 
-	controller.nodes[nodeID] = newHandler
+	controller.nodes[nodeConfigStatus.NodeID] = newHandler
+	newHandler.nodeConfigStatus = nodeConfigStatus
+	controller.nodeConfigStatusChan <- nodeConfigStatus
 
 	if err := newHandler.sendConnectionStatus(controller.isCloudConnected); err != nil {
 		log.Errorf("Can't send connection status: %v", err)
 	}
-
-	for _, node := range controller.nodes {
-		if node == nil {
-			return nil
-		}
-	}
-
-	log.Info("All SM client connected")
 
 	return nil
 }
@@ -525,7 +524,7 @@ func (controller *Controller) handleCloseConnection(nodeID string) {
 		return
 	}
 
-	controller.nodes[nodeID] = nil
+	delete(controller.nodes, nodeID)
 }
 
 func (controller *Controller) getNodeHandlerByID(nodeID string) (*smHandler, error) {

@@ -121,7 +121,8 @@ func init() {
  * CommunicationManager
  **********************************************************************************************************************/
 
-func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) { //nolint:funlen
+//nolint:funlen
+func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err error) {
 	defer func() {
 		if err != nil {
 			cm.close()
@@ -178,27 +179,38 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return cm, aoserrors.Wrap(err)
 	}
 
+	if cm.smController, err = smcontroller.New(
+		cfg, cm.amqp, cm.alerts, cm.monitorcontroller, cm.iam, cm.cryptoContext, false); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
+	if cm.unitConfig, err = unitconfig.New(cfg, cm.iam, cm.smController); err != nil {
+		return cm, aoserrors.Wrap(err)
+	}
+
 	if cfg.Monitoring.MonitorConfig != nil {
-		if cm.resourcemonitor, err = resourcemonitor.New(cm.iam.GetNodeID(), *cfg.Monitoring.MonitorConfig,
-			cm.alerts, cm.monitorcontroller, nil); err != nil {
+		if cm.resourcemonitor, err = resourcemonitor.New(*cfg.Monitoring.MonitorConfig, cm.iam, cm.unitConfig,
+			nil, cm.alerts); err != nil {
 			return cm, aoserrors.Wrap(err)
 		}
+
+		go func() {
+			for {
+				monitoringData, ok := <-cm.resourcemonitor.GetNodeMonitoringChannel()
+				if !ok {
+					return
+				}
+
+				cm.monitorcontroller.SendNodeMonitoring(monitoringData)
+			}
+		}()
 	}
 
 	if cm.downloader, err = downloader.New("CM", cfg, cm.alerts, cm.db); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.smController, err = smcontroller.New(
-		cfg, cm.amqp, cm.alerts, cm.monitorcontroller, cm.iam, cm.cryptoContext, false); err != nil {
-		return cm, aoserrors.Wrap(err)
-	}
-
-	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.iam, cm.cryptoContext, cm.crypt, false); err != nil {
-		return cm, aoserrors.Wrap(err)
-	}
-
-	if cm.unitConfig, err = unitconfig.New(cfg, cm.smController); err != nil {
+	if cm.umController, err = umcontroller.New(cfg, cm.db, cm.iam, cm.iam, cm.cryptoContext, cm.crypt, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -215,12 +227,12 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 	}
 
 	if cm.launcher, err = launcher.New(
-		cfg, cm.db, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState, cm.network); err != nil {
+		cfg, cm.db, cm.iam, cm.smController, cm.imagemanager, cm.unitConfig, cm.storageState, cm.network); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
-	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.unitConfig, cm.umController, cm.imagemanager, cm.launcher,
-		cm.downloader, cm.db, cm.amqp); err != nil {
+	if cm.statusHandler, err = unitstatushandler.New(cfg, cm.iam, cm.unitConfig, cm.umController,
+		cm.imagemanager, cm.launcher, cm.downloader, cm.db, cm.amqp, cm.smController); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 
@@ -382,12 +394,12 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.RenewCertsNotification:
 		log.Info("Receive renew certificates notification message")
 
-		if data.UnitSecret.Version != cloudprotocol.UnitSecretVersion {
+		if data.UnitSecrets.Version != cloudprotocol.UnitSecretVersion {
 			return aoserrors.New("unit secure version mismatch")
 		}
 
 		if err = cm.iam.RenewCertificatesNotification(
-			data.UnitSecret.Data.OwnerPassword, data.Certificates); err != nil {
+			data.UnitSecrets, data.Certificates); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -395,6 +407,27 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 		log.Info("Receive issued unit certificates message")
 
 		if err = cm.iam.InstallCertificates(data.Certificates, cm.crypt); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.StartProvisioningRequest:
+		log.Info("Receive start provisioning request message")
+
+		if err = cm.iam.StartProvisioning(data.NodeID, data.Password); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.FinishProvisioningRequest:
+		log.Info("Receive finish provisioning request message")
+
+		if err = cm.iam.FinishProvisioning(data.NodeID, data.Password, data.Certificates); err != nil {
+			return aoserrors.Wrap(err)
+		}
+
+	case *cloudprotocol.DeprovisioningRequest:
+		log.Info("Receive deprovisioning request message")
+
+		if err = cm.iam.Deprovision(data.NodeID, data.Password); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -506,7 +539,7 @@ func (hook *journalHook) Fire(entry *log.Entry) (err error) {
 		return aoserrors.Wrap(err)
 	}
 
-	err = journal.Print(hook.severityMap[entry.Level], logMessage)
+	err = journal.Print(hook.severityMap[entry.Level], "%s", logMessage)
 
 	return aoserrors.Wrap(err)
 }

@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
+	"sort"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
@@ -32,6 +32,7 @@ import (
 	_ "github.com/mattn/go-sqlite3" // ignore lint
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aosedge/aos_common/utils/semverutils"
 	"github.com/aosedge/aos_communicationmanager/config"
 	"github.com/aosedge/aos_communicationmanager/downloader"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
@@ -51,7 +52,7 @@ const (
 	syncMode    = "NORMAL"
 )
 
-const dbVersion = 1
+const dbVersion = 2
 
 const dbFileName = "communicationmanager.db"
 
@@ -177,7 +178,7 @@ func (db *Database) GetJournalCursor() (cursor string, err error) {
 }
 
 // SetComponentsUpdateInfo store update data for update managers.
-func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComponent) (err error) {
+func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.ComponentStatus) (err error) {
 	dataJSON, err := json.Marshal(&updateInfo)
 	if err != nil {
 		return aoserrors.Wrap(err)
@@ -191,7 +192,7 @@ func (db *Database) SetComponentsUpdateInfo(updateInfo []umcontroller.SystemComp
 }
 
 // GetComponentsUpdateInfo returns update data for system components.
-func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.SystemComponent, err error) {
+func (db *Database) GetComponentsUpdateInfo() (updateInfo []umcontroller.ComponentStatus, err error) {
 	stmt, err := db.sql.Prepare("SELECT componentsUpdateInfo FROM config")
 	if err != nil {
 		return updateInfo, aoserrors.Wrap(err)
@@ -267,28 +268,7 @@ func (db *Database) GetSoftwareUpdateState() (state json.RawMessage, err error) 
 	return state, err
 }
 
-// SetDesiredInstances sets desired instances status.
-func (db *Database) SetDesiredInstances(instances json.RawMessage) (err error) {
-	if err = db.executeQuery(`UPDATE config SET desiredInstances = ?`, instances); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetDesiredInstances returns desired instances.
-func (db *Database) GetDesiredInstances() (instances json.RawMessage, err error) {
-	if err = db.getDataFromQuery(
-		"SELECT desiredInstances FROM config",
-		[]any{}, &instances); err != nil {
-		if errors.Is(err, errNotExist) {
-			return instances, launcher.ErrNotExist
-		}
-	}
-
-	return instances, err
-}
-
+// GetDownloadInfo returns download info by file path.
 func (db *Database) GetDownloadInfo(filePath string) (downloadInfo downloader.DownloadInfo, err error) {
 	if err = db.getDataFromQuery(
 		"SELECT * FROM download WHERE path = ?",
@@ -302,6 +282,7 @@ func (db *Database) GetDownloadInfo(filePath string) (downloadInfo downloader.Do
 	return downloadInfo, err
 }
 
+// GetDownloadInfos returns all download info.
 func (db *Database) GetDownloadInfos() (downloadInfos []downloader.DownloadInfo, err error) {
 	rows, err := db.sql.Query("SELECT * FROM download")
 	if err != nil {
@@ -328,6 +309,7 @@ func (db *Database) GetDownloadInfos() (downloadInfos []downloader.DownloadInfo,
 	return downloadInfos, nil
 }
 
+// RemoveDownloadInfo removes download info by file path.
 func (db *Database) RemoveDownloadInfo(filePath string) (err error) {
 	if err = db.executeQuery("DELETE FROM download WHERE path = ?", filePath); errors.Is(err, errNotExist) {
 		return nil
@@ -336,6 +318,7 @@ func (db *Database) RemoveDownloadInfo(filePath string) (err error) {
 	return err
 }
 
+// SetDownloadInfo stores download info.
 func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err error) {
 	var path string
 
@@ -365,44 +348,59 @@ func (db *Database) SetDownloadInfo(downloadInfo downloader.DownloadInfo) (err e
 
 // GetServicesInfo returns services info.
 func (db *Database) GetServicesInfo() ([]imagemanager.ServiceInfo, error) {
-	return db.getServicesFromQuery(`SELECT * FROM services WHERE(id, aosVersion)
-                                    IN (SELECT id, MAX(aosVersion) FROM services GROUP BY id)`)
+	allServiceVersions, err := db.getServicesFromQuery(`SELECT * FROM services`)
+	if err != nil {
+		return nil, err
+	}
+
+	maxVersionServices := make(map[string]imagemanager.ServiceInfo)
+
+	for _, service := range allServiceVersions {
+		if storedService, found := maxVersionServices[service.ServiceID]; found {
+			greater, err := semverutils.GreaterThan(service.Version, storedService.Version)
+			if err != nil {
+				return nil, aoserrors.Wrap(err)
+			}
+
+			if greater {
+				maxVersionServices[service.ServiceID] = service
+			}
+		} else {
+			maxVersionServices[service.ServiceID] = service
+		}
+	}
+
+	result := make([]imagemanager.ServiceInfo, 0)
+	for _, value := range maxVersionServices {
+		result = append(result, value)
+	}
+
+	return result, nil
 }
 
 // GetServiceInfo returns service info by ID.
 func (db *Database) GetServiceInfo(serviceID string) (service imagemanager.ServiceInfo, err error) {
-	var (
-		configJSON   []byte
-		layers       []byte
-		exposedPorts []byte
-	)
-
-	if err = db.getDataFromQuery(
-		"SELECT * FROM services WHERE aosVersion = (SELECT MAX(aosVersion) FROM services WHERE id = ?) AND id = ?",
-		[]any{serviceID, serviceID},
-		&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion, &service.Description,
-		&service.URL, &service.RemoteURL, &service.Path, &service.Size, &service.Timestamp, &service.Cached,
-		&configJSON, &layers, &service.Sha256, &service.Sha512, &exposedPorts, &service.GID); err != nil {
-		if errors.Is(err, errNotExist) {
-			return service, imagemanager.ErrNotExist
-		}
-
+	maxVersion, err := db.getMaxServiceVersion(serviceID)
+	if err != nil {
 		return service, err
 	}
 
-	if err = json.Unmarshal(configJSON, &service.Config); err != nil {
-		return service, aoserrors.Wrap(err)
+	services, err := db.getServicesFromQuery(
+		"SELECT * FROM services WHERE id = ? and version = ?",
+		serviceID, maxVersion)
+	if err != nil {
+		return service, err
 	}
 
-	if err = json.Unmarshal(layers, &service.Layers); err != nil {
-		return service, aoserrors.Wrap(err)
+	if len(services) == 0 {
+		return imagemanager.ServiceInfo{}, imagemanager.ErrNotExist
 	}
 
-	if err = json.Unmarshal(exposedPorts, &service.ExposedPorts); err != nil {
-		return service, aoserrors.Wrap(err)
+	if len(services) > 1 {
+		return imagemanager.ServiceInfo{}, aoserrors.New("wrong number of services returned")
 	}
 
-	return service, nil
+	return services[0], nil
 }
 
 // AddService adds new service.
@@ -422,10 +420,10 @@ func (db *Database) AddService(service imagemanager.ServiceInfo) error {
 		return aoserrors.Wrap(err)
 	}
 
-	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		service.ID, service.AosVersion, service.ProviderID, service.VendorVersion, service.Description,
-		service.URL, service.RemoteURL, service.Path, service.Size, service.Timestamp, service.Cached,
-		configJSON, layers, service.Sha256, service.Sha512, exposedPorts, service.GID)
+	return db.executeQuery("INSERT INTO services values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		service.ServiceID, service.Version, service.ProviderID, service.URL, service.RemoteURL,
+		service.Path, service.Size, service.Timestamp, service.Cached,
+		configJSON, layers, service.Sha256, exposedPorts, service.GID)
 }
 
 // SetServiceCached sets cached status for the service.
@@ -439,9 +437,9 @@ func (db *Database) SetServiceCached(serviceID string, cached bool) (err error) 
 }
 
 // RemoveService removes existing service.
-func (db *Database) RemoveService(serviceID string, aosVersion uint64) (err error) {
-	if err = db.executeQuery("DELETE FROM services WHERE id = ? AND aosVersion = ?",
-		serviceID, aosVersion); errors.Is(err, errNotExist) {
+func (db *Database) RemoveService(serviceID string, version string) (err error) {
+	if err = db.executeQuery("DELETE FROM services WHERE id = ? AND version = ?",
+		serviceID, version); errors.Is(err, errNotExist) {
 		return nil
 	}
 
@@ -451,13 +449,19 @@ func (db *Database) RemoveService(serviceID string, aosVersion uint64) (err erro
 // GetAllServiceVersions returns all service versions.
 func (db *Database) GetServiceVersions(serviceID string) (services []imagemanager.ServiceInfo, err error) {
 	if services, err = db.getServicesFromQuery(
-		"SELECT * FROM services WHERE id = ? ORDER BY aosVersion", serviceID); err != nil {
+		"SELECT * FROM services WHERE id = ?", serviceID); err != nil {
 		return nil, err
 	}
 
 	if len(services) == 0 {
 		return nil, imagemanager.ErrNotExist
 	}
+
+	sort.SliceStable(services, func(left, right int) bool {
+		res, _ := semverutils.LessThan(services[left].Version, services[right].Version)
+
+		return res
+	})
 
 	return services, nil
 }
@@ -470,8 +474,8 @@ func (db *Database) GetLayersInfo() ([]imagemanager.LayerInfo, error) {
 // GetLayerInfo returns layer info by ID.
 func (db *Database) GetLayerInfo(digest string) (layer imagemanager.LayerInfo, err error) {
 	if err = db.getDataFromQuery("SELECT * FROM layers WHERE digest = ?",
-		[]any{digest}, &layer.Digest, &layer.ID, &layer.AosVersion, &layer.VendorVersion, &layer.Description,
-		&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256, &layer.Sha512,
+		[]any{digest}, &layer.Digest, &layer.LayerID, &layer.Version,
+		&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256,
 		&layer.Cached); err != nil {
 		if errors.Is(err, errNotExist) {
 			return layer, imagemanager.ErrNotExist
@@ -485,9 +489,9 @@ func (db *Database) GetLayerInfo(digest string) (layer imagemanager.LayerInfo, e
 
 // AddLayer adds new layer.
 func (db *Database) AddLayer(layer imagemanager.LayerInfo) error {
-	return db.executeQuery("INSERT INTO layers values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		layer.Digest, layer.ID, layer.AosVersion, layer.VendorVersion, layer.Description, layer.URL, layer.RemoteURL,
-		layer.Path, layer.Size, layer.Timestamp, layer.Sha256, layer.Sha512, layer.Cached)
+	return db.executeQuery("INSERT INTO layers values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		layer.Digest, layer.LayerID, layer.Version, layer.URL, layer.RemoteURL,
+		layer.Path, layer.Size, layer.Timestamp, layer.Sha256, layer.Cached)
 }
 
 // SetLayerCached sets cached status for the layer.
@@ -509,26 +513,47 @@ func (db *Database) RemoveLayer(digest string) (err error) {
 	return err
 }
 
-// AddInstance adds instanace with uid.
+// AddInstance adds instanace info.
 func (db *Database) AddInstance(instanceInfo launcher.InstanceInfo) error {
-	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?, ?, 0)",
-		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance, instanceInfo.UID, instanceInfo.Timestamp)
+	return db.executeQuery("INSERT INTO instances values(?, ?, ?, ?, ?, ?, ?, ?)",
+		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance, instanceInfo.NodeID,
+		instanceInfo.PrevNodeID, instanceInfo.UID, instanceInfo.Timestamp, instanceInfo.Cached)
 }
 
-// GetInstanceUID gets uid by instanace ident.
-func (db *Database) GetInstanceUID(instance aostypes.InstanceIdent) (int, error) {
-	var uid int
-
-	if err := db.getDataFromQuery("SELECT uid FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
-		[]any{instance.ServiceID, instance.SubjectID, instance.Instance}, &uid); err != nil {
+// UpdateInstance updates instance info.
+func (db *Database) UpdateInstance(instanceInfo launcher.InstanceInfo) error {
+	if err := db.executeQuery("UPDATE instances SET "+
+		"nodeID = ? prevNodeID = ? uid = ? timestamp = ? cached = ? "+
+		"WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
+		instanceInfo.NodeID, instanceInfo.PrevNodeID, instanceInfo.UID, instanceInfo.Timestamp, instanceInfo.Cached,
+		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance); err != nil {
 		if errors.Is(err, errNotExist) {
-			return uid, launcher.ErrNotExist
+			return launcher.ErrNotExist
 		}
-
-		return uid, err
 	}
 
-	return uid, nil
+	return nil
+}
+
+// GetInstance returns instance by instance ident.
+func (db *Database) GetInstance(instance aostypes.InstanceIdent) (launcher.InstanceInfo, error) {
+	instanceInfo := launcher.InstanceInfo{
+		InstanceIdent: instance,
+	}
+
+	if err := db.getDataFromQuery("SELECT nodeID, prevNodeID, uid, timestamp, cached "+
+		"FROM instances WHERE serviceId = ? AND subjectId = ? AND instance = ?",
+		[]any{instance.ServiceID, instance.SubjectID, instance.Instance},
+		&instanceInfo.NodeID, &instanceInfo.PrevNodeID, &instanceInfo.UID,
+		&instanceInfo.Timestamp, &instanceInfo.Cached); err != nil {
+		if errors.Is(err, errNotExist) {
+			return instanceInfo, launcher.ErrNotExist
+		}
+
+		return instanceInfo, err
+	}
+
+	return instanceInfo, nil
 }
 
 // GetInstances gets all instances.
@@ -549,8 +574,8 @@ func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
 	for rows.Next() {
 		var instance launcher.InstanceInfo
 
-		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.UID,
-			&instance.Timestamp, &instance.Cached); err != nil {
+		if err = rows.Scan(&instance.ServiceID, &instance.SubjectID, &instance.Instance, &instance.NodeID,
+			&instance.PrevNodeID, &instance.UID, &instance.Timestamp, &instance.Cached); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -564,13 +589,6 @@ func (db *Database) GetInstances() ([]launcher.InstanceInfo, error) {
 func (db *Database) RemoveInstance(instance aostypes.InstanceIdent) error {
 	return db.executeQuery("DELETE FROM instances WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
 		instance.ServiceID, instance.SubjectID, instance.Instance)
-}
-
-// SetInstanceCached sets cached status for the instance.
-func (db *Database) SetInstanceCached(instance aostypes.InstanceIdent, cached bool) error {
-	return db.executeQuery(
-		"UPDATE instances SET cached = ?, timestamp = ? WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
-		cached, time.Now().UTC(), instance.ServiceID, instance.SubjectID, instance.Instance)
 }
 
 // GetStorageStateInfo returns storage and state info by instance ident.
@@ -665,7 +683,7 @@ func (db *Database) RemoveStorageStateInfo(instanceIdent aostypes.InstanceIdent)
 	return err
 }
 
-func (db *Database) AddNetworkInfo(networkInfo networkmanager.NetworkInfo) error {
+func (db *Database) AddNetworkInfo(networkInfo aostypes.NetworkParameters) error {
 	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?)",
 		networkInfo.NetworkID, networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID)
 }
@@ -678,7 +696,7 @@ func (db *Database) RemoveNetworkInfo(networkID string) (err error) {
 	return err
 }
 
-func (db *Database) GetNetworksInfo() ([]networkmanager.NetworkInfo, error) {
+func (db *Database) GetNetworksInfo() ([]aostypes.NetworkParameters, error) {
 	rows, err := db.sql.Query("SELECT * FROM network")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -689,10 +707,10 @@ func (db *Database) GetNetworksInfo() ([]networkmanager.NetworkInfo, error) {
 		return nil, aoserrors.Wrap(rows.Err())
 	}
 
-	var networks []networkmanager.NetworkInfo
+	var networks []aostypes.NetworkParameters
 
 	for rows.Next() {
-		var networkInfo networkmanager.NetworkInfo
+		var networkInfo aostypes.NetworkParameters
 
 		if err = rows.Scan(&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet, &networkInfo.VlanID); err != nil {
 			return nil, aoserrors.Wrap(err)
@@ -761,31 +779,6 @@ func (db *Database) GetNetworkInstancesInfo() (networkInfos []networkmanager.Ins
 	return networkInfos, nil
 }
 
-// SetNodeState stores node state.
-func (db *Database) SetNodeState(nodeID string, state json.RawMessage) error {
-	if err := db.executeQuery("UPDATE nodes SET state = ? WHERE nodeID = ?", state, nodeID); errors.Is(err, errNotExist) {
-		return db.executeQuery("INSERT INTO nodes values(?, ?)", nodeID, state)
-	} else {
-		return err
-	}
-}
-
-// GetNodeState retrieves node state.
-func (db *Database) GetNodeState(nodeID string) (json.RawMessage, error) {
-	var state json.RawMessage
-
-	if err := db.getDataFromQuery(
-		"SELECT state FROM nodes WHERE nodeID = ?", []any{nodeID}, &state); err != nil {
-		if errors.Is(err, errNotExist) {
-			return nil, launcher.ErrNotExist
-		}
-
-		return nil, err
-	}
-
-	return state, nil
-}
-
 // Close closes database.
 func (db *Database) Close() {
 	db.sql.Close()
@@ -852,12 +845,10 @@ func (db *Database) createServiceTable() (err error) {
 	log.Info("Create service table")
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS services (id TEXT NOT NULL ,
-                                                               aosVersion INTEGER,
+                                                               version TEXT NOT NULL,
                                                                providerId TEXT,
-                                                               vendorVersion TEXT,
-                                                               description TEXT,
-                                                               localURL   TEXT,
-                                                               remoteURL  TEXT,
+                                                               localURL TEXT,
+                                                               remoteURL TEXT,
                                                                path TEXT,
                                                                size INTEGER,
                                                                timestamp TIMESTAMP,
@@ -865,10 +856,9 @@ func (db *Database) createServiceTable() (err error) {
                                                                config BLOB,
                                                                layers BLOB,
                                                                sha256 BLOB,
-                                                               sha512 BLOB,
                                                                exposedPorts BLOB,
                                                                gid INTEGER,
-                                                               PRIMARY KEY(id, aosVersion))`)
+                                                               PRIMARY KEY(id, version))`)
 
 	return aoserrors.Wrap(err)
 }
@@ -878,16 +868,13 @@ func (db *Database) createLayersTable() (err error) {
 
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS layers (digest TEXT NOT NULL PRIMARY KEY,
                                                              layerId TEXT,
-                                                             aosVersion INTEGER,
-                                                             vendorVersion TEXT,
-                                                             description TEXT,
+                                                             version TEXT,
                                                              localURL   TEXT,
                                                              remoteURL  TEXT,
                                                              Path       TEXT,
                                                              Size       INTEGER,
                                                              Timestamp  TIMESTAMP,
                                                              sha256 BLOB,
-                                                             sha512 BLOB,
                                                              cached INTEGER)`)
 
 	return aoserrors.Wrap(err)
@@ -899,6 +886,8 @@ func (db *Database) createInstancesTable() (err error) {
 	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS instances (serviceId TEXT,
                                                                 subjectId TEXT,
                                                                 instance INTEGER,
+                                                                nodeID TEXT,
+                                                                prevNodeID TEXT,
                                                                 uid integer,
                                                                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                                                 cached INTEGER DEFAULT 0,
@@ -1003,10 +992,6 @@ func (db *Database) getServicesFromQuery(
 	}
 	defer rows.Close()
 
-	if rows.Err() != nil {
-		return nil, aoserrors.Wrap(rows.Err())
-	}
-
 	for rows.Next() {
 		var (
 			service      imagemanager.ServiceInfo
@@ -1015,10 +1000,9 @@ func (db *Database) getServicesFromQuery(
 			exposedPorts []byte
 		)
 
-		if err = rows.Scan(&service.ID, &service.AosVersion, &service.ProviderID, &service.VendorVersion,
-			&service.Description, &service.URL, &service.RemoteURL, &service.Path, &service.Size,
-			&service.Timestamp, &service.Cached, &configJSON, &layers, &service.Sha256,
-			&service.Sha512, &exposedPorts, &service.GID); err != nil {
+		if err = rows.Scan(&service.ServiceID, &service.Version, &service.ProviderID, &service.URL, &service.RemoteURL,
+			&service.Path, &service.Size, &service.Timestamp, &service.Cached, &configJSON, &layers,
+			&service.Sha256, &exposedPorts, &service.GID); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -1037,7 +1021,50 @@ func (db *Database) getServicesFromQuery(
 		services = append(services, service)
 	}
 
+	if rows.Err() != nil {
+		return nil, aoserrors.Wrap(rows.Err())
+	}
+
 	return services, nil
+}
+
+func (db *Database) getMaxServiceVersion(serviceID string) (version string, err error) {
+	var rows *sql.Rows
+	if serviceID != "" {
+		rows, err = db.sql.Query("SELECT version FROM services WHERE id = ?", serviceID)
+	} else {
+		rows, err = db.sql.Query("SELECT version FROM services")
+	}
+
+	if err != nil {
+		return "", aoserrors.Wrap(err)
+	}
+
+	defer rows.Close()
+
+	if rows.Err() != nil {
+		return "", aoserrors.Wrap(rows.Err())
+	}
+
+	maxVersion := "0.0.0"
+
+	for rows.Next() {
+		var version string
+		if err = rows.Scan(&version); err != nil {
+			return "", aoserrors.Wrap(err)
+		}
+
+		greater, err := semverutils.GreaterThan(version, maxVersion)
+		if err != nil {
+			return "", aoserrors.Wrap(err)
+		}
+
+		if greater {
+			maxVersion = version
+		}
+	}
+
+	return maxVersion, nil
 }
 
 func (db *Database) getLayersFromQuery(
@@ -1057,8 +1084,8 @@ func (db *Database) getLayersFromQuery(
 		var layer imagemanager.LayerInfo
 
 		if err = rows.Scan(
-			&layer.Digest, &layer.ID, &layer.AosVersion, &layer.VendorVersion, &layer.Description,
-			&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256, &layer.Sha512,
+			&layer.Digest, &layer.LayerID, &layer.Version,
+			&layer.URL, &layer.RemoteURL, &layer.Path, &layer.Size, &layer.Timestamp, &layer.Sha256,
 			&layer.Cached); err != nil {
 			return layers, aoserrors.Wrap(err)
 		}

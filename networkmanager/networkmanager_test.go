@@ -579,11 +579,11 @@ func (storage *testStore) RemoveNetworkInfo(networkID string) error {
 	return nil
 }
 
-func (storage *testStore) AddNetworkInfo(networkInfo networkmanager.NetworkInfo) error {
+func (storage *testStore) AddNetworkInfo(networkInfo aostypes.NetworkParameters) error {
 	return nil
 }
 
-func (storage *testStore) GetNetworksInfo() (networkInfos []networkmanager.NetworkInfo, err error) {
+func (storage *testStore) GetNetworksInfo() (networkInfos []aostypes.NetworkParameters, err error) {
 	return nil, nil
 }
 

@@ -161,7 +161,7 @@ func TestInstallService(t *testing.T) {
 
 	cases := []struct {
 		serviceID            string
-		aosVersion           uint64
+		version              string
 		size                 uint64
 		expectedCountService int
 		installErr           error
@@ -169,7 +169,7 @@ func TestInstallService(t *testing.T) {
 	}{
 		{
 			serviceID:            "service1",
-			aosVersion:           1,
+			version:              "1.0",
 			size:                 1 * megabyte,
 			expectedCountService: 1,
 			installErr:           nil,
@@ -184,7 +184,7 @@ func TestInstallService(t *testing.T) {
 		},
 		{
 			serviceID:            "service2",
-			aosVersion:           1,
+			version:              "1.0",
 			size:                 1 * megabyte,
 			expectedCountService: 2,
 			installErr:           nil,
@@ -199,7 +199,7 @@ func TestInstallService(t *testing.T) {
 		},
 		{
 			serviceID:            "service3",
-			aosVersion:           1,
+			version:              "1.0",
 			size:                 2 * megabyte,
 			expectedCountService: 2,
 			installErr:           spaceallocator.ErrNoSpace,
@@ -230,7 +230,7 @@ func TestInstallService(t *testing.T) {
 			t.Errorf("Can't prepare service file: %v", err)
 		}
 
-		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.aosVersion)
+		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.version)
 		if err != nil {
 			t.Errorf("Can't prepare service info: %v", err)
 		}
@@ -245,7 +245,7 @@ func TestInstallService(t *testing.T) {
 				t.Errorf("Can't get service: %v", err)
 			}
 
-			if service.ID != tCase.serviceID || service.AosVersion != tCase.aosVersion {
+			if service.ServiceID != tCase.serviceID || service.Version != tCase.version {
 				t.Error("Unexpected service info")
 			}
 
@@ -295,14 +295,14 @@ func TestRevertService(t *testing.T) {
 
 	cases := []struct {
 		serviceID     string
-		aosVersion    uint64
+		version       string
 		size          uint64
 		serviceConfig aostypes.ServiceConfig
 	}{
 		{
-			serviceID:  "service1",
-			aosVersion: 1,
-			size:       1 * megabyte,
+			serviceID: "service1",
+			version:   "1.0",
+			size:      1 * megabyte,
 			serviceConfig: aostypes.ServiceConfig{
 				Hostname: allocateString("service1"),
 				Quotas: aostypes.ServiceQuotas{
@@ -313,9 +313,9 @@ func TestRevertService(t *testing.T) {
 			},
 		},
 		{
-			serviceID:  "service1",
-			aosVersion: 2,
-			size:       1 * megabyte,
+			serviceID: "service1",
+			version:   "2.0",
+			size:      1 * megabyte,
 			serviceConfig: aostypes.ServiceConfig{
 				Hostname: allocateString("service1"),
 				Quotas: aostypes.ServiceQuotas{
@@ -338,7 +338,7 @@ func TestRevertService(t *testing.T) {
 			t.Errorf("Can't prepare service file: %v", err)
 		}
 
-		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.aosVersion)
+		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.version)
 		if err != nil {
 			t.Errorf("Can't prepare service info: %v", err)
 		}
@@ -349,14 +349,14 @@ func TestRevertService(t *testing.T) {
 	}
 
 	casesRevert := []struct {
-		revertServiceID    string
-		expectedAosVersion uint64
-		err                error
+		revertServiceID string
+		expectedVersion string
+		err             error
 	}{
 		{
-			revertServiceID:    "service1",
-			expectedAosVersion: 1,
-			err:                nil,
+			revertServiceID: "service1",
+			expectedVersion: "1.0",
+			err:             nil,
 		},
 		{
 			revertServiceID: "service1",
@@ -374,7 +374,7 @@ func TestRevertService(t *testing.T) {
 			t.Errorf("Can't get service: %v", err)
 		}
 
-		if service.AosVersion != tCase.expectedAosVersion {
+		if service.Version != tCase.expectedVersion {
 			t.Error("Unexpected service version")
 		}
 	}
@@ -410,7 +410,7 @@ func TestRemoveService(t *testing.T) {
 	cases := []struct {
 		serviceID            string
 		removeServiceID      string
-		aosVersion           uint64
+		version              string
 		size                 uint64
 		expectedCountService int
 		installErr           error
@@ -418,7 +418,7 @@ func TestRemoveService(t *testing.T) {
 	}{
 		{
 			serviceID:            "service1",
-			aosVersion:           1,
+			version:              "1.0",
 			size:                 1 * megabyte,
 			expectedCountService: 1,
 			installErr:           nil,
@@ -434,7 +434,7 @@ func TestRemoveService(t *testing.T) {
 		{
 			serviceID:            "service2",
 			removeServiceID:      "service1",
-			aosVersion:           1,
+			version:              "1.0",
 			size:                 1 * megabyte,
 			expectedCountService: 1,
 			installErr:           spaceallocator.ErrNoSpace,
@@ -460,7 +460,7 @@ func TestRemoveService(t *testing.T) {
 			t.Errorf("Can't prepare service file: %v", err)
 		}
 
-		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.aosVersion)
+		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.version)
 		if err != nil {
 			t.Errorf("Can't prepare service info: %v", err)
 		}
@@ -543,14 +543,14 @@ func TestRestoreService(t *testing.T) {
 	cases := []struct {
 		serviceID       string
 		removeServiceID string
-		aosVersion      uint64
+		version         string
 		size            uint64
 		installErr      error
 		serviceConfig   aostypes.ServiceConfig
 	}{
 		{
 			serviceID:  "service1",
-			aosVersion: 1,
+			version:    "1.0",
 			size:       1 * megabyte,
 			installErr: nil,
 			serviceConfig: aostypes.ServiceConfig{
@@ -565,7 +565,7 @@ func TestRestoreService(t *testing.T) {
 		{
 			serviceID:       "service2",
 			removeServiceID: "service1",
-			aosVersion:      1,
+			version:         "1.0",
 			size:            1 * megabyte,
 			installErr:      spaceallocator.ErrNoSpace,
 			serviceConfig: aostypes.ServiceConfig{
@@ -590,7 +590,7 @@ func TestRestoreService(t *testing.T) {
 			t.Errorf("Can't prepare service file: %v", err)
 		}
 
-		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.aosVersion)
+		serviceInfo, err := prepareServiceInfo(servicePath, tCase.serviceID, tCase.version)
 		if err != nil {
 			t.Errorf("Can't prepare service info: %v", err)
 		}
@@ -989,9 +989,8 @@ func TestFileServer(t *testing.T) {
 
 	decryptFilePath := path.Join("layers", base64.URLEncoding.EncodeToString(layerInfo.Sha256)+".dec")
 
-	if layer.RemoteURL != fmt.Sprintf("http://localhost:8092/%s", decryptFilePath) ||
-		layer.URL != fmt.Sprintf("file://%s",
-			path.Join(layersDir, base64.URLEncoding.EncodeToString(layerInfo.Sha256)+".dec")) {
+	if layer.RemoteURL != "http://localhost:8092/"+decryptFilePath ||
+		layer.URL != "file://"+path.Join(layersDir, base64.URLEncoding.EncodeToString(layerInfo.Sha256)+".dec") {
 		t.Fatalf("Unexpected urls")
 	}
 
@@ -1185,11 +1184,11 @@ func (storage *testStorageProvider) AddLayer(layer imagemanager.LayerInfo) error
 }
 
 func (storage *testStorageProvider) AddService(service imagemanager.ServiceInfo) error {
-	services := storage.services[service.ID]
+	services := storage.services[service.ServiceID]
 
 	services = append(services, service)
 
-	storage.services[service.ID] = services
+	storage.services[service.ServiceID] = services
 
 	return nil
 }
@@ -1219,7 +1218,7 @@ func (storage *testStorageProvider) SetServiceCached(serviceID string, cached bo
 	return nil
 }
 
-func (storage *testStorageProvider) RemoveService(serviceID string, aosVersion uint64) error {
+func (storage *testStorageProvider) RemoveService(serviceID string, version string) error {
 	services, ok := storage.services[serviceID]
 	if !ok {
 		return nil
@@ -1232,7 +1231,7 @@ func (storage *testStorageProvider) RemoveService(serviceID string, aosVersion u
 	}
 
 	for i := 0; i < len(services); i++ {
-		if services[i].AosVersion == aosVersion {
+		if services[i].Version == version {
 			services = append(services[:i], services[i+1:]...)
 		}
 	}
@@ -1276,24 +1275,20 @@ func prepareLayerInfo(filePath, digest string, index int) (layerInfo cloudprotoc
 	}
 
 	installRequest := cloudprotocol.LayerInfo{
-		VersionInfo: aostypes.VersionInfo{
-			AosVersion: uint64(index), Description: "description" + strconv.Itoa(index),
-		},
-		ID:     "testLayer" + strconv.Itoa(index),
-		Digest: digest,
-		DecryptDataStruct: cloudprotocol.DecryptDataStruct{
+		Version: "v" + strconv.Itoa(index),
+		LayerID: "testLayer" + strconv.Itoa(index),
+		Digest:  digest,
+		DownloadInfo: cloudprotocol.DownloadInfo{
 			URLs:   []string{url.String()},
 			Sha256: imageFileInfo.Sha256,
-			Sha512: imageFileInfo.Sha512,
 			Size:   imageFileInfo.Size,
-			DecryptionInfo: &cloudprotocol.DecryptionInfo{
-				BlockAlg:     "AES256/CBC/pkcs7",
-				BlockIv:      []byte{},
-				BlockKey:     []byte{},
-				AsymAlg:      "RSA/PKCS1v1_5",
-				ReceiverInfo: &recInfo,
-			},
-			Signs: &cloudprotocol.Signs{},
+		},
+		DecryptionInfo: cloudprotocol.DecryptionInfo{
+			BlockAlg:     "AES256/CBC/pkcs7",
+			BlockIv:      []byte{},
+			BlockKey:     []byte{},
+			AsymAlg:      "RSA/PKCS1v1_5",
+			ReceiverInfo: &recInfo,
 		},
 	}
 
@@ -1301,7 +1296,7 @@ func prepareLayerInfo(filePath, digest string, index int) (layerInfo cloudprotoc
 }
 
 func prepareServiceInfo(
-	filePath, serviceID string, aosVersion uint64,
+	filePath, serviceID string, version string,
 ) (layerInfo cloudprotocol.ServiceInfo, err error) {
 	imageFileInfo, err := image.CreateFileInfo(context.Background(), filePath)
 	if err != nil {
@@ -1322,24 +1317,20 @@ func prepareServiceInfo(
 	}
 
 	installRequest := cloudprotocol.ServiceInfo{
-		VersionInfo: aostypes.VersionInfo{
-			AosVersion: aosVersion, Description: "description",
-		},
-		ID:         serviceID,
+		Version:    version,
+		ServiceID:  serviceID,
 		ProviderID: serviceID,
-		DecryptDataStruct: cloudprotocol.DecryptDataStruct{
+		DownloadInfo: cloudprotocol.DownloadInfo{
 			URLs:   []string{url.String()},
 			Sha256: imageFileInfo.Sha256,
-			Sha512: imageFileInfo.Sha512,
 			Size:   imageFileInfo.Size,
-			DecryptionInfo: &cloudprotocol.DecryptionInfo{
-				BlockAlg:     "AES256/CBC/pkcs7",
-				BlockIv:      []byte{},
-				BlockKey:     []byte{},
-				AsymAlg:      "RSA/PKCS1v1_5",
-				ReceiverInfo: &recInfo,
-			},
-			Signs: &cloudprotocol.Signs{},
+		},
+		DecryptionInfo: cloudprotocol.DecryptionInfo{
+			BlockAlg:     "AES256/CBC/pkcs7",
+			BlockIv:      []byte{},
+			BlockKey:     []byte{},
+			AsymAlg:      "RSA/PKCS1v1_5",
+			ReceiverInfo: &recInfo,
 		},
 	}
 

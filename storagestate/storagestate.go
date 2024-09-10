@@ -128,7 +128,6 @@ type StorageState struct {
 }
 
 type stateParams struct {
-	instanceID         string
 	stateFilePath      string
 	quota              uint64
 	checksum           []byte
@@ -177,6 +176,10 @@ func New(cfg *config.Config, messageSender MessageSender, storage Storage) (stor
 	}
 
 	storageState.isSamePartition = storageMountPoint == stateMountPoint
+
+	if err = storageState.initStateWatching(); err != nil {
+		log.Errorf("Can't init state watching: %v", err)
+	}
 
 	go storageState.processWatcher()
 
@@ -398,6 +401,26 @@ func (storageState *StorageState) GetInstanceCheckSum(instanceIdent aostypes.Ins
  * Private
  **********************************************************************************************************************/
 
+func (storageState *StorageState) initStateWatching() error {
+	infos, err := storageState.storage.GetAllStorageStateInfo()
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	for _, info := range infos {
+		if info.StateQuota == 0 {
+			continue
+		}
+
+		if err = storageState.startStateWatching(info.InstanceIdent,
+			storageState.getStatePath(info.InstanceID), info.StateQuota); err != nil {
+			log.WithField("instanceID", info.InstanceID).Errorf("Can't setup state watching: %v", err)
+		}
+	}
+
+	return nil
+}
+
 func (storageState *StorageState) prepareState(
 	instanceID string, params SetupParams, checksum []byte,
 ) (stateFilePath string, err error) {
@@ -411,7 +434,7 @@ func (storageState *StorageState) prepareState(
 
 	stateFilePath = storageState.getStatePath(instanceID)
 
-	if err = storageState.setupStateWatching(instanceID, stateFilePath, params); err != nil {
+	if err = storageState.setupStateWatching(stateFilePath, params); err != nil {
 		return "", aoserrors.Wrap(err)
 	}
 
@@ -479,12 +502,13 @@ func (storageState *StorageState) checkChecksumAndSendUpdateRequest(
 	return nil
 }
 
-func (storageState *StorageState) setupStateWatching(instanceID, stateFilePath string, params SetupParams) error {
+func (storageState *StorageState) setupStateWatching(stateFilePath string, params SetupParams) error {
 	if err := createStateFileIfNotExist(stateFilePath, params.UID, params.GID); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if err := storageState.startStateWatching(instanceID, stateFilePath, params); err != nil {
+	if err := storageState.startStateWatching(
+		params.InstanceIdent, stateFilePath, params.StateQuota); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -492,16 +516,15 @@ func (storageState *StorageState) setupStateWatching(instanceID, stateFilePath s
 }
 
 func (storageState *StorageState) startStateWatching(
-	instanceID string, stateFilePath string, params SetupParams,
+	instanceIdent aostypes.InstanceIdent, stateFilePath string, quota uint64,
 ) (err error) {
 	if err = storageState.watcher.Add(stateFilePath); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	storageState.statesMap[params.InstanceIdent] = &stateParams{
-		instanceID:         instanceID,
+	storageState.statesMap[instanceIdent] = &stateParams{
 		stateFilePath:      stateFilePath,
-		quota:              params.StateQuota,
+		quota:              quota,
 		changeTimerChannel: make(chan bool, 1),
 	}
 

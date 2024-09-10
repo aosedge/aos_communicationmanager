@@ -133,12 +133,12 @@ func TestCursor(t *testing.T) {
 }
 
 func TestComponentsUpdateInfo(t *testing.T) {
-	testData := []umcontroller.SystemComponent{
+	testData := []umcontroller.ComponentStatus{
 		{
-			ID: "component1", VendorVersion: "v1", AosVersion: 1,
-			Annotations: "Some annotation", URL: "url12", Sha512: []byte{1, 3, 90, 42},
+			ComponentID: "component1", Version: "v1",
+			Annotations: "Some annotation", URL: "url12", Sha256: []byte{1, 3, 90, 42},
 		},
-		{ID: "component2", VendorVersion: "v1", AosVersion: 1, URL: "url12", Sha512: []byte{1, 3, 90, 42}},
+		{ComponentID: "component2", Version: "v1", URL: "url12", Sha256: []byte{1, 3, 90, 42}},
 	}
 
 	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
@@ -154,7 +154,7 @@ func TestComponentsUpdateInfo(t *testing.T) {
 		t.Fatalf("Wrong update info value: %v", getUpdateInfo)
 	}
 
-	testData = []umcontroller.SystemComponent{}
+	testData = []umcontroller.ComponentStatus{}
 
 	if err := testDB.SetComponentsUpdateInfo(testData); err != nil {
 		t.Fatal("Can't set update manager's update info ", err)
@@ -173,7 +173,6 @@ func TestComponentsUpdateInfo(t *testing.T) {
 func TestSotaFotaInstancesFields(t *testing.T) {
 	fotaState := json.RawMessage("fotaState")
 	sotaState := json.RawMessage("sotaState")
-	desiredInstances := json.RawMessage("desiredInstances")
 
 	if err := testDB.SetFirmwareUpdateState(fotaState); err != nil {
 		t.Fatalf("Can't set FOTA state: %v", err)
@@ -181,10 +180,6 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 
 	if err := testDB.SetSoftwareUpdateState(sotaState); err != nil {
 		t.Fatalf("Can't set SOTA state: %v", err)
-	}
-
-	if err := testDB.SetDesiredInstances(desiredInstances); err != nil {
-		t.Fatalf("Can't set desired instances: %v", err)
 	}
 
 	retFota, err := testDB.GetFirmwareUpdateState()
@@ -203,15 +198,6 @@ func TestSotaFotaInstancesFields(t *testing.T) {
 
 	if string(retSota) != string(sotaState) {
 		t.Errorf("Incorrect SOTA state: %s", string(retSota))
-	}
-
-	retInstances, err := testDB.GetDesiredInstances()
-	if err != nil {
-		t.Fatalf("Can't get desired instances state %v", err)
-	}
-
-	if string(retInstances) != string(desiredInstances) {
-		t.Errorf("Incorrect desired instances: %s", string(retInstances))
 	}
 }
 
@@ -246,7 +232,7 @@ func TestMultiThread(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < numIterations; i++ {
-			if err := testDB.SetComponentsUpdateInfo([]umcontroller.SystemComponent{{AosVersion: uint64(i)}}); err != nil {
+			if err := testDB.SetComponentsUpdateInfo([]umcontroller.ComponentStatus{{Version: strconv.Itoa(i)}}); err != nil {
 				t.Errorf("Can't set journal cursor: %s", err)
 			}
 		}
@@ -275,14 +261,11 @@ func TestServiceStore(t *testing.T) {
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
-					ID: "service1",
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion:    1,
-						VendorVersion: "1",
-					},
-					URL:  "file:///path/service1",
-					Size: 30,
-					GID:  1000,
+					ServiceID: "service1",
+					Version:   "1.1",
+					URL:       "file:///path/service1",
+					Size:      30,
+					GID:       1000,
 				},
 				RemoteURL: "http://path/service1",
 				Path:      "/path/service1", Timestamp: time.Now().UTC(), Cached: false, Config: aostypes.ServiceConfig{
@@ -301,14 +284,11 @@ func TestServiceStore(t *testing.T) {
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
-					ID: "service2",
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion:    1,
-						VendorVersion: "1",
-					},
-					URL:  "file:///path/service2",
-					Size: 60,
-					GID:  2000,
+					ServiceID: "service2",
+					Version:   "1.1",
+					URL:       "file:///path/service2",
+					Size:      60,
+					GID:       2000,
 				},
 				RemoteURL: "http://path/service2",
 				Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true, Config: aostypes.ServiceConfig{
@@ -328,14 +308,11 @@ func TestServiceStore(t *testing.T) {
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
-					ID: "service2",
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion:    2,
-						VendorVersion: "1",
-					},
-					URL:  "file:///path/service2/new",
-					Size: 20,
-					GID:  1000,
+					ServiceID: "service2",
+					Version:   "2.1",
+					URL:       "file:///path/service2/new",
+					Size:      20,
+					GID:       1000,
 				},
 				RemoteURL: "http://path/service2/new",
 				Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
@@ -351,16 +328,16 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Can't add service: %v", err)
 		}
 
-		service, err := testDB.GetServiceInfo(tCase.service.ID)
+		service, err := testDB.GetServiceInfo(tCase.service.ServiceID)
 		if err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
 		if !reflect.DeepEqual(service, tCase.service) {
-			t.Errorf("service %s doesn't match stored one", tCase.service.ID)
+			t.Errorf("service %s doesn't match stored one", tCase.service.ServiceID)
 		}
 
-		serviceVersions, err := testDB.GetServiceVersions(tCase.service.ID)
+		serviceVersions, err := testDB.GetServiceVersions(tCase.service.ServiceID)
 		if err != nil {
 			t.Errorf("Can't get service versions: %v", err)
 		}
@@ -378,11 +355,11 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Incorrect count of services: %v", len(services))
 		}
 
-		if err := testDB.SetServiceCached(tCase.service.ID, !tCase.service.Cached); err != nil {
+		if err := testDB.SetServiceCached(tCase.service.ServiceID, !tCase.service.Cached); err != nil {
 			t.Errorf("Can't set service cached: %v", err)
 		}
 
-		if service, err = testDB.GetServiceInfo(tCase.service.ID); err != nil {
+		if service, err = testDB.GetServiceInfo(tCase.service.ServiceID); err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
@@ -392,13 +369,77 @@ func TestServiceStore(t *testing.T) {
 	}
 
 	for _, tCase := range cases {
-		if err := testDB.RemoveService(tCase.service.ID, tCase.service.AosVersion); err != nil {
+		if err := testDB.RemoveService(tCase.service.ServiceID, tCase.service.Version); err != nil {
 			t.Errorf("Can't remove service: %v", err)
 		}
 
-		if _, err := testDB.GetServiceInfo(tCase.service.ID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
+		if _, err := testDB.GetServiceInfo(tCase.service.ServiceID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
 			t.Errorf("Unexpected error: %v", err)
 		}
+	}
+}
+
+func TestGetServiceInfo(t *testing.T) {
+	serviceID := "service2"
+	services := []imagemanager.ServiceInfo{
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				ServiceID: serviceID,
+				Version:   "1.1",
+				URL:       "file:///path/service2",
+				Size:      60,
+				GID:       2000,
+			},
+			RemoteURL: "http://path/service2",
+			Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true,
+			Config: aostypes.ServiceConfig{
+				Hostname: allocateString("service2"),
+				Author:   "test1",
+				Quotas: aostypes.ServiceQuotas{
+					UploadSpeed:   allocateUint64(500),
+					DownloadSpeed: allocateUint64(500),
+				},
+				Resources: []string{"resource1", "resource2"},
+			},
+		},
+
+		{
+			ServiceInfo: aostypes.ServiceInfo{
+				ServiceID: serviceID,
+				Version:   "2.1",
+				URL:       "file:///path/service2/new",
+				Size:      20,
+				GID:       1000,
+			},
+			RemoteURL: "http://path/service2/new",
+			Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
+		},
+	}
+
+	latestService := services[1]
+
+	for _, service := range services {
+		if err := testDB.AddService(service); err != nil {
+			t.Errorf("Can't add service: %v", err)
+		}
+	}
+
+	service, err := testDB.GetServiceInfo(serviceID)
+	if err != nil {
+		t.Errorf("Can't get service info: %v", err)
+	}
+
+	if !reflect.DeepEqual(service, latestService) {
+		t.Errorf("Wrong service info: actual %v != expected %v", service, latestService)
+	}
+
+	serviceInfo, err := testDB.GetServicesInfo()
+	if err != nil {
+		t.Errorf("Can't get services info: %v", err)
+	}
+
+	if len(serviceInfo) != 1 || !reflect.DeepEqual(serviceInfo[0], latestService) {
+		t.Errorf("Wrong service info: actual %v != expected %v", serviceInfo[0], latestService)
 	}
 }
 
@@ -410,13 +451,11 @@ func TestLayerStore(t *testing.T) {
 		{
 			layer: imagemanager.LayerInfo{
 				LayerInfo: aostypes.LayerInfo{
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion: 1,
-					},
-					ID:     "layer1",
-					Digest: "digest1",
-					URL:    "file:///path/layer1",
-					Size:   30,
+					Version: "1.0",
+					LayerID: "layer1",
+					Digest:  "digest1",
+					URL:     "file:///path/layer1",
+					Size:    30,
 				},
 				RemoteURL: "http://path/layer1", Path: "/path/layer1",
 				Timestamp: time.Now().UTC(), Cached: false,
@@ -426,13 +465,11 @@ func TestLayerStore(t *testing.T) {
 		{
 			layer: imagemanager.LayerInfo{
 				LayerInfo: aostypes.LayerInfo{
-					VersionInfo: aostypes.VersionInfo{
-						AosVersion: 1,
-					},
-					ID:     "layer2",
-					Digest: "digest2",
-					URL:    "file:///path/layer2",
-					Size:   60,
+					Version: "1.0",
+					LayerID: "layer2",
+					Digest:  "digest2",
+					URL:     "file:///path/layer2",
+					Size:    60,
 				},
 				RemoteURL: "http://path/layer2",
 				Path:      "/path/layer2", Timestamp: time.Now().UTC(), Cached: true,
@@ -452,7 +489,7 @@ func TestLayerStore(t *testing.T) {
 		}
 
 		if !reflect.DeepEqual(layer, tCase.layer) {
-			t.Errorf("layer %s doesn't match stored one", tCase.layer.ID)
+			t.Errorf("layer %s doesn't match stored one", tCase.layer.LayerID)
 		}
 
 		layers, err := testDB.GetLayersInfo()
@@ -499,19 +536,17 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 					SubjectID: "subject1",
 					Instance:  1,
 				},
-				NetworkInfo: networkmanager.NetworkInfo{
+				NetworkParameters: aostypes.NetworkParameters{
 					NetworkID: "network1",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.17.0.0/16",
-						IP:     "172.17.0.1",
-						VlanID: 1,
-						FirewallRules: []aostypes.FirewallRule{
-							{
-								Proto:   "tcp",
-								DstIP:   "172.18.0.1",
-								SrcIP:   "172.17.0.1",
-								DstPort: "80",
-							},
+					Subnet:    "172.17.0.0/16",
+					IP:        "172.17.0.1",
+					VlanID:    1,
+					FirewallRules: []aostypes.FirewallRule{
+						{
+							Proto:   "tcp",
+							DstIP:   "172.18.0.1",
+							SrcIP:   "172.17.0.1",
+							DstPort: "80",
 						},
 					},
 				},
@@ -524,13 +559,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 					SubjectID: "subject2",
 					Instance:  1,
 				},
-				NetworkInfo: networkmanager.NetworkInfo{
+				NetworkParameters: aostypes.NetworkParameters{
 					NetworkID: "network2",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.18.0.0/16",
-						IP:     "172.18.0.1",
-						VlanID: 1,
-					},
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.1",
+					VlanID:    1,
 				},
 			},
 		},
@@ -541,13 +574,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 					SubjectID: "subject2",
 					Instance:  2,
 				},
-				NetworkInfo: networkmanager.NetworkInfo{
+				NetworkParameters: aostypes.NetworkParameters{
 					NetworkID: "network2",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.18.0.0/16",
-						IP:     "172.18.0.2",
-						VlanID: 1,
-					},
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.2",
+					VlanID:    1,
 				},
 			},
 		},
@@ -576,13 +607,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 						SubjectID: "subject2",
 						Instance:  1,
 					},
-					NetworkInfo: networkmanager.NetworkInfo{
+					NetworkParameters: aostypes.NetworkParameters{
 						NetworkID: "network2",
-						NetworkParameters: aostypes.NetworkParameters{
-							Subnet: "172.18.0.0/16",
-							IP:     "172.18.0.1",
-							VlanID: 1,
-						},
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.1",
+						VlanID:    1,
 					},
 				},
 				{
@@ -591,13 +620,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 						SubjectID: "subject2",
 						Instance:  2,
 					},
-					NetworkInfo: networkmanager.NetworkInfo{
+					NetworkParameters: aostypes.NetworkParameters{
 						NetworkID: "network2",
-						NetworkParameters: aostypes.NetworkParameters{
-							Subnet: "172.18.0.0/16",
-							IP:     "172.18.0.2",
-							VlanID: 1,
-						},
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.2",
+						VlanID:    1,
 					},
 				},
 			},
@@ -615,13 +642,11 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 						SubjectID: "subject2",
 						Instance:  2,
 					},
-					NetworkInfo: networkmanager.NetworkInfo{
+					NetworkParameters: aostypes.NetworkParameters{
 						NetworkID: "network2",
-						NetworkParameters: aostypes.NetworkParameters{
-							Subnet: "172.18.0.0/16",
-							IP:     "172.18.0.2",
-							VlanID: 1,
-						},
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.2",
+						VlanID:    1,
 					},
 				},
 			},
@@ -654,36 +679,30 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 
 func TestNetworkConfiguration(t *testing.T) {
 	casesAdd := []struct {
-		networkInfo networkmanager.NetworkInfo
+		networkInfo aostypes.NetworkParameters
 	}{
 		{
-			networkInfo: networkmanager.NetworkInfo{
+			networkInfo: aostypes.NetworkParameters{
 				NetworkID: "network1",
-				NetworkParameters: aostypes.NetworkParameters{
-					Subnet: "172.17.0.0/16",
-					IP:     "172.17.0.1",
-					VlanID: 1,
-				},
+				Subnet:    "172.17.0.0/16",
+				IP:        "172.17.0.1",
+				VlanID:    1,
 			},
 		},
 		{
-			networkInfo: networkmanager.NetworkInfo{
+			networkInfo: aostypes.NetworkParameters{
 				NetworkID: "network2",
-				NetworkParameters: aostypes.NetworkParameters{
-					Subnet: "172.18.0.0/16",
-					IP:     "172.18.0.1",
-					VlanID: 1,
-				},
+				Subnet:    "172.18.0.0/16",
+				IP:        "172.18.0.1",
+				VlanID:    1,
 			},
 		},
 		{
-			networkInfo: networkmanager.NetworkInfo{
+			networkInfo: aostypes.NetworkParameters{
 				NetworkID: "network3",
-				NetworkParameters: aostypes.NetworkParameters{
-					Subnet: "172.19.0.0/16",
-					IP:     "172.19.0.2",
-					VlanID: 1,
-				},
+				Subnet:    "172.19.0.0/16",
+				IP:        "172.19.0.2",
+				VlanID:    1,
 			},
 		},
 	}
@@ -695,40 +714,34 @@ func TestNetworkConfiguration(t *testing.T) {
 	}
 
 	casesRemove := []struct {
-		expectedNetworkInfo []networkmanager.NetworkInfo
+		expectedNetworkInfo []aostypes.NetworkParameters
 		removeNetwork       string
 	}{
 		{
 			removeNetwork: "network1",
-			expectedNetworkInfo: []networkmanager.NetworkInfo{
+			expectedNetworkInfo: []aostypes.NetworkParameters{
 				{
 					NetworkID: "network2",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.18.0.0/16",
-						IP:     "172.18.0.1",
-						VlanID: 1,
-					},
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.1",
+					VlanID:    1,
 				},
 				{
 					NetworkID: "network3",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.19.0.0/16",
-						IP:     "172.19.0.2",
-						VlanID: 1,
-					},
+					Subnet:    "172.19.0.0/16",
+					IP:        "172.19.0.2",
+					VlanID:    1,
 				},
 			},
 		},
 		{
 			removeNetwork: "network2",
-			expectedNetworkInfo: []networkmanager.NetworkInfo{
+			expectedNetworkInfo: []aostypes.NetworkParameters{
 				{
 					NetworkID: "network3",
-					NetworkParameters: aostypes.NetworkParameters{
-						Subnet: "172.19.0.0/16",
-						IP:     "172.19.0.2",
-						VlanID: 1,
-					},
+					Subnet:    "172.19.0.0/16",
+					IP:        "172.19.0.2",
+					VlanID:    1,
 				},
 			},
 		},
@@ -843,7 +856,7 @@ func TestInstance(t *testing.T) {
 		t.Error("Incorrect empty instances")
 	}
 
-	if _, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
+	if _, err := testDB.GetInstance(aostypes.InstanceIdent{
 		ServiceID: "notexist", SubjectID: "notexist", Instance: 0,
 	}); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
@@ -851,10 +864,12 @@ func TestInstance(t *testing.T) {
 
 	for i := 100; i < 105; i++ {
 		instanceInfo := launcher.InstanceInfo{
-			InstanceIdent: aostypes.InstanceIdent{
-				ServiceID: servicePrefix + strconv.Itoa(i), SubjectID: subjectPrefix + strconv.Itoa(i), Instance: 0,
-			},
-			UID: i,
+			InstanceIdent: createInstanceIdent(i),
+			NodeID:        fmt.Sprintf("node%d", i+1),
+			PrevNodeID:    fmt.Sprintf("node%d", i),
+			Timestamp:     time.Now().UTC(),
+			UID:           i,
+			Cached:        i%2 == 0,
 		}
 
 		if err := testDB.AddInstance(instanceInfo); err != nil {
@@ -864,18 +879,16 @@ func TestInstance(t *testing.T) {
 		expectedInstances = append(expectedInstances, instanceInfo)
 	}
 
-	expectedUID := 103
+	expectedIndex := 103
 
-	uid, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
-	})
+	instanceInfo, err := testDB.GetInstance(createInstanceIdent(expectedIndex))
 	if err != nil {
-		t.Errorf("Can't get instance uid: %v", err)
+		t.Fatalf("Can't get instance: %v", err)
 	}
 
-	if uid != expectedUID {
-		t.Error("Incorrect uid for instance")
+	if !reflect.DeepEqual(instanceInfo, expectedInstances[expectedIndex-100]) {
+		t.Errorf("Incorrect result for get instance: %v, expected: %v", instanceInfo,
+			expectedInstances[expectedIndex-100])
 	}
 
 	instances, err = testDB.GetInstances()
@@ -887,42 +900,37 @@ func TestInstance(t *testing.T) {
 		t.Errorf("Incorrect result for get instances: %v, expected: %v", instances, expectedInstances)
 	}
 
-	expectedCachedInstanceIdent := aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
+	updatedIndex := 102
+
+	updatedInstance := launcher.InstanceInfo{
+		InstanceIdent: createInstanceIdent(updatedIndex),
+		NodeID:        "updatedNode",
+		PrevNodeID:    "prevUpdatedNode",
+		Timestamp:     time.Now().UTC(),
+		UID:           5000,
+		Cached:        true,
 	}
 
-	if err := testDB.SetInstanceCached(expectedCachedInstanceIdent, true); err != nil {
-		t.Errorf("Can't set instance cached: %v", err)
+	if err := testDB.UpdateInstance(updatedInstance); err != nil {
+		t.Errorf("Can't update instance: %v", err)
 	}
 
-	instances, err = testDB.GetInstances()
-	if err != nil {
-		t.Errorf("Can't get all instances: %v", err)
+	if instanceInfo, err = testDB.GetInstance(createInstanceIdent(expectedIndex)); err != nil {
+		t.Fatalf("Can't get instance: %v", err)
 	}
 
-	for _, instance := range instances {
-		cached := instance.Cached
-		if instance.InstanceIdent == expectedCachedInstanceIdent {
-			if !cached {
-				t.Error("Instance expected to be cached")
-			}
-
-			break
-		}
+	if !reflect.DeepEqual(instanceInfo, expectedInstances[expectedIndex-100]) {
+		t.Errorf("Incorrect result for get instance: %v, expected: %v", instanceInfo,
+			expectedInstances[expectedIndex-100])
 	}
 
-	if err := testDB.RemoveInstance(aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
-	}); err != nil {
+	removedInstance := 104
+
+	if err := testDB.RemoveInstance(createInstanceIdent(removedInstance)); err != nil {
 		t.Errorf("Can't remove instance: %v", err)
 	}
 
-	if _, err := testDB.GetInstanceUID(aostypes.InstanceIdent{
-		ServiceID: servicePrefix + strconv.Itoa(expectedUID),
-		SubjectID: subjectPrefix + strconv.Itoa(expectedUID), Instance: 0,
-	}); !errors.Is(err, launcher.ErrNotExist) {
+	if _, err := testDB.GetInstance(createInstanceIdent(removedInstance)); !errors.Is(err, launcher.ErrNotExist) {
 		t.Errorf("Incorrect error: %v, should be %v", err, launcher.ErrNotExist)
 	}
 }
@@ -1034,38 +1042,6 @@ func TestStorageState(t *testing.T) {
 
 	if _, err := testDB.GetStorageStateInfo(instanceIdent); !errors.Is(err, storagestate.ErrNotExist) {
 		t.Errorf("Should be: entry does not exist")
-	}
-}
-
-func TestNodeState(t *testing.T) {
-	setNodeState := json.RawMessage("node state 1")
-
-	if err := testDB.SetNodeState("nodeID", setNodeState); err != nil {
-		t.Fatalf("Can't set node state: %v", err)
-	}
-
-	getNodeState, err := testDB.GetNodeState("nodeID")
-	if err != nil {
-		t.Errorf("Can't get node state: %v", err)
-	}
-
-	if string(setNodeState) != string(getNodeState) {
-		t.Errorf("Wrong get node state: %s", string(getNodeState))
-	}
-
-	setNodeState = json.RawMessage("node state 2")
-
-	if err := testDB.SetNodeState("nodeID", setNodeState); err != nil {
-		t.Fatalf("Can't set node state: %v", err)
-	}
-
-	getNodeState, err = testDB.GetNodeState("nodeID")
-	if err != nil {
-		t.Errorf("Can't get node state: %v", err)
-	}
-
-	if string(setNodeState) != string(getNodeState) {
-		t.Errorf("Wrong get node state: %s", string(getNodeState))
 	}
 }
 
@@ -1278,4 +1254,12 @@ func isTableExist(sqlite *sql.DB, tableName string) (bool, error) {
 	}
 
 	return false, aoserrors.Wrap(rows.Err())
+}
+
+func createInstanceIdent(index int) aostypes.InstanceIdent {
+	return aostypes.InstanceIdent{
+		ServiceID: servicePrefix + strconv.Itoa(index),
+		SubjectID: subjectPrefix + strconv.Itoa(index),
+		Instance:  uint64(index),
+	}
 }

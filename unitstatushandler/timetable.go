@@ -29,7 +29,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const maxAvailableTime = 1<<63 - 1
+const (
+	maxAvailableTime = 1<<63 - 1
+	daysInWeek       = 7
+)
 
 /***********************************************************************************************************************
  * Types
@@ -54,12 +57,12 @@ func validateTimetable(timetable []cloudprotocol.TimetableEntry) (err error) {
 				return aoserrors.New("start value should contain only time")
 			}
 
-			if year, month, day := slot.Finish.Date(); year != 0 || month != 1 || day != 1 {
-				return aoserrors.New("finish value should contain only time")
+			if year, month, day := slot.End.Date(); year != 0 || month != 1 || day != 1 {
+				return aoserrors.New("end value should contain only time")
 			}
 
-			if slot.Start.After(slot.Finish.Time) {
-				return aoserrors.New("start value should be before finish value")
+			if slot.Start.After(slot.End.Time) {
+				return aoserrors.New("start value should be before end value")
 			}
 		}
 	}
@@ -85,7 +88,7 @@ func getAvailableTimetableTime(
 
 	for _, entry := range timetable {
 		// Convert to time.Weekday
-		entryWeekday := time.Weekday((entry.DayOfWeek) % 7) //nolint:gomnd
+		entryWeekday := time.Weekday((entry.DayOfWeek) % daysInWeek)
 		fromWeekday := fromDate.Weekday()
 
 		// Get num of days from weekday to entry weekday
@@ -103,7 +106,7 @@ func getAvailableTimetableTime(
 
 			//nolint:gosmopolitan
 			finishDate := time.Date(startEntry.Year(), startEntry.Month(), startEntry.Day(),
-				slot.Finish.Hour(), slot.Finish.Minute(), slot.Finish.Second(), slot.Finish.Nanosecond(), time.Local)
+				slot.End.Hour(), slot.End.Minute(), slot.End.Second(), slot.End.Nanosecond(), time.Local)
 
 			duration := startDate.Sub(fromDate)
 

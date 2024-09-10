@@ -20,18 +20,24 @@ package iamclient
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"io"
 	"sync"
 	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
-	pb "github.com/aosedge/aos_common/api/iamanager/v4"
+	pb "github.com/aosedge/aos_common/api/iamanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
+	pbconvert "github.com/aosedge/aos_common/utils/pbconvert"
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 )
@@ -40,7 +46,10 @@ import (
  * Consts
  **********************************************************************************************************************/
 
-const iamRequestTimeout = 30 * time.Second
+const (
+	iamRequestTimeout    = 30 * time.Second
+	iamReconnectInterval = 10 * time.Second
+)
 
 /***********************************************************************************************************************
  * Types
@@ -52,8 +61,7 @@ type Client struct {
 
 	sender Sender
 
-	nodeID string
-
+	nodeID   string
 	systemID string
 
 	publicConnection    *grpc.ClientConn
@@ -61,14 +69,21 @@ type Client struct {
 	publicService       pb.IAMPublicServiceClient
 	identService        pb.IAMPublicIdentityServiceClient
 	certificateService  pb.IAMCertificateServiceClient
+	provisioningService pb.IAMProvisioningServiceClient
 
-	closeChannel chan struct{}
+	closeChannel       chan struct{}
+	publicNodesService pb.IAMPublicNodesServiceClient
+	nodesService       pb.IAMNodesServiceClient
+	nodeInfoListeners  []chan cloudprotocol.NodeInfo
 }
 
 // Sender provides API to send messages to the cloud.
 type Sender interface {
 	SendIssueUnitCerts(requests []cloudprotocol.IssueCertData) (err error)
 	SendInstallCertsConfirmation(confirmations []cloudprotocol.InstallCertData) (err error)
+	SendStartProvisioningResponse(response cloudprotocol.StartProvisioningResponse) (err error)
+	SendFinishProvisioningResponse(response cloudprotocol.FinishProvisioningResponse) (err error)
+	SendDeprovisioningResponse(response cloudprotocol.DeprovisioningResponse) (err error)
 }
 
 // CertificateProvider provides certificate info.
@@ -91,8 +106,9 @@ func New(
 	}
 
 	localClient := &Client{
-		sender:       sender,
-		closeChannel: make(chan struct{}, 1),
+		sender:            sender,
+		closeChannel:      make(chan struct{}, 1),
+		nodeInfoListeners: make([]chan cloudprotocol.NodeInfo, 0),
 	}
 
 	defer func() {
@@ -108,6 +124,7 @@ func New(
 
 	localClient.publicService = pb.NewIAMPublicServiceClient(localClient.publicConnection)
 	localClient.identService = pb.NewIAMPublicIdentityServiceClient(localClient.publicConnection)
+	localClient.publicNodesService = pb.NewIAMPublicNodesServiceClient(localClient.publicConnection)
 
 	if localClient.protectedConnection, err = localClient.createProtectedConnection(
 		config, cryptocontext, insecure); err != nil {
@@ -115,16 +132,20 @@ func New(
 	}
 
 	localClient.certificateService = pb.NewIAMCertificateServiceClient(localClient.protectedConnection)
+	localClient.provisioningService = pb.NewIAMProvisioningServiceClient(localClient.protectedConnection)
+	localClient.nodesService = pb.NewIAMNodesServiceClient(localClient.protectedConnection)
 
 	log.Debug("Connected to IAM")
 
 	if localClient.nodeID, _, err = localClient.getNodeInfo(); err != nil {
-		return client, aoserrors.Wrap(err)
+		return nil, aoserrors.Wrap(err)
 	}
 
 	if localClient.systemID, err = localClient.getSystemID(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
+
+	go localClient.connectPublicNodeService()
 
 	return localClient, nil
 }
@@ -139,8 +160,60 @@ func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
 }
 
+// GetCurrentNodeInfo returns info for current node.
+func (client *Client) GetCurrentNodeInfo() (nodeInfo cloudprotocol.NodeInfo, err error) {
+	return client.GetNodeInfo(client.GetNodeID())
+}
+
+// GetNodeInfo returns node info.
+func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInfo, err error) {
+	log.WithField("nodeID", nodeID).Debug("Get node info")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	request := &pb.GetNodeInfoRequest{NodeId: nodeID}
+
+	response, err := client.publicNodesService.GetNodeInfo(ctx, request)
+	if err != nil {
+		return cloudprotocol.NodeInfo{}, aoserrors.Wrap(err)
+	}
+
+	return pbconvert.NodeInfoFromPB(response), nil
+}
+
+// GetAllNodeIDs returns node ids.
+func (client *Client) GetAllNodeIDs() (nodeIDs []string, err error) {
+	log.Debug("Get all node ids")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.publicNodesService.GetAllNodeIDs(ctx, &emptypb.Empty{})
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return response.GetIds(), err
+}
+
+// SubscribeNodeInfoChange subscribes client on NodeInfoChange events.
+func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
+	client.Lock()
+	defer client.Unlock()
+
+	log.Debug("Subscribe on node info change event")
+
+	ch := make(chan cloudprotocol.NodeInfo)
+	client.nodeInfoListeners = append(client.nodeInfoListeners, ch)
+
+	return ch
+}
+
 // RenewCertificatesNotification renew certificates notification.
-func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloudprotocol.RenewCertData) (err error) {
+func (client *Client) RenewCertificatesNotification(secrets cloudprotocol.UnitSecrets,
+	certInfo []cloudprotocol.RenewCertData,
+) (err error) {
 	newCerts := make([]cloudprotocol.IssueCertData, 0, len(certInfo))
 
 	for _, cert := range certInfo {
@@ -150,6 +223,11 @@ func (client *Client) RenewCertificatesNotification(pwd string, certInfo []cloud
 
 		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 		defer cancel()
+
+		pwd, ok := secrets.Nodes[cert.NodeID]
+		if !ok {
+			return aoserrors.New("not found password for node: " + cert.NodeID)
+		}
 
 		request := &pb.CreateKeyRequest{Type: cert.Type, Password: pwd, NodeId: cert.NodeID}
 
@@ -243,6 +321,157 @@ func (client *Client) GetCertificate(
 	return response.GetCertUrl(), response.GetKeyUrl(), nil
 }
 
+// StartProvisioning starts provisioning.
+func (client *Client) StartProvisioning(nodeID, password string) (err error) {
+	log.WithField("nodeID", nodeID).Debug("Start provisioning")
+
+	var (
+		errorInfo *cloudprotocol.ErrorInfo
+		csrs      []cloudprotocol.IssueCertData
+	)
+
+	defer func() {
+		errSend := client.sender.SendStartProvisioningResponse(cloudprotocol.StartProvisioningResponse{
+			MessageType: cloudprotocol.StartProvisioningResponseMessageType,
+			NodeID:      nodeID,
+			ErrorInfo:   errorInfo,
+			CSRs:        csrs,
+		})
+		if errSend != nil && err == nil {
+			err = aoserrors.Wrap(errSend)
+		}
+	}()
+
+	errorInfo = client.startProvisioning(nodeID, password)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	csrs, errorInfo = client.createKeys(nodeID, password)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// FinishProvisioning starts provisioning.
+func (client *Client) FinishProvisioning(
+	nodeID, password string, certificates []cloudprotocol.IssuedCertData,
+) (err error) {
+	log.WithField("nodeID", nodeID).Debug("Finish provisioning")
+
+	var errorInfo *cloudprotocol.ErrorInfo
+
+	defer func() {
+		errSend := client.sender.SendFinishProvisioningResponse(cloudprotocol.FinishProvisioningResponse{
+			MessageType: cloudprotocol.FinishProvisioningResponseMessageType,
+			NodeID:      nodeID,
+			ErrorInfo:   errorInfo,
+		})
+		if errSend != nil && err == nil {
+			err = aoserrors.Wrap(errSend)
+		}
+	}()
+
+	errorInfo = client.applyCertificates(nodeID, certificates)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	errorInfo = client.finishProvisioning(nodeID, password)
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// Deprovision deprovisions node.
+func (client *Client) Deprovision(nodeID, password string) (err error) {
+	log.WithField("nodeID", nodeID).Debug("Deprovision node")
+
+	var errorInfo *cloudprotocol.ErrorInfo
+
+	defer func() {
+		errSend := client.sender.SendDeprovisioningResponse(cloudprotocol.DeprovisioningResponse{
+			MessageType: cloudprotocol.DeprovisioningResponseMessageType,
+			NodeID:      nodeID,
+			ErrorInfo:   errorInfo,
+		})
+		if errSend != nil && err == nil {
+			err = aoserrors.Wrap(errSend)
+		}
+	}()
+
+	if nodeID == client.GetNodeID() {
+		err = aoserrors.New("Can't deprovision main node")
+		errorInfo = &cloudprotocol.ErrorInfo{
+			Message: err.Error(),
+		}
+
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.Deprovision(
+		ctx, &pb.DeprovisionRequest{NodeId: nodeID, Password: password})
+	if err != nil {
+		errorInfo = &cloudprotocol.ErrorInfo{Message: err.Error()}
+
+		return aoserrors.Wrap(err)
+	}
+
+	errorInfo = pbconvert.ErrorInfoFromPB(response.GetError())
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// PauseNode pauses node.
+func (client *Client) PauseNode(nodeID string) error {
+	log.WithField("nodeID", nodeID).Debug("Pause node")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.nodesService.PauseNode(ctx, &pb.PauseNodeRequest{NodeId: nodeID})
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	errorInfo := pbconvert.ErrorInfoFromPB(response.GetError())
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
+// ResumeNode resumes node.
+func (client *Client) ResumeNode(nodeID string) error {
+	log.WithField("nodeID", nodeID).Debug("Resume node")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.nodesService.ResumeNode(ctx, &pb.ResumeNodeRequest{NodeId: nodeID})
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	errorInfo := pbconvert.ErrorInfoFromPB(response.GetError())
+	if errorInfo != nil {
+		return aoserrors.New(errorInfo.Message)
+	}
+
+	return nil
+}
+
 // Close closes IAM client.
 func (client *Client) Close() (err error) {
 	if client.publicConnection != nil || client.protectedConnection != nil {
@@ -256,6 +485,8 @@ func (client *Client) Close() (err error) {
 	if client.protectedConnection != nil {
 		client.protectedConnection.Close()
 	}
+
+	client.nodeInfoListeners = nil
 
 	log.Debug("Disconnected from IAM")
 
@@ -355,4 +586,179 @@ func (client *Client) getSystemID() (systemID string, err error) {
 	log.WithFields(log.Fields{"systemID": response.GetSystemId()}).Debug("Get system ID")
 
 	return response.GetSystemId(), nil
+}
+
+func (client *Client) processMessages(listener pb.IAMPublicNodesService_SubscribeNodeChangedClient) (err error) {
+	for {
+		nodeInfo, err := listener.Recv()
+		if err != nil {
+			if code, ok := status.FromError(err); ok {
+				if code.Code() == codes.Canceled {
+					log.Debug("IAM client connection closed")
+					return nil
+				}
+			}
+
+			return aoserrors.Wrap(err)
+		}
+
+		client.Lock()
+		for _, listener := range client.nodeInfoListeners {
+			listener <- pbconvert.NodeInfoFromPB(nodeInfo)
+		}
+		client.Unlock()
+	}
+}
+
+func (client *Client) connectPublicNodeService() {
+	listener, err := client.subscribeNodeInfoChange()
+
+	for {
+		if err != nil {
+			log.Errorf("Error register to IAM: %v", aoserrors.Wrap(err))
+		} else {
+			if err = client.processMessages(listener); err != nil {
+				if errors.Is(err, io.EOF) {
+					log.Debug("Connection is closed")
+				} else {
+					log.Errorf("Connection error: %v", aoserrors.Wrap(err))
+				}
+			}
+		}
+
+		log.Debugf("Reconnect to IAM in %v...", iamReconnectInterval)
+
+		select {
+		case <-client.closeChannel:
+			log.Debugf("Disconnected from IAM")
+
+			return
+
+		case <-time.After(iamReconnectInterval):
+			listener, err = client.subscribeNodeInfoChange()
+		}
+	}
+}
+
+func (client *Client) subscribeNodeInfoChange() (
+	listener pb.IAMPublicNodesService_SubscribeNodeChangedClient, err error,
+) {
+	client.Lock()
+	defer client.Unlock()
+
+	client.publicNodesService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
+
+	listener, err = client.publicNodesService.SubscribeNodeChanged(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		log.WithField("error", err).Error("Can't subscribe on NodeChange event")
+
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return listener, aoserrors.Wrap(err)
+}
+
+func (client *Client) getCertTypes(nodeID string) ([]string, error) {
+	log.WithField("nodeID", nodeID).Debug("Get certificate types")
+
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.GetCertTypes(
+		ctx, &pb.GetCertTypesRequest{NodeId: nodeID})
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return response.GetTypes(), nil
+}
+
+func (client *Client) createKeys(nodeID, password string) (
+	certs []cloudprotocol.IssueCertData, errorInfo *cloudprotocol.ErrorInfo,
+) {
+	certTypes, err := client.getCertTypes(nodeID)
+	if err != nil {
+		return nil, &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	for _, certType := range certTypes {
+		log.WithFields(log.Fields{"nodeID": nodeID, "type": certType}).Debug("Create key")
+
+		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+		defer cancel()
+
+		response, err := client.certificateService.CreateKey(ctx, &pb.CreateKeyRequest{
+			Type:     certType,
+			NodeId:   nodeID,
+			Password: password,
+		})
+		if err != nil {
+			return nil, &cloudprotocol.ErrorInfo{Message: err.Error()}
+		}
+
+		if response.GetError() != nil {
+			return nil, pbconvert.ErrorInfoFromPB(response.GetError())
+		}
+
+		certs = append(certs, cloudprotocol.IssueCertData{
+			Type:   certType,
+			Csr:    response.GetCsr(),
+			NodeID: nodeID,
+		})
+	}
+
+	return certs, nil
+}
+
+func (client *Client) startProvisioning(nodeID, password string) (errorInfo *cloudprotocol.ErrorInfo) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.StartProvisioning(
+		ctx, &pb.StartProvisioningRequest{NodeId: nodeID, Password: password})
+	if err != nil {
+		return &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	return pbconvert.ErrorInfoFromPB(response.GetError())
+}
+
+func (client *Client) applyCertificates(
+	nodeID string, certificates []cloudprotocol.IssuedCertData,
+) (errorInfo *cloudprotocol.ErrorInfo) {
+	for _, certificate := range certificates {
+		log.WithFields(log.Fields{"nodeID": nodeID, "type": certificate.Type}).Debug("Apply certificate")
+
+		ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+		defer cancel()
+
+		response, err := client.certificateService.ApplyCert(
+			ctx, &pb.ApplyCertRequest{
+				NodeId: nodeID,
+				Type:   certificate.Type,
+				Cert:   certificate.CertificateChain,
+			})
+		if err != nil {
+			return &cloudprotocol.ErrorInfo{Message: err.Error()}
+		}
+
+		if response.GetError() != nil {
+			return pbconvert.ErrorInfoFromPB(response.GetError())
+		}
+	}
+
+	return nil
+}
+
+func (client *Client) finishProvisioning(nodeID, password string) (errorInfo *cloudprotocol.ErrorInfo) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	response, err := client.provisioningService.FinishProvisioning(
+		ctx, &pb.FinishProvisioningRequest{NodeId: nodeID, Password: password})
+	if err != nil {
+		return &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	return pbconvert.ErrorInfoFromPB(response.GetError())
 }

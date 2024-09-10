@@ -24,9 +24,14 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
+	"github.com/aosedge/aos_common/api/cloudprotocol"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 
 	"github.com/aosedge/aos_communicationmanager/config"
+	"github.com/aosedge/aos_communicationmanager/imagemanager"
+	"github.com/aosedge/aos_communicationmanager/storagestate"
 	"github.com/aosedge/aos_communicationmanager/utils/uidgidpool"
 )
 
@@ -40,26 +45,50 @@ const removePeriod = time.Hour * 24
  * Types
  **********************************************************************************************************************/
 
+type InstanceInfo struct {
+	aostypes.InstanceIdent
+	NodeID     string
+	PrevNodeID string
+	UID        int
+	Timestamp  time.Time
+	Cached     bool
+}
+
+// Storage storage interface.
+type Storage interface {
+	AddInstance(instanceInfo InstanceInfo) error
+	UpdateInstance(instanceInfo InstanceInfo) error
+	RemoveInstance(instanceIdent aostypes.InstanceIdent) error
+	GetInstance(instanceIdent aostypes.InstanceIdent) (InstanceInfo, error)
+	GetInstances() ([]InstanceInfo, error)
+}
+
 type instanceManager struct {
-	config               *config.Config
-	storage              Storage
-	storageStateProvider StorageStateProvider
-	cancelFunc           context.CancelFunc
-	uidPool              *uidgidpool.IdentifierPool
-	removeServiceChannel <-chan string
+	config                           *config.Config
+	imageProvider                    ImageProvider
+	storageStateProvider             StorageStateProvider
+	storage                          Storage
+	cancelFunc                       context.CancelFunc
+	uidPool                          *uidgidpool.IdentifierPool
+	errorStatus                      map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus
+	instances                        map[aostypes.InstanceIdent]aostypes.InstanceInfo
+	removeServiceChannel             <-chan string
+	curInstances                     []InstanceInfo
+	availableStorage, availableState uint64
 }
 
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
-func newInstanceManager(config *config.Config, storage Storage, storageStateProvider StorageStateProvider,
-	removeServiceChannel <-chan string,
+func newInstanceManager(config *config.Config, imageProvider ImageProvider, storageStateProvider StorageStateProvider,
+	storage Storage, removeServiceChannel <-chan string,
 ) (im *instanceManager, err error) {
 	im = &instanceManager{
 		config:               config,
-		storage:              storage,
+		imageProvider:        imageProvider,
 		storageStateProvider: storageStateProvider,
+		storage:              storage,
 		removeServiceChannel: removeServiceChannel,
 		uidPool:              uidgidpool.NewUserIDPool(),
 	}
@@ -89,6 +118,220 @@ func newInstanceManager(config *config.Config, storage Storage, storageStateProv
 	go im.instanceRemover(ctx)
 
 	return im, nil
+}
+
+func (im *instanceManager) initInstances() {
+	im.instances = make(map[aostypes.InstanceIdent]aostypes.InstanceInfo)
+	im.errorStatus = make(map[aostypes.InstanceIdent]cloudprotocol.InstanceStatus)
+
+	var err error
+
+	instances, err := im.storage.GetInstances()
+	if err != nil {
+		log.Errorf("Can't get current instances: %v", err)
+	}
+
+	im.curInstances = make([]InstanceInfo, 0, len(instances))
+
+	for _, instance := range instances {
+		if instance.Cached {
+			continue
+		}
+
+		im.curInstances = append(im.curInstances, instance)
+	}
+}
+
+func (im *instanceManager) getCurrentInstances() []InstanceInfo {
+	return im.curInstances
+}
+
+func (im *instanceManager) getCurrentInstance(instanceIdent aostypes.InstanceIdent) (InstanceInfo, error) {
+	curIndex := slices.IndexFunc(im.curInstances, func(curInstance InstanceInfo) bool {
+		return curInstance.InstanceIdent == instanceIdent
+	})
+
+	if curIndex == -1 {
+		return InstanceInfo{}, aoserrors.Wrap(ErrNotExist)
+	}
+
+	return im.curInstances[curIndex], nil
+}
+
+func (im *instanceManager) resetStorageStateUsage(storageSize, stateSize uint64) {
+	im.availableStorage, im.availableState = storageSize, stateSize
+}
+
+func (im *instanceManager) setupInstance(
+	instance cloudprotocol.InstanceInfo, index uint64, node *nodeHandler, service imagemanager.ServiceInfo,
+	rebalancing bool,
+) (aostypes.InstanceInfo, error) {
+	instanceInfo := aostypes.InstanceInfo{
+		InstanceIdent: aostypes.InstanceIdent{
+			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID, Instance: index,
+		},
+		Priority: instance.Priority,
+	}
+
+	if _, ok := im.instances[instanceInfo.InstanceIdent]; ok {
+		return aostypes.InstanceInfo{}, aoserrors.Errorf("instance already set up")
+	}
+
+	storedInstance, err := im.storage.GetInstance(instanceInfo.InstanceIdent)
+	if err != nil {
+		if !errors.Is(err, ErrNotExist) {
+			return aostypes.InstanceInfo{}, aoserrors.Wrap(err)
+		}
+
+		uid, err := im.acquireUID()
+		if err != nil {
+			return aostypes.InstanceInfo{}, err
+		}
+
+		storedInstance = InstanceInfo{
+			InstanceIdent: instanceInfo.InstanceIdent,
+			NodeID:        node.nodeInfo.NodeID,
+			UID:           uid,
+			Timestamp:     time.Now(),
+		}
+
+		if err := im.storage.AddInstance(storedInstance); err != nil {
+			log.Errorf("Can't add instance: %v", err)
+		}
+	} else {
+		if rebalancing {
+			storedInstance.PrevNodeID = storedInstance.NodeID
+		} else {
+			storedInstance.PrevNodeID = ""
+		}
+
+		storedInstance.NodeID = node.nodeInfo.NodeID
+		storedInstance.Timestamp = time.Now()
+		storedInstance.Cached = false
+
+		err = im.storage.UpdateInstance(storedInstance)
+		if err != nil {
+			log.Errorf("Can't update instance: %v", err)
+		}
+	}
+
+	instanceInfo.UID = uint32(storedInstance.UID)
+
+	if err = im.setupInstanceStateStorage(&instanceInfo, service,
+		getStorageRequestRatio(service.Config.ResourceRatios, node.nodeConfig.ResourceRatios)); err != nil {
+		return aostypes.InstanceInfo{}, err
+	}
+
+	im.instances[instanceInfo.InstanceIdent] = instanceInfo
+
+	return instanceInfo, nil
+}
+
+func createInstanceIdent(instance cloudprotocol.InstanceInfo, instanceIndex uint64) aostypes.InstanceIdent {
+	return aostypes.InstanceIdent{
+		ServiceID: instance.ServiceID, SubjectID: instance.SubjectID, Instance: instanceIndex,
+	}
+}
+
+func (im *instanceManager) setInstanceError(
+	instanceIdent aostypes.InstanceIdent, serviceVersion string, err error,
+) {
+	instanceStatus := cloudprotocol.InstanceStatus{
+		InstanceIdent:  instanceIdent,
+		ServiceVersion: serviceVersion,
+		Status:         cloudprotocol.InstanceStateFailed,
+	}
+
+	if err != nil {
+		log.WithFields(instanceIdentLogFields(instanceStatus.InstanceIdent, nil)).Errorf(
+			"Schedule instance error: %v", err)
+
+		instanceStatus.ErrorInfo = &cloudprotocol.ErrorInfo{Message: err.Error()}
+	}
+
+	im.errorStatus[instanceStatus.InstanceIdent] = instanceStatus
+}
+
+func (im *instanceManager) setAllInstanceError(
+	instance cloudprotocol.InstanceInfo, serviceVersion string, err error,
+) {
+	for i := uint64(0); i < instance.NumInstances; i++ {
+		im.setInstanceError(createInstanceIdent(instance, i), serviceVersion, err)
+	}
+}
+
+func (im *instanceManager) isInstanceScheduled(instanceIdent aostypes.InstanceIdent) bool {
+	if _, ok := im.instances[instanceIdent]; ok {
+		return true
+	}
+
+	if _, ok := im.errorStatus[instanceIdent]; ok {
+		return true
+	}
+
+	return false
+}
+
+func (im *instanceManager) getInstanceCheckSum(instance aostypes.InstanceIdent) string {
+	return im.storageStateProvider.GetInstanceCheckSum(instance)
+}
+
+func (im *instanceManager) setupInstanceStateStorage(
+	instanceInfo *aostypes.InstanceInfo, serviceInfo imagemanager.ServiceInfo,
+	requestRation float64,
+) error {
+	stateStorageParams := storagestate.SetupParams{
+		InstanceIdent: instanceInfo.InstanceIdent,
+		UID:           int(instanceInfo.UID), GID: int(serviceInfo.GID),
+	}
+
+	if serviceInfo.Config.Quotas.StateLimit != nil {
+		stateStorageParams.StateQuota = *serviceInfo.Config.Quotas.StateLimit
+	}
+
+	if serviceInfo.Config.Quotas.StorageLimit != nil {
+		stateStorageParams.StorageQuota = *serviceInfo.Config.Quotas.StorageLimit
+	}
+
+	requestedStorage := uint64(float64(stateStorageParams.StorageQuota)*requestRation + 0.5)
+	requestedState := uint64(float64(stateStorageParams.StateQuota)*requestRation + 0.5)
+
+	if requestedStorage > im.availableStorage {
+		return aoserrors.Errorf("not enough storage space")
+	}
+
+	if requestedState > im.availableState {
+		return aoserrors.Errorf("not enough state space")
+	}
+
+	var err error
+
+	instanceInfo.StoragePath, instanceInfo.StatePath, err = im.storageStateProvider.Setup(stateStorageParams)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	im.availableStorage -= requestedStorage
+	im.availableState -= requestedState
+
+	return nil
+}
+
+func (im *instanceManager) cacheInstance(instanceInfo InstanceInfo) error {
+	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Debug("Cache instance")
+
+	instanceInfo.Cached = true
+	instanceInfo.NodeID = ""
+
+	if err := im.storage.UpdateInstance(instanceInfo); err != nil {
+		log.Errorf("Can't update instance: %v", err)
+	}
+
+	if err := im.storageStateProvider.Cleanup(instanceInfo.InstanceIdent); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
 }
 
 func (im *instanceManager) acquireUID() (int, error) {
@@ -177,7 +420,7 @@ func (im *instanceManager) clearInstancesWithDeletedService() error {
 	}
 
 	for _, instance := range instances {
-		if _, err := im.storage.GetServiceInfo(instance.ServiceID); err == nil {
+		if _, err := im.imageProvider.GetServiceInfo(instance.ServiceID); err == nil {
 			continue
 		}
 
@@ -187,6 +430,10 @@ func (im *instanceManager) clearInstancesWithDeletedService() error {
 	}
 
 	return nil
+}
+
+func (im *instanceManager) getErrorInstanceStatuses() []cloudprotocol.InstanceStatus {
+	return maps.Values(im.errorStatus)
 }
 
 func (im *instanceManager) instanceRemover(ctx context.Context) {

@@ -102,26 +102,35 @@ type ConnectionEventsConsumer interface {
  **********************************************************************************************************************/
 
 var messageMap = map[string]func() interface{}{ //nolint:gochecknoglobals
-	cloudprotocol.DesiredStatusType: func() interface{} {
+	cloudprotocol.DesiredStatusMessageType: func() interface{} {
 		return &cloudprotocol.DesiredStatus{}
 	},
-	cloudprotocol.RequestLogType: func() interface{} {
+	cloudprotocol.RequestLogMessageType: func() interface{} {
 		return &cloudprotocol.RequestLog{}
 	},
-	cloudprotocol.StateAcceptanceType: func() interface{} {
+	cloudprotocol.StateAcceptanceMessageType: func() interface{} {
 		return &cloudprotocol.StateAcceptance{}
 	},
-	cloudprotocol.UpdateStateType: func() interface{} {
+	cloudprotocol.UpdateStateMessageType: func() interface{} {
 		return &cloudprotocol.UpdateState{}
 	},
-	cloudprotocol.RenewCertsNotificationType: func() interface{} {
+	cloudprotocol.RenewCertsNotificationMessageType: func() interface{} {
 		return &cloudprotocol.RenewCertsNotification{}
 	},
-	cloudprotocol.IssuedUnitCertsType: func() interface{} {
+	cloudprotocol.IssuedUnitCertsMessageType: func() interface{} {
 		return &cloudprotocol.IssuedUnitCerts{}
 	},
-	cloudprotocol.OverrideEnvVarsType: func() interface{} {
+	cloudprotocol.OverrideEnvVarsMessageType: func() interface{} {
 		return &cloudprotocol.OverrideEnvVars{}
+	},
+	cloudprotocol.StartProvisioningRequestMessageType: func() interface{} {
+		return &cloudprotocol.StartProvisioningRequest{}
+	},
+	cloudprotocol.FinishProvisioningRequestMessageType: func() interface{} {
+		return &cloudprotocol.FinishProvisioningRequest{}
+	},
+	cloudprotocol.DeprovisioningRequestMessageType: func() interface{} {
+		return &cloudprotocol.DeprovisioningRequest{}
 	},
 }
 
@@ -131,14 +140,6 @@ var (
 	// ErrSendChannelFull indicates AMQP send channel is full.
 	ErrSendChannelFull = errors.New("send channel full")
 )
-
-var importantMessages = []string{ //nolint:gochecknoglobals // used as const
-	cloudprotocol.DesiredStatusType, cloudprotocol.StateAcceptanceType,
-	cloudprotocol.RenewCertsNotificationType, cloudprotocol.IssuedUnitCertsType, cloudprotocol.OverrideEnvVarsType,
-	cloudprotocol.NewStateType, cloudprotocol.StateRequestType, cloudprotocol.UnitStatusType,
-	cloudprotocol.IssueUnitCertsType, cloudprotocol.InstallUnitCertsConfirmationType,
-	cloudprotocol.OverrideEnvVarsStatusType,
-}
 
 /***********************************************************************************************************************
  * Public
@@ -179,8 +180,7 @@ func (handler *AmqpHandler) Connect(cryptoContext CryptoContext, sdURL, systemID
 	ctx, handler.cancelFunc = context.WithCancel(context.Background())
 
 	if connectionInfo, err = getConnectionInfo(ctx, sdURL,
-		handler.createCloudMessage(cloudprotocol.ServiceDiscoveryType,
-			cloudprotocol.ServiceDiscoveryRequest{}), tlsConfig); err != nil {
+		handler.createCloudMessage(cloudprotocol.ServiceDiscoveryRequest{}), tlsConfig); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
@@ -234,7 +234,9 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.UnitStatusType, unitStatus, false)
+	unitStatus.MessageType = cloudprotocol.UnitStatusMessageType
+
+	return handler.scheduleMessage(unitStatus, false)
 }
 
 // SendMonitoringData sends monitoring data.
@@ -242,7 +244,9 @@ func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.Moni
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.MonitoringDataType, monitoringData, false)
+	monitoringData.MessageType = cloudprotocol.MonitoringMessageType
+
+	return handler.scheduleMessage(monitoringData, false)
 }
 
 // SendServiceNewState sends new state message.
@@ -250,7 +254,9 @@ func (handler *AmqpHandler) SendInstanceNewState(newState cloudprotocol.NewState
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.NewStateType, newState, false)
+	newState.MessageType = cloudprotocol.NewStateMessageType
+
+	return handler.scheduleMessage(newState, false)
 }
 
 // SendServiceStateRequest sends state request message.
@@ -258,7 +264,9 @@ func (handler *AmqpHandler) SendInstanceStateRequest(request cloudprotocol.State
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.StateRequestType, request, true)
+	request.MessageType = cloudprotocol.StateRequestMessageType
+
+	return handler.scheduleMessage(request, true)
 }
 
 // SendLog sends system or service logs.
@@ -266,7 +274,9 @@ func (handler *AmqpHandler) SendLog(serviceLog cloudprotocol.PushLog) error {
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.PushLogType, serviceLog, true)
+	serviceLog.MessageType = cloudprotocol.PushLogMessageType
+
+	return handler.scheduleMessage(serviceLog, true)
 }
 
 // SendAlerts sends alerts message.
@@ -274,7 +284,9 @@ func (handler *AmqpHandler) SendAlerts(alerts cloudprotocol.Alerts) error {
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.AlertsType, alerts, true)
+	alerts.MessageType = cloudprotocol.AlertsMessageType
+
+	return handler.scheduleMessage(alerts, true)
 }
 
 // SendIssueUnitCerts sends request to issue new certificates.
@@ -282,8 +294,11 @@ func (handler *AmqpHandler) SendIssueUnitCerts(requests []cloudprotocol.IssueCer
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(
-		cloudprotocol.IssueUnitCertsType, cloudprotocol.IssueUnitCerts{Requests: requests}, true)
+	issueUnitCerts := cloudprotocol.IssueUnitCerts{
+		MessageType: cloudprotocol.IssueUnitCertsMessageType, Requests: requests,
+	}
+
+	return handler.scheduleMessage(issueUnitCerts, true)
 }
 
 // SendInstallCertsConfirmation sends install certificates confirmation.
@@ -291,9 +306,11 @@ func (handler *AmqpHandler) SendInstallCertsConfirmation(confirmations []cloudpr
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(
-		cloudprotocol.InstallUnitCertsConfirmationType,
-		cloudprotocol.InstallUnitCertsConfirmation{Certificates: confirmations}, true)
+	request := cloudprotocol.InstallUnitCertsConfirmation{
+		MessageType: cloudprotocol.InstallUnitCertsConfirmationMessageType, Certificates: confirmations,
+	}
+
+	return handler.scheduleMessage(request, true)
 }
 
 // SendOverrideEnvVarsStatus overrides env vars status.
@@ -301,7 +318,33 @@ func (handler *AmqpHandler) SendOverrideEnvVarsStatus(envs cloudprotocol.Overrid
 	handler.Lock()
 	defer handler.Unlock()
 
-	return handler.scheduleMessage(cloudprotocol.OverrideEnvVarsStatusType, envs, true)
+	envs.MessageType = cloudprotocol.OverrideEnvVarsStatusMessageType
+
+	return handler.scheduleMessage(envs, true)
+}
+
+// SendStartProvisioningResponse sends start provisioning response.
+func (handler *AmqpHandler) SendStartProvisioningResponse(response cloudprotocol.StartProvisioningResponse) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	return handler.scheduleMessage(response, true)
+}
+
+// SendFinishProvisioningResponse sends finish provisioning response.
+func (handler *AmqpHandler) SendFinishProvisioningResponse(response cloudprotocol.FinishProvisioningResponse) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	return handler.scheduleMessage(response, true)
+}
+
+// SendDeprovisioningResponse sends deprovisioning response.
+func (handler *AmqpHandler) SendDeprovisioningResponse(response cloudprotocol.DeprovisioningResponse) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	return handler.scheduleMessage(response, true)
 }
 
 // SubscribeForConnectionEvents subscribes for connection events.
@@ -580,30 +623,30 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 				return
 			}
 
-			var incomingMsg cloudprotocol.ReceivedMessage
+			decryptData, err := handler.cryptoContext.DecryptMetadata(delivery.Body)
+			if err != nil {
+				log.Errorf("Can't decrypt message: %v", err)
 
-			if err := json.Unmarshal(delivery.Body, &incomingMsg); err != nil {
-				log.Errorf("Can't parse message header: %s", err)
+				continue
+			}
+
+			var incomingMsg cloudprotocol.ReceivedMessage
+			if err := json.Unmarshal(decryptData, &incomingMsg); err != nil {
+				log.Errorf("Can't parse message: %v", err)
+
 				continue
 			}
 
 			if incomingMsg.Header.Version != cloudprotocol.ProtocolVersion {
 				log.Errorf("Unsupported protocol version: %d", incomingMsg.Header.Version)
+
 				continue
 			}
 
-			messageTypeFunc, ok := messageMap[incomingMsg.Header.MessageType]
-			if !ok {
-				log.Warnf("AMQP unsupported message type: %s", incomingMsg.Header.MessageType)
-				continue
-			}
+			decodedData, err := handler.unmarshalReceiveData(incomingMsg.Data)
+			if err != nil {
+				log.Errorf("Can't unmarshal incoming message %s", err)
 
-			decodedData := messageTypeFunc()
-
-			log.Infof("AMQP receive message: %s", incomingMsg.Header.MessageType)
-
-			if err := handler.decodeData(incomingMsg.Data, decodedData); err != nil {
-				log.Errorf("Can't decode incoming message %s", err)
 				continue
 			}
 
@@ -612,59 +655,67 @@ func (handler *AmqpHandler) runReceiver(deliveryChannel <-chan amqp.Delivery, pa
 	}
 }
 
-func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
+func (handler *AmqpHandler) unmarshalReceiveData(data []byte) (Message, error) {
 	if len(data) == 0 {
-		return nil
+		//nolint:nilnil
+		return nil, nil
 	}
 
-	decryptData, err := handler.cryptoContext.DecryptMetadata(data)
-	if err != nil {
-		return aoserrors.Wrap(err)
+	// unmarshal type name
+	var messageType struct {
+		Type string `json:"messageType"`
 	}
 
-	if err = json.Unmarshal(decryptData, result); err != nil {
-		return aoserrors.Wrap(err)
+	if err := json.Unmarshal(data, &messageType); err != nil {
+		return nil, aoserrors.Wrap(err)
 	}
 
-	desiredStatus, ok := result.(*cloudprotocol.DesiredStatus)
+	// unmarshal type message
+	messageTypeFunc, ok := messageMap[messageType.Type]
 	if !ok {
-		log.WithField("data", string(decryptData)).Debug("Decrypted data")
+		log.Warnf("AMQP unsupported message type: %s", messageType.Type)
 
-		return nil
+		return nil, aoserrors.New("AMQP unsupported message type")
+	}
+
+	messageData := messageTypeFunc()
+
+	if err := json.Unmarshal(data, &messageData); err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	// print DesiredStatus message
+	desiredStatus, ok := messageData.(*cloudprotocol.DesiredStatus)
+	if !ok {
+		return messageData, nil
 	}
 
 	log.Debug("Decrypted data:")
 
-	if len(desiredStatus.UnitConfig) != 0 {
-		log.Debugf("UnitConfig: %s", desiredStatus.UnitConfig)
+	if desiredStatus.UnitConfig != nil {
+		log.Debugf("UnitConfig: %v", desiredStatus.UnitConfig)
 	}
 
 	for _, service := range desiredStatus.Services {
 		log.WithFields(log.Fields{
-			"id":            service.ID,
-			"aosVersion":    service.AosVersion,
-			"vendorVersion": service.VendorVersion,
-			"description":   service.Description,
+			"id":      service.ServiceID,
+			"version": service.Version,
 		}).Debug("Service")
 	}
 
 	for _, layer := range desiredStatus.Layers {
 		log.WithFields(log.Fields{
-			"id":            layer.ID,
-			"digest":        layer.Digest,
-			"aosVersion":    layer.AosVersion,
-			"vendorVersion": layer.VendorVersion,
-			"description":   layer.Description,
+			"id":      layer.LayerID,
+			"digest":  layer.Digest,
+			"version": layer.Version,
 		}).Debug("Layer")
 	}
 
 	for _, component := range desiredStatus.Components {
 		log.WithFields(log.Fields{
-			"id":            component.ID,
-			"annotations":   string(component.Annotations),
-			"aosVersion":    component.AosVersion,
-			"vendorVersion": component.VendorVersion,
-			"description":   component.Description,
+			"id":          component.ComponentID,
+			"annotations": string(component.Annotations),
+			"version":     component.Version,
 		}).Debug("Component")
 	}
 
@@ -686,15 +737,14 @@ func (handler *AmqpHandler) decodeData(data []byte, result interface{}) error {
 		log.Debugf("Sota schedule: %s", schedule)
 	}
 
-	return nil
+	return messageData, nil
 }
 
-func (handler *AmqpHandler) createCloudMessage(messageType string, data interface{}) cloudprotocol.Message {
+func (handler *AmqpHandler) createCloudMessage(data interface{}) cloudprotocol.Message {
 	return cloudprotocol.Message{
 		Header: cloudprotocol.MessageHeader{
-			Version:     cloudprotocol.ProtocolVersion,
-			SystemID:    handler.systemID,
-			MessageType: messageType,
+			Version:  cloudprotocol.ProtocolVersion,
+			SystemID: handler.systemID,
 		},
 		Data: data,
 	}
@@ -712,13 +762,13 @@ func (handler *AmqpHandler) notifyCloudDisconnected() {
 	}
 }
 
-func (handler *AmqpHandler) scheduleMessage(messageType string, data interface{}, important bool) error {
+func (handler *AmqpHandler) scheduleMessage(data interface{}, important bool) error {
 	if !important && !handler.isConnected {
 		return ErrNotConnected
 	}
 
 	select {
-	case handler.sendChannel <- handler.createCloudMessage(messageType, data):
+	case handler.sendChannel <- handler.createCloudMessage(data):
 		return nil
 
 	case <-time.After(sendTimeout):
@@ -726,18 +776,8 @@ func (handler *AmqpHandler) scheduleMessage(messageType string, data interface{}
 	}
 }
 
-func isMessageImportant(messageType string) bool {
-	for _, importantType := range importantMessages {
-		if messageType == importantType {
-			return true
-		}
-	}
-
-	return false
-}
-
-func getMessageDataForLog(messageType string, data []byte) string {
-	if len(data) > maxLenLogMessage && !isMessageImportant(messageType) {
+func getMessageDataForLog(message interface{}, data []byte) string {
+	if len(data) > maxLenLogMessage && !isMessageImportant(message) {
 		return string(data[:maxLenLogMessage]) + "..."
 	}
 
@@ -753,9 +793,9 @@ func (handler *AmqpHandler) sendMessage(
 	}
 
 	if handler.sendTry > 1 {
-		log.WithField("data", getMessageDataForLog(message.Header.MessageType, data)).Debug("AMQP retry message")
+		log.WithField("data", getMessageDataForLog(message.Data, data)).Debug("AMQP retry message")
 	} else {
-		log.WithField("data", getMessageDataForLog(message.Header.MessageType, data)).Debug("AMQP send message")
+		log.WithField("data", getMessageDataForLog(message.Data, data)).Debug("AMQP send message")
 	}
 
 	if handler.sendTry++; handler.sendTry > sendMaxTry {
@@ -778,4 +818,33 @@ func (handler *AmqpHandler) sendMessage(
 	}
 
 	return nil
+}
+
+func isMessageImportant(message interface{}) bool {
+	switch message.(type) {
+	case cloudprotocol.DesiredStatus:
+		return true
+	case cloudprotocol.StateAcceptance:
+		return true
+	case cloudprotocol.RenewCertsNotification:
+		return true
+	case cloudprotocol.IssuedUnitCerts:
+		return true
+	case cloudprotocol.OverrideEnvVars:
+		return true
+	case cloudprotocol.NewState:
+		return true
+	case cloudprotocol.StateRequest:
+		return true
+	case cloudprotocol.UnitStatus:
+		return true
+	case cloudprotocol.IssueUnitCerts:
+		return true
+	case cloudprotocol.InstallCertData:
+		return true
+	case cloudprotocol.OverrideEnvVarsStatus:
+		return true
+	}
+
+	return false
 }
