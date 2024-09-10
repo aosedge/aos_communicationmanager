@@ -1148,7 +1148,7 @@ func (umCtrl *Controller) notifyNewComponents(umID string, componsStatus []syste
 			ComponentID:   status.componentID,
 			ComponentType: status.componentType,
 			Version:       status.version,
-			NodeID:        umID,
+			NodeID:        &umID,
 			Status:        status.status,
 		}
 

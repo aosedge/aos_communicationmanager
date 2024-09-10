@@ -1175,15 +1175,15 @@ func TestNewComponents(t *testing.T) {
 	newComponents := []cloudprotocol.ComponentStatus{
 		{
 			ComponentID: "comp1", ComponentType: "type1", Version: "1.0.0",
-			Status: cloudprotocol.InstalledStatus, NodeID: "node1",
+			Status: cloudprotocol.InstalledStatus, NodeID: convertToNodeID("node1"),
 		},
 		{
 			ComponentID: "comp2", ComponentType: "type2", Version: "1.0.0",
-			Status: cloudprotocol.InstalledStatus, NodeID: "node2",
+			Status: cloudprotocol.InstalledStatus, NodeID: convertToNodeID("node2"),
 		},
 		{
 			ComponentID: "comp3", ComponentType: "type3", Version: "1.0.0",
-			Status: cloudprotocol.InstalledStatus, NodeID: "node3",
+			Status: cloudprotocol.InstalledStatus, NodeID: convertToNodeID("node3"),
 		},
 	}
 
@@ -1387,4 +1387,8 @@ func handleUpdateStatus(handler *unitstatushandler.Instance) {
 
 func convertToComponentID(id string) *string {
 	return &id
+}
+
+func convertToNodeID(nodeID string) *string {
+	return &nodeID
 }
