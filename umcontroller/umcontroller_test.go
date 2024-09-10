@@ -341,8 +341,8 @@ func TestNewComponentsUpdate(t *testing.T) {
 	select {
 	case newComponents := <-umCtrl.NewComponentsChannel():
 		if !reflect.DeepEqual(newComponents, []cloudprotocol.ComponentStatus{
-			{ComponentID: "component3", Version: "1.0.0", Status: "installed", NodeID: "umID2"},
-			{ComponentID: "component4", Version: "1.0.0", Status: "installed", NodeID: "umID2"},
+			{ComponentID: "component3", Version: "1.0.0", Status: "installed", NodeID: convertToNodeID("umID2")},
+			{ComponentID: "component4", Version: "1.0.0", Status: "installed", NodeID: convertToNodeID("umID2")},
 		}) {
 			t.Errorf("Incorrect new components: %v", newComponents)
 		}
@@ -1896,4 +1896,8 @@ func generateFile(fileName string, size uint64) (err error) {
 
 func convertToComponentID(id string) *string {
 	return &id
+}
+
+func convertToNodeID(nodeID string) *string {
+	return &nodeID
 }
