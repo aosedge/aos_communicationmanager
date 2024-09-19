@@ -161,7 +161,7 @@ type ComponentStatus struct {
 	ComponentID   string          `json:"id"`
 	ComponentType string          `json:"type"`
 	Version       string          `json:"version"`
-	NodeID        string          `json:"nodeId"`
+	NodeID        *string         `json:"nodeId,omitempty"`
 	Status        string          `json:"status"`
 	Annotations   json.RawMessage `json:"annotations,omitempty"`
 	ErrorInfo     *ErrorInfo      `json:"errorInfo,omitempty"`
