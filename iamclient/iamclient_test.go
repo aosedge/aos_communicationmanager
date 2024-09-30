@@ -56,6 +56,14 @@ const (
  * Types
  **********************************************************************************************************************/
 
+type testIAMPublicIdentityServiceServer struct {
+	pb.UnimplementedIAMPublicIdentityServiceServer
+	subjects chan *pb.Subjects
+
+	currentSubjects []string
+	systemID        string
+}
+
 type testIAMPublicNodesServiceServer struct {
 	pb.UnimplementedIAMPublicNodesServiceServer
 	nodeInfo chan *pb.NodeInfo
@@ -66,11 +74,10 @@ type testIAMPublicNodesServiceServer struct {
 
 type testPublicServer struct {
 	pb.UnimplementedIAMPublicServiceServer
-	pb.UnimplementedIAMPublicIdentityServiceServer
+	testIAMPublicIdentityServiceServer
 	testIAMPublicNodesServiceServer
 
 	grpcServer *grpc.Server
-	systemID   string
 	certURL    map[string]string
 	keyURL     map[string]string
 }
@@ -143,7 +150,7 @@ func TestMain(m *testing.M) {
 func TestGetSystemID(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -165,12 +172,71 @@ func TestGetSystemID(t *testing.T) {
 	}
 }
 
+func TestGetUnitSubjects(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %v", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	publicServer.systemID = "testID"
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	subjects, err := client.GetUnitSubjects()
+	if err != nil {
+		t.Errorf("Can't get subjects: %v", err)
+	}
+
+	if !reflect.DeepEqual(subjects, publicServer.currentSubjects) {
+		t.Errorf("Subjects mismatch: expected = %v, got = %v", publicServer.currentSubjects, subjects)
+	}
+}
+
+func TestSubscribeUnitSubjectsChanged(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %v", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	stream := client.SubscribeUnitSubjectsChanged()
+
+	newSubjects := []string{"new1", "new2"}
+
+	publicServer.subjects <- &pb.Subjects{Subjects: newSubjects}
+
+	if receivedSubjects := <-stream; !reflect.DeepEqual(newSubjects, receivedSubjects) {
+		t.Errorf("Subjects mismatch: expected = %v, got = %v", newSubjects, receivedSubjects)
+	}
+}
+
 func TestRenewCertificatesNotification(t *testing.T) {
 	sender := &testSender{}
 
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -207,7 +273,7 @@ func TestInstallCertificates(t *testing.T) {
 
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -312,7 +378,7 @@ KzpDMr/kcScwzmmNcN8aLp31TSRVee64QrK7yF3YJxL+rA==
 func TestGetCertificates(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -350,7 +416,7 @@ func TestGetCertificates(t *testing.T) {
 func TestGetNodeInfo(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -414,7 +480,7 @@ func TestGetCurrentNodeInfo(t *testing.T) {
 func TestSubscribeNodeInfoChange(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -452,7 +518,7 @@ func TestStartProvisioning(t *testing.T) {
 
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -499,7 +565,7 @@ func TestFinishProvisioning(t *testing.T) {
 
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -540,7 +606,7 @@ func TestDeprovisioning(t *testing.T) {
 
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -574,7 +640,7 @@ func TestFailDeprovisionMainNode(t *testing.T) {
 
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -598,7 +664,7 @@ func TestFailDeprovisionMainNode(t *testing.T) {
 func TestPauseNode(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -622,7 +688,7 @@ func TestPauseNode(t *testing.T) {
 func TestResumeNode(t *testing.T) {
 	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
 	if err != nil {
-		t.Fatalf("Can't create test server: %s", err)
+		t.Fatalf("Can't create test server: %v", err)
 	}
 
 	defer publicServer.close()
@@ -658,10 +724,13 @@ func newTestServer(
 	}
 
 	publicServer.grpcServer = grpc.NewServer()
+
+	publicServer.currentSubjects = []string{"initial1", "initial2"}
+	publicServer.subjects = make(chan *pb.Subjects)
 	publicServer.nodeInfo = make(chan *pb.NodeInfo)
 
 	pb.RegisterIAMPublicServiceServer(publicServer.grpcServer, publicServer)
-	pb.RegisterIAMPublicIdentityServiceServer(publicServer.grpcServer, publicServer)
+	pb.RegisterIAMPublicIdentityServiceServer(publicServer.grpcServer, &publicServer.testIAMPublicIdentityServiceServer)
 	pb.RegisterIAMPublicNodesServiceServer(publicServer.grpcServer, &publicServer.testIAMPublicNodesServiceServer)
 
 	go func() {
@@ -821,6 +890,32 @@ func (server *testPublicServer) GetSystemInfo(
 
 func (server *testPublicServer) GetNodeInfo(context context.Context, req *empty.Empty) (*pb.NodeInfo, error) {
 	return &pb.NodeInfo{}, nil
+}
+
+func (server *testIAMPublicIdentityServiceServer) GetSystemInfo(
+	context context.Context, req *empty.Empty,
+) (rsp *pb.SystemInfo, err error) {
+	rsp = &pb.SystemInfo{SystemId: server.systemID}
+
+	return rsp, nil
+}
+
+func (server *testIAMPublicIdentityServiceServer) GetSubjects(
+	context.Context, *emptypb.Empty,
+) (rsp *pb.Subjects, err error) {
+	rsp = &pb.Subjects{Subjects: server.currentSubjects}
+
+	return rsp, nil
+}
+
+func (server *testIAMPublicIdentityServiceServer) SubscribeSubjectsChanged(
+	empty *emptypb.Empty, stream pb.IAMPublicIdentityService_SubscribeSubjectsChangedServer,
+) error {
+	log.Error("testIAMPublicIdentityServiceServer SubscribeSubjectsChanged")
+
+	subjects := <-server.subjects
+
+	return aoserrors.Wrap(stream.Send(subjects))
 }
 
 func (server *testIAMPublicNodesServiceServer) GetAllNodeIDs(context context.Context, req *emptypb.Empty) (
