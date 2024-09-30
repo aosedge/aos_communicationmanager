@@ -71,10 +71,11 @@ type Client struct {
 	certificateService  pb.IAMCertificateServiceClient
 	provisioningService pb.IAMProvisioningServiceClient
 
-	closeChannel       chan struct{}
-	publicNodesService pb.IAMPublicNodesServiceClient
-	nodesService       pb.IAMNodesServiceClient
-	nodeInfoListeners  []chan cloudprotocol.NodeInfo
+	cancelFunc            context.CancelFunc
+	publicNodesService    pb.IAMPublicNodesServiceClient
+	nodesService          pb.IAMNodesServiceClient
+	nodeInfoListeners     []chan cloudprotocol.NodeInfo
+	unitSubjectsListeners []chan []string
 }
 
 // Sender provides API to send messages to the cloud.
@@ -107,15 +108,8 @@ func New(
 
 	localClient := &Client{
 		sender:            sender,
-		closeChannel:      make(chan struct{}, 1),
 		nodeInfoListeners: make([]chan cloudprotocol.NodeInfo, 0),
 	}
-
-	defer func() {
-		if err != nil {
-			localClient.Close()
-		}
-	}()
 
 	if localClient.publicConnection, err = createPublicConnection(
 		config.IAMPublicServerURL, cryptocontext, insecure); err != nil {
@@ -145,7 +139,12 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	go localClient.connectPublicNodeService()
+	ctx, cancelFunction := context.WithCancel(context.Background())
+
+	localClient.cancelFunc = cancelFunction
+
+	go localClient.connectPublicIdentityService(ctx)
+	go localClient.connectPublicNodeService(ctx)
 
 	return localClient, nil
 }
@@ -158,6 +157,23 @@ func (client *Client) GetNodeID() string {
 // GetSystemID returns system ID.
 func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
+}
+
+// GetUnitSubjects returns unit subjects.
+func (client *Client) GetUnitSubjects() (subjects []string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
+	defer cancel()
+
+	request := &empty.Empty{}
+
+	response, err := client.identService.GetSubjects(ctx, request)
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	log.WithFields(log.Fields{"subjects": response.GetSubjects()}).Debug("Get unit subjects")
+
+	return response.GetSubjects(), nil
 }
 
 // GetCurrentNodeInfo returns info for current node.
@@ -206,6 +222,19 @@ func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
 
 	ch := make(chan cloudprotocol.NodeInfo)
 	client.nodeInfoListeners = append(client.nodeInfoListeners, ch)
+
+	return ch
+}
+
+// SubscribeUnitSubjectsChanged subscribes client on unit subject changed events.
+func (client *Client) SubscribeUnitSubjectsChanged() <-chan []string {
+	client.Lock()
+	defer client.Unlock()
+
+	log.Debug("Subscribe on unit subjects change event")
+
+	ch := make(chan []string)
+	client.unitSubjectsListeners = append(client.unitSubjectsListeners, ch)
 
 	return ch
 }
@@ -474,8 +503,8 @@ func (client *Client) ResumeNode(nodeID string) error {
 
 // Close closes IAM client.
 func (client *Client) Close() (err error) {
-	if client.publicConnection != nil || client.protectedConnection != nil {
-		client.closeChannel <- struct{}{}
+	if client.cancelFunc != nil {
+		client.cancelFunc()
 	}
 
 	if client.publicConnection != nil {
@@ -487,8 +516,9 @@ func (client *Client) Close() (err error) {
 	}
 
 	client.nodeInfoListeners = nil
+	client.unitSubjectsListeners = nil
 
-	log.Debug("Disconnected from IAM")
+	log.Debug("Close IAM client")
 
 	return nil
 }
@@ -588,6 +618,30 @@ func (client *Client) getSystemID() (systemID string, err error) {
 	return response.GetSystemId(), nil
 }
 
+func (client *Client) processUnitSubjectsChangeMessages(
+	listener pb.IAMPublicIdentityService_SubscribeSubjectsChangedClient,
+) (err error) {
+	for {
+		subjects, err := listener.Recv()
+		if err != nil {
+			if code, ok := status.FromError(err); ok {
+				if code.Code() == codes.Canceled {
+					log.Debug("IAM client connection closed")
+					return nil
+				}
+			}
+
+			return aoserrors.Wrap(err)
+		}
+
+		client.Lock()
+		for _, listener := range client.unitSubjectsListeners {
+			listener <- subjects.GetSubjects()
+		}
+		client.Unlock()
+	}
+}
+
 func (client *Client) processMessages(listener pb.IAMPublicNodesService_SubscribeNodeChangedClient) (err error) {
 	for {
 		nodeInfo, err := listener.Recv()
@@ -610,7 +664,37 @@ func (client *Client) processMessages(listener pb.IAMPublicNodesService_Subscrib
 	}
 }
 
-func (client *Client) connectPublicNodeService() {
+func (client *Client) connectPublicIdentityService(ctx context.Context) {
+	listener, err := client.subscribeUnitSubjectsChange()
+
+	for {
+		if err != nil {
+			log.Errorf("Error register to IAM: %v", aoserrors.Wrap(err))
+		} else {
+			if err = client.processUnitSubjectsChangeMessages(listener); err != nil {
+				if errors.Is(err, io.EOF) {
+					log.Debug("Connection is closed")
+				} else {
+					log.Errorf("Connection error: %v", aoserrors.Wrap(err))
+				}
+			}
+		}
+
+		log.Debugf("Reconnect to IAM in %v...", iamReconnectInterval)
+
+		select {
+		case <-ctx.Done():
+			log.Debugf("Disconnected from IAM public identity service")
+
+			return
+
+		case <-time.After(iamReconnectInterval):
+			listener, err = client.subscribeUnitSubjectsChange()
+		}
+	}
+}
+
+func (client *Client) connectPublicNodeService(ctx context.Context) {
 	listener, err := client.subscribeNodeInfoChange()
 
 	for {
@@ -629,8 +713,8 @@ func (client *Client) connectPublicNodeService() {
 		log.Debugf("Reconnect to IAM in %v...", iamReconnectInterval)
 
 		select {
-		case <-client.closeChannel:
-			log.Debugf("Disconnected from IAM")
+		case <-ctx.Done():
+			log.Debugf("Disconnected from IAM public node service")
 
 			return
 
@@ -638,6 +722,24 @@ func (client *Client) connectPublicNodeService() {
 			listener, err = client.subscribeNodeInfoChange()
 		}
 	}
+}
+
+func (client *Client) subscribeUnitSubjectsChange() (
+	listener pb.IAMPublicIdentityService_SubscribeSubjectsChangedClient, err error,
+) {
+	client.Lock()
+	defer client.Unlock()
+
+	client.identService = pb.NewIAMPublicIdentityServiceClient(client.publicConnection)
+
+	listener, err = client.identService.SubscribeSubjectsChanged(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		log.WithField("error", err).Errorf("Can't subscribe on unit subjects change event: %v", err)
+
+		return nil, aoserrors.Wrap(err)
+	}
+
+	return listener, nil
 }
 
 func (client *Client) subscribeNodeInfoChange() (
