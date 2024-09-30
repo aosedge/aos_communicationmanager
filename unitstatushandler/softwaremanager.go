@@ -83,7 +83,7 @@ type softwareManager struct {
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
-	nodeManager       NodeManager
+	unitManager       UnitManager
 	unitConfigUpdater UnitConfigUpdater
 	downloader        softwareDownloader
 	statusHandler     softwareStatusHandler
@@ -114,7 +114,7 @@ type softwareManager struct {
  * Interface
  **********************************************************************************************************************/
 
-func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader, nodeManager NodeManager,
+func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader, unitManager UnitManager,
 	unitConfigUpdater UnitConfigUpdater, softwareUpdater SoftwareUpdater, instanceRunner InstanceRunner,
 	storage Storage, defaultTTL time.Duration,
 ) (manager *softwareManager, err error) {
@@ -122,7 +122,7 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		statusChannel:     make(chan cmserver.UpdateSOTAStatus, 1),
 		downloader:        downloader,
 		statusHandler:     statusHandler,
-		nodeManager:       nodeManager,
+		unitManager:       unitManager,
 		unitConfigUpdater: unitConfigUpdater,
 		softwareUpdater:   softwareUpdater,
 		instanceRunner:    instanceRunner,
@@ -1499,7 +1499,7 @@ func (manager *softwareManager) updateNodes() (nodesErr error) {
 		if nodeStatus.Status == cloudprotocol.NodeStatusPaused {
 			log.WithField("nodeID", nodeStatus.NodeID).Debug("Pause node")
 
-			if err := manager.nodeManager.PauseNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
+			if err := manager.unitManager.PauseNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
 				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't pause node: %v", err)
 
 				nodesErr = aoserrors.Wrap(err)
@@ -1509,7 +1509,7 @@ func (manager *softwareManager) updateNodes() (nodesErr error) {
 		if nodeStatus.Status == cloudprotocol.NodeStatusProvisioned {
 			log.WithField("nodeID", nodeStatus.NodeID).Debug("Resume node")
 
-			if err := manager.nodeManager.ResumeNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
+			if err := manager.unitManager.ResumeNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
 				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't resume node: %v", err)
 
 				nodesErr = aoserrors.Wrap(err)

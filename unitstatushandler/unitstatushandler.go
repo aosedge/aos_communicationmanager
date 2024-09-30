@@ -41,13 +41,15 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// NodeManager manages nodes.
-type NodeManager interface {
+// UnitManager manages unit.
+type UnitManager interface {
 	GetAllNodeIDs() ([]string, error)
 	GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error)
 	SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo
 	PauseNode(nodeID string) error
 	ResumeNode(nodeID string) error
+	GetUnitSubjects() ([]string, error)
+	SubscribeUnitSubjectsChanged() <-chan []string
 }
 
 // Downloader downloads packages.
@@ -128,7 +130,7 @@ type LayerStatus struct {
 type Instance struct {
 	sync.Mutex
 
-	nodeManager  NodeManager
+	unitManager  UnitManager
 	statusSender StatusSender
 
 	statusMutex sync.Mutex
@@ -140,9 +142,10 @@ type Instance struct {
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
 
-	newComponentsChannel    <-chan []cloudprotocol.ComponentStatus
-	nodeChangedChannel      <-chan cloudprotocol.NodeInfo
-	systemQuotaAlertChannel <-chan cloudprotocol.SystemQuotaAlert
+	newComponentsChannel       <-chan []cloudprotocol.ComponentStatus
+	nodeChangedChannel         <-chan cloudprotocol.NodeInfo
+	unitSubjectsChangedChannel <-chan []string
+	systemQuotaAlertChannel    <-chan cloudprotocol.SystemQuotaAlert
 
 	initDone    bool
 	isConnected bool
@@ -155,7 +158,7 @@ type Instance struct {
 // New creates new unit status handler instance.
 func New(
 	cfg *config.Config,
-	nodeManager NodeManager,
+	unitManager UnitManager,
 	unitConfigUpdater UnitConfigUpdater,
 	firmwareUpdater FirmwareUpdater,
 	softwareUpdater SoftwareUpdater,
@@ -168,12 +171,13 @@ func New(
 	log.Debug("Create unit status handler")
 
 	instance = &Instance{
-		nodeManager:             nodeManager,
-		statusSender:            statusSender,
-		sendStatusPeriod:        cfg.UnitStatusSendTimeout.Duration,
-		newComponentsChannel:    firmwareUpdater.NewComponentsChannel(),
-		nodeChangedChannel:      nodeManager.SubscribeNodeInfoChange(),
-		systemQuotaAlertChannel: systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
+		unitManager:                unitManager,
+		statusSender:               statusSender,
+		sendStatusPeriod:           cfg.UnitStatusSendTimeout.Duration,
+		newComponentsChannel:       firmwareUpdater.NewComponentsChannel(),
+		nodeChangedChannel:         unitManager.SubscribeNodeInfoChange(),
+		unitSubjectsChangedChannel: unitManager.SubscribeUnitSubjectsChanged(),
+		systemQuotaAlertChannel:    systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
 	}
 
 	instance.resetUnitStatus()
@@ -185,7 +189,7 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, nodeManager, unitConfigUpdater,
+	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, unitManager, unitConfigUpdater,
 		softwareUpdater, instanceRunner, storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -448,6 +452,19 @@ func (instance *Instance) initNodesStatus() error {
 	return nil
 }
 
+func (instance *Instance) initUnitSubjects() error {
+	subjects, err := instance.unitManager.GetUnitSubjects()
+	if err != nil {
+		log.Errorf("Can't get unit subjects: %v", err)
+	}
+
+	if len(subjects) > 0 {
+		instance.setSubjects(subjects)
+	}
+
+	return nil
+}
+
 func (instance *Instance) initCurrentStatus() error {
 	if err := instance.initUnitConfigStatus(); err != nil {
 		return err
@@ -470,6 +487,10 @@ func (instance *Instance) initCurrentStatus() error {
 	}
 
 	if err := instance.initNodesStatus(); err != nil {
+		return err
+	}
+
+	if err := instance.initUnitSubjects(); err != nil {
 		return err
 	}
 
@@ -636,6 +657,20 @@ func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 	instance.statusChanged()
 }
 
+func (instance *Instance) setSubjects(subjects []string) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	log.WithField("subjects", subjects).Debug("Set subjects")
+
+	instance.unitStatus.UnitSubjects = subjects
+}
+
+func (instance *Instance) updateSubjects(subjects []string) {
+	instance.setSubjects(subjects)
+	instance.statusChanged()
+}
+
 func (instance *Instance) statusChanged() {
 	if instance.statusTimer != nil {
 		return
@@ -686,7 +721,7 @@ func (instance *Instance) sendCurrentStatus(deltaStatus bool) {
 }
 
 func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
-	nodeIDs, err := instance.nodeManager.GetAllNodeIDs()
+	nodeIDs, err := instance.unitManager.GetAllNodeIDs()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -694,7 +729,7 @@ func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
 	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(nodeIDs))
 
 	for _, nodeID := range nodeIDs {
-		nodeInfo, err := instance.nodeManager.GetNodeInfo(nodeID)
+		nodeInfo, err := instance.unitManager.GetNodeInfo(nodeID)
 		if err != nil {
 			log.WithField("nodeID", nodeID).Errorf("Can't get node info: %s", err)
 			continue
@@ -743,6 +778,13 @@ func (instance *Instance) handleChannels() {
 			if err := instance.softwareManager.requestRebalancing(); err != nil {
 				log.Errorf("Can't perform rebalancing: %v", err)
 			}
+
+		case subjects, ok := <-instance.unitSubjectsChangedChannel:
+			if !ok {
+				return
+			}
+
+			instance.updateSubjects(subjects)
 
 		case systemQuotaAlert, ok := <-instance.systemQuotaAlertChannel:
 			if !ok {
