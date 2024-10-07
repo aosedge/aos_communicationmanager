@@ -311,7 +311,13 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 		}
 
 		if version.LessThanOrEqual(versionInStorage) {
-			return ErrVersionMismatch
+			// Workaround for the case when the service is cached and the version is downgraded.
+			// Should be refactored once CM is capable to check if unit is in validation set.
+			if !serviceFromStorage.Cached {
+				return ErrVersionMismatch
+			}
+
+			log.WithField("serviceID", serviceInfo.ServiceID).Warn("Service is cached, allow version downgrade")
 		}
 	}
 
