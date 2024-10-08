@@ -980,6 +980,15 @@ func TestSendMultipleMessages(t *testing.T) {
 			)
 		},
 		func() error {
+			return aoserrors.Wrap(amqpHandler.SendDeltaUnitStatus(
+				cloudprotocol.DeltaUnitStatus{
+					MessageType:  cloudprotocol.UnitStatusMessageType,
+					IsDeltaInfo:  true,
+					UnitSubjects: []string{"subject"},
+				}),
+			)
+		},
+		func() error {
 			return aoserrors.Wrap(amqpHandler.SendMonitoringData(
 				cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}),
 			)

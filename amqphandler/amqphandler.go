@@ -238,6 +238,16 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 	return handler.scheduleMessage(unitStatus, false)
 }
 
+// SendDeltaUnitStatus sends delta unit status.
+func (handler *AmqpHandler) SendDeltaUnitStatus(deltaUnitStatus cloudprotocol.DeltaUnitStatus) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	deltaUnitStatus.MessageType = cloudprotocol.UnitStatusMessageType
+
+	return handler.scheduleMessage(deltaUnitStatus, false)
+}
+
 // SendMonitoringData sends monitoring data.
 func (handler *AmqpHandler) SendMonitoringData(monitoringData cloudprotocol.Monitoring) error {
 	handler.Lock()
