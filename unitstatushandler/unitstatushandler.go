@@ -60,6 +60,7 @@ type Downloader interface {
 // StatusSender sends unit status to cloud.
 type StatusSender interface {
 	SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error)
+	SendDeltaUnitStatus(deltaUnitStatus cloudprotocol.DeltaUnitStatus) (err error)
 	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
 }
 
@@ -666,10 +667,21 @@ func (instance *Instance) sendCurrentStatus(deltaStatus bool) {
 		return
 	}
 
-	instance.unitStatus.IsDeltaInfo = deltaStatus
-	if err := instance.statusSender.SendUnitStatus(
-		instance.unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
-		log.Errorf("Can't send unit status: %s", err)
+	if !deltaStatus {
+		if err := instance.statusSender.SendUnitStatus(
+			instance.unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+			log.Errorf("Can't send unit status: %s", err)
+		}
+
+		return
+	}
+
+	deltaUnitStatus := cloudprotocol.DeltaUnitStatus(instance.unitStatus)
+	deltaUnitStatus.IsDeltaInfo = true
+
+	if err := instance.statusSender.SendDeltaUnitStatus(
+		deltaUnitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+		log.Errorf("Can't send delta unit status: %s", err)
 	}
 }
 

@@ -1738,6 +1738,12 @@ func (sender *TestSender) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (e
 	return nil
 }
 
+func (sender *TestSender) SendDeltaUnitStatus(deltaUnitStatus cloudprotocol.DeltaUnitStatus) (err error) {
+	sender.statusChannel <- cloudprotocol.UnitStatus(deltaUnitStatus)
+
+	return nil
+}
+
 func (sender *TestSender) WaitForStatus(timeout time.Duration) (status cloudprotocol.UnitStatus, err error) {
 	select {
 	case receivedUnitStatus := <-sender.statusChannel:
