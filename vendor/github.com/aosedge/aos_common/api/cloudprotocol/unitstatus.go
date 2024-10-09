@@ -180,6 +180,19 @@ type UnitStatus struct {
 	UnitSubjects []string           `json:"unitSubjects"`
 }
 
+// DeltaUnitStatus delta unit status structure.
+type DeltaUnitStatus struct {
+	MessageType  string             `json:"messageType"`
+	IsDeltaInfo  bool               `json:"isDeltaInfo"`
+	UnitConfig   []UnitConfigStatus `json:"unitConfig,omitempty"`
+	Nodes        []NodeInfo         `json:"nodes,omitempty"`
+	Services     []ServiceStatus    `json:"services,omitempty"`
+	Instances    []InstanceStatus   `json:"instances,omitempty"`
+	Layers       []LayerStatus      `json:"layers,omitempty"`
+	Components   []ComponentStatus  `json:"components,omitempty"`
+	UnitSubjects []string           `json:"unitSubjects,omitempty"`
+}
+
 /***********************************************************************************************************************
  * Public
  **********************************************************************************************************************/
