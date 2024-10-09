@@ -792,7 +792,7 @@ func (instance *Instance) handleChannels() {
 			}
 
 			if systemQuotaAlert.Status == resourcemonitor.AlertStatusFall {
-				return
+				continue
 			}
 
 			if slices.Contains([]string{"cpu", "ram"}, systemQuotaAlert.Parameter) {
