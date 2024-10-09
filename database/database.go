@@ -523,13 +523,15 @@ func (db *Database) AddInstance(instanceInfo launcher.InstanceInfo) error {
 // UpdateInstance updates instance info.
 func (db *Database) UpdateInstance(instanceInfo launcher.InstanceInfo) error {
 	if err := db.executeQuery("UPDATE instances SET "+
-		"nodeID = ? prevNodeID = ? uid = ? timestamp = ? cached = ? "+
+		"nodeID = ?, prevNodeID = ?, uid = ?, timestamp = ?, cached = ? "+
 		"WHERE serviceId = ? AND subjectId = ? AND  instance = ?",
 		instanceInfo.NodeID, instanceInfo.PrevNodeID, instanceInfo.UID, instanceInfo.Timestamp, instanceInfo.Cached,
 		instanceInfo.ServiceID, instanceInfo.SubjectID, instanceInfo.Instance); err != nil {
 		if errors.Is(err, errNotExist) {
 			return launcher.ErrNotExist
 		}
+
+		return err
 	}
 
 	return nil

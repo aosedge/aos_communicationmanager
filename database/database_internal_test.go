@@ -915,13 +915,12 @@ func TestInstance(t *testing.T) {
 		t.Errorf("Can't update instance: %v", err)
 	}
 
-	if instanceInfo, err = testDB.GetInstance(createInstanceIdent(expectedIndex)); err != nil {
+	if instanceInfo, err = testDB.GetInstance(createInstanceIdent(updatedIndex)); err != nil {
 		t.Fatalf("Can't get instance: %v", err)
 	}
 
-	if !reflect.DeepEqual(instanceInfo, expectedInstances[expectedIndex-100]) {
-		t.Errorf("Incorrect result for get instance: %v, expected: %v", instanceInfo,
-			expectedInstances[expectedIndex-100])
+	if !reflect.DeepEqual(instanceInfo, updatedInstance) {
+		t.Errorf("Incorrect result for get instance: %v, expected: %v", instanceInfo, updatedInstance)
 	}
 
 	removedInstance := 104
