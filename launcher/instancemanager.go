@@ -209,11 +209,16 @@ func (im *instanceManager) setupInstance(
 		storedInstance.Timestamp = time.Now()
 		storedInstance.Cached = false
 
-		err = im.storage.UpdateInstance(storedInstance)
-		if err != nil {
+		if err := im.storage.UpdateInstance(storedInstance); err != nil {
 			log.Errorf("Can't update instance: %v", err)
 		}
 	}
+
+	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent,
+		log.Fields{
+			"curNodeID":  storedInstance.NodeID,
+			"prevNodeID": storedInstance.PrevNodeID,
+		})).Debug("Setup instance")
 
 	instanceInfo.UID = uint32(storedInstance.UID)
 	requestedState, requestedStorage := getReqDiskSize(service.Config, node.nodeConfig.ResourceRatios)
