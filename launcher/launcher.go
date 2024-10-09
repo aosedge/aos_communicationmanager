@@ -507,6 +507,9 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 				}
 
 				if curInstance.PrevNodeID != "" && curInstance.PrevNodeID != curInstance.NodeID {
+					log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent,
+						log.Fields{"prevNodeID": curInstance.PrevNodeID})).Debug("Exclude previous node")
+
 					nodes = excludeNodes(nodes, []string{curInstance.PrevNodeID})
 					if len(nodes) == 0 {
 						launcher.instanceManager.setInstanceError(instanceIdent, service.Version,
