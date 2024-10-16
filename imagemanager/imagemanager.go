@@ -300,24 +300,8 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 	if err == nil {
 		isServiceExist = true
 
-		version, err := semver.NewSemver(serviceInfo.Version)
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		versionInStorage, err := semver.NewSemver(serviceFromStorage.Version)
-		if err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		if version.LessThanOrEqual(versionInStorage) {
-			// Workaround for the case when the service is cached and the version is downgraded.
-			// Should be refactored once CM is capable to check if unit is in validation set.
-			if !serviceFromStorage.Cached {
-				return ErrVersionMismatch
-			}
-
-			log.WithField("serviceID", serviceInfo.ServiceID).Warn("Service is cached, allow version downgrade")
+		if err = imagemanager.checkServiceVersion(serviceFromStorage, serviceInfo.Version); err != nil {
+			return err
 		}
 	}
 
@@ -433,7 +417,7 @@ func (imagemanager *Imagemanager) RestoreService(serviceID string) error {
 	}
 
 	if !service.Cached {
-		log.Warningf("Service %s not cached", serviceID)
+		log.WithField("serviceID", serviceID).Warn("Service is not cached")
 
 		return nil
 	}
@@ -489,11 +473,9 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 ) error {
 	log.WithFields(log.Fields{"id": layerInfo.LayerID, "digest": layerInfo.Digest}).Debug("Install layer")
 
-	if layerInfo, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest); err == nil {
-		if layerInfo.Cached {
-			if err := imagemanager.storage.SetLayerCached(layerInfo.Digest, false); err != nil {
-				return aoserrors.Wrap(err)
-			}
+	if layerFromStorage, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest); err == nil {
+		if err = imagemanager.checkLayerVersion(layerFromStorage, layerInfo.Version); err != nil {
+			return err
 		}
 
 		return nil
@@ -602,7 +584,7 @@ func (imagemanager *Imagemanager) RestoreLayer(digest string) error {
 	}
 
 	if !layer.Cached {
-		log.Warningf("Layer %v not cached", digest)
+		log.WithField("layerID", layer.LayerID).Warn("Layer is not cached")
 
 		return nil
 	}
@@ -657,6 +639,80 @@ func (imagemanager *Imagemanager) RevertService(serviceID string) error {
 /***********************************************************************************************************************
 * Private
 **********************************************************************************************************************/
+
+func (imagemanager *Imagemanager) checkServiceVersion(curService ServiceInfo, newVersion string) error {
+	newSemver, err := semver.NewSemver(newVersion)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	curSemver, err := semver.NewSemver(curService.Version)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if curSemver.Equal(newSemver) {
+		if curService.Cached {
+			log.WithField("serviceID", curService.ServiceID).Debug("Restore cached service")
+
+			if err := imagemanager.storage.SetServiceCached(curService.ServiceID, false); err != nil {
+				return aoserrors.Wrap(err)
+			}
+		} else {
+			log.WithField("serviceID", curService.ServiceID).Warn("Service already installed")
+		}
+
+		return nil
+	}
+
+	if newSemver.LessThan(curSemver) {
+		// Workaround for the case when the service is cached and the version is downgraded.
+		// Should be refactored once CM is capable to check if unit is in validation set.
+		if !curService.Cached {
+			return ErrVersionMismatch
+		}
+
+		log.WithField("serviceID", curService.ServiceID).Warn("Service is cached, allow version downgrade")
+	}
+
+	return nil
+}
+
+func (imagemanager *Imagemanager) checkLayerVersion(curLayer LayerInfo, newVersion string) error {
+	newSemver, err := semver.NewSemver(newVersion)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	curSemver, err := semver.NewSemver(curLayer.Version)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	if curSemver.Equal(newSemver) {
+		if curLayer.Cached {
+			log.WithField("layerID", curLayer.LayerID).Debug("Restore cached layer")
+
+			if err := imagemanager.storage.SetLayerCached(curLayer.Digest, false); err != nil {
+				return aoserrors.Wrap(err)
+			}
+		} else {
+			log.WithField("layerID", curLayer.LayerID).Warn("Layer already installed")
+		}
+	}
+
+	if newSemver.LessThan(curSemver) {
+		// Workaround for the case when the service is cached and the version is downgraded.
+		// Should be refactored once CM is capable to check if unit is in validation set.
+		if !curLayer.Cached {
+			return ErrVersionMismatch
+		}
+
+		log.WithField("layerID", curLayer.LayerID).Warn("Layer is cached, allow version downgrade")
+	}
+
+	return nil
+}
 
 func (imagemanager *Imagemanager) setServiceCached(service ServiceInfo, cached bool) error {
 	if err := imagemanager.storage.SetServiceCached(service.ServiceID, cached); err != nil {
