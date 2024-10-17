@@ -20,16 +20,14 @@ package umcontroller
 import (
 	"errors"
 	"io"
-	"net"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	pb "github.com/aosedge/aos_common/api/updatemanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
+	"github.com/aosedge/aos_common/utils/grpchelpers"
 
 	"github.com/aosedge/aos_communicationmanager/config"
 )
@@ -42,9 +40,7 @@ import (
 type umCtrlServer struct {
 	pb.UnimplementedUMServiceServer
 
-	url          string
-	grpcServer   *grpc.Server
-	listener     net.Listener
+	grpcServer   *grpchelpers.GRPCServer
 	controllerCh chan umCtrlInternalMsg
 }
 
@@ -58,59 +54,26 @@ func newServer(cfg *config.Config, ch chan umCtrlInternalMsg, certProvider Certi
 ) (server *umCtrlServer, err error) {
 	log.WithField("host", cfg.UMController.CMServerURL).Debug("Start UM server")
 
-	server = &umCtrlServer{controllerCh: ch}
-
-	var opts []grpc.ServerOption
-
-	if !insecure {
-		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		tlsConfig, err := cryptcoxontext.GetClientMutualTLSConfig(certURL, keyURL)
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
-	} else {
-		log.Info("GRPC server starts in insecure mode")
-	}
-
-	server.url = cfg.UMController.CMServerURL
-
-	server.grpcServer = grpc.NewServer(opts...)
-
+	server = &umCtrlServer{controllerCh: ch, grpcServer: grpchelpers.NewGRPCServer(cfg.UMController.CMServerURL)}
 	pb.RegisterUMServiceServer(server.grpcServer, server)
 
-	return server, nil
-}
-
-// Start start update controller server.
-func (server *umCtrlServer) Start() (err error) {
-	server.listener, err = net.Listen("tcp", server.url)
+	opts, err := grpchelpers.NewProtectedServerOptions(cryptcoxontext, certProvider, cfg.CertStorage, insecure)
 	if err != nil {
-		return aoserrors.Wrap(err)
+		return nil, aoserrors.Wrap(err)
 	}
 
-	go func() {
-		if err := server.grpcServer.Serve(server.listener); err != nil {
-			log.Errorf("Can't serve gRPC server: %s", err)
-		}
-	}()
+	err = server.grpcServer.RestartServer(opts)
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
 
-	return nil
+	return server, nil
 }
 
 // Stop stop update controller server.
 func (server *umCtrlServer) Stop() {
 	if server.grpcServer != nil {
-		server.grpcServer.Stop()
-	}
-
-	if server.listener != nil {
-		server.listener.Close()
+		server.grpcServer.StopServer()
 	}
 }
 
