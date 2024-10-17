@@ -69,10 +69,12 @@ type testPublicServer struct {
 	pb.UnimplementedIAMPublicIdentityServiceServer
 	testIAMPublicNodesServiceServer
 
-	grpcServer *grpc.Server
-	systemID   string
-	certURL    map[string]string
-	keyURL     map[string]string
+	grpcServer   *grpc.Server
+	certInfoChan chan *pb.CertInfo
+
+	systemID string
+	certURL  map[string]string
+	keyURL   map[string]string
 }
 
 type testProtectedServer struct {
@@ -344,6 +346,96 @@ func TestGetCertificates(t *testing.T) {
 		if keyURL != publicServer.keyURL[certType] {
 			t.Errorf("Wrong %s key URL: %s", certType, keyURL)
 		}
+	}
+}
+
+func TestSubscribeCert(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	iamCert := pb.CertInfo{
+		Type:    "iam",
+		CertUrl: "iam cert url",
+		KeyUrl:  "iam key url",
+	}
+
+	ch, err := client.SubscribeCertChanged("iam")
+	if err != nil {
+		t.Fatalf("Can't subscribe cert change err=%v", err)
+	}
+
+	publicServer.certInfoChan <- &iamCert
+
+	newCertInfo := <-ch
+
+	if newCertInfo.GetType() != iamCert.GetType() || newCertInfo.GetCertUrl() != iamCert.GetCertUrl() ||
+		newCertInfo.GetCertUrl() != iamCert.GetCertUrl() {
+		t.Fatalf("Can't subscribe cert change err=%v", err)
+	}
+}
+
+func TestDisconnected(t *testing.T) {
+	publicServer, protectedServer, err := newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	client, err := iamclient.New(&config.Config{
+		IAMProtectedServerURL: protectedServerURL,
+		IAMPublicServerURL:    publicServerURL,
+	}, &testSender{}, nil, true)
+	if err != nil {
+		t.Fatalf("Can't create IAM client: %s", err)
+	}
+	defer client.Close()
+
+	publicServer.certURL = map[string]string{"online": "onlineCertURL"}
+	publicServer.keyURL = map[string]string{"online": "onlineKeyURL"}
+
+	_, err = client.SubscribeCertChanged("online")
+	if err != nil {
+		t.Fatalf("Can't subscribe on CertChanged: %s", err)
+	}
+
+	_, err = client.SubscribeCertChanged("offline")
+	if err != nil {
+		t.Fatalf("Can't subscribe on CertChanged: %s", err)
+	}
+
+	// reconnect
+	publicServer.close()
+	protectedServer.close()
+
+	publicServer, protectedServer, err = newTestServer(publicServerURL, protectedServerURL)
+	if err != nil {
+		t.Fatalf("Can't create test server: %s", err)
+	}
+
+	publicServer.certURL = map[string]string{"online": "onlineCertURL"}
+	publicServer.keyURL = map[string]string{"online": "onlineKeyURL"}
+
+	defer publicServer.close()
+	defer protectedServer.close()
+
+	time.Sleep(1 * time.Second)
+
+	_, _, err = client.GetCertificate("online", nil, "1")
+	if err != nil {
+		t.Fatalf("Can't get certificate: %s", err)
 	}
 }
 
@@ -659,6 +751,7 @@ func newTestServer(
 
 	publicServer.grpcServer = grpc.NewServer()
 	publicServer.nodeInfo = make(chan *pb.NodeInfo)
+	publicServer.certInfoChan = make(chan *pb.CertInfo, 1)
 
 	pb.RegisterIAMPublicServiceServer(publicServer.grpcServer, publicServer)
 	pb.RegisterIAMPublicIdentityServiceServer(publicServer.grpcServer, publicServer)
@@ -788,8 +881,8 @@ func (server *testProtectedServer) ResumeNode(
 
 func (server *testPublicServer) GetCert(
 	context context.Context, req *pb.GetCertRequest,
-) (rsp *pb.GetCertResponse, err error) {
-	rsp = &pb.GetCertResponse{Type: req.GetType()}
+) (rsp *pb.CertInfo, err error) {
+	rsp = &pb.CertInfo{Type: req.GetType()}
 
 	certURL, ok := server.certURL[req.GetType()]
 	if !ok {
@@ -805,6 +898,14 @@ func (server *testPublicServer) GetCert(
 	rsp.KeyUrl = keyURL
 
 	return rsp, nil
+}
+
+func (server *testPublicServer) SubscribeCertChanged(
+	req *pb.SubscribeCertChangedRequest, stream pb.IAMPublicService_SubscribeCertChangedServer,
+) error {
+	certInfo := <-server.certInfoChan
+
+	return aoserrors.Wrap(stream.SendMsg(certInfo))
 }
 
 func (server *testPublicServer) GetCertTypes(context context.Context, req *empty.Empty) (rsp *pb.CertTypes, err error) {

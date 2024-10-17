@@ -19,26 +19,22 @@ package iamclient
 
 import (
 	"context"
-	"encoding/base64"
-	"errors"
-	"io"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/golang/protobuf/ptypes/empty"
+	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/slices"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	pb "github.com/aosedge/aos_common/api/iamanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
+	"github.com/aosedge/aos_common/utils/grpchelpers"
 	pbconvert "github.com/aosedge/aos_common/utils/pbconvert"
-	"github.com/golang/protobuf/ptypes/empty"
-	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	"github.com/aosedge/aos_communicationmanager/config"
 )
 
@@ -51,6 +47,8 @@ const (
 	iamReconnectInterval = 10 * time.Second
 )
 
+const iamCertType = "iam"
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -58,24 +56,46 @@ const (
 // Client IAM client instance.
 type Client struct {
 	sync.Mutex
+	*grpchelpers.IAMPublicServiceClient
 
-	sender Sender
+	config        *config.Config
+	sender        Sender
+	cryptocontext *cryptutils.CryptoContext
+	insecure      bool
 
 	nodeID   string
 	systemID string
 
-	publicConnection    *grpc.ClientConn
+	publicConnection    *grpchelpers.BlockingGRPCConn
 	protectedConnection *grpc.ClientConn
-	publicService       pb.IAMPublicServiceClient
+
 	identService        pb.IAMPublicIdentityServiceClient
 	certificateService  pb.IAMCertificateServiceClient
 	provisioningService pb.IAMProvisioningServiceClient
+	publicNodesService  pb.IAMPublicNodesServiceClient
+	nodesService        pb.IAMNodesServiceClient
 
-	closeChannel       chan struct{}
-	publicNodesService pb.IAMPublicNodesServiceClient
-	nodesService       pb.IAMNodesServiceClient
-	nodeInfoListeners  []chan cloudprotocol.NodeInfo
+	nodeInfoSubs *nodeInfoChangeSub
+
+	tlsCertChan      <-chan *pb.CertInfo
+	closeChannel     chan struct{}
+	disableReconnect atomic.Bool
+	reconnectChannel chan struct{}
+
+	reconnectTimer *time.Timer
 }
+
+// certSubscription generic subscription for IAM public messages.
+type iamSubscription[grpcStream *pb.IAMPublicService_SubscribeCertChangedClient |
+	*pb.IAMPublicNodesService_SubscribeNodeChangedClient, T any] struct {
+	grpcStream grpcStream
+	listeners  []chan T
+	stopWG     sync.WaitGroup
+}
+
+type (
+	nodeInfoChangeSub = iamSubscription[*pb.IAMPublicNodesService_SubscribeNodeChangedClient, cloudprotocol.NodeInfo]
+)
 
 // Sender provides API to send messages to the cloud.
 type Sender interface {
@@ -99,16 +119,25 @@ type CertificateProvider interface {
 func New(
 	config *config.Config, sender Sender, cryptocontext *cryptutils.CryptoContext, insecure bool,
 ) (client *Client, err error) {
-	log.Debug("Connecting to IAM...")
-
 	if sender == nil {
 		return nil, aoserrors.New("sender is nil")
 	}
 
+	reconnectChannel := make(chan struct{}, 1)
 	localClient := &Client{
-		sender:            sender,
-		closeChannel:      make(chan struct{}, 1),
-		nodeInfoListeners: make([]chan cloudprotocol.NodeInfo, 0),
+		IAMPublicServiceClient: grpchelpers.NewIAMPublicServiceClient(iamRequestTimeout),
+		config:                 config,
+		sender:                 sender,
+		cryptocontext:          cryptocontext,
+		insecure:               insecure,
+		publicConnection:       grpchelpers.NewBlockingGRPCConn(),
+		nodeInfoSubs: &nodeInfoChangeSub{
+			listeners: make([]chan cloudprotocol.NodeInfo, 0),
+		},
+
+		tlsCertChan:      make(<-chan *pb.CertInfo),
+		closeChannel:     make(chan struct{}, 1),
+		reconnectChannel: reconnectChannel,
 	}
 
 	defer func() {
@@ -117,35 +146,29 @@ func New(
 		}
 	}()
 
-	if localClient.publicConnection, err = createPublicConnection(
-		config.IAMPublicServerURL, cryptocontext, insecure); err != nil {
-		return nil, err
-	}
-
-	localClient.publicService = pb.NewIAMPublicServiceClient(localClient.publicConnection)
-	localClient.identService = pb.NewIAMPublicIdentityServiceClient(localClient.publicConnection)
-	localClient.publicNodesService = pb.NewIAMPublicNodesServiceClient(localClient.publicConnection)
-
-	if localClient.protectedConnection, err = localClient.createProtectedConnection(
-		config, cryptocontext, insecure); err != nil {
-		return nil, err
-	}
-
-	localClient.certificateService = pb.NewIAMCertificateServiceClient(localClient.protectedConnection)
-	localClient.provisioningService = pb.NewIAMProvisioningServiceClient(localClient.protectedConnection)
-	localClient.nodesService = pb.NewIAMNodesServiceClient(localClient.protectedConnection)
-
-	log.Debug("Connected to IAM")
-
-	if localClient.nodeID, _, err = localClient.getNodeInfo(); err != nil {
+	if err = localClient.openGRPCConnection(); err != nil {
 		return nil, aoserrors.Wrap(err)
+	}
+
+	if !insecure {
+		if ch, err := localClient.SubscribeCertChanged(config.CertStorage); err != nil {
+			return nil, aoserrors.Wrap(err)
+		} else {
+			localClient.tlsCertChan = ch
+		}
+	}
+
+	if nodeInfo, err := localClient.GetCurrentNodeInfo(); err != nil {
+		return nil, aoserrors.Wrap(err)
+	} else {
+		localClient.nodeID = nodeInfo.NodeID
 	}
 
 	if localClient.systemID, err = localClient.getSystemID(); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	go localClient.connectPublicNodeService()
+	go localClient.processEvents()
 
 	return localClient, nil
 }
@@ -160,13 +183,11 @@ func (client *Client) GetSystemID() (systemID string) {
 	return client.systemID
 }
 
-// GetCurrentNodeInfo returns info for current node.
-func (client *Client) GetCurrentNodeInfo() (nodeInfo cloudprotocol.NodeInfo, err error) {
-	return client.GetNodeInfo(client.GetNodeID())
-}
-
 // GetNodeInfo returns node info.
 func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInfo, err error) {
+	client.Lock()
+	defer client.Unlock()
+
 	log.WithField("nodeID", nodeID).Debug("Get node info")
 
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -184,6 +205,9 @@ func (client *Client) GetNodeInfo(nodeID string) (nodeInfo cloudprotocol.NodeInf
 
 // GetAllNodeIDs returns node ids.
 func (client *Client) GetAllNodeIDs() (nodeIDs []string, err error) {
+	client.Lock()
+	defer client.Unlock()
+
 	log.Debug("Get all node ids")
 
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -205,7 +229,7 @@ func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
 	log.Debug("Subscribe on node info change event")
 
 	ch := make(chan cloudprotocol.NodeInfo)
-	client.nodeInfoListeners = append(client.nodeInfoListeners, ch)
+	client.nodeInfoSubs.listeners = append(client.nodeInfoSubs.listeners, ch)
 
 	return ch
 }
@@ -214,6 +238,9 @@ func (client *Client) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
 func (client *Client) RenewCertificatesNotification(secrets cloudprotocol.UnitSecrets,
 	certInfo []cloudprotocol.RenewCertData,
 ) (err error) {
+	client.Lock()
+	defer client.Unlock()
+
 	newCerts := make([]cloudprotocol.IssueCertData, 0, len(certInfo))
 
 	for _, cert := range certInfo {
@@ -256,7 +283,29 @@ func (client *Client) RenewCertificatesNotification(secrets cloudprotocol.UnitSe
 func (client *Client) InstallCertificates(
 	certInfo []cloudprotocol.IssuedCertData, certProvider CertificateProvider,
 ) error {
+	client.Lock()
+	defer client.Unlock()
+
 	confirmations := make([]cloudprotocol.InstallCertData, len(certInfo))
+
+	// IAM cert type of secondary nodes should be sent the latest among certificates for that node.
+	// And IAM certificate for the main node should be send in the end. Otherwise IAM client/server
+	// restart will fail the following certificates to apply.
+	slices.SortStableFunc(certInfo, func(a, b cloudprotocol.IssuedCertData) bool {
+		if a.NodeID == b.NodeID {
+			return b.Type == iamCertType
+		}
+
+		if a.NodeID == client.nodeID && a.Type == iamCertType {
+			return false
+		}
+
+		if b.NodeID == client.nodeID && b.Type == iamCertType {
+			return true
+		}
+
+		return false
+	})
 
 	for i, cert := range certInfo {
 		log.WithFields(log.Fields{"type": cert.Type}).Debug("Install certificate")
@@ -295,34 +344,11 @@ func (client *Client) InstallCertificates(
 	return nil
 }
 
-// GetCertificate gets certificate by issuer.
-func (client *Client) GetCertificate(
-	certType string, issuer []byte, serial string,
-) (certURL, keyURL string, err error) {
-	log.WithFields(log.Fields{
-		"type":   certType,
-		"issuer": base64.StdEncoding.EncodeToString(issuer),
-		"serial": serial,
-	}).Debug("Get certificate")
-
-	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
-	defer cancel()
-
-	response, err := client.publicService.GetCert(
-		ctx, &pb.GetCertRequest{Type: certType, Issuer: issuer, Serial: serial})
-	if err != nil {
-		return "", "", aoserrors.Wrap(err)
-	}
-
-	log.WithFields(log.Fields{
-		"certURL": response.GetCertUrl(), "keyURL": response.GetKeyUrl(),
-	}).Debug("Certificate info")
-
-	return response.GetCertUrl(), response.GetKeyUrl(), nil
-}
-
 // StartProvisioning starts provisioning.
 func (client *Client) StartProvisioning(nodeID, password string) (err error) {
+	client.Lock()
+	defer client.Unlock()
+
 	log.WithField("nodeID", nodeID).Debug("Start provisioning")
 
 	var (
@@ -359,6 +385,9 @@ func (client *Client) StartProvisioning(nodeID, password string) (err error) {
 func (client *Client) FinishProvisioning(
 	nodeID, password string, certificates []cloudprotocol.IssuedCertData,
 ) (err error) {
+	client.Lock()
+	defer client.Unlock()
+
 	log.WithField("nodeID", nodeID).Debug("Finish provisioning")
 
 	var errorInfo *cloudprotocol.ErrorInfo
@@ -389,6 +418,9 @@ func (client *Client) FinishProvisioning(
 
 // Deprovision deprovisions node.
 func (client *Client) Deprovision(nodeID, password string) (err error) {
+	client.Lock()
+	defer client.Unlock()
+
 	log.WithField("nodeID", nodeID).Debug("Deprovision node")
 
 	var errorInfo *cloudprotocol.ErrorInfo
@@ -434,6 +466,9 @@ func (client *Client) Deprovision(nodeID, password string) (err error) {
 
 // PauseNode pauses node.
 func (client *Client) PauseNode(nodeID string) error {
+	client.Lock()
+	defer client.Unlock()
+
 	log.WithField("nodeID", nodeID).Debug("Pause node")
 
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -454,6 +489,9 @@ func (client *Client) PauseNode(nodeID string) error {
 
 // ResumeNode resumes node.
 func (client *Client) ResumeNode(nodeID string) error {
+	client.Lock()
+	defer client.Unlock()
+
 	log.WithField("nodeID", nodeID).Debug("Resume node")
 
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
@@ -474,102 +512,128 @@ func (client *Client) ResumeNode(nodeID string) error {
 
 // Close closes IAM client.
 func (client *Client) Close() (err error) {
-	if client.publicConnection != nil || client.protectedConnection != nil {
-		client.closeChannel <- struct{}{}
+	client.Lock()
+	defer client.Unlock()
+
+	client.disableReconnect.Store(true)
+	client.closeChannel <- struct{}{}
+
+	if client.reconnectTimer != nil {
+		client.reconnectTimer.Stop()
+		client.reconnectTimer = nil
 	}
 
-	if client.publicConnection != nil {
-		client.publicConnection.Close()
-	}
-
-	if client.protectedConnection != nil {
-		client.protectedConnection.Close()
-	}
-
-	client.nodeInfoListeners = nil
+	client.closeGRPCConnection()
+	client.publicConnection.Close()
 
 	log.Debug("Disconnected from IAM")
 
 	return nil
 }
 
+// OnConnectionLost grpchelpers.ConnectionLossHandler::OnConnectionLost implementation.
+func (client *Client) OnConnectionLost() {
+	if !client.disableReconnect.Load() {
+		client.reconnectChannel <- struct{}{}
+	}
+}
+
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
 
-func createPublicConnection(serverURL string, cryptocontext *cryptutils.CryptoContext, insecureConn bool) (
-	connection *grpc.ClientConn, err error,
-) {
-	var secureOpt grpc.DialOption
+func (client *Client) openGRPCConnection() (err error) {
+	log.Debug("Connecting to IAM...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
-	defer cancel()
+	var publicConn *grpc.ClientConn
 
-	if insecureConn {
-		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
-	} else {
-		tlsConfig, err := cryptocontext.GetClientTLSConfig()
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		secureOpt = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
-	}
-
-	if connection, err = grpc.DialContext(ctx, serverURL, secureOpt, grpc.WithBlock()); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	return connection, nil
-}
-
-func (client *Client) getNodeInfo() (nodeID, nodeType string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
-	defer cancel()
-
-	response, err := client.publicService.GetNodeInfo(ctx, &empty.Empty{})
+	publicConn, err = grpchelpers.CreatePublicConnection(
+		client.config.IAMPublicServerURL, iamRequestTimeout, client.cryptocontext, client.insecure)
 	if err != nil {
-		return "", "", aoserrors.Wrap(err)
+		return aoserrors.Wrap(err)
 	}
 
-	log.WithFields(log.Fields{
-		"nodeID":   response.GetNodeId(),
-		"nodeType": response.GetNodeType(),
-	}).Debug("Get node Info")
+	client.publicConnection.Set(publicConn)
 
-	return response.GetNodeId(), response.GetNodeType(), nil
+	client.RegisterIAMPublicServiceClient(client.publicConnection, client)
+	client.identService = pb.NewIAMPublicIdentityServiceClient(client.publicConnection)
+	client.publicNodesService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
+
+	client.protectedConnection, err = grpchelpers.CreateProtectedConnection(client.config.CertStorage,
+		client.config.IAMProtectedServerURL, iamRequestTimeout, client.cryptocontext, client, client.insecure)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	client.certificateService = pb.NewIAMCertificateServiceClient(client.protectedConnection)
+	client.provisioningService = pb.NewIAMProvisioningServiceClient(client.protectedConnection)
+	client.nodesService = pb.NewIAMNodesServiceClient(client.protectedConnection)
+
+	// Restore GRPC NodeInfo subscription
+	if err = client.subscribeNodeInfoChange(); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
 }
 
-func (client *Client) createProtectedConnection(
-	config *config.Config, cryptocontext *cryptutils.CryptoContext, insecureConn bool) (
-	connection *grpc.ClientConn, err error,
-) {
-	var secureOpt grpc.DialOption
+func (client *Client) closeGRPCConnection() {
+	log.Debug("Closing IAM connection...")
 
-	if insecureConn {
-		secureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
+	if client.publicConnection != nil {
+		client.publicConnection.Stop()
+	}
+
+	if client.protectedConnection != nil {
+		client.protectedConnection.Close()
+	}
+
+	client.WaitIAMPublicServiceClient()
+	client.nodeInfoSubs.stopWG.Wait()
+}
+
+func (client *Client) processEvents() {
+	for {
+		select {
+		case <-client.closeChannel:
+			return
+
+		case <-client.tlsCertChan:
+			client.Lock()
+			client.reconnect()
+			client.Unlock()
+
+		case <-client.reconnectChannel:
+			client.Lock()
+			client.reconnect()
+			client.Unlock()
+		}
+	}
+}
+
+func (client *Client) reconnect() {
+	if client.disableReconnect.CompareAndSwap(false, true) {
+		return
+	}
+
+	log.Debug("Reconnecting to IAM server...")
+
+	client.closeGRPCConnection()
+
+	if err := client.openGRPCConnection(); err != nil {
+		log.WithField("err", err).Error("Reconnection to IAM failed")
+
+		client.reconnectTimer = time.AfterFunc(iamReconnectInterval, func() {
+			client.Lock()
+			defer client.Unlock()
+
+			client.reconnectTimer = nil
+
+			client.reconnect()
+		})
 	} else {
-		certURL, keyURL, err := client.GetCertificate(config.CertStorage, nil, "")
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		tlsConfig, err := cryptocontext.GetClientMutualTLSConfig(certURL, keyURL)
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		secureOpt = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
+		client.disableReconnect.Store(false)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
-	defer cancel()
-
-	if connection, err = grpc.DialContext(ctx, config.IAMProtectedServerURL, secureOpt, grpc.WithBlock()); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	return connection, nil
 }
 
 func (client *Client) getSystemID() (systemID string, err error) {
@@ -588,74 +652,39 @@ func (client *Client) getSystemID() (systemID string, err error) {
 	return response.GetSystemId(), nil
 }
 
-func (client *Client) processMessages(listener pb.IAMPublicNodesService_SubscribeNodeChangedClient) (err error) {
-	for {
-		nodeInfo, err := listener.Recv()
-		if err != nil {
-			if code, ok := status.FromError(err); ok {
-				if code.Code() == codes.Canceled {
-					log.Debug("IAM client connection closed")
-					return nil
-				}
-			}
+func (client *Client) processNodeInfoChange(sub *nodeInfoChangeSub) {
+	defer sub.stopWG.Done()
 
-			return aoserrors.Wrap(err)
+	for {
+		nodeInfo, err := (*sub.grpcStream).Recv()
+		if err != nil {
+			client.OnConnectionLost()
+
+			return
 		}
 
 		client.Lock()
-		for _, listener := range client.nodeInfoListeners {
+		for _, listener := range sub.listeners {
 			listener <- pbconvert.NodeInfoFromPB(nodeInfo)
 		}
 		client.Unlock()
 	}
 }
 
-func (client *Client) connectPublicNodeService() {
-	listener, err := client.subscribeNodeInfoChange()
-
-	for {
-		if err != nil {
-			log.Errorf("Error register to IAM: %v", aoserrors.Wrap(err))
-		} else {
-			if err = client.processMessages(listener); err != nil {
-				if errors.Is(err, io.EOF) {
-					log.Debug("Connection is closed")
-				} else {
-					log.Errorf("Connection error: %v", aoserrors.Wrap(err))
-				}
-			}
-		}
-
-		log.Debugf("Reconnect to IAM in %v...", iamReconnectInterval)
-
-		select {
-		case <-client.closeChannel:
-			log.Debugf("Disconnected from IAM")
-
-			return
-
-		case <-time.After(iamReconnectInterval):
-			listener, err = client.subscribeNodeInfoChange()
-		}
-	}
-}
-
-func (client *Client) subscribeNodeInfoChange() (
-	listener pb.IAMPublicNodesService_SubscribeNodeChangedClient, err error,
-) {
-	client.Lock()
-	defer client.Unlock()
-
-	client.publicNodesService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
-
-	listener, err = client.publicNodesService.SubscribeNodeChanged(context.Background(), &emptypb.Empty{})
+func (client *Client) subscribeNodeInfoChange() error {
+	listener, err := client.publicNodesService.SubscribeNodeChanged(context.Background(), &emptypb.Empty{})
 	if err != nil {
 		log.WithField("error", err).Error("Can't subscribe on NodeChange event")
 
-		return nil, aoserrors.Wrap(err)
+		return aoserrors.Wrap(err)
 	}
 
-	return listener, aoserrors.Wrap(err)
+	client.nodeInfoSubs.grpcStream = &listener
+
+	client.nodeInfoSubs.stopWG.Add(1)
+	go client.processNodeInfoChange(client.nodeInfoSubs)
+
+	return nil
 }
 
 func (client *Client) getCertTypes(nodeID string) ([]string, error) {
