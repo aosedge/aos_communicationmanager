@@ -20,18 +20,19 @@ package smcontroller
 import (
 	"errors"
 	"io"
-	"net"
 	"sync"
+	"time"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/api/iamanager"
 	pb "github.com/aosedge/aos_common/api/servicemanager"
 	"github.com/aosedge/aos_common/utils/cryptutils"
+	"github.com/aosedge/aos_common/utils/grpchelpers"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	"github.com/aosedge/aos_communicationmanager/amqphandler"
@@ -46,6 +47,8 @@ import (
 
 const statusChanSize = 10
 
+const smRestartInterval = 10 * time.Second
+
 /***********************************************************************************************************************
  * Types
  **********************************************************************************************************************/
@@ -53,6 +56,11 @@ const statusChanSize = 10
 // Controller SM controller instance.
 type Controller struct {
 	sync.Mutex
+
+	config         *config.Config
+	certProvider   CertificateProvider
+	cryptcoxontext *cryptutils.CryptoContext
+	insecureConn   bool
 
 	nodes map[string]*smHandler
 
@@ -65,10 +73,11 @@ type Controller struct {
 	runInstancesStatusChan    chan launcher.NodeRunInstanceStatus
 	systemQuotaAlertChan      chan cloudprotocol.SystemQuotaAlert
 	nodeConfigStatusChan      chan unitconfig.NodeConfigStatus
+	closeChannel              chan struct{}
+	restartTimer              *time.Timer
 
 	isCloudConnected bool
-	grpcServer       *grpc.Server
-	listener         net.Listener
+	grpcServer       *grpchelpers.GRPCServer
 	pb.UnimplementedSMServiceServer
 }
 
@@ -93,6 +102,7 @@ type MessageSender interface {
 // CertificateProvider certificate and key provider interface.
 type CertificateProvider interface {
 	GetCertificate(certType string, issuer []byte, serial string) (certURL, keyURL string, err error)
+	SubscribeCertChanged(certType string) (<-chan *iamanager.CertInfo, error)
 }
 
 /***********************************************************************************************************************
@@ -108,6 +118,11 @@ func New(
 	log.Debug("Create SM controller")
 
 	controller = &Controller{
+		config:         cfg,
+		certProvider:   certProvider,
+		cryptcoxontext: cryptcoxontext,
+		insecureConn:   insecureConn,
+
 		messageSender:             messageSender,
 		alertSender:               alertSender,
 		monitoringSender:          monitoringSender,
@@ -116,6 +131,8 @@ func New(
 		systemQuotaAlertChan:      make(chan cloudprotocol.SystemQuotaAlert, statusChanSize),
 		nodeConfigStatusChan:      make(chan unitconfig.NodeConfigStatus, statusChanSize),
 		nodes:                     make(map[string]*smHandler),
+		closeChannel:              make(chan struct{}, 1),
+		grpcServer:                grpchelpers.NewGRPCServer(cfg.SMController.CMServerURL),
 	}
 
 	if controller.messageSender != nil {
@@ -124,48 +141,40 @@ func New(
 		}
 	}
 
+	pb.RegisterSMServiceServer(controller.grpcServer, controller)
+
 	controller.logHandler = map[string]func(cloudprotocol.RequestLog) error{
 		cloudprotocol.SystemLog:  controller.getSystemLog,
 		cloudprotocol.ServiceLog: controller.getServiceLog,
 		cloudprotocol.CrashLog:   controller.getCrashLog,
 	}
 
-	var opts []grpc.ServerOption
-
-	if !insecureConn {
-		certURL, keyURL, err := certProvider.GetCertificate(cfg.CertStorage, nil, "")
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		tlsConfig, err := cryptcoxontext.GetClientMutualTLSConfig(certURL, keyURL)
-		if err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
-	} else {
-		log.Info("GRPC server starts in insecure mode")
+	if err := controller.startGRPCServer(); err != nil {
+		return nil, err
 	}
 
-	controller.grpcServer = grpc.NewServer(opts...)
+	if !insecureConn {
+		var ch <-chan *iamanager.CertInfo
 
-	pb.RegisterSMServiceServer(controller.grpcServer, controller)
-
-	go func() {
-		if err := controller.startServer(cfg.SMController.CMServerURL); err != nil {
-			log.Errorf("Can't start SM controller server: %v", err)
+		if ch, err = controller.certProvider.SubscribeCertChanged(cfg.CertStorage); err != nil {
+			return nil, aoserrors.Wrap(err)
 		}
-	}()
+
+		go controller.processCertChange(ch)
+	}
 
 	return controller, nil
 }
 
 // Close closes SM controller.
 func (controller *Controller) Close() error {
+	controller.Lock()
+	defer controller.Unlock()
+
 	log.Debug("Close SM controller")
 
-	controller.stopServer()
+	close(controller.closeChannel)
+	controller.grpcServer.StopServer()
 
 	if controller.messageSender != nil {
 		if err := controller.messageSender.UnsubscribeFromConnectionEvents(controller); err != nil {
@@ -468,31 +477,6 @@ func (controller *Controller) getNodeHandlersByIDs(nodeIDs []string) (handlers [
 	return handlers, nil
 }
 
-func (controller *Controller) startServer(serverURL string) (err error) {
-	controller.listener, err = net.Listen("tcp", serverURL)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if err := controller.grpcServer.Serve(controller.listener); err != nil {
-		log.Errorf("Can't serve gRPC server: %s", err)
-
-		return aoserrors.Wrap(err)
-	}
-
-	return nil
-}
-
-func (controller *Controller) stopServer() {
-	if controller.grpcServer != nil {
-		controller.grpcServer.Stop()
-	}
-
-	if controller.listener != nil {
-		controller.listener.Close()
-	}
-}
-
 func (controller *Controller) handleNewConnection(
 	nodeConfigStatus unitconfig.NodeConfigStatus, newHandler *smHandler,
 ) error {
@@ -551,6 +535,53 @@ func (controller *Controller) sendConnectionStatus() {
 
 		if err := handler.sendConnectionStatus(controller.isCloudConnected); err != nil {
 			log.Errorf("Can't send connection status: %v", err)
+		}
+	}
+}
+
+func (controller *Controller) startGRPCServer() error {
+	var opts []grpc.ServerOption
+
+	opts, err := grpchelpers.NewProtectedServerOptions(controller.cryptcoxontext, controller.certProvider,
+		controller.config.CertStorage, controller.insecureConn)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	err = controller.grpcServer.RestartServer(opts)
+	if err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	return nil
+}
+
+func (controller *Controller) restartGRPCServer() {
+	controller.Lock()
+	defer controller.Unlock()
+
+	if controller.restartTimer != nil {
+		controller.restartTimer.Stop()
+		controller.restartTimer = nil
+	}
+
+	if err := controller.startGRPCServer(); err != nil {
+		log.WithField("err", err).Error("SM controller failed to start GRPC server")
+
+		controller.restartTimer = time.AfterFunc(smRestartInterval, func() {
+			controller.restartGRPCServer()
+		})
+	}
+}
+
+func (controller *Controller) processCertChange(certChannel <-chan *iamanager.CertInfo) {
+	for {
+		select {
+		case <-certChannel:
+			controller.restartGRPCServer()
+
+		case <-controller.closeChannel:
+			return
 		}
 	}
 }
