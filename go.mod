@@ -8,7 +8,7 @@ replace github.com/anexia-it/fsquota => github.com/aosedge/fsquota v0.0.0-202311
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20231017140541-3b893ed0421b
-	github.com/aosedge/aos_common v0.0.0-20241009091011-7ee2b4d3e394
+	github.com/aosedge/aos_common v0.0.0-20241025075156-14720a7d701f
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
