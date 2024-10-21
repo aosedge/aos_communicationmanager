@@ -1,9 +1,5 @@
 code.cloudfoundry.org/bytefmt v0.0.0-20231017140541-3b893ed0421b h1:/2OEIBwZAaJ8n8iTXrM4v/+bdyLDTLwcW6RZtkO4+r0=
 code.cloudfoundry.org/bytefmt v0.0.0-20231017140541-3b893ed0421b/go.mod h1:CKNYSQxmKcMCNIKoRG5rRR4AIgJMIoK65ya+Z5xHnk4=
-github.com/aosedge/aos_common v0.0.0-20240920111133-bbcdc07c1664 h1:AvwdHsdKR1hVIpa64RjC33Qy7Z5SB4CYqhv7C/tX8ug=
-github.com/aosedge/aos_common v0.0.0-20240920111133-bbcdc07c1664/go.mod h1:CG/e1tQPMo2fvdwRHi+Cx5StpNURu7InTZSgyfmBVYM=
-github.com/aosedge/aos_common v0.0.0-20241009091011-7ee2b4d3e394 h1:mkrBWT3Eyg5Wy/5qCKq21qlwi37e0ciE+qbv6ptKmAM=
-github.com/aosedge/aos_common v0.0.0-20241009091011-7ee2b4d3e394/go.mod h1:CG/e1tQPMo2fvdwRHi+Cx5StpNURu7InTZSgyfmBVYM=
 github.com/aosedge/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f h1:xL5hA9axQFHnoVVF/Q8CkKl9JiTvA7U72jRDltMBB9M=
 github.com/aosedge/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f/go.mod h1:ILDKtnCKiQ7zRoNxcp36Y1ZR8LBPmR2E23+wTQe/MlE=
 github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7 h1:KR+SuYXJ9HigUaJdUwRlkDOOpkCrliFF3liBVKu2GKY=
@@ -61,6 +57,8 @@ github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f h1:eVB9ELsoq5ouItQB
 github.com/miekg/pkcs11 v1.0.3-0.20190429190417-a667d056470f/go.mod h1:XsNlhZGX73bx86s2hdc/FuaLm2CPZJemRLMA+WTFxgs=
 github.com/moby/sys/mountinfo v0.7.1 h1:/tTvQaSJRr2FshkhXiIpux6fQ2Zvc4j7tAhMTStAG2g=
 github.com/moby/sys/mountinfo v0.7.1/go.mod h1:IJb6JQeOklcdMU9F5xQ8ZALD+CUr5VlGpwtX+VE0rpI=
+github.com/mykola-kobets-epam/aos_common v0.0.0-20241021095022-36ddb7c716b5 h1:PqV7IeSEnlqKFXvh9tVsvshaulhC00Pza/MET7b90hA=
+github.com/mykola-kobets-epam/aos_common v0.0.0-20241021095022-36ddb7c716b5/go.mod h1:CG/e1tQPMo2fvdwRHi+Cx5StpNURu7InTZSgyfmBVYM=
 github.com/onsi/ginkgo v1.16.4 h1:29JGrr5oVBm5ulCWet69zQkzWipVXIol6ygQUe/EzNc=
 github.com/onsi/ginkgo/v2 v2.9.2 h1:BA2GMJOtfGAfagzYtrAlufIP0lq6QERkFmHLMLPwFSU=
 github.com/onsi/ginkgo/v2 v2.9.2/go.mod h1:WHcJJG2dIlcCqVfBAwUCrJxSPFb6v4azBwgxeMeDuts=

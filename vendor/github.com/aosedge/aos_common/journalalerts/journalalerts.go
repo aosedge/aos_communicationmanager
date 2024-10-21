@@ -111,6 +111,7 @@ var coreComponents = []string{ //nolint:gochecknoglobals
 	"aos-updatemanager",
 	"aos-iamanager",
 	"aos-communicationmanager",
+	"aos-messageproxy",
 	"aos-vis",
 }
 
