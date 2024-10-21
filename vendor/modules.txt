@@ -7,7 +7,7 @@ github.com/ThalesIgnite/crypto11
 # github.com/anexia-it/fsquota v0.0.0-00010101000000-000000000000 => github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7
 ## explicit; go 1.21
 github.com/anexia-it/fsquota
-# github.com/aosedge/aos_common v0.0.0-20241009091011-7ee2b4d3e394
+# github.com/aosedge/aos_common v0.0.0-20241009091011-7ee2b4d3e394 => github.com/mykola-kobets-epam/aos_common v0.0.0-20241021095022-36ddb7c716b5
 ## explicit; go 1.21
 github.com/aosedge/aos_common/aoserrors
 github.com/aosedge/aos_common/aostypes
@@ -298,3 +298,4 @@ google.golang.org/protobuf/types/known/timestamppb
 gopkg.in/yaml.v3
 # github.com/ThalesIgnite/crypto11 => github.com/aosedge/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f
 # github.com/anexia-it/fsquota => github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7
+# github.com/aosedge/aos_common => github.com/mykola-kobets-epam/aos_common v0.0.0-20241021095022-36ddb7c716b5

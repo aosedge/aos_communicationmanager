@@ -6,6 +6,8 @@ replace github.com/ThalesIgnite/crypto11 => github.com/aosedge/crypto11 v1.0.3-0
 
 replace github.com/anexia-it/fsquota => github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7
 
+replace github.com/aosedge/aos_common => github.com/mykola-kobets-epam/aos_common v0.0.0-20241021095022-36ddb7c716b5
+
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20231017140541-3b893ed0421b
 	github.com/aosedge/aos_common v0.0.0-20241009091011-7ee2b4d3e394
