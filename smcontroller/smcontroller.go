@@ -169,20 +169,21 @@ func New(
 // Close closes SM controller.
 func (controller *Controller) Close() error {
 	controller.Lock()
-	defer controller.Unlock()
 
 	log.Debug("Close SM controller")
 
 	close(controller.closeChannel)
 	controller.grpcServer.StopServer()
 
+	close(controller.nodeConfigStatusChan)
+
+	controller.Unlock()
+
 	if controller.messageSender != nil {
 		if err := controller.messageSender.UnsubscribeFromConnectionEvents(controller); err != nil {
 			log.Errorf("Can't unsubscribe from connection events: %v", err)
 		}
 	}
-
-	close(controller.nodeConfigStatusChan)
 
 	return nil
 }
