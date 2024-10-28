@@ -94,6 +94,8 @@ func newNodeHandler(
 func (node *nodeHandler) initAvailableResources(nodeManager NodeManager, rebalancing bool) {
 	var err error
 
+	node.averageMonitoring = aostypes.NodeMonitoring{}
+
 	if rebalancing && node.nodeConfig.AlertRules != nil &&
 		(node.nodeConfig.AlertRules.CPU != nil || node.nodeConfig.AlertRules.RAM != nil) {
 		node.averageMonitoring, err = nodeManager.GetAverageMonitoring(node.nodeInfo.NodeID)
