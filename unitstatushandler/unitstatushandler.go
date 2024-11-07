@@ -533,6 +533,7 @@ func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatu
 		"type":    status.ComponentType,
 		"status":  status.Status,
 		"version": status.Version,
+		"nodeID":  status.NodeID,
 		"error":   status.ErrorInfo,
 	}).Debug("Set component status")
 
