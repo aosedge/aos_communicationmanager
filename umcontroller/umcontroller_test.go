@@ -543,10 +543,22 @@ func TestFullUpdate(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um1C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um1C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um2C1", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um2C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{
+			ComponentID: "um1C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM1"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um1C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM1"),
+			Version: "2.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um2C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM2"),
+			Version: "2.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um2C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM2"),
+			Version: "2.0.0", Status: "installed",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -745,10 +757,22 @@ func TestFullUpdateWithDisconnect(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um3C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um3C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um4C1", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um4C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{
+			ComponentID: "um3C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM3"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um3C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM3"),
+			Version: "2.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um4C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM4"),
+			Version: "2.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um4C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM4"),
+			Version: "2.0.0", Status: "installed",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -967,10 +991,22 @@ func TestFullUpdateWithReboot(t *testing.T) {
 	um6.step = finishStep
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um5C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um5C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um6C1", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
-		{ComponentID: "um6C2", ComponentType: "type-1", Version: "2.0.0", Status: "installed"},
+		{
+			ComponentID: "um5C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM5"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um5C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM5"),
+			Version: "2.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um6C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM6"),
+			Version: "2.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um6C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM6"),
+			Version: "2.0.0", Status: "installed",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1118,11 +1154,26 @@ func TestRevertOnPrepare(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um7C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um7C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um8C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um8C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um8C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
+		{
+			ComponentID: "um7C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM7"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um7C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM7"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um8C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM8"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um8C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM8"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um8C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM8"),
+			Version: "2.0.0", Status: "error",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1132,8 +1183,8 @@ func TestRevertOnPrepare(t *testing.T) {
 
 	if !reflect.DeepEqual(etalonComponents, currentComponents) {
 		log.Debug(currentComponents)
-		t.Error("incorrect result component list")
 		log.Debug(etalonComponents)
+		t.Error("incorrect result component list")
 	}
 
 	um7.closeConnection()
@@ -1295,11 +1346,26 @@ func TestRevertOnUpdate(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um9C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um9C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um10C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um10C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um10C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
+		{
+			ComponentID: "um9C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM9"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um9C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM9"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um10C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM10"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um10C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM10"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um10C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM10"),
+			Version: "2.0.0", Status: "error",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1477,11 +1543,26 @@ func TestRevertOnUpdateWithDisconnect(t *testing.T) {
 	<-finishChannel
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um11C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um11C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um12C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um12C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um12C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
+		{
+			ComponentID: "um11C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM11"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um11C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM11"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um12C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM12"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um12C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM12"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um12C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM12"),
+			Version: "2.0.0", Status: "error",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()
@@ -1678,11 +1759,26 @@ func TestRevertOnUpdateWithReboot(t *testing.T) {
 	time.Sleep(time.Second)
 
 	etalonComponents := []cloudprotocol.ComponentStatus{
-		{ComponentID: "um13C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um13C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um14C1", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um14C2", ComponentType: "type-1", Version: "1.0.0", Status: "installed"},
-		{ComponentID: "um14C2", ComponentType: "type-1", Version: "2.0.0", Status: "error"},
+		{
+			ComponentID: "um13C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM13"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um13C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM13"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um14C1", ComponentType: "type-1", NodeID: convertToNodeID("testUM14"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um14C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM14"),
+			Version: "1.0.0", Status: "installed",
+		},
+		{
+			ComponentID: "um14C2", ComponentType: "type-1", NodeID: convertToNodeID("testUM14"),
+			Version: "2.0.0", Status: "error",
+		},
 	}
 
 	currentComponents, err := umCtrl.GetStatus()

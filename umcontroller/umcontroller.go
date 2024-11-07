@@ -417,7 +417,7 @@ func (umCtrl *Controller) UpdateComponents(
 
 			componentsUpdateInfo = append(componentsUpdateInfo, componentInfo)
 
-			umCtrl.updateComponentElement(componentStatus)
+			umCtrl.updateComponentElement(componentStatus, nil)
 		}
 
 		if err := umCtrl.storage.SetComponentsUpdateInfo(componentsUpdateInfo); err != nil {
@@ -504,7 +504,7 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 			continue
 		}
 
-		umCtrl.updateCurrentComponentsStatus(status.componsStatus)
+		umCtrl.updateCurrentComponentsStatus(status.componsStatus, umID)
 
 		if umCtrl.fsm.Current() != stateInit {
 			umCtrl.notifyNewComponents(umID, status.componsStatus)
@@ -600,8 +600,11 @@ func (umCtrl *Controller) handleCloseConnection(umID string, reason closeReason)
 	}
 }
 
-func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemComponentStatus) {
-	log.Debug("Receive components: ", componsStatus)
+func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemComponentStatus, nodeID string) {
+	log.WithFields(log.Fields{
+		"nodeID":     nodeID,
+		"components": componsStatus,
+	}).Debug("Received components")
 
 	for _, value := range componsStatus {
 		if value.status == cloudprotocol.InstalledStatus {
@@ -628,11 +631,11 @@ func (umCtrl *Controller) updateCurrentComponentsStatus(componsStatus []systemCo
 			}
 		}
 
-		umCtrl.updateComponentElement(value)
+		umCtrl.updateComponentElement(value, &nodeID)
 	}
 }
 
-func (umCtrl *Controller) updateComponentElement(component systemComponentStatus) {
+func (umCtrl *Controller) updateComponentElement(component systemComponentStatus, nodeID *string) {
 	for i, curElement := range umCtrl.currentComponents {
 		if curElement.ComponentID == component.componentID && curElement.ComponentType == component.componentType &&
 			curElement.Version == component.version {
@@ -642,6 +645,7 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 
 			if curElement.Status != component.status {
 				umCtrl.currentComponents[i].Status = component.status
+				umCtrl.currentComponents[i].NodeID = nodeID
 
 				if component.err != "" {
 					umCtrl.currentComponents[i].ErrorInfo = &cloudprotocol.ErrorInfo{Message: component.err}
@@ -656,6 +660,7 @@ func (umCtrl *Controller) updateComponentElement(component systemComponentStatus
 		ComponentID:   component.componentID,
 		ComponentType: component.componentType,
 		Version:       component.version,
+		NodeID:        nodeID,
 		Status:        component.status,
 	}
 
@@ -1129,7 +1134,7 @@ func (umCtrl *Controller) processUpdateUpdateStatus(ctx context.Context, e *fsm.
 		}
 	}
 
-	umCtrl.updateCurrentComponentsStatus(status.componsStatus)
+	umCtrl.updateCurrentComponentsStatus(status.componsStatus, umID)
 
 	go umCtrl.generateFSMEvent(evContinue)
 }
