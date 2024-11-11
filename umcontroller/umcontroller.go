@@ -101,7 +101,7 @@ type ComponentStatus struct {
 }
 
 type umConnection struct {
-	umID           string
+	nodeID         string
 	isLocalClient  bool
 	handler        *umHandler
 	updatePriority uint32
@@ -111,7 +111,7 @@ type umConnection struct {
 }
 
 type umCtrlInternalMsg struct {
-	umID        string
+	nodeID      string
 	handler     *umHandler
 	requestType int
 	status      umStatus
@@ -461,13 +461,13 @@ func (umCtrl *Controller) processInternalMessages() {
 
 			switch internalMsg.requestType {
 			case openConnection:
-				umCtrl.handleNewConnection(internalMsg.umID, internalMsg.handler, internalMsg.status)
+				umCtrl.handleNewConnection(internalMsg.nodeID, internalMsg.handler, internalMsg.status)
 
 			case closeConnection:
-				umCtrl.handleCloseConnection(internalMsg.umID, internalMsg.close)
+				umCtrl.handleCloseConnection(internalMsg.nodeID, internalMsg.close)
 
 			case umStatusUpdate:
-				umCtrl.generateFSMEvent(evUpdateStatusUpdated, internalMsg.umID, internalMsg.status)
+				umCtrl.generateFSMEvent(evUpdateStatusUpdated, internalMsg.nodeID, internalMsg.status)
 
 			default:
 				log.Error("Unsupported internal message ", internalMsg.requestType)
@@ -491,29 +491,29 @@ func (umCtrl *Controller) processInternalMessages() {
 	}
 }
 
-func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, status umStatus) {
+func (umCtrl *Controller) handleNewConnection(nodeID string, handler *umHandler, status umStatus) {
 	if handler == nil {
 		log.Error("Handler is nil")
 		return
 	}
 
-	umIDfound := false
+	nodeIDfound := false
 
 	for i, value := range umCtrl.connections {
-		if value.umID != umID {
+		if value.nodeID != nodeID {
 			continue
 		}
 
-		umCtrl.updateCurrentComponentsStatus(status.componsStatus, umID)
+		umCtrl.updateCurrentComponentsStatus(status.componsStatus, nodeID)
 
 		if umCtrl.fsm.Current() != stateInit {
-			umCtrl.notifyNewComponents(umID, status.componsStatus)
+			umCtrl.notifyNewComponents(nodeID, status.componsStatus)
 		}
 
-		umIDfound = true
+		nodeIDfound = true
 
 		if value.handler != nil {
-			log.Warn("Connection already available umID = ", umID)
+			log.Warn("Connection already available nodeID = ", nodeID)
 			value.handler.Close(Reconnect)
 		}
 
@@ -542,8 +542,8 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 		break
 	}
 
-	if !umIDfound {
-		log.Error("Unexpected new UM connection with ID = ", umID)
+	if !nodeIDfound {
+		log.Error("Unexpected new UM connection with ID = ", nodeID)
 		handler.Close(ConnectionClose)
 
 		return
@@ -554,12 +554,12 @@ func (umCtrl *Controller) handleNewConnection(umID string, handler *umHandler, s
 	}
 }
 
-func (umCtrl *Controller) handleCloseConnection(umID string, reason closeReason) {
-	log.WithFields(log.Fields{"state": umCtrl.fsm.Current(), "umID": umID}).Debug("Close UM connection")
+func (umCtrl *Controller) handleCloseConnection(nodeID string, reason closeReason) {
+	log.WithFields(log.Fields{"state": umCtrl.fsm.Current(), "nodeID": nodeID}).Debug("Close UM connection")
 
 	if umCtrl.fsm.Current() == stateReconnecting {
 		for i, value := range umCtrl.connections {
-			if value.umID == umID {
+			if value.nodeID == nodeID {
 				umCtrl.connections[i].handler = nil
 
 				break
@@ -578,9 +578,9 @@ func (umCtrl *Controller) handleCloseConnection(umID string, reason closeReason)
 	}
 
 	for i, value := range umCtrl.connections {
-		if value.umID == umID {
+		if value.nodeID == nodeID {
 			if reason == ConnectionClose {
-				nodeInfo, err := umCtrl.nodeInfoProvider.GetNodeInfo(umID)
+				nodeInfo, err := umCtrl.nodeInfoProvider.GetNodeInfo(nodeID)
 				provisionedNode := err == nil && nodeInfo.Status != cloudprotocol.NodeStatusUnprovisioned
 
 				if provisionedNode {
@@ -1012,12 +1012,13 @@ func (umCtrl *Controller) processPrepareState(ctx context.Context, e *fsm.Event)
 	for i := range umCtrl.connections {
 		if len(umCtrl.connections[i].updatePackages) > 0 {
 			if umCtrl.connections[i].state == umFailed {
-				go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.New("preparUpdate failure umID = "+umCtrl.connections[i].umID))
+				go umCtrl.generateFSMEvent(evUpdateFailed,
+					aoserrors.New("preparUpdate failure nodeID = "+umCtrl.connections[i].nodeID))
 				return
 			}
 
 			if umCtrl.connections[i].handler == nil {
-				log.Warnf("Connection to um %s closed", umCtrl.connections[i].umID)
+				log.Warnf("Connection to um %s closed", umCtrl.connections[i].nodeID)
 				return
 			}
 
@@ -1036,13 +1037,13 @@ func (umCtrl *Controller) processStartUpdateState(ctx context.Context, e *fsm.Ev
 	for i := range umCtrl.connections {
 		if len(umCtrl.connections[i].updatePackages) > 0 {
 			if umCtrl.connections[i].state == umFailed {
-				go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.New("update failure umID = "+umCtrl.connections[i].umID))
+				go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.New("update failure nodeID = "+umCtrl.connections[i].nodeID))
 				return
 			}
 		}
 
 		if umCtrl.connections[i].handler == nil {
-			log.Warnf("Connection to um %s closed", umCtrl.connections[i].umID)
+			log.Warnf("Connection to um %s closed", umCtrl.connections[i].nodeID)
 			return
 		}
 
@@ -1062,12 +1063,12 @@ func (umCtrl *Controller) processStartRevertState(ctx context.Context, e *fsm.Ev
 
 		if len(umCtrl.connections[i].updatePackages) > 0 || umCtrl.connections[i].state == umFailed {
 			if umCtrl.connections[i].handler == nil {
-				log.Warnf("Connection to um %s closed", umCtrl.connections[i].umID)
+				log.Warnf("Connection to um %s closed", umCtrl.connections[i].nodeID)
 				return
 			}
 
 			if len(umCtrl.connections[i].updatePackages) == 0 {
-				log.Warnf("No update components but UM %s is in failure state", umCtrl.connections[i].umID)
+				log.Warnf("No update components but UM %s is in failure state", umCtrl.connections[i].nodeID)
 			}
 
 			if err := umCtrl.connections[i].handler.StartRevert(); err == nil {
@@ -1092,13 +1093,13 @@ func (umCtrl *Controller) processStartApplyState(ctx context.Context, e *fsm.Eve
 	for i := range umCtrl.connections {
 		if len(umCtrl.connections[i].updatePackages) > 0 {
 			if umCtrl.connections[i].state == umFailed {
-				go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.New("apply failure umID = "+umCtrl.connections[i].umID))
+				go umCtrl.generateFSMEvent(evUpdateFailed, aoserrors.New("apply failure nodeID = "+umCtrl.connections[i].nodeID))
 				return
 			}
 		}
 
 		if umCtrl.connections[i].handler == nil {
-			log.Warnf("Connection to um %s closed", umCtrl.connections[i].umID)
+			log.Warnf("Connection to um %s closed", umCtrl.connections[i].nodeID)
 			return
 		}
 
@@ -1113,7 +1114,7 @@ func (umCtrl *Controller) processStartApplyState(ctx context.Context, e *fsm.Eve
 func (umCtrl *Controller) processUpdateUpdateStatus(ctx context.Context, e *fsm.Event) {
 	log.Debug("processUpdateUpdateStatus")
 
-	umID, ok := e.Args[0].(string)
+	nodeID, ok := e.Args[0].(string)
 	if !ok {
 		log.Error("Incorrect UM ID in update state")
 		return
@@ -1126,15 +1127,15 @@ func (umCtrl *Controller) processUpdateUpdateStatus(ctx context.Context, e *fsm.
 	}
 
 	for i, v := range umCtrl.connections {
-		if v.umID == umID {
+		if v.nodeID == nodeID {
 			umCtrl.connections[i].state = status.updateStatus
-			log.Debugf("umID = %s  state = %s", umID, status.updateStatus)
+			log.Debugf("nodeID = %s  state = %s", nodeID, status.updateStatus)
 
 			break
 		}
 	}
 
-	umCtrl.updateCurrentComponentsStatus(status.componsStatus, umID)
+	umCtrl.updateCurrentComponentsStatus(status.componsStatus, nodeID)
 
 	go umCtrl.generateFSMEvent(evContinue)
 }
@@ -1188,7 +1189,7 @@ func (umCtrl *Controller) createConnections() error {
 
 		if nodeHasUM {
 			umCtrl.connections = append(umCtrl.connections, umConnection{
-				umID:           nodeInfo.NodeID,
+				nodeID:         nodeInfo.NodeID,
 				isLocalClient:  nodeInfo.NodeID == umCtrl.currentNodeID,
 				updatePriority: lowestUpdatePriority,
 				handler:        nil,
@@ -1210,7 +1211,7 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo cloudprotocol.NodeInfo) 
 
 	case cloudprotocol.NodeStatusUnprovisioned:
 		ind := slices.IndexFunc(umCtrl.connections, func(conn umConnection) bool {
-			return nodeInfo.NodeID == conn.umID
+			return nodeInfo.NodeID == conn.nodeID
 		})
 
 		if ind >= 0 {
@@ -1236,13 +1237,13 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo cloudprotocol.NodeInfo) 
 		}
 
 		for _, connection := range umCtrl.connections {
-			if connection.umID == nodeInfo.NodeID {
+			if connection.nodeID == nodeInfo.NodeID {
 				return
 			}
 		}
 
 		umCtrl.connections = append(umCtrl.connections, umConnection{
-			umID:          nodeInfo.NodeID,
+			nodeID:        nodeInfo.NodeID,
 			isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: lowestUpdatePriority, handler: nil,
 		})
 	}
@@ -1256,7 +1257,7 @@ func (status systemComponentStatus) String() string {
 	return fmt.Sprintf("{id: %s, status: %s, version: %s }", status.componentID, status.status, status.version)
 }
 
-func (umCtrl *Controller) notifyNewComponents(umID string, componsStatus []systemComponentStatus) {
+func (umCtrl *Controller) notifyNewComponents(nodeID string, componsStatus []systemComponentStatus) {
 	newComponents := make([]cloudprotocol.ComponentStatus, 0, len(componsStatus))
 
 	for _, status := range componsStatus {
@@ -1264,7 +1265,7 @@ func (umCtrl *Controller) notifyNewComponents(umID string, componsStatus []syste
 			ComponentID:   status.componentID,
 			ComponentType: status.componentType,
 			Version:       status.version,
-			NodeID:        &umID,
+			NodeID:        &nodeID,
 			Status:        status.status,
 		}
 
