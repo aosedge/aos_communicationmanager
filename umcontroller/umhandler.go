@@ -36,7 +36,7 @@ import (
 type closeReason int
 
 type umHandler struct {
-	umID                string
+	nodeID              string
 	stream              pb.UMService_RegisterUMServer
 	messageChannel      chan umCtrlInternalMsg
 	closeChannel        chan closeReason
@@ -87,7 +87,7 @@ const (
 func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 	messageChannel chan umCtrlInternalMsg, state pb.UpdateState,
 ) (handler *umHandler, closeChannel chan closeReason, err error) {
-	handler = &umHandler{umID: id, stream: umStream, messageChannel: messageChannel}
+	handler = &umHandler{nodeID: id, stream: umStream, messageChannel: messageChannel}
 	handler.closeChannel = make(chan closeReason)
 	handler.initialUpdateStatus = state.String()
 
@@ -137,7 +137,7 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 			beforePrefix + eventUpdateError:    handler.updateStatusNtf,
 
 			beforePrefix + "event": func(ctx context.Context, e *fsm.Event) {
-				log.Debugf("[UMID %s]: %s -> %s : Event: %s", handler.umID, e.Src, e.Dst, e.Event)
+				log.Debugf("[nodeID %s]: %s -> %s : Event: %s", handler.nodeID, e.Src, e.Dst, e.Event)
 			},
 		},
 	)
@@ -149,7 +149,7 @@ func newUmHandler(id string, umStream pb.UMService_RegisterUMServer,
 
 // Close close connection.
 func (handler *umHandler) Close(reason closeReason) {
-	log.Debug("Close umhandler with UMID = ", handler.umID)
+	log.Debug("Close umhandler with nodeID = ", handler.nodeID)
 	handler.closeChannel <- reason
 }
 
@@ -159,7 +159,7 @@ func (handler *umHandler) GetInitialState() (state string) {
 
 // Close close connection.
 func (handler *umHandler) PrepareUpdate(prepareComponents []ComponentStatus) (err error) {
-	log.Debug("PrepareUpdate for UMID ", handler.umID)
+	log.Debug("PrepareUpdate for nodeID ", handler.nodeID)
 
 	request := prepareRequest{components: prepareComponents}
 
@@ -169,17 +169,17 @@ func (handler *umHandler) PrepareUpdate(prepareComponents []ComponentStatus) (er
 }
 
 func (handler *umHandler) StartUpdate() (err error) {
-	log.Debug("StartUpdate for UMID ", handler.umID)
+	log.Debug("StartUpdate for nodeID ", handler.nodeID)
 	return aoserrors.Wrap(handler.FSM.Event(context.Background(), eventStartUpdate))
 }
 
 func (handler *umHandler) StartApply() (err error) {
-	log.Debug("StartApply for UMID ", handler.umID)
+	log.Debug("StartApply for nodeID ", handler.nodeID)
 	return aoserrors.Wrap(handler.FSM.Event(context.Background(), eventStartApply))
 }
 
 func (handler *umHandler) StartRevert() (err error) {
-	log.Debug("StartRevert for UMID ", handler.umID)
+	log.Debug("StartRevert for nodeID ", handler.nodeID)
 	return aoserrors.Wrap(handler.FSM.Event(context.Background(), eventStartRevert))
 }
 
@@ -193,12 +193,12 @@ func (handler *umHandler) receiveData() {
 	for {
 		statusMsg, err := handler.stream.Recv()
 		if errors.Is(err, io.EOF) {
-			log.Debug("End of connection ", handler.umID)
+			log.Debug("End of connection ", handler.nodeID)
 			return
 		}
 
 		if err != nil {
-			log.Debugf("End of connection %s with error: %s", handler.umID, err)
+			log.Debugf("End of connection %s with error: %s", handler.nodeID, err)
 			return
 		}
 
@@ -220,7 +220,7 @@ func (handler *umHandler) receiveData() {
 
 		err = handler.FSM.Event(context.Background(), evt, getUmStatusFromUmMessage(statusMsg))
 		if err != nil {
-			log.Errorf("Can't make transition umID %s %s", handler.umID, err.Error())
+			log.Errorf("Can't make transition nodeID %s %s", handler.nodeID, err.Error())
 		}
 
 		continue
@@ -228,7 +228,7 @@ func (handler *umHandler) receiveData() {
 }
 
 func (handler *umHandler) sendPrepareUpdateRequest(ctx context.Context, e *fsm.Event) {
-	log.Debug("Send prepare request for UMID = ", handler.umID)
+	log.Debug("Send prepare request for nodeID = ", handler.nodeID)
 
 	request, ok := e.Args[0].(prepareRequest)
 	if !ok {
@@ -274,14 +274,14 @@ func (handler *umHandler) updateStatusNtf(ctx context.Context, e *fsm.Event) {
 	}
 
 	handler.messageChannel <- umCtrlInternalMsg{
-		umID:        handler.umID,
+		nodeID:      handler.nodeID,
 		requestType: umStatusUpdate,
 		status:      status,
 	}
 }
 
 func (handler *umHandler) sendStartUpdateToUM(ctx context.Context, e *fsm.Event) {
-	log.Debug("Send start update UMID = ", handler.umID)
+	log.Debug("Send start update nodeID = ", handler.nodeID)
 
 	cmMsg := &pb.CMMessages_StartUpdate{StartUpdate: &pb.StartUpdate{}}
 
@@ -298,7 +298,7 @@ func (handler *umHandler) sendStartUpdateToUM(ctx context.Context, e *fsm.Event)
 }
 
 func (handler *umHandler) sendApplyUpdateToUM(ctx context.Context, e *fsm.Event) {
-	log.Debug("Send apply UMID = ", handler.umID)
+	log.Debug("Send apply nodeID = ", handler.nodeID)
 
 	cmMsg := &pb.CMMessages_ApplyUpdate{ApplyUpdate: &pb.ApplyUpdate{}}
 
@@ -315,7 +315,7 @@ func (handler *umHandler) sendApplyUpdateToUM(ctx context.Context, e *fsm.Event)
 }
 
 func (handler *umHandler) sendRevertUpdateToUM(ctx context.Context, e *fsm.Event) {
-	log.Debug("Send revert UMID = ", handler.umID)
+	log.Debug("Send revert nodeID = ", handler.nodeID)
 
 	cmMsg := &pb.CMMessages_RevertUpdate{RevertUpdate: &pb.RevertUpdate{}}
 

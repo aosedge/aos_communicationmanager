@@ -95,7 +95,7 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 	}
 
 	openConnectionMsg := umCtrlInternalMsg{
-		umID:        statusMsg.GetNodeId(),
+		nodeID:      statusMsg.GetNodeId(),
 		handler:     handler,
 		requestType: openConnection,
 		status:      getUmStatusFromUmMessage(statusMsg),
@@ -107,7 +107,7 @@ func (server *umCtrlServer) RegisterUM(stream pb.UMService_RegisterUMServer) (er
 	reason := <-ch
 
 	closeConnectionMsg := umCtrlInternalMsg{
-		umID:        statusMsg.GetNodeId(),
+		nodeID:      statusMsg.GetNodeId(),
 		requestType: closeConnection,
 		close:       reason,
 	}
