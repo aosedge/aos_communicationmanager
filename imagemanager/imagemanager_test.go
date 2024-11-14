@@ -281,7 +281,7 @@ func TestRevertService(t *testing.T) {
 	}
 
 	serviceAllocator = &testAllocator{
-		totalSize: 4 * megabyte,
+		totalSize: 5 * megabyte,
 	}
 
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
@@ -298,10 +298,11 @@ func TestRevertService(t *testing.T) {
 		version       string
 		size          uint64
 		serviceConfig aostypes.ServiceConfig
+		cacheService  bool
 	}{
 		{
 			serviceID: "service1",
-			version:   "1.0",
+			version:   "1.0.0",
 			size:      1 * megabyte,
 			serviceConfig: aostypes.ServiceConfig{
 				Hostname: allocateString("service1"),
@@ -311,10 +312,25 @@ func TestRevertService(t *testing.T) {
 				},
 				Resources: []string{"resource1", "resource2"},
 			},
+			cacheService: true,
 		},
 		{
 			serviceID: "service1",
-			version:   "2.0",
+			version:   "1.0.1",
+			size:      1 * megabyte,
+			serviceConfig: aostypes.ServiceConfig{
+				Hostname: allocateString("service1"),
+				Quotas: aostypes.ServiceQuotas{
+					UploadSpeed:   allocateUint64(1000),
+					DownloadSpeed: allocateUint64(2000),
+				},
+				Resources: []string{"resource1", "resource2"},
+			},
+			cacheService: true,
+		},
+		{
+			serviceID: "service1",
+			version:   "2.0.0",
 			size:      1 * megabyte,
 			serviceConfig: aostypes.ServiceConfig{
 				Hostname: allocateString("service1"),
@@ -324,6 +340,21 @@ func TestRevertService(t *testing.T) {
 				},
 				Resources: []string{"resource1"},
 			},
+			cacheService: false,
+		},
+		{
+			serviceID: "service1",
+			version:   "3.0.0",
+			size:      1 * megabyte,
+			serviceConfig: aostypes.ServiceConfig{
+				Hostname: allocateString("service1"),
+				Quotas: aostypes.ServiceQuotas{
+					UploadSpeed:   allocateUint64(500),
+					DownloadSpeed: allocateUint64(1000),
+				},
+				Resources: []string{"resource1"},
+			},
+			cacheService: true,
 		},
 	}
 
@@ -346,6 +377,12 @@ func TestRevertService(t *testing.T) {
 		if err := imagemanagerInstance.InstallService(serviceInfo, nil, nil); err != nil {
 			t.Errorf("Can't install service: %v", err)
 		}
+
+		if tCase.cacheService {
+			if err := storage.SetServiceCached(tCase.serviceID, true); err != nil {
+				t.Errorf("Can't set service cached: %v", err)
+			}
+		}
 	}
 
 	casesRevert := []struct {
@@ -355,7 +392,12 @@ func TestRevertService(t *testing.T) {
 	}{
 		{
 			revertServiceID: "service1",
-			expectedVersion: "1.0",
+			expectedVersion: "1.0.1",
+			err:             nil,
+		},
+		{
+			revertServiceID: "service1",
+			expectedVersion: "1.0.0",
 			err:             nil,
 		},
 		{

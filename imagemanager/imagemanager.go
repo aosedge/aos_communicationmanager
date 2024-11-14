@@ -348,7 +348,10 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 	var gid int
 
 	if isServiceExist {
-		if err = imagemanager.removeObsoleteServiceVersions(serviceFromStorage); err != nil {
+		if err = imagemanager.removeObsoleteServiceVersions(ServiceInfo{ServiceInfo: aostypes.ServiceInfo{
+			ServiceID: serviceInfo.ServiceID,
+			Version:   serviceInfo.Version,
+		}}); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
@@ -672,7 +675,11 @@ func (imagemanager *Imagemanager) checkServiceVersion(curService ServiceInfo, ne
 			return ErrVersionMismatch
 		}
 
-		log.WithField("serviceID", curService.ServiceID).Warn("Service is cached, allow version downgrade")
+		log.WithFields(log.Fields{
+			"serviceID":      curService.ServiceID,
+			"currentVersion": curService.Version,
+			"newVersion":     newVersion,
+		}).Warn("Service is cached, allow version downgrade")
 	}
 
 	return nil
@@ -759,7 +766,12 @@ func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceI
 	}
 
 	for _, storageService := range services {
-		if service.Version != storageService.Version {
+		if service.Version != storageService.Version && !storageService.Cached {
+			log.WithFields(log.Fields{
+				"serviceID": storageService.ServiceID,
+				"version":   storageService.Version,
+			}).Debug("Remove obsolete service version")
+
 			if removeErr := imagemanager.removeService(storageService); removeErr != nil {
 				log.WithFields(log.Fields{
 					"serviceID": storageService.ServiceID,
@@ -884,6 +896,13 @@ func (imagemanager *Imagemanager) clearLayerResource(layer LayerInfo) error {
 }
 
 func (imagemanager *Imagemanager) removeService(service ServiceInfo) error {
+	log.WithFields(log.Fields{
+		"serviceID": service.ServiceID,
+		"version":   service.Version,
+		"imagePath": service.Path,
+		"cached":    service.Cached,
+	}).Debug("Remove service")
+
 	if err := imagemanager.clearServiceResource(service); err != nil {
 		return err
 	}
