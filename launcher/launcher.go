@@ -322,7 +322,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 
 	currentStatus := launcher.getNode(runStatus.NodeID)
 	if currentStatus == nil {
-		log.Errorf("Received status for unknown nodeID  %s", runStatus.NodeID)
+		log.Warningf("Received status for unknown nodeID  %s", runStatus.NodeID)
 
 		return
 	}
