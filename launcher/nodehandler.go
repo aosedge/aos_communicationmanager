@@ -501,7 +501,13 @@ func getNodesByCPU(
 	resultNodes := make([]*nodeHandler, 0)
 
 	for _, node := range nodes {
-		if node.availableCPU >= node.getRequestedCPU(instanceIdent, serviceConfig) {
+		requestedCPU := node.getRequestedCPU(instanceIdent, serviceConfig)
+
+		log.WithFields(instanceIdentLogFields(instanceIdent, log.Fields{
+			"CPU": requestedCPU, "nodeID": node.nodeInfo.NodeID,
+		})).Debug("Instance CPU request")
+
+		if node.availableCPU >= requestedCPU {
 			resultNodes = append(resultNodes, node)
 		}
 	}
@@ -515,6 +521,12 @@ func getNodesByRAM(
 	resultNodes := make([]*nodeHandler, 0)
 
 	for _, node := range nodes {
+		requestedRAM := node.getRequestedRAM(instanceIdent, serviceConfig)
+
+		log.WithFields(instanceIdentLogFields(instanceIdent, log.Fields{
+			"RAM": requestedRAM, "nodeID": node.nodeInfo.NodeID,
+		})).Debug("Instance RAM request")
+
 		if node.availableRAM >= node.getRequestedRAM(instanceIdent, serviceConfig) {
 			resultNodes = append(resultNodes, node)
 		}
