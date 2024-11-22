@@ -322,7 +322,7 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 
 	currentStatus := launcher.getNode(runStatus.NodeID)
 	if currentStatus == nil {
-		log.Errorf("Received status for unknown nodeID  %s", runStatus.NodeID)
+		log.WithField("nodeID", runStatus.NodeID).Errorf("Received status for unknown nodeID")
 
 		return
 	}
@@ -478,7 +478,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			"subjectID":    instance.SubjectID,
 			"numInstances": instance.NumInstances,
 			"priority":     instance.Priority,
-		}).Debug("Balance instances")
+		}).Debug("Balance service instances")
 
 		service, layers, err := launcher.getServiceLayers(instance)
 		if err != nil {
@@ -494,6 +494,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 
 		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
 			instanceIdent := createInstanceIdent(instance, instanceIndex)
+			log.WithFields(instanceIdentLogFields(instanceIdent, nil)).Debug("Balance instance")
 
 			if launcher.instanceManager.isInstanceScheduled(instanceIdent) {
 				continue

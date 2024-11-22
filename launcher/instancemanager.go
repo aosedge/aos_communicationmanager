@@ -159,6 +159,10 @@ func (im *instanceManager) getCurrentInstance(instanceIdent aostypes.InstanceIde
 }
 
 func (im *instanceManager) resetStorageStateUsage(storageSize, stateSize uint64) {
+	log.WithFields(log.Fields{
+		"availableState": im.availableState, "availableStorage": im.availableStorage,
+	}).Debug("Available storage and state")
+
 	im.availableStorage, im.availableState = storageSize, stateSize
 }
 
@@ -222,6 +226,12 @@ func (im *instanceManager) setupInstance(
 
 	instanceInfo.UID = uint32(storedInstance.UID)
 	requestedState, requestedStorage := getReqDiskSize(service.Config, node.nodeConfig.ResourceRatios)
+
+	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent,
+		log.Fields{
+			"requestedStorage": requestedStorage,
+			"requestedState":   requestedState,
+		})).Debug("Requested storage and state")
 
 	if err = im.setupInstanceStateStorage(&instanceInfo, service, requestedState, requestedStorage); err != nil {
 		return aostypes.InstanceInfo{}, err
@@ -315,6 +325,10 @@ func (im *instanceManager) setupInstanceStateStorage(
 
 	im.availableStorage -= requestedStorage
 	im.availableState -= requestedState
+
+	log.WithFields(log.Fields{
+		"remainingState": im.availableState, "remainingStorage": im.availableStorage,
+	}).Debug("Remaining storage and state")
 
 	return nil
 }
