@@ -230,23 +230,24 @@ func (node *nodeHandler) addRunRequest(instanceInfo aostypes.InstanceInfo, servi
 		return err
 	}
 
-	node.runRequest.Instances = append(node.runRequest.Instances, instanceInfo)
-
-	node.addService(service)
-	node.addLayers(layers)
-
 	requestedCPU := node.getRequestedCPU(instanceInfo.InstanceIdent, service.Config)
-	if requestedCPU > node.availableCPU {
+	if requestedCPU > node.availableCPU && !service.Config.SkipResourceLimits {
 		return aoserrors.Errorf("not enough CPU")
 	}
 
 	requestedRAM := node.getRequestedRAM(instanceInfo.InstanceIdent, service.Config)
-	if requestedRAM > node.availableRAM {
-		return aoserrors.Errorf("not enough CPU")
+	if requestedRAM > node.availableRAM && !service.Config.SkipResourceLimits {
+		return aoserrors.Errorf("not enough RAM")
 	}
 
-	node.availableCPU -= requestedCPU
-	node.availableRAM -= requestedRAM
+	if !service.Config.SkipResourceLimits {
+		node.availableCPU -= requestedCPU
+		node.availableRAM -= requestedRAM
+	}
+
+	node.runRequest.Instances = append(node.runRequest.Instances, instanceInfo)
+	node.addService(service)
+	node.addLayers(layers)
 
 	log.WithFields(log.Fields{
 		"nodeID": node.nodeInfo.NodeID, "RAM": node.availableRAM, "CPU": node.availableCPU,
@@ -509,7 +510,7 @@ func getNodesByCPU(
 			"CPU": requestedCPU, "nodeID": node.nodeInfo.NodeID,
 		})).Debug("Instance CPU request")
 
-		if node.availableCPU >= requestedCPU {
+		if node.availableCPU >= requestedCPU || serviceConfig.SkipResourceLimits {
 			resultNodes = append(resultNodes, node)
 		}
 	}
@@ -529,7 +530,7 @@ func getNodesByRAM(
 			"RAM": requestedRAM, "nodeID": node.nodeInfo.NodeID,
 		})).Debug("Instance RAM request")
 
-		if node.availableRAM >= node.getRequestedRAM(instanceIdent, serviceConfig) {
+		if node.availableRAM >= node.getRequestedRAM(instanceIdent, serviceConfig) || serviceConfig.SkipResourceLimits {
 			resultNodes = append(resultNodes, node)
 		}
 	}

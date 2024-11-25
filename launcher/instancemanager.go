@@ -308,11 +308,11 @@ func (im *instanceManager) setupInstanceStateStorage(
 		stateStorageParams.StorageQuota = *serviceInfo.Config.Quotas.StorageLimit
 	}
 
-	if requestedStorage > im.availableStorage {
+	if requestedStorage > im.availableStorage && !serviceInfo.Config.SkipResourceLimits {
 		return aoserrors.Errorf("not enough storage space")
 	}
 
-	if requestedState > im.availableState {
+	if requestedState > im.availableState && !serviceInfo.Config.SkipResourceLimits {
 		return aoserrors.Errorf("not enough state space")
 	}
 
@@ -323,8 +323,10 @@ func (im *instanceManager) setupInstanceStateStorage(
 		return aoserrors.Wrap(err)
 	}
 
-	im.availableStorage -= requestedStorage
-	im.availableState -= requestedState
+	if !serviceInfo.Config.SkipResourceLimits {
+		im.availableStorage -= requestedStorage
+		im.availableState -= requestedState
+	}
 
 	log.WithFields(log.Fields{
 		"remainingState": im.availableState, "remainingStorage": im.availableStorage,
