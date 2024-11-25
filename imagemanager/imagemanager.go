@@ -125,8 +125,8 @@ type LayerInfo struct {
  **********************************************************************************************************************/
 
 var (
-	// ErrNotExist not exist service error.
-	ErrNotExist = errors.New("service not exist")
+	// ErrNotExist not exist item error.
+	ErrNotExist = errors.New("item not exist")
 
 	// ErrVersionMismatch new service version <= existing one.
 	ErrVersionMismatch = errors.New("version mismatch")
@@ -288,7 +288,7 @@ func (imagemanager *Imagemanager) GetRemoveServiceChannel() (channel <-chan stri
 func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.ServiceInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
-	log.WithFields(log.Fields{"id": serviceInfo.ServiceID}).Debug("Install service")
+	log.WithFields(log.Fields{"id": serviceInfo.ServiceID, "version": serviceInfo.Version}).Debug("Install service")
 
 	serviceFromStorage, err := imagemanager.storage.GetServiceInfo(serviceInfo.ServiceID)
 	if err != nil && !errors.Is(err, ErrNotExist) {
@@ -471,15 +471,41 @@ func (imagemanager *Imagemanager) RemoveService(serviceID string) error {
 func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
-	log.WithFields(log.Fields{"id": layerInfo.LayerID, "digest": layerInfo.Digest}).Debug("Install layer")
-
 	if layerFromStorage, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest); err == nil {
-		if err = imagemanager.checkLayerVersion(layerFromStorage, layerInfo.Version); err != nil {
-			return err
+		if layerInfo.Version == layerFromStorage.Version && layerFromStorage.LayerID == layerInfo.LayerID {
+			if layerFromStorage.Cached {
+				log.WithFields(log.Fields{
+					"id":      layerFromStorage.LayerID,
+					"digest":  layerFromStorage.Digest,
+					"version": layerFromStorage.Version,
+				}).Warn("Restore cached layer")
+
+				if err := imagemanager.setLayerCached(layerFromStorage, false); err != nil {
+					return aoserrors.Wrap(err)
+				}
+			} else {
+				log.WithFields(log.Fields{
+					"id":      layerFromStorage.LayerID,
+					"digest":  layerFromStorage.Digest,
+					"version": layerFromStorage.Version,
+				}).Warn("Layer already installed")
+			}
+
+			return nil
 		}
 
-		return nil
+		log.WithFields(log.Fields{
+			"id": layerFromStorage.LayerID, "digest": layerFromStorage.Digest, "version": layerFromStorage.Version,
+		}).Warn("Remove same digest layer")
+
+		if err = imagemanager.removeLayer(layerFromStorage); err != nil {
+			return err
+		}
 	}
+
+	log.WithFields(log.Fields{
+		"id": layerInfo.LayerID, "digest": layerInfo.Digest, "version": layerInfo.Version,
+	}).Debug("Install layer")
 
 	id := base64.URLEncoding.EncodeToString(layerInfo.Sha256)
 
@@ -495,9 +521,7 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 			releaseAllocatedSpace(decryptedFile, space)
 
 			log.WithFields(log.Fields{
-				"id":        layerInfo.LayerID,
-				"version":   layerInfo.Version,
-				"imagePath": decryptedFile,
+				"id": layerInfo.LayerID, "version": layerInfo.Version, "imagePath": decryptedFile,
 			}).Errorf("Can't install layer: %v", err)
 
 			return
@@ -678,42 +702,6 @@ func (imagemanager *Imagemanager) checkServiceVersion(curService ServiceInfo, ne
 	return nil
 }
 
-func (imagemanager *Imagemanager) checkLayerVersion(curLayer LayerInfo, newVersion string) error {
-	newSemver, err := semver.NewSemver(newVersion)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	curSemver, err := semver.NewSemver(curLayer.Version)
-	if err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if curSemver.Equal(newSemver) {
-		if curLayer.Cached {
-			log.WithField("layerID", curLayer.LayerID).Debug("Restore cached layer")
-
-			if err := imagemanager.storage.SetLayerCached(curLayer.Digest, false); err != nil {
-				return aoserrors.Wrap(err)
-			}
-		} else {
-			log.WithField("layerID", curLayer.LayerID).Warn("Layer already installed")
-		}
-	}
-
-	if newSemver.LessThan(curSemver) {
-		// Workaround for the case when the service is cached and the version is downgraded.
-		// Should be refactored once CM is capable to check if unit is in validation set.
-		if !curLayer.Cached {
-			return ErrVersionMismatch
-		}
-
-		log.WithField("layerID", curLayer.LayerID).Warn("Layer is cached, allow version downgrade")
-	}
-
-	return nil
-}
-
 func (imagemanager *Imagemanager) setServiceCached(service ServiceInfo, cached bool) error {
 	if err := imagemanager.storage.SetServiceCached(service.ServiceID, cached); err != nil {
 		return aoserrors.Wrap(err)
@@ -875,10 +863,10 @@ func (imagemanager *Imagemanager) clearLayerResource(layer LayerInfo) error {
 	}
 
 	if layer.Cached {
-		imagemanager.serviceAllocator.RestoreOutdatedItem(layer.Digest)
+		imagemanager.layerAllocator.RestoreOutdatedItem(layer.Digest)
 	}
 
-	imagemanager.serviceAllocator.FreeSpace(layer.Size)
+	imagemanager.layerAllocator.FreeSpace(layer.Size)
 
 	return nil
 }

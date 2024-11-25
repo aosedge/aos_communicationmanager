@@ -26,7 +26,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -659,42 +658,50 @@ func TestRestoreLayer(t *testing.T) {
 	defer imagemanagerInstance.Close()
 
 	cases := []struct {
+		id                 string
+		version            string
 		digest             string
-		removedDigest      string
+		removeDigest       string
 		size               uint64
 		expectedCountLayer int
 		installErr         error
 	}{
 		{
+			id:                 "layer1",
+			version:            "1.0.0",
 			digest:             "digest1",
 			size:               1 * megabyte,
 			expectedCountLayer: 1,
 			installErr:         nil,
 		},
 		{
+			id:                 "layer2",
+			version:            "1.0.0",
 			digest:             "digest2",
 			size:               1 * megabyte,
 			expectedCountLayer: 1,
 			installErr:         nil,
 		},
 		{
+			id:                 "layer3",
+			version:            "1.0.0",
 			digest:             "digest3",
 			size:               1 * megabyte,
-			removedDigest:      "digest1",
+			removeDigest:       "digest1",
 			expectedCountLayer: 1,
 			installErr:         spaceallocator.ErrNoSpace,
 		},
 	}
 
-	for index, tCase := range cases {
-		fileName := path.Join(tmpDir, fmt.Sprintf("layer_%d", index))
+	for _, tCase := range cases {
+		fileName := path.Join(tmpDir, tCase.id)
 
 		if err = generateFile(fileName, tCase.size); err != nil {
 			t.Errorf("Can't generate file: %v", err)
 		}
 		defer os.RemoveAll(fileName)
 
-		layerInfo, err := prepareLayerInfo(fileName, tCase.digest, index)
+		layerInfo, err := prepareLayerInfo(fileName, tCase.id, tCase.version, tCase.digest)
 		if err != nil {
 			t.Errorf("Can't prepare layer info data: %v", err)
 		}
@@ -704,11 +711,11 @@ func TestRestoreLayer(t *testing.T) {
 		}
 
 		if tCase.installErr != nil {
-			if err := imagemanagerInstance.RemoveLayer(tCase.removedDigest); err != nil {
+			if err := imagemanagerInstance.RemoveLayer(tCase.removeDigest); err != nil {
 				t.Errorf("Can't remove layer: %v", err)
 			}
 
-			layer, err := imagemanagerInstance.GetLayerInfo(tCase.removedDigest)
+			layer, err := imagemanagerInstance.GetLayerInfo(tCase.removeDigest)
 			if err != nil {
 				t.Errorf("Can't get layer info: %v", err)
 			}
@@ -717,11 +724,11 @@ func TestRestoreLayer(t *testing.T) {
 				t.Error("Layer should be cached")
 			}
 
-			if err := imagemanagerInstance.RestoreLayer(tCase.removedDigest); err != nil {
+			if err := imagemanagerInstance.RestoreLayer(tCase.removeDigest); err != nil {
 				t.Errorf("Can't restore layer: %v", err)
 			}
 
-			if layer, err = imagemanagerInstance.GetLayerInfo(tCase.removedDigest); err != nil {
+			if layer, err = imagemanagerInstance.GetLayerInfo(tCase.removeDigest); err != nil {
 				t.Errorf("Can't get layer info: %v", err)
 			}
 
@@ -729,7 +736,7 @@ func TestRestoreLayer(t *testing.T) {
 				t.Error("Layer should not be cached")
 			}
 
-			if err := imagemanagerInstance.RemoveLayer(tCase.removedDigest); err != nil {
+			if err := imagemanagerInstance.RemoveLayer(tCase.removeDigest); err != nil {
 				t.Errorf("Can't remove layer: %v", err)
 			}
 
@@ -737,7 +744,7 @@ func TestRestoreLayer(t *testing.T) {
 				t.Errorf("Can't install layer: %v", err)
 			}
 
-			if err := imagemanagerInstance.RestoreLayer(tCase.removedDigest); err == nil {
+			if err := imagemanagerInstance.RestoreLayer(tCase.removeDigest); err == nil {
 				t.Error("Expected error layer not found")
 			}
 		}
@@ -763,6 +770,8 @@ func TestRemoveLayer(t *testing.T) {
 	defer imagemanagerInstance.Close()
 
 	cases := []struct {
+		id                 string
+		version            string
 		digest             string
 		removeDigest       string
 		size               uint64
@@ -770,12 +779,16 @@ func TestRemoveLayer(t *testing.T) {
 		installErr         error
 	}{
 		{
+			id:                 "layer1",
+			version:            "1.0.0",
 			digest:             "digest1",
 			size:               1 * megabyte,
 			expectedCountLayer: 1,
 			installErr:         nil,
 		},
 		{
+			id:                 "layer2",
+			version:            "1.0.0",
 			digest:             "digest2",
 			removeDigest:       "digest1",
 			size:               2 * megabyte,
@@ -784,15 +797,15 @@ func TestRemoveLayer(t *testing.T) {
 		},
 	}
 
-	for index, tCase := range cases {
-		fileName := path.Join(tmpDir, fmt.Sprintf("layer_%d", index))
+	for _, tCase := range cases {
+		fileName := path.Join(tmpDir, tCase.id)
 
 		if err = generateFile(fileName, tCase.size); err != nil {
 			t.Errorf("Can't generate file: %v", err)
 		}
 		defer os.RemoveAll(fileName)
 
-		layerInfo, err := prepareLayerInfo(fileName, tCase.digest, index)
+		layerInfo, err := prepareLayerInfo(fileName, tCase.id, tCase.version, tCase.digest)
 		if err != nil {
 			t.Errorf("Can't prepare layer info data: %v", err)
 		}
@@ -864,30 +877,64 @@ func TestInstallLayer(t *testing.T) {
 	defer imagemanagerInstance.Close()
 
 	cases := []struct {
+		id                 string
+		version            string
 		digest             string
+		removeDigest       string
 		size               uint64
 		expectedCountLayer int
 		installErr         error
 	}{
+		// install first layer
 		{
+			id:                 "layer1",
+			version:            "1.0.0",
 			digest:             "digest1",
 			size:               1 * megabyte,
 			expectedCountLayer: 1,
 			installErr:         nil,
 		},
+		// install second layer
 		{
+			id:                 "layer2",
+			version:            "1.0.0",
 			digest:             "digest2",
 			size:               1 * megabyte,
 			expectedCountLayer: 2,
 			installErr:         nil,
 		},
+		// install same version
 		{
+			id:                 "layer1",
+			version:            "1.0.0",
 			digest:             "digest1",
 			size:               1 * megabyte,
 			expectedCountLayer: 2,
 			installErr:         nil,
 		},
+		// install other version
 		{
+			id:                 "layer1",
+			version:            "2.0.0",
+			digest:             "digest1",
+			size:               1 * megabyte,
+			expectedCountLayer: 2,
+			installErr:         nil,
+		},
+		// restore cached layer
+		{
+			id:                 "layer1",
+			version:            "2.0.0",
+			digest:             "digest1",
+			removeDigest:       "digest1",
+			size:               1 * megabyte,
+			expectedCountLayer: 2,
+			installErr:         nil,
+		},
+		// install layer with no enough space
+		{
+			id:                 "layer3",
+			version:            "1.0.0",
 			digest:             "digest3",
 			size:               2 * megabyte,
 			expectedCountLayer: 2,
@@ -901,30 +948,39 @@ func TestInstallLayer(t *testing.T) {
 		}
 	}()
 
-	for index, tCase := range cases {
-		fileName := path.Join(tmpDir, fmt.Sprintf("layer_%d", index))
+	for i, tCase := range cases {
+		t.Logf("Test case: %d", i)
+
+		fileName := path.Join(tmpDir, tCase.id)
 
 		if err = generateFile(fileName, tCase.size); err != nil {
 			t.Errorf("Can't generate file: %v", err)
 		}
 		defer os.RemoveAll(fileName)
 
-		layerInfo, err := prepareLayerInfo(fileName, tCase.digest, index)
+		layerInfo, err := prepareLayerInfo(fileName, tCase.id, tCase.version, tCase.digest)
 		if err != nil {
 			t.Errorf("Can't prepare layer info data: %v", err)
 		}
 
+		if tCase.removeDigest != "" {
+			if err := imagemanagerInstance.RemoveLayer(tCase.removeDigest); err != nil {
+				t.Fatalf("Can't remove layer: %v", err)
+			}
+		}
+
 		if err = imagemanagerInstance.InstallLayer(layerInfo, nil, nil); !errors.Is(err, tCase.installErr) {
-			t.Errorf("Can't install layer: %v", err)
+			t.Fatalf("Can't install layer: %v", err)
 		}
 
 		if tCase.installErr == nil {
 			layer, err := imagemanagerInstance.GetLayerInfo(tCase.digest)
 			if err != nil {
-				t.Errorf("Can't install layer: %v", err)
+				t.Errorf("Can't get layer info layer: %v", err)
 			}
 
-			if layer.Digest != tCase.digest || layer.Size != tCase.size {
+			if layer.LayerID != tCase.id || layer.Version != tCase.version || layer.Digest != tCase.digest ||
+				layer.Size != tCase.size || layer.Cached {
 				t.Error("Unexpected layer info")
 			}
 		}
@@ -935,7 +991,7 @@ func TestInstallLayer(t *testing.T) {
 		}
 
 		if tCase.expectedCountLayer != len(layers) {
-			t.Error("Unexpected layers count")
+			t.Errorf("Unexpected layers count: %d", len(layers))
 		}
 
 		for _, layer := range layers {
@@ -973,7 +1029,7 @@ func TestFileServer(t *testing.T) {
 		t.Fatalf("Can't create package file: %s", err)
 	}
 
-	layerInfo, err := prepareLayerInfo(fileName, "digest", 1)
+	layerInfo, err := prepareLayerInfo(fileName, "layer1", "1.0.0", "digest")
 	if err != nil {
 		t.Fatalf("Can't prepare layer info data: %v", err)
 	}
@@ -1255,7 +1311,7 @@ func (storage *testStorageProvider) RemoveLayer(digest string) error {
  * Private
  **********************************************************************************************************************/
 
-func prepareLayerInfo(filePath, digest string, index int) (layerInfo cloudprotocol.LayerInfo, err error) {
+func prepareLayerInfo(filePath, id, version, digest string) (layerInfo cloudprotocol.LayerInfo, err error) {
 	imageFileInfo, err := image.CreateFileInfo(context.Background(), filePath)
 	if err != nil {
 		return cloudprotocol.LayerInfo{}, nil
@@ -1275,8 +1331,8 @@ func prepareLayerInfo(filePath, digest string, index int) (layerInfo cloudprotoc
 	}
 
 	installRequest := cloudprotocol.LayerInfo{
-		Version: "v" + strconv.Itoa(index),
-		LayerID: "testLayer" + strconv.Itoa(index),
+		Version: version,
+		LayerID: id,
 		Digest:  digest,
 		DownloadInfo: cloudprotocol.DownloadInfo{
 			URLs:   []string{url.String()},
