@@ -486,6 +486,13 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			continue
 		}
 
+		if service.Config.SkipResourceLimits {
+			log.WithFields(log.Fields{
+				"serviceID": instance.ServiceID,
+				"subjectID": instance.SubjectID,
+			}).Warn("Skip resource limits")
+		}
+
 		nodes, err := getNodesByStaticResources(launcher.getNodesByPriorities(), service.Config, instance)
 		if err != nil {
 			launcher.instanceManager.setAllInstanceError(instance, service.Version, err)
