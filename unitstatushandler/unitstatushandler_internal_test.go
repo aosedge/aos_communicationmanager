@@ -2073,24 +2073,28 @@ func newTestStatusHandler() *testStatusHandler {
 	return &testStatusHandler{}
 }
 
-func (statusHandler *testStatusHandler) updateComponentStatus(status cloudprotocol.ComponentStatus) {
+func (statusHandler *testStatusHandler) updateComponentStatus(status cloudprotocol.ComponentStatus) bool {
 	log.WithFields(log.Fields{
 		"id":      status.ComponentID,
 		"version": status.Version,
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update component status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
+func (statusHandler *testStatusHandler) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool {
 	log.WithFields(log.Fields{
 		"version": status.Version,
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update unit config status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.LayerStatus) {
+func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.LayerStatus) bool {
 	log.WithFields(log.Fields{
 		"id":      status.LayerID,
 		"digest":  status.Digest,
@@ -2098,18 +2102,22 @@ func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.L
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update layer status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateServiceStatus(status cloudprotocol.ServiceStatus) {
+func (statusHandler *testStatusHandler) updateServiceStatus(status cloudprotocol.ServiceStatus) bool {
 	log.WithFields(log.Fields{
 		"id":      status.ServiceID,
 		"version": status.Version,
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update service status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotocol.InstanceStatus) {
+func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotocol.InstanceStatus) bool {
 	log.WithFields(log.Fields{
 		"serviceID":  status.ServiceID,
 		"subjectID":  status.SubjectID,
@@ -2118,6 +2126,8 @@ func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotoco
 		"error":      status.ErrorInfo,
 		"nodeID":     status.NodeID,
 	}).Debug("Update instance status")
+
+	return true
 }
 
 func (statusHandler *testStatusHandler) getNodesStatus() ([]cloudprotocol.NodeStatus, error) {

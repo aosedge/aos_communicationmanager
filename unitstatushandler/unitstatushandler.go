@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -497,7 +498,7 @@ func (instance *Instance) initCurrentStatus() error {
 	return nil
 }
 
-func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
+func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -512,19 +513,30 @@ func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigSta
 	})
 	if index < 0 {
 		instance.unitStatus.UnitConfig = append(instance.unitStatus.UnitConfig, status)
-	} else {
-		instance.unitStatus.UnitConfig[index] = status
+
+		return true
 	}
 
-	instance.statusChanged()
+	if !reflect.DeepEqual(instance.unitStatus.UnitConfig[index], status) {
+		instance.unitStatus.UnitConfig[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
-	instance.setUnitConfigStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool {
+	if instance.setUnitConfigStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatus) {
+func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -542,17 +554,30 @@ func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatu
 	})
 	if index < 0 {
 		instance.unitStatus.Components = append(instance.unitStatus.Components, status)
-	} else {
-		instance.unitStatus.Components[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Components[index], status) {
+		instance.unitStatus.Components[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentStatus) {
-	instance.setComponentStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentStatus) bool {
+	if instance.setComponentStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) {
+func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -569,17 +594,30 @@ func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) {
 	})
 	if index < 0 {
 		instance.unitStatus.Layers = append(instance.unitStatus.Layers, status)
-	} else {
-		instance.unitStatus.Layers[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Layers[index], status) {
+		instance.unitStatus.Layers[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) {
-	instance.setLayerStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) bool {
+	if instance.setLayerStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) {
+func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -595,17 +633,30 @@ func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) {
 	})
 	if index < 0 {
 		instance.unitStatus.Services = append(instance.unitStatus.Services, status)
-	} else {
-		instance.unitStatus.Services[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Services[index], status) {
+		instance.unitStatus.Services[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateServiceStatus(status cloudprotocol.ServiceStatus) {
-	instance.setServiceStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateServiceStatus(status cloudprotocol.ServiceStatus) bool {
+	if instance.setServiceStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus) {
+func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -623,17 +674,30 @@ func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus)
 	})
 	if index < 0 {
 		instance.unitStatus.Instances = append(instance.unitStatus.Instances, status)
-	} else {
-		instance.unitStatus.Instances[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Instances[index], status) {
+		instance.unitStatus.Instances[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateInstanceStatus(status cloudprotocol.InstanceStatus) {
-	instance.setInstanceStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateInstanceStatus(status cloudprotocol.InstanceStatus) bool {
+	if instance.setInstanceStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
+func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -648,14 +712,27 @@ func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 	})
 	if index < 0 {
 		instance.unitStatus.Nodes = append(instance.unitStatus.Nodes, nodeInfo)
-	} else {
-		instance.unitStatus.Nodes[index] = nodeInfo
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Nodes[index], nodeInfo) {
+		instance.unitStatus.Nodes[index] = nodeInfo
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
-	instance.setNodeInfo(nodeInfo)
-	instance.statusChanged()
+func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) bool {
+	if instance.setNodeInfo(nodeInfo) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
 func (instance *Instance) setSubjects(subjects []string) {
@@ -673,19 +750,22 @@ func (instance *Instance) updateSubjects(subjects []string) {
 }
 
 func (instance *Instance) statusChanged() {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
 	if instance.statusTimer != nil {
 		return
 	}
 
 	instance.statusTimer = time.AfterFunc(instance.sendStatusPeriod, func() {
-		instance.statusMutex.Lock()
-		defer instance.statusMutex.Unlock()
-
 		instance.sendCurrentStatus(true)
 	})
 }
 
 func (instance *Instance) sendCurrentStatus(deltaStatus bool) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
 	if instance.statusTimer != nil {
 		instance.statusTimer.Stop()
 		instance.statusTimer = nil
@@ -774,10 +854,10 @@ func (instance *Instance) handleChannels() {
 				return
 			}
 
-			instance.updateNodeInfo(nodeInfo)
-
-			if err := instance.softwareManager.requestRebalancing(); err != nil {
-				log.Errorf("Can't perform rebalancing: %v", err)
+			if instance.updateNodeInfo(nodeInfo) {
+				if err := instance.softwareManager.requestRebalancing(); err != nil {
+					log.Errorf("Can't perform rebalancing: %v", err)
+				}
 			}
 
 		case subjects, ok := <-instance.unitSubjectsChangedChannel:
