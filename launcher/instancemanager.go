@@ -45,13 +45,20 @@ const removePeriod = time.Hour * 24
  * Types
  **********************************************************************************************************************/
 
+// Instance state.
+const (
+	InstanceActive = iota
+	InstanceCached
+)
+
+// InstanceInfo instance info.
 type InstanceInfo struct {
 	aostypes.InstanceIdent
 	NodeID     string
 	PrevNodeID string
 	UID        int
 	Timestamp  time.Time
-	Cached     bool
+	State      int
 }
 
 // Storage storage interface.
@@ -134,7 +141,7 @@ func (im *instanceManager) initInstances() {
 	im.curInstances = make([]InstanceInfo, 0, len(instances))
 
 	for _, instance := range instances {
-		if instance.Cached {
+		if instance.State == InstanceCached {
 			continue
 		}
 
@@ -211,7 +218,7 @@ func (im *instanceManager) setupInstance(
 
 		storedInstance.NodeID = node.nodeInfo.NodeID
 		storedInstance.Timestamp = time.Now()
-		storedInstance.Cached = false
+		storedInstance.State = InstanceActive
 
 		if err := im.storage.UpdateInstance(storedInstance); err != nil {
 			log.Errorf("Can't update instance: %v", err)
@@ -338,7 +345,7 @@ func (im *instanceManager) setupInstanceStateStorage(
 func (im *instanceManager) cacheInstance(instanceInfo InstanceInfo) error {
 	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Debug("Cache instance")
 
-	instanceInfo.Cached = true
+	instanceInfo.State = InstanceCached
 	instanceInfo.NodeID = ""
 
 	if err := im.storage.UpdateInstance(instanceInfo); err != nil {
@@ -397,7 +404,7 @@ func (im *instanceManager) removeOutdatedInstances() error {
 	}
 
 	for _, instance := range instances {
-		if !instance.Cached ||
+		if instance.State != InstanceCached ||
 			time.Since(instance.Timestamp) < time.Hour*24*time.Duration(im.config.ServiceTTLDays) {
 			continue
 		}
