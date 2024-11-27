@@ -256,19 +256,21 @@ func TestServiceStore(t *testing.T) {
 		service                      imagemanager.ServiceInfo
 		expectedServiceVersionsCount int
 		expectedServiceCount         int
-		serviceErrorAfterRemove      error
+		setState                     int
 	}{
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
 					ServiceID: "service1",
-					Version:   "1.1",
+					Version:   "1.1.0",
 					URL:       "file:///path/service1",
 					Size:      30,
 					GID:       1000,
 				},
 				RemoteURL: "http://path/service1",
-				Path:      "/path/service1", Timestamp: time.Now().UTC(), Cached: false, Config: aostypes.ServiceConfig{
+				Path:      "/path/service1", Timestamp: time.Now().UTC(),
+				State: imagemanager.ServiceActive,
+				Config: aostypes.ServiceConfig{
 					Hostname: allocateString("service1"),
 					Author:   "test",
 					Quotas: aostypes.ServiceQuotas{
@@ -279,19 +281,21 @@ func TestServiceStore(t *testing.T) {
 			},
 			expectedServiceVersionsCount: 1,
 			expectedServiceCount:         1,
-			serviceErrorAfterRemove:      imagemanager.ErrNotExist,
+			setState:                     imagemanager.ServiceCached,
 		},
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
 					ServiceID: "service2",
-					Version:   "1.1",
+					Version:   "1.1.0",
 					URL:       "file:///path/service2",
 					Size:      60,
 					GID:       2000,
 				},
 				RemoteURL: "http://path/service2",
-				Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true, Config: aostypes.ServiceConfig{
+				Path:      "/path/service2", Timestamp: time.Now().UTC(),
+				State: imagemanager.ServiceCached,
+				Config: aostypes.ServiceConfig{
 					Hostname: allocateString("service2"),
 					Author:   "test1",
 					Quotas: aostypes.ServiceQuotas{
@@ -303,13 +307,13 @@ func TestServiceStore(t *testing.T) {
 			},
 			expectedServiceVersionsCount: 1,
 			expectedServiceCount:         2,
-			serviceErrorAfterRemove:      nil,
+			setState:                     imagemanager.ServiceActive,
 		},
 		{
 			service: imagemanager.ServiceInfo{
 				ServiceInfo: aostypes.ServiceInfo{
 					ServiceID: "service2",
-					Version:   "2.1",
+					Version:   "2.1.0",
 					URL:       "file:///path/service2/new",
 					Size:      20,
 					GID:       1000,
@@ -318,8 +322,8 @@ func TestServiceStore(t *testing.T) {
 				Path:      "/path/service2/new", Timestamp: time.Now().UTC(),
 			},
 			expectedServiceVersionsCount: 2,
-			expectedServiceCount:         2,
-			serviceErrorAfterRemove:      imagemanager.ErrNotExist,
+			expectedServiceCount:         3,
+			setState:                     imagemanager.ServicePending,
 		},
 	}
 
@@ -328,7 +332,7 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Can't add service: %v", err)
 		}
 
-		service, err := testDB.GetServiceInfo(tCase.service.ServiceID)
+		service, err := testDB.GetServiceInfo(tCase.service.ServiceID, tCase.service.Version)
 		if err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
@@ -355,16 +359,16 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Incorrect count of services: %v", len(services))
 		}
 
-		if err := testDB.SetServiceCached(tCase.service.ServiceID, !tCase.service.Cached); err != nil {
-			t.Errorf("Can't set service cached: %v", err)
+		if err := testDB.SetServiceState(tCase.service.ServiceID, tCase.setState); err != nil {
+			t.Errorf("Can't set service state: %v", err)
 		}
 
-		if service, err = testDB.GetServiceInfo(tCase.service.ServiceID); err != nil {
+		if service, err = testDB.GetServiceInfo(tCase.service.ServiceID, tCase.service.Version); err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
-		if service.Cached != !tCase.service.Cached {
-			t.Error("Unexpected service cached status")
+		if service.State != tCase.setState {
+			t.Error("Unexpected service state")
 		}
 	}
 
@@ -373,7 +377,8 @@ func TestServiceStore(t *testing.T) {
 			t.Errorf("Can't remove service: %v", err)
 		}
 
-		if _, err := testDB.GetServiceInfo(tCase.service.ServiceID); !errors.Is(err, tCase.serviceErrorAfterRemove) {
+		if _, err := testDB.GetServiceInfo(
+			tCase.service.ServiceID, tCase.service.Version); !errors.Is(err, imagemanager.ErrNotExist) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	}
@@ -385,13 +390,13 @@ func TestGetServiceInfo(t *testing.T) {
 		{
 			ServiceInfo: aostypes.ServiceInfo{
 				ServiceID: serviceID,
-				Version:   "1.1",
+				Version:   "1.1.0",
 				URL:       "file:///path/service2",
 				Size:      60,
 				GID:       2000,
 			},
 			RemoteURL: "http://path/service2",
-			Path:      "/path/service2", Timestamp: time.Now().UTC(), Cached: true,
+			Path:      "/path/service2", Timestamp: time.Now().UTC(), State: imagemanager.ServiceCached,
 			Config: aostypes.ServiceConfig{
 				Hostname: allocateString("service2"),
 				Author:   "test1",
@@ -402,11 +407,10 @@ func TestGetServiceInfo(t *testing.T) {
 				Resources: []string{"resource1", "resource2"},
 			},
 		},
-
 		{
 			ServiceInfo: aostypes.ServiceInfo{
 				ServiceID: serviceID,
-				Version:   "2.1",
+				Version:   "2.1.0",
 				URL:       "file:///path/service2/new",
 				Size:      20,
 				GID:       1000,
@@ -416,30 +420,30 @@ func TestGetServiceInfo(t *testing.T) {
 		},
 	}
 
-	latestService := services[1]
-
 	for _, service := range services {
 		if err := testDB.AddService(service); err != nil {
 			t.Errorf("Can't add service: %v", err)
 		}
 	}
 
-	service, err := testDB.GetServiceInfo(serviceID)
-	if err != nil {
-		t.Errorf("Can't get service info: %v", err)
+	for _, service := range services {
+		serviceInfo, err := testDB.GetServiceInfo(service.ServiceID, service.Version)
+		if err != nil {
+			t.Errorf("Can't get service info: %v", err)
+		}
+
+		if !reflect.DeepEqual(service, serviceInfo) {
+			t.Errorf("Wrong service info: actual %v != expected %v", service, serviceInfo)
+		}
 	}
 
-	if !reflect.DeepEqual(service, latestService) {
-		t.Errorf("Wrong service info: actual %v != expected %v", service, latestService)
-	}
-
-	serviceInfo, err := testDB.GetServicesInfo()
+	servicesInfo, err := testDB.GetServicesInfo()
 	if err != nil {
 		t.Errorf("Can't get services info: %v", err)
 	}
 
-	if len(serviceInfo) != 1 || !reflect.DeepEqual(serviceInfo[0], latestService) {
-		t.Errorf("Wrong service info: actual %v != expected %v", serviceInfo[0], latestService)
+	if len(servicesInfo) != len(services) {
+		t.Errorf("Wrong service info: actual %v != expected %v", servicesInfo, services)
 	}
 }
 
@@ -447,34 +451,37 @@ func TestLayerStore(t *testing.T) {
 	cases := []struct {
 		layer              imagemanager.LayerInfo
 		expectedLayerCount int
+		setLayerState      int
 	}{
 		{
 			layer: imagemanager.LayerInfo{
 				LayerInfo: aostypes.LayerInfo{
-					Version: "1.0",
+					Version: "1.0.0",
 					LayerID: "layer1",
 					Digest:  "digest1",
 					URL:     "file:///path/layer1",
 					Size:    30,
 				},
 				RemoteURL: "http://path/layer1", Path: "/path/layer1",
-				Timestamp: time.Now().UTC(), Cached: false,
+				Timestamp: time.Now().UTC(), State: imagemanager.LayerActive,
 			},
 			expectedLayerCount: 1,
+			setLayerState:      imagemanager.LayerCached,
 		},
 		{
 			layer: imagemanager.LayerInfo{
 				LayerInfo: aostypes.LayerInfo{
-					Version: "1.0",
+					Version: "1.0.0",
 					LayerID: "layer2",
 					Digest:  "digest2",
 					URL:     "file:///path/layer2",
 					Size:    60,
 				},
 				RemoteURL: "http://path/layer2",
-				Path:      "/path/layer2", Timestamp: time.Now().UTC(), Cached: true,
+				Path:      "/path/layer2", Timestamp: time.Now().UTC(), State: imagemanager.LayerCached,
 			},
 			expectedLayerCount: 2,
+			setLayerState:      imagemanager.LayerActive,
 		},
 	}
 
@@ -501,16 +508,16 @@ func TestLayerStore(t *testing.T) {
 			t.Errorf("Incorrect count of layers: %v", len(layers))
 		}
 
-		if err := testDB.SetLayerCached(tCase.layer.Digest, !tCase.layer.Cached); err != nil {
-			t.Errorf("Can't set layer cached: %v", err)
+		if err := testDB.SetLayerState(tCase.layer.Digest, tCase.setLayerState); err != nil {
+			t.Errorf("Can't set layer state: %v", err)
 		}
 
 		if layer, err = testDB.GetLayerInfo(tCase.layer.Digest); err != nil {
 			t.Errorf("Can't get layer: %v", err)
 		}
 
-		if layer.Cached != !tCase.layer.Cached {
-			t.Error("Unexpected layer cached status")
+		if layer.State != tCase.setLayerState {
+			t.Error("Unexpected layer state")
 		}
 	}
 
@@ -519,7 +526,7 @@ func TestLayerStore(t *testing.T) {
 			t.Errorf("Can't remove service: %v", err)
 		}
 
-		if _, err := testDB.GetServiceInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
+		if _, err := testDB.GetLayerInfo(tCase.layer.Digest); !errors.Is(err, imagemanager.ErrNotExist) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	}
@@ -869,7 +876,7 @@ func TestInstance(t *testing.T) {
 			PrevNodeID:    fmt.Sprintf("node%d", i),
 			Timestamp:     time.Now().UTC(),
 			UID:           i,
-			Cached:        i%2 == 0,
+			State:         i % 2,
 		}
 
 		if err := testDB.AddInstance(instanceInfo); err != nil {
@@ -908,7 +915,7 @@ func TestInstance(t *testing.T) {
 		PrevNodeID:    "prevUpdatedNode",
 		Timestamp:     time.Now().UTC(),
 		UID:           5000,
-		Cached:        true,
+		State:         launcher.InstanceCached,
 	}
 
 	if err := testDB.UpdateInstance(updatedInstance); err != nil {
@@ -1088,7 +1095,39 @@ func TestMigration(t *testing.T) {
 		t.Fatalf("Error checking db version: %v", err)
 	}
 
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 2); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer2(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 3); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer3(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+
 	// Migration downward
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 2); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer2(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 1); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer1(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
 
 	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 0); err != nil {
 		t.Fatalf("Can't perform migration: %v", err)
@@ -1222,7 +1261,7 @@ func checkDatabaseVer0(sqlite *sql.DB) error {
 	}
 
 	if exist {
-		return aoserrors.New("table nodes should not exist")
+		return errWrongVersion
 	}
 
 	return nil
@@ -1235,24 +1274,128 @@ func checkDatabaseVer1(sqlite *sql.DB) error {
 	}
 
 	if !exist {
-		return errNotExist
+		return errWrongVersion
+	}
+
+	exist, err = isColumnsExist(sqlite, "instances", []string{"timestamp", "cached"})
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return errWrongVersion
 	}
 
 	return nil
 }
 
-func isTableExist(sqlite *sql.DB, tableName string) (bool, error) {
-	rows, err := sqlite.Query("SELECT * FROM sqlite_master WHERE name = ? and type='table'", tableName)
+func checkDatabaseVer2(sqlite *sql.DB) error {
+	exist, err := isTableExist(sqlite, "nodes")
 	if err != nil {
+		return err
+	}
+
+	if !exist {
+		return errNotExist
+	}
+
+	if exist, err = isColumnsExist(sqlite, "instances", []string{"timestamp", "cached"}); err != nil {
+		return err
+	}
+
+	if !exist {
+		return errWrongVersion
+	}
+
+	if exist, err = isColumnExist(sqlite, "instances", "state"); err != nil {
+		return err
+	}
+
+	if exist {
+		return errWrongVersion
+	}
+
+	if exist, err = isColumnExist(sqlite, "services", "state"); err != nil {
+		return err
+	}
+
+	if exist {
+		return errWrongVersion
+	}
+
+	if exist, err = isColumnExist(sqlite, "layers", "state"); err != nil {
+		return err
+	}
+
+	if exist {
+		return errWrongVersion
+	}
+
+	return nil
+}
+
+func checkDatabaseVer3(sqlite *sql.DB) error {
+	exist, err := isColumnExist(sqlite, "instances", "state")
+	if err != nil {
+		return err
+	}
+
+	if !exist {
+		return errWrongVersion
+	}
+
+	if exist, err = isColumnExist(sqlite, "services", "state"); err != nil {
+		return err
+	}
+
+	if !exist {
+		return errWrongVersion
+	}
+
+	if exist, err = isColumnExist(sqlite, "layers", "state"); err != nil {
+		return err
+	}
+
+	if !exist {
+		return errWrongVersion
+	}
+
+	return nil
+}
+
+func isTableExist(sqlite *sql.DB, tableName string) (exist bool, err error) {
+	if err = sqlite.QueryRow(
+		"SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ? and type='table')",
+		tableName).Scan(&exist); err != nil {
 		return false, aoserrors.Wrap(err)
 	}
-	defer rows.Close()
 
-	if rows.Next() {
-		return true, nil
+	return exist, nil
+}
+
+func isColumnExist(sqlite *sql.DB, tableName, columnName string) (exist bool, err error) {
+	if err = sqlite.QueryRow(
+		"SELECT EXISTS (SELECT 1 FROM pragma_table_info(?) WHERE name = ?)",
+		tableName, columnName).Scan(&exist); err != nil {
+		return false, aoserrors.Wrap(err)
 	}
 
-	return false, aoserrors.Wrap(rows.Err())
+	return exist, nil
+}
+
+func isColumnsExist(sqlite *sql.DB, tableName string, columns []string) (bool, error) {
+	for _, column := range columns {
+		exist, err := isColumnExist(sqlite, tableName, column)
+		if err != nil {
+			return false, err
+		}
+
+		if exist {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func createInstanceIdent(index int) aostypes.InstanceIdent {
