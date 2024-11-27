@@ -1314,6 +1314,12 @@ func TestSoftwareManager(t *testing.T) {
 			continue
 		}
 
+		// Process initial run status
+
+		if softwareManager.processRunStatus(nil) {
+			t.Error("Revert should not be required")
+		}
+
 		// Check init status
 
 		if item.initStatus != nil {
@@ -1351,7 +1357,9 @@ func TestSoftwareManager(t *testing.T) {
 					t.Errorf("Wait run instances error: %v", err)
 				}
 
-				softwareManager.processRunStatus(nil)
+				if softwareManager.processRunStatus(nil) {
+					t.Error("Revert should not be required")
+				}
 			}
 
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
