@@ -54,10 +54,10 @@ type softwareDownloader interface {
 	releaseDownloadedSoftware() error
 }
 type softwareStatusHandler interface {
-	updateLayerStatus(status cloudprotocol.LayerStatus)
-	updateServiceStatus(status cloudprotocol.ServiceStatus)
-	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus)
-	updateInstanceStatus(status cloudprotocol.InstanceStatus)
+	updateLayerStatus(status cloudprotocol.LayerStatus) bool
+	updateServiceStatus(status cloudprotocol.ServiceStatus) bool
+	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool
+	updateInstanceStatus(status cloudprotocol.InstanceStatus) bool
 	getNodesStatus() ([]cloudprotocol.NodeStatus, error)
 }
 
