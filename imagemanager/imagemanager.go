@@ -27,11 +27,14 @@ import (
 	"path"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
 	"github.com/aosedge/aos_common/image"
 	"github.com/aosedge/aos_common/spaceallocator"
+	"github.com/aosedge/aos_common/utils/semverutils"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	log "github.com/sirupsen/logrus"
 
@@ -40,7 +43,6 @@ import (
 	"github.com/aosedge/aos_communicationmanager/fileserver"
 	"github.com/aosedge/aos_communicationmanager/unitstatushandler"
 	"github.com/aosedge/aos_communicationmanager/utils/uidgidpool"
-	semver "github.com/hashicorp/go-version"
 )
 
 /***********************************************************************************************************************
@@ -63,17 +65,16 @@ const (
 
 // Storage provides API to create, remove or access information from DB.
 type Storage interface {
-	GetServiceVersions(serviceID string) ([]ServiceInfo, error)
-	GetServicesInfo() ([]ServiceInfo, error)
-	GetLayersInfo() ([]LayerInfo, error)
-	GetServiceInfo(serviceID string) (ServiceInfo, error)
-	GetLayerInfo(digest string) (LayerInfo, error)
 	AddLayer(layer LayerInfo) error
-	AddService(service ServiceInfo) error
-	SetLayerCached(digest string, cached bool) error
-	SetServiceCached(serviceID string, cached bool) error
-	RemoveService(serviceID string, version string) error
+	GetLayerInfo(digest string) (LayerInfo, error)
+	GetLayersInfo() ([]LayerInfo, error)
 	RemoveLayer(digest string) error
+	SetLayerState(digest string, state int) error
+	AddService(service ServiceInfo) error
+	GetServicesInfo() ([]ServiceInfo, error)
+	GetServiceVersions(serviceID string) ([]ServiceInfo, error)
+	RemoveService(serviceID string, version string) error
+	SetServiceState(serviceID, version string, state int) error
 }
 
 // Decrypter interface to decrypt and validate image.
@@ -99,17 +100,30 @@ type Imagemanager struct {
 	fileServer             *fileserver.FileServer
 }
 
+// Service state.
+const (
+	ServiceActive = iota
+	ServiceCached
+	ServicePending
+)
+
 // ServiceInfo service information.
 type ServiceInfo struct {
 	aostypes.ServiceInfo
 	RemoteURL    string
 	Path         string
 	Timestamp    time.Time
-	Cached       bool
+	State        int
 	Config       aostypes.ServiceConfig
 	Layers       []string
 	ExposedPorts []string
 }
+
+// Layer state.
+const (
+	LayerActive = iota
+	LayerCached
+)
 
 // LayerInfo service information.
 type LayerInfo struct {
@@ -117,7 +131,7 @@ type LayerInfo struct {
 	RemoteURL string
 	Path      string
 	Timestamp time.Time
-	Cached    bool
+	State     int
 }
 
 /***********************************************************************************************************************
@@ -243,12 +257,16 @@ func (imagemanager *Imagemanager) GetServicesStatus() ([]unitstatushandler.Servi
 	servicesStatus := make([]unitstatushandler.ServiceStatus, len(servicesInfo))
 
 	for i, service := range servicesInfo {
+		if service.State == ServicePending {
+			continue
+		}
+
 		servicesStatus[i] = unitstatushandler.ServiceStatus{
 			ServiceStatus: cloudprotocol.ServiceStatus{
 				ServiceID: service.ServiceID,
 				Version:   service.Version,
 				Status:    cloudprotocol.InstalledStatus,
-			}, Cached: service.Cached,
+			}, Cached: service.State != ServiceActive,
 		}
 	}
 
@@ -273,7 +291,7 @@ func (imagemanager *Imagemanager) GetLayersStatus() ([]unitstatushandler.LayerSt
 				Version: layer.Version,
 				Digest:  layer.Digest,
 				Status:  cloudprotocol.InstalledStatus,
-			}, Cached: layer.Cached,
+			}, Cached: layer.State != LayerActive,
 		}
 	}
 
@@ -290,19 +308,18 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 ) error {
 	log.WithFields(log.Fields{"id": serviceInfo.ServiceID, "version": serviceInfo.Version}).Debug("Install service")
 
-	serviceFromStorage, err := imagemanager.storage.GetServiceInfo(serviceInfo.ServiceID)
+	currentServices, err := imagemanager.storage.GetServiceVersions(serviceInfo.ServiceID)
 	if err != nil && !errors.Is(err, ErrNotExist) {
 		return aoserrors.Wrap(err)
 	}
 
-	var isServiceExist bool
+	alreadyInstalled, err := imagemanager.checkCurrentServices(currentServices, serviceInfo)
+	if err != nil {
+		return err
+	}
 
-	if err == nil {
-		isServiceExist = true
-
-		if err = imagemanager.checkServiceVersion(serviceFromStorage, serviceInfo.Version); err != nil {
-			return err
-		}
+	if alreadyInstalled {
+		return nil
 	}
 
 	decryptedFile := path.Join(imagemanager.servicesDir, base64.URLEncoding.EncodeToString(serviceInfo.Sha256))
@@ -347,15 +364,8 @@ func (imagemanager *Imagemanager) InstallService(serviceInfo cloudprotocol.Servi
 
 	var gid int
 
-	if isServiceExist {
-		if err = imagemanager.removeObsoleteServiceVersions(ServiceInfo{ServiceInfo: aostypes.ServiceInfo{
-			ServiceID: serviceInfo.ServiceID,
-			Version:   serviceInfo.Version,
-		}}); err != nil {
-			return aoserrors.Wrap(err)
-		}
-
-		gid = int(serviceFromStorage.GID)
+	if len(currentServices) > 0 {
+		gid = int(currentServices[0].GID)
 	} else {
 		if gid, err = imagemanager.gidPool.GetFreeID(); err != nil {
 			return aoserrors.Wrap(err)
@@ -387,6 +397,10 @@ func (imagemanager *Imagemanager) addService(
 		return aoserrors.Wrap(err)
 	}
 
+	if err = imagemanager.updatePrevServiceVersions(serviceInfo.ServiceID, serviceInfo.Version); err != nil {
+		return err
+	}
+
 	if err = imagemanager.storage.AddService(ServiceInfo{
 		ServiceInfo: aostypes.ServiceInfo{
 			Version:    serviceInfo.Version,
@@ -397,6 +411,7 @@ func (imagemanager *Imagemanager) addService(
 			GID:        uint32(gid),
 			Sha256:     fileInfo.Sha256,
 		},
+		State:        ServiceActive,
 		RemoteURL:    remoteURL,
 		Path:         decryptedFile,
 		Timestamp:    time.Now().UTC(),
@@ -414,22 +429,42 @@ func (imagemanager *Imagemanager) addService(
 func (imagemanager *Imagemanager) RestoreService(serviceID string) error {
 	log.WithFields(log.Fields{"serviceID": serviceID}).Debug("Restore service")
 
-	service, err := imagemanager.storage.GetServiceInfo(serviceID)
+	existingServices, err := imagemanager.storage.GetServiceVersions(serviceID)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if !service.Cached {
-		log.WithField("serviceID", serviceID).Warn("Service is not cached")
+	if index := slices.IndexFunc(existingServices, func(service ServiceInfo) bool {
+		return service.State == ServiceActive
+	}); index != -1 {
+		log.WithFields(log.Fields{
+			"serviceID": existingServices[index].ServiceID, "version": existingServices[index].Version,
+		}).Warn("Service already active")
 
 		return nil
 	}
 
-	if err = imagemanager.setServiceCached(service, false); err != nil {
-		return aoserrors.Wrap(err)
+	if index := slices.IndexFunc(existingServices, func(service ServiceInfo) bool {
+		return service.State == ServicePending
+	}); index != -1 {
+		log.WithFields(log.Fields{
+			"serviceID": existingServices[index].ServiceID, "version": existingServices[index].Version,
+		}).Warn("Restore pending service")
+
+		return imagemanager.activateService(existingServices[index])
 	}
 
-	return nil
+	if index := slices.IndexFunc(existingServices, func(service ServiceInfo) bool {
+		return service.State == ServiceCached
+	}); index != -1 {
+		log.WithFields(log.Fields{
+			"serviceID": existingServices[index].ServiceID, "version": existingServices[index].Version,
+		}).Debug("Restore service")
+
+		return imagemanager.activateService(existingServices[index])
+	}
+
+	return ErrNotExist
 }
 
 // RemoveService makes service cached.
@@ -441,30 +476,23 @@ func (imagemanager *Imagemanager) RemoveService(serviceID string) error {
 		return aoserrors.Wrap(err)
 	}
 
-	if len(services) == 0 {
-		return nil
-	}
-
-	if services[0].Cached {
-		log.Warningf("Service %v already cached", serviceID)
-
-		return nil
-	}
-
-	var serviceSize uint64
-
 	for _, service := range services {
-		serviceSize += service.Size
-	}
+		switch service.State {
+		case ServiceActive:
+			if err = imagemanager.setServiceState(service, ServiceCached); err != nil {
+				return err
+			}
 
-	if err = imagemanager.setServiceCached(ServiceInfo{
-		ServiceInfo: aostypes.ServiceInfo{
-			ServiceID: serviceID,
-			Size:      serviceSize,
-		},
-		Timestamp: services[len(services)-1].Timestamp,
-	}, true); err != nil {
-		return aoserrors.Wrap(err)
+		case ServicePending:
+			if err := imagemanager.removeService(service); err != nil {
+				return err
+			}
+
+		default:
+			log.WithFields(log.Fields{
+				"serviceID": service.ServiceID, "version": service.Version,
+			}).Warn("Service already cached")
+		}
 	}
 
 	return nil
@@ -474,44 +502,27 @@ func (imagemanager *Imagemanager) RemoveService(serviceID string) error {
 func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo,
 	chains []cloudprotocol.CertificateChain, certs []cloudprotocol.Certificate,
 ) error {
-	if layerFromStorage, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest); err == nil {
-		if layerInfo.Version == layerFromStorage.Version && layerFromStorage.LayerID == layerInfo.LayerID {
-			if layerFromStorage.Cached {
-				log.WithFields(log.Fields{
-					"id":      layerFromStorage.LayerID,
-					"digest":  layerFromStorage.Digest,
-					"version": layerFromStorage.Version,
-				}).Warn("Restore cached layer")
-
-				if err := imagemanager.setLayerCached(layerFromStorage, false); err != nil {
-					return aoserrors.Wrap(err)
-				}
-			} else {
-				log.WithFields(log.Fields{
-					"id":      layerFromStorage.LayerID,
-					"digest":  layerFromStorage.Digest,
-					"version": layerFromStorage.Version,
-				}).Warn("Layer already installed")
-			}
-
-			return nil
-		}
-
-		log.WithFields(log.Fields{
-			"id": layerFromStorage.LayerID, "digest": layerFromStorage.Digest, "version": layerFromStorage.Version,
-		}).Warn("Remove same digest layer")
-
-		if err = imagemanager.removeLayer(layerFromStorage); err != nil {
-			return err
-		}
-	}
-
 	log.WithFields(log.Fields{
 		"id": layerInfo.LayerID, "digest": layerInfo.Digest, "version": layerInfo.Version,
 	}).Debug("Install layer")
 
-	id := base64.URLEncoding.EncodeToString(layerInfo.Sha256)
+	currentLayer, err := imagemanager.storage.GetLayerInfo(layerInfo.Digest)
+	if err != nil && !errors.Is(err, ErrNotExist) {
+		return aoserrors.Wrap(err)
+	}
 
+	if err == nil {
+		alreadyInstalled, err := imagemanager.checkCurrentLayer(currentLayer, layerInfo)
+		if err != nil {
+			return err
+		}
+
+		if alreadyInstalled {
+			return nil
+		}
+	}
+
+	id := base64.URLEncoding.EncodeToString(layerInfo.Sha256)
 	decryptedFile := path.Join(imagemanager.layersDir, id+decryptedFileExt)
 
 	space, err := imagemanager.layerAllocator.AllocateSpace(layerInfo.Size)
@@ -569,6 +580,7 @@ func (imagemanager *Imagemanager) InstallLayer(layerInfo cloudprotocol.LayerInfo
 			Sha256:  fileInfo.Sha256,
 			Size:    fileInfo.Size,
 		},
+		State:     LayerActive,
 		Path:      decryptedFile,
 		RemoteURL: remoteURL,
 		Timestamp: time.Now().UTC(),
@@ -588,13 +600,13 @@ func (imagemanager *Imagemanager) RemoveLayer(digest string) error {
 		return aoserrors.Wrap(err)
 	}
 
-	if layer.Cached {
-		log.Warningf("Layer %v already cached", digest)
+	if layer.State == LayerCached {
+		log.WithFields(log.Fields{"digest": digest}).Warn("Layer already cached")
 
 		return nil
 	}
 
-	if err = imagemanager.setLayerCached(layer, true); err != nil {
+	if err = imagemanager.setLayerState(layer, LayerCached); err != nil {
 		return err
 	}
 
@@ -610,52 +622,74 @@ func (imagemanager *Imagemanager) RestoreLayer(digest string) error {
 		return aoserrors.Wrap(err)
 	}
 
-	if !layer.Cached {
-		log.WithField("layerID", layer.LayerID).Warn("Layer is not cached")
+	if layer.State == LayerActive {
+		log.WithField("digest", digest).Warn("Layer already active")
 
 		return nil
 	}
 
-	if err = imagemanager.setLayerCached(layer, false); err != nil {
+	if err = imagemanager.setLayerState(layer, LayerActive); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// GetServiceInfo gets service information by id.
+// GetServiceInfo returns active service information by id.
 func (imagemanager *Imagemanager) GetServiceInfo(serviceID string) (ServiceInfo, error) {
-	serviceInfo, err := imagemanager.storage.GetServiceInfo(serviceID)
+	services, err := imagemanager.storage.GetServiceVersions(serviceID)
+	if err != nil {
+		return ServiceInfo{}, aoserrors.Wrap(err)
+	}
 
-	return serviceInfo, aoserrors.Wrap(err)
+	if index := slices.IndexFunc(services, func(service ServiceInfo) bool {
+		return service.State == ServiceActive
+	}); index != -1 {
+		return services[index], nil
+	}
+
+	return ServiceInfo{}, ErrNotExist
 }
 
-// GetLayerInfo gets layer information by id.
+// GetLayerInfo returns active layer information by id.
 func (imagemanager *Imagemanager) GetLayerInfo(digest string) (LayerInfo, error) {
 	layerInfo, err := imagemanager.storage.GetLayerInfo(digest)
+	if err != nil {
+		return LayerInfo{}, aoserrors.Wrap(err)
+	}
+
+	if layerInfo.State != LayerActive {
+		return LayerInfo{}, ErrNotExist
+	}
 
 	return layerInfo, aoserrors.Wrap(err)
 }
 
 // RevertService reverts already stored service.
 func (imagemanager *Imagemanager) RevertService(serviceID string) error {
+	log.WithFields(log.Fields{"serviceID": serviceID}).Debug("Revert service")
+
 	services, err := imagemanager.storage.GetServiceVersions(serviceID)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if len(services) == 0 {
-		return nil
+	if !slices.ContainsFunc(services, func(service ServiceInfo) bool {
+		return service.State == ServicePending
+	}) {
+		return ErrNotExist
 	}
 
-	service := services[len(services)-1]
+	for _, service := range services {
+		if service.State == ServicePending {
+			if err = imagemanager.setServiceState(service, ServiceActive); err != nil {
+				return err
+			}
 
-	if err := imagemanager.removeService(service); err != nil {
-		return err
-	}
+			continue
+		}
 
-	if service.Cached {
-		if err := imagemanager.setServiceCached(service, false); err != nil {
+		if err = imagemanager.removeService(service); err != nil {
 			return err
 		}
 	}
@@ -667,54 +701,137 @@ func (imagemanager *Imagemanager) RevertService(serviceID string) error {
 * Private
 **********************************************************************************************************************/
 
-func (imagemanager *Imagemanager) checkServiceVersion(curService ServiceInfo, newVersion string) error {
-	newSemver, err := semver.NewSemver(newVersion)
-	if err != nil {
-		return aoserrors.Wrap(err)
+func (imagemanager *Imagemanager) checkCurrentServices(
+	currentServices []ServiceInfo, newService cloudprotocol.ServiceInfo,
+) (alreadyInstalled bool, err error) {
+	if index := slices.IndexFunc(currentServices, func(service ServiceInfo) bool {
+		return service.State == ServiceActive
+	}); index != -1 {
+		versionResult, err := semverutils.Compare(newService.Version, currentServices[index].Version)
+		if err != nil {
+			return false, aoserrors.Wrap(err)
+		}
+
+		if versionResult == 0 {
+			log.WithFields(log.Fields{
+				"serviceID": newService.ServiceID, "version": newService.Version,
+			}).Warn("Service already installed")
+
+			return true, nil
+		}
+
+		if versionResult < 0 {
+			return false, ErrVersionMismatch
+		}
 	}
 
-	curSemver, err := semver.NewSemver(curService.Version)
-	if err != nil {
-		return aoserrors.Wrap(err)
+	if index := slices.IndexFunc(currentServices, func(service ServiceInfo) bool {
+		return service.Version == newService.Version
+	}); index != -1 {
+		log.WithFields(log.Fields{
+			"serviceID": currentServices[index].ServiceID,
+			"version":   currentServices[index].Version,
+		}).Warn("Restore service through install")
+
+		if err = imagemanager.activateService(currentServices[index]); err != nil {
+			return false, err
+		}
 	}
 
-	if curSemver.Equal(newSemver) {
-		if curService.Cached {
-			log.WithField("serviceID", curService.ServiceID).Debug("Restore cached service")
+	return false, nil
+}
 
-			if err := imagemanager.storage.SetServiceCached(curService.ServiceID, false); err != nil {
-				return aoserrors.Wrap(err)
+func (imagemanager *Imagemanager) checkCurrentLayer(
+	currentLayer LayerInfo, newLayer cloudprotocol.LayerInfo,
+) (alreadyInstalled bool, err error) {
+	if currentLayer.Version == newLayer.Version && currentLayer.LayerID == newLayer.LayerID {
+		if currentLayer.State == LayerCached {
+			log.WithFields(log.Fields{
+				"id":      currentLayer.LayerID,
+				"digest":  currentLayer.Digest,
+				"version": currentLayer.Version,
+			}).Warn("Restore cached layer")
+
+			if err := imagemanager.setLayerState(currentLayer, LayerActive); err != nil {
+				return false, err
 			}
 		} else {
-			log.WithField("serviceID", curService.ServiceID).Warn("Service already installed")
+			log.WithFields(log.Fields{
+				"id":      currentLayer.LayerID,
+				"digest":  currentLayer.Digest,
+				"version": currentLayer.Version,
+			}).Warn("Layer already installed")
 		}
 
-		return nil
+		return true, nil
 	}
 
-	if newSemver.LessThan(curSemver) {
-		// Workaround for the case when the service is cached and the version is downgraded.
-		// Should be refactored once CM is capable to check if unit is in validation set.
-		if !curService.Cached {
-			return ErrVersionMismatch
+	log.WithFields(log.Fields{
+		"id":      currentLayer.LayerID,
+		"digest":  currentLayer.Digest,
+		"version": currentLayer.Version,
+	}).Warn("Remove same digest layer")
+
+	if err = imagemanager.removeLayer(currentLayer); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+func (imagemanager *Imagemanager) updatePrevServiceVersions(serviceID, version string) error {
+	serviceVersions, err := imagemanager.storage.GetServiceVersions(serviceID)
+	if err != nil && !errors.Is(err, ErrNotExist) {
+		return aoserrors.Wrap(err)
+	}
+
+	if curIndex := slices.IndexFunc(serviceVersions, func(service ServiceInfo) bool {
+		return service.Version == version
+	}); curIndex != -1 {
+		serviceVersions = append(serviceVersions[:curIndex], serviceVersions[curIndex+1:]...)
+	}
+
+	pendingSet := false
+
+	for _, service := range serviceVersions {
+		// previous active service should be in pending state for revert if needed
+		if service.State == ServiceActive && !pendingSet {
+			if err = imagemanager.setServiceState(service, ServicePending); err != nil {
+				return err
+			}
+
+			pendingSet = true
+
+			continue
 		}
 
-		log.WithFields(log.Fields{
-			"serviceID":      curService.ServiceID,
-			"currentVersion": curService.Version,
-			"newVersion":     newVersion,
-		}).Warn("Service is cached, allow version downgrade")
+		// other should be removed
+		if err = imagemanager.removeService(service); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (imagemanager *Imagemanager) setServiceCached(service ServiceInfo, cached bool) error {
-	if err := imagemanager.storage.SetServiceCached(service.ServiceID, cached); err != nil {
+func (imagemanager *Imagemanager) activateService(service ServiceInfo) error {
+	if err := imagemanager.updatePrevServiceVersions(service.ServiceID, service.Version); err != nil {
+		return err
+	}
+
+	return imagemanager.setServiceState(service, ServiceActive)
+}
+
+func (imagemanager *Imagemanager) setServiceState(service ServiceInfo, state int) error {
+	if service.State == state {
+		return nil
+	}
+
+	if err := imagemanager.storage.SetServiceState(service.ServiceID, service.Version, state); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if cached {
+	if state == ServiceCached {
 		if err := imagemanager.serviceAllocator.AddOutdatedItem(
 			service.ServiceID, service.Size, service.Timestamp); err != nil {
 			return aoserrors.Wrap(err)
@@ -723,17 +840,23 @@ func (imagemanager *Imagemanager) setServiceCached(service ServiceInfo, cached b
 		return nil
 	}
 
-	imagemanager.serviceAllocator.RestoreOutdatedItem(service.ServiceID)
+	if service.State == ServiceCached {
+		imagemanager.serviceAllocator.RestoreOutdatedItem(service.ServiceID)
+	}
 
 	return nil
 }
 
-func (imagemanager *Imagemanager) setLayerCached(layer LayerInfo, cached bool) error {
-	if err := imagemanager.storage.SetLayerCached(layer.Digest, cached); err != nil {
+func (imagemanager *Imagemanager) setLayerState(layer LayerInfo, state int) error {
+	if layer.State == state {
+		return nil
+	}
+
+	if err := imagemanager.storage.SetLayerState(layer.Digest, state); err != nil {
 		return aoserrors.Wrap(err)
 	}
 
-	if cached {
+	if state == LayerCached {
 		if err := imagemanager.layerAllocator.AddOutdatedItem(
 			layer.Digest, layer.Size, layer.Timestamp); err != nil {
 			return aoserrors.Wrap(err)
@@ -742,48 +865,11 @@ func (imagemanager *Imagemanager) setLayerCached(layer LayerInfo, cached bool) e
 		return nil
 	}
 
-	imagemanager.layerAllocator.RestoreOutdatedItem(layer.Digest)
+	if layer.State == LayerCached {
+		imagemanager.layerAllocator.RestoreOutdatedItem(layer.Digest)
+	}
 
 	return nil
-}
-
-func (imagemanager *Imagemanager) removeObsoleteServiceVersions(service ServiceInfo) error {
-	services, err := imagemanager.storage.GetServiceVersions(service.ServiceID)
-	if err != nil && !errors.Is(err, ErrNotExist) {
-		return aoserrors.Wrap(err)
-	}
-
-	for _, storageService := range services {
-		if service.Version != storageService.Version && !storageService.Cached {
-			log.WithFields(log.Fields{
-				"serviceID": storageService.ServiceID,
-				"version":   storageService.Version,
-			}).Debug("Remove obsolete service version")
-
-			if removeErr := imagemanager.removeService(storageService); removeErr != nil {
-				log.WithFields(log.Fields{
-					"serviceID": storageService.ServiceID,
-					"version":   storageService.Version,
-				}).Errorf("Can't remove service: %v", removeErr)
-
-				if err == nil {
-					err = removeErr
-				}
-			}
-		}
-	}
-
-	if service.Cached {
-		if cacheErr := imagemanager.setServiceCached(service, false); cacheErr != nil {
-			log.WithField("serviceID", service.ServiceID).Errorf("Can't cached service: %v", cacheErr)
-
-			if err == nil {
-				err = cacheErr
-			}
-		}
-	}
-
-	return err
 }
 
 func (imagemanager *Imagemanager) getServiceDataFromManifest(
@@ -860,7 +946,7 @@ func (imagemanager *Imagemanager) clearServiceResource(service ServiceInfo) erro
 		return aoserrors.Wrap(err)
 	}
 
-	if service.Cached {
+	if service.State == ServiceCached {
 		imagemanager.serviceAllocator.RestoreOutdatedItem(service.ServiceID)
 	}
 
@@ -874,7 +960,7 @@ func (imagemanager *Imagemanager) clearLayerResource(layer LayerInfo) error {
 		return aoserrors.Wrap(err)
 	}
 
-	if layer.Cached {
+	if layer.State == LayerCached {
 		imagemanager.layerAllocator.RestoreOutdatedItem(layer.Digest)
 	}
 
@@ -888,7 +974,7 @@ func (imagemanager *Imagemanager) removeService(service ServiceInfo) error {
 		"serviceID": service.ServiceID,
 		"version":   service.Version,
 		"imagePath": service.Path,
-		"cached":    service.Cached,
+		"state":     service.State,
 	}).Debug("Remove service")
 
 	if err := imagemanager.clearServiceResource(service); err != nil {
@@ -932,6 +1018,8 @@ func (imagemanager *Imagemanager) createRemoteURL(decryptedFile string) (string,
 }
 
 func (imagemanager *Imagemanager) removeOutdatedLayer(digest string) error {
+	log.WithFields(log.Fields{"digest": digest}).Debug("Remove outdated layer")
+
 	layer, err := imagemanager.storage.GetLayerInfo(digest)
 	if err != nil {
 		return aoserrors.Wrap(err)
@@ -949,6 +1037,8 @@ func (imagemanager *Imagemanager) removeOutdatedLayer(digest string) error {
 }
 
 func (imagemanager *Imagemanager) removeOutdatedService(serviceID string) error {
+	log.WithFields(log.Fields{"serviceID": serviceID}).Debug("Remove outdated service")
+
 	imagemanager.removeServiceChannel <- serviceID
 
 	services, err := imagemanager.storage.GetServiceVersions(serviceID)
@@ -988,7 +1078,7 @@ func (imagemanager *Imagemanager) setOutdatedServices() error {
 			log.Errorf("Can't add service GID to pool: %v", err)
 		}
 
-		if service.Cached {
+		if service.State == ServiceCached {
 			size, err := imagemanager.getServiceSize(service.ServiceID)
 			if err != nil {
 				return err
@@ -1011,7 +1101,7 @@ func (imagemanager *Imagemanager) setOutdatedLayers() error {
 	}
 
 	for _, layer := range layersInfo {
-		if layer.Cached {
+		if layer.State == LayerCached {
 			if err = imagemanager.layerAllocator.AddOutdatedItem(
 				layer.Digest, layer.Size, layer.Timestamp); err != nil {
 				return aoserrors.Wrap(err)
@@ -1042,7 +1132,7 @@ func (imagemanager *Imagemanager) removeOutdatedServices() error {
 	}
 
 	for _, service := range services {
-		if service.Cached &&
+		if service.State == ServiceCached &&
 			service.Timestamp.Add(time.Hour*24*time.Duration(imagemanager.serviceTTLDays)).Before(time.Now()) {
 			if removeErr := imagemanager.removeService(service); removeErr != nil {
 				log.WithField("serviceID", service.ServiceID).Errorf("Can't remove outdated service: %v", removeErr)
@@ -1064,7 +1154,7 @@ func (imagemanager *Imagemanager) removeOutdatedLayers() error {
 	}
 
 	for _, layer := range layers {
-		if layer.Cached &&
+		if layer.State == LayerCached &&
 			layer.Timestamp.Add(time.Hour*24*time.Duration(imagemanager.layerTTLDays)).Before(time.Now()) {
 			if err := imagemanager.removeLayer(layer); err != nil {
 				return err

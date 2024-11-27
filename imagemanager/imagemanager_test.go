@@ -39,6 +39,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
@@ -160,15 +162,17 @@ func TestInstallService(t *testing.T) {
 
 	cases := []struct {
 		serviceID            string
+		removeServiceID      string
 		version              string
 		size                 uint64
 		expectedCountService int
 		installErr           error
 		serviceConfig        aostypes.ServiceConfig
 	}{
+		// Install first service
 		{
 			serviceID:            "service1",
-			version:              "1.0",
+			version:              "1.0.0",
 			size:                 1 * megabyte,
 			expectedCountService: 1,
 			installErr:           nil,
@@ -181,9 +185,10 @@ func TestInstallService(t *testing.T) {
 				Resources: []string{"resource1", "resource2"},
 			},
 		},
+		// Install second service
 		{
 			serviceID:            "service2",
-			version:              "1.0",
+			version:              "1.0.0",
 			size:                 1 * megabyte,
 			expectedCountService: 2,
 			installErr:           nil,
@@ -196,9 +201,42 @@ func TestInstallService(t *testing.T) {
 				Resources: []string{"resource1"},
 			},
 		},
+		// Install same version service
+		{
+			serviceID:            "service1",
+			version:              "1.0.0",
+			size:                 1 * megabyte,
+			expectedCountService: 2,
+			installErr:           nil,
+			serviceConfig: aostypes.ServiceConfig{
+				Hostname: allocateString("service1"),
+				Quotas: aostypes.ServiceQuotas{
+					UploadSpeed:   allocateUint64(1000),
+					DownloadSpeed: allocateUint64(2000),
+				},
+				Resources: []string{"resource1", "resource2"},
+			},
+		},
+		// Install old version service on active service
+		{
+			serviceID:            "service1",
+			version:              "0.9.0",
+			size:                 1 * megabyte,
+			expectedCountService: 2,
+			installErr:           imagemanager.ErrVersionMismatch,
+		},
+		// Install old version service on cached service
+		{
+			serviceID:            "service1",
+			removeServiceID:      "service1",
+			version:              "0.9.0",
+			size:                 1 * megabyte,
+			expectedCountService: 2,
+		},
+		// Install other service with no space available
 		{
 			serviceID:            "service3",
-			version:              "1.0",
+			version:              "1.0.0",
 			size:                 2 * megabyte,
 			expectedCountService: 2,
 			installErr:           spaceallocator.ErrNoSpace,
@@ -218,7 +256,15 @@ func TestInstallService(t *testing.T) {
 		}
 	}()
 
-	for _, tCase := range cases {
+	for i, tCase := range cases {
+		t.Logf("Test case: %d", i)
+
+		if tCase.removeServiceID != "" {
+			if err := imagemanagerInstance.RemoveService(tCase.removeServiceID); err != nil {
+				t.Fatalf("Can't remove service: %v", err)
+			}
+		}
+
 		configJSON, err := json.Marshal(tCase.serviceConfig)
 		if err != nil {
 			t.Errorf("Can't generate config json: %v", err)
@@ -280,7 +326,7 @@ func TestRevertService(t *testing.T) {
 	}
 
 	serviceAllocator = &testAllocator{
-		totalSize: 5 * megabyte,
+		totalSize: 4 * megabyte,
 	}
 
 	imagemanagerInstance, err := imagemanager.New(&config.Config{
@@ -297,7 +343,6 @@ func TestRevertService(t *testing.T) {
 		version       string
 		size          uint64
 		serviceConfig aostypes.ServiceConfig
-		cacheService  bool
 	}{
 		{
 			serviceID: "service1",
@@ -311,21 +356,6 @@ func TestRevertService(t *testing.T) {
 				},
 				Resources: []string{"resource1", "resource2"},
 			},
-			cacheService: true,
-		},
-		{
-			serviceID: "service1",
-			version:   "1.0.1",
-			size:      1 * megabyte,
-			serviceConfig: aostypes.ServiceConfig{
-				Hostname: allocateString("service1"),
-				Quotas: aostypes.ServiceQuotas{
-					UploadSpeed:   allocateUint64(1000),
-					DownloadSpeed: allocateUint64(2000),
-				},
-				Resources: []string{"resource1", "resource2"},
-			},
-			cacheService: true,
 		},
 		{
 			serviceID: "service1",
@@ -339,7 +369,6 @@ func TestRevertService(t *testing.T) {
 				},
 				Resources: []string{"resource1"},
 			},
-			cacheService: false,
 		},
 		{
 			serviceID: "service1",
@@ -353,7 +382,6 @@ func TestRevertService(t *testing.T) {
 				},
 				Resources: []string{"resource1"},
 			},
-			cacheService: true,
 		},
 	}
 
@@ -376,12 +404,6 @@ func TestRevertService(t *testing.T) {
 		if err := imagemanagerInstance.InstallService(serviceInfo, nil, nil); err != nil {
 			t.Errorf("Can't install service: %v", err)
 		}
-
-		if tCase.cacheService {
-			if err := storage.SetServiceCached(tCase.serviceID, true); err != nil {
-				t.Errorf("Can't set service cached: %v", err)
-			}
-		}
 	}
 
 	casesRevert := []struct {
@@ -391,27 +413,25 @@ func TestRevertService(t *testing.T) {
 	}{
 		{
 			revertServiceID: "service1",
-			expectedVersion: "1.0.1",
-			err:             nil,
-		},
-		{
-			revertServiceID: "service1",
-			expectedVersion: "1.0.0",
+			expectedVersion: "2.0.0",
 			err:             nil,
 		},
 		{
 			revertServiceID: "service1",
 			err:             imagemanager.ErrNotExist,
+			expectedVersion: "2.0.0",
 		},
 	}
 
-	for _, tCase := range casesRevert {
-		if err := imagemanagerInstance.RevertService(tCase.revertServiceID); err != nil {
+	for i, tCase := range casesRevert {
+		t.Logf("Test case: %d", i)
+
+		if err := imagemanagerInstance.RevertService(tCase.revertServiceID); !errors.Is(err, tCase.err) {
 			t.Errorf("Can't revert service to previous version: %v", err)
 		}
 
 		service, err := imagemanagerInstance.GetServiceInfo(tCase.revertServiceID)
-		if !errors.Is(err, tCase.err) {
+		if err != nil {
 			t.Errorf("Can't get service: %v", err)
 		}
 
@@ -459,7 +479,7 @@ func TestRemoveService(t *testing.T) {
 	}{
 		{
 			serviceID:            "service1",
-			version:              "1.0",
+			version:              "1.0.0",
 			size:                 1 * megabyte,
 			expectedCountService: 1,
 			installErr:           nil,
@@ -475,7 +495,7 @@ func TestRemoveService(t *testing.T) {
 		{
 			serviceID:            "service2",
 			removeServiceID:      "service1",
-			version:              "1.0",
+			version:              "1.0.0",
 			size:                 1 * megabyte,
 			expectedCountService: 1,
 			installErr:           spaceallocator.ErrNoSpace,
@@ -490,7 +510,9 @@ func TestRemoveService(t *testing.T) {
 		},
 	}
 
-	for _, tCase := range cases {
+	for i, tCase := range cases {
+		t.Logf("Test case: %d", i)
+
 		configJSON, err := json.Marshal(tCase.serviceConfig)
 		if err != nil {
 			t.Errorf("Can't generate config json: %v", err)
@@ -515,13 +537,8 @@ func TestRemoveService(t *testing.T) {
 				t.Errorf("Can't remove service: %v", err)
 			}
 
-			service, err := imagemanagerInstance.GetServiceInfo(tCase.removeServiceID)
-			if err != nil {
-				t.Errorf("Can't get service info: %v", err)
-			}
-
-			if !service.Cached {
-				t.Error("Service should be cached")
+			if _, err := imagemanagerInstance.GetServiceInfo(tCase.removeServiceID); err == nil {
+				t.Error("Service should be removed")
 			}
 
 			if err := imagemanagerInstance.InstallService(serviceInfo, nil, nil); err != nil {
@@ -591,7 +608,7 @@ func TestRestoreService(t *testing.T) {
 	}{
 		{
 			serviceID:  "service1",
-			version:    "1.0",
+			version:    "1.0.0",
 			size:       1 * megabyte,
 			installErr: nil,
 			serviceConfig: aostypes.ServiceConfig{
@@ -606,7 +623,7 @@ func TestRestoreService(t *testing.T) {
 		{
 			serviceID:       "service2",
 			removeServiceID: "service1",
-			version:         "1.0",
+			version:         "1.0.0",
 			size:            1 * megabyte,
 			installErr:      spaceallocator.ErrNoSpace,
 			serviceConfig: aostypes.ServiceConfig{
@@ -645,24 +662,20 @@ func TestRestoreService(t *testing.T) {
 				t.Errorf("Can't remove service: %v", err)
 			}
 
-			service, err := imagemanagerInstance.GetServiceInfo(tCase.removeServiceID)
-			if err != nil {
-				t.Errorf("Can't get service info: %v", err)
-			}
-
-			if !service.Cached {
-				t.Error("Service should be cached")
+			if _, err := imagemanagerInstance.GetServiceInfo(tCase.removeServiceID); err == nil {
+				t.Error("Service should be removed")
 			}
 
 			if err := imagemanagerInstance.RestoreService(tCase.removeServiceID); err != nil {
 				t.Errorf("Can't restore service: %v", err)
 			}
 
-			if service, err = imagemanagerInstance.GetServiceInfo(tCase.removeServiceID); err != nil {
+			service, err := imagemanagerInstance.GetServiceInfo(tCase.removeServiceID)
+			if err != nil {
 				t.Errorf("Can't get service info: %v", err)
 			}
 
-			if service.Cached {
+			if service.State == imagemanager.ServiceCached {
 				t.Error("Service should not be cached")
 			}
 
@@ -757,24 +770,20 @@ func TestRestoreLayer(t *testing.T) {
 				t.Errorf("Can't remove layer: %v", err)
 			}
 
-			layer, err := imagemanagerInstance.GetLayerInfo(tCase.removeDigest)
-			if err != nil {
-				t.Errorf("Can't get layer info: %v", err)
-			}
-
-			if !layer.Cached {
-				t.Error("Layer should be cached")
+			if _, err := imagemanagerInstance.GetLayerInfo(tCase.removeDigest); err == nil {
+				t.Error("Layer should be removed")
 			}
 
 			if err := imagemanagerInstance.RestoreLayer(tCase.removeDigest); err != nil {
 				t.Errorf("Can't restore layer: %v", err)
 			}
 
-			if layer, err = imagemanagerInstance.GetLayerInfo(tCase.removeDigest); err != nil {
+			layer, err := imagemanagerInstance.GetLayerInfo(tCase.removeDigest)
+			if err != nil {
 				t.Errorf("Can't get layer info: %v", err)
 			}
 
-			if layer.Cached {
+			if layer.State == imagemanager.LayerCached {
 				t.Error("Layer should not be cached")
 			}
 
@@ -861,13 +870,8 @@ func TestRemoveLayer(t *testing.T) {
 				t.Errorf("Can't remove layer: %v", err)
 			}
 
-			layer, err := imagemanagerInstance.GetLayerInfo(tCase.removeDigest)
-			if err != nil {
-				t.Errorf("Can't get layer info: %v", err)
-			}
-
-			if !layer.Cached {
-				t.Error("Layer should be cached")
+			if _, err := imagemanagerInstance.GetLayerInfo(tCase.removeDigest); err == nil {
+				t.Error("Layer should be removed")
 			}
 
 			if err := imagemanagerInstance.InstallLayer(layerInfo, nil, nil); err != nil {
@@ -1022,7 +1026,7 @@ func TestInstallLayer(t *testing.T) {
 			}
 
 			if layer.LayerID != tCase.id || layer.Version != tCase.version || layer.Digest != tCase.digest ||
-				layer.Size != tCase.size || layer.Cached {
+				layer.Size != tCase.size || layer.State != imagemanager.LayerActive {
 				t.Error("Unexpected layer info")
 			}
 		}
@@ -1252,15 +1256,6 @@ func (storage *testStorageProvider) GetLayersInfo() (layers []imagemanager.Layer
 	return layers, nil
 }
 
-func (storage *testStorageProvider) GetServiceInfo(serviceID string) (imagemanager.ServiceInfo, error) {
-	services, ok := storage.services[serviceID]
-	if !ok {
-		return imagemanager.ServiceInfo{}, imagemanager.ErrNotExist
-	}
-
-	return services[len(services)-1], nil
-}
-
 func (storage *testStorageProvider) GetLayerInfo(digest string) (imagemanager.LayerInfo, error) {
 	layer, ok := storage.layers[digest]
 	if !ok {
@@ -1291,27 +1286,32 @@ func (storage *testStorageProvider) AddService(service imagemanager.ServiceInfo)
 	return nil
 }
 
-func (storage *testStorageProvider) SetLayerCached(digest string, cached bool) error {
+func (storage *testStorageProvider) SetLayerState(digest string, state int) error {
 	layer, ok := storage.layers[digest]
 	if !ok {
 		return aoserrors.New("layer not found")
 	}
 
-	layer.Cached = cached
+	layer.State = state
 	storage.layers[digest] = layer
 
 	return nil
 }
 
-func (storage *testStorageProvider) SetServiceCached(serviceID string, cached bool) error {
+func (storage *testStorageProvider) SetServiceState(serviceID, version string, state int) error {
 	services, ok := storage.services[serviceID]
 	if !ok {
 		return aoserrors.New("service not found")
 	}
 
-	for i := 0; i < len(services); i++ {
-		services[i].Cached = cached
+	index := slices.IndexFunc(services, func(service imagemanager.ServiceInfo) bool {
+		return service.Version == version
+	})
+	if index == -1 {
+		return imagemanager.ErrNotExist
 	}
+
+	services[index].State = state
 
 	return nil
 }
@@ -1503,8 +1503,6 @@ func prepareService(servicelayerSize uint64, srvConfig []byte,
 }
 
 func packImage(source, name string) (err error) {
-	log.WithFields(log.Fields{"source": source, "name": name}).Debug("Pack image")
-
 	if output, err := exec.Command("tar", "-C", source, "-cf", name, "./").CombinedOutput(); err != nil {
 		return aoserrors.Errorf("tar error: %s, code: %s", string(output), err)
 	}
