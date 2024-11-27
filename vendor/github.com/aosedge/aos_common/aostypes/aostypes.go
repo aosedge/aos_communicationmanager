@@ -214,6 +214,7 @@ type RequestedResources struct {
 type ServiceConfig struct {
 	Created            time.Time                    `json:"created"`
 	Author             string                       `json:"author"`
+	SkipResourceLimits bool                         `json:"skipResourceLimits"`
 	Hostname           *string                      `json:"hostname,omitempty"`
 	BalancingPolicy    string                       `json:"balancingPolicy"`
 	Runners            []string                     `json:"runners"`
