@@ -51,3 +51,17 @@ func GreaterThan(version1 string, version2 string) (bool, error) {
 
 	return semver1.GreaterThan(semver2), nil
 }
+
+func Compare(version1 string, version2 string) (int, error) {
+	semver1, err := semver.NewSemver(version1)
+	if err != nil {
+		return -1, aoserrors.Wrap(err)
+	}
+
+	semver2, err := semver.NewSemver(version2)
+	if err != nil {
+		return -1, aoserrors.Wrap(err)
+	}
+
+	return semver1.Compare(semver2), nil
+}
