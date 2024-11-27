@@ -52,7 +52,7 @@ type firmwareDownloader interface {
 }
 
 type firmwareStatusHandler interface {
-	updateComponentStatus(componentInfo cloudprotocol.ComponentStatus)
+	updateComponentStatus(componentInfo cloudprotocol.ComponentStatus) bool
 }
 
 type firmwareUpdate struct {
