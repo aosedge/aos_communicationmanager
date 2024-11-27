@@ -254,7 +254,7 @@ func (instance *Instance) ProcessRunStatus(instances []cloudprotocol.InstanceSta
 
 	log.Debug("Process run status")
 
-	if !instance.softwareManager.processRunStatus(instances) {
+	if instance.softwareManager.processRunStatus(instances) {
 		return nil
 	}
 
