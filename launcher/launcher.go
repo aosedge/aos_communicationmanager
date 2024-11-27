@@ -556,7 +556,7 @@ func (launcher *Launcher) getServiceLayers(instance cloudprotocol.InstanceInfo) 
 		return service, nil, aoserrors.Wrap(err)
 	}
 
-	if service.Cached {
+	if service.State == InstanceCached {
 		return service, nil, aoserrors.New("service deleted")
 	}
 

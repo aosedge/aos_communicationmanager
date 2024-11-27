@@ -210,7 +210,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
-		Cached:        true,
+		State:         launcher.InstanceCached,
 		Timestamp:     time.Now().Add(-time.Hour * 25).UTC(),
 		UID:           5000,
 	})
@@ -220,7 +220,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 
 	err = testStorage.AddInstance(launcher.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service2},
-		Cached:        true,
+		State:         launcher.InstanceCached,
 		Timestamp:     time.Now().UTC(),
 		UID:           5001,
 	})
@@ -283,7 +283,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
-		Cached:        false,
+		State:         launcher.InstanceActive,
 	})
 	if err != nil {
 		t.Fatalf("Can't add instance %v", err)
