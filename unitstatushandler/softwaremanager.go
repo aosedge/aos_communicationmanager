@@ -77,9 +77,18 @@ type softwareUpdate struct {
 	RebalanceRequest bool                             `json:"rebalanceRequest,omitempty"`
 }
 
+const (
+	runStatusEventNone = iota
+	runStatusEventReceived
+	runStatusEventTimeout
+	runStatusEventClose
+)
+
 type softwareManager struct {
 	sync.Mutex
-	runStatusCV *sync.Cond
+
+	runStatusCV    *sync.Cond
+	runStatusEvent int
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
@@ -165,6 +174,7 @@ func (manager *softwareManager) close() (err error) {
 
 	log.Debug("Close software manager")
 
+	manager.runStatusEvent = runStatusEventClose
 	manager.runStatusCV.Signal()
 
 	close(manager.statusChannel)
@@ -219,7 +229,7 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 	return status
 }
 
-func (manager *softwareManager) processRunStatus(instances []cloudprotocol.InstanceStatus) bool {
+func (manager *softwareManager) processRunStatus(instances []cloudprotocol.InstanceStatus) (revertRequired bool) {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -230,9 +240,10 @@ func (manager *softwareManager) processRunStatus(instances []cloudprotocol.Insta
 		manager.newServices = nil
 	}
 
+	manager.runStatusEvent = runStatusEventReceived
 	manager.runStatusCV.Signal()
 
-	return len(manager.revertServices) == 0
+	return len(manager.revertServices) != 0
 }
 
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
@@ -789,7 +800,7 @@ func (manager *softwareManager) readyToUpdate() {
 	manager.stateMachine.scheduleUpdate(manager.CurrentUpdate.Schedule)
 }
 
-func (manager *softwareManager) update(ctx context.Context) {
+func (manager *softwareManager) update(ctx context.Context) { //nolint: funlen
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -811,6 +822,14 @@ func (manager *softwareManager) update(ctx context.Context) {
 			manager.stateMachine.finishOperation(ctx, eventFinishUpdate, updateErr)
 		}()
 	}()
+
+	for manager.runStatusEvent == runStatusEventNone {
+		manager.runStatusCV.Wait()
+	}
+
+	if manager.runStatusEvent == runStatusEventClose {
+		return
+	}
 
 	if err := manager.updateNodes(); err != nil {
 		updateErr = err
@@ -854,7 +873,15 @@ func (manager *softwareManager) update(ctx context.Context) {
 		updateErr = err
 	}
 
-	manager.runStatusCV.Wait()
+	manager.runStatusEvent = runStatusEventNone
+
+	for manager.runStatusEvent == runStatusEventNone {
+		manager.runStatusCV.Wait()
+	}
+
+	if manager.runStatusEvent != runStatusEventReceived {
+		return
+	}
 
 	if len(manager.revertServices) != 0 {
 		manager.doRevertServices()
@@ -864,7 +891,11 @@ func (manager *softwareManager) update(ctx context.Context) {
 			updateErr = err
 		}
 
-		manager.runStatusCV.Wait()
+		manager.runStatusEvent = runStatusEventNone
+
+		for manager.runStatusEvent == runStatusEventNone {
+			manager.runStatusCV.Wait()
+		}
 	}
 }
 
@@ -928,6 +959,7 @@ func (manager *softwareManager) updateTimeout() {
 		}
 	}
 
+	manager.runStatusEvent = runStatusEventTimeout
 	manager.runStatusCV.Signal()
 }
 
