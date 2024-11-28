@@ -1337,7 +1337,7 @@ func (umCtrl *Controller) processAllNodesConnected() {
 		return
 	}
 
-	log.Debug("All connection to Ums established")
+	log.Info("All UM's connections established")
 
 	umCtrl.connectionMonitor.stopConnectionTimer()
 
