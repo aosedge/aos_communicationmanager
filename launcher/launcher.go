@@ -318,17 +318,17 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 	launcher.Lock()
 	defer launcher.Unlock()
 
-	log.Debugf("Received run status from nodeID: %s", runStatus.NodeID)
+	log.WithFields(log.Fields{"nodeID": runStatus.NodeID}).Debugf("Receive run status from node")
 
-	currentStatus := launcher.getNode(runStatus.NodeID)
-	if currentStatus == nil {
+	node := launcher.getNode(runStatus.NodeID)
+	if node == nil {
 		log.WithField("nodeID", runStatus.NodeID).Errorf("Received status for unknown nodeID")
 
 		return
 	}
 
-	currentStatus.runStatus = runStatus.Instances
-	currentStatus.waitStatus = false
+	node.runStatus = runStatus.Instances
+	node.waitStatus = false
 
 	for _, node := range launcher.nodes {
 		if node.waitStatus {
