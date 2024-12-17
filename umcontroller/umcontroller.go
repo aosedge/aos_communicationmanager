@@ -587,7 +587,6 @@ func (umCtrl *Controller) handleCloseConnection(nodeID string, reason closeReaso
 					umCtrl.connections[i].handler = nil
 
 					umCtrl.generateFSMEvent(evConnectionClose)
-					umCtrl.connectionMonitor.wg.Add(1)
 
 					umCtrl.connectionMonitor.startConnectionTimer(len(umCtrl.connections))
 				} else {
