@@ -1603,7 +1603,7 @@ func TestSyncExecutor(t *testing.T) {
 
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
-	for i := 0; i < numExecuteTasks+numCanceledTasks; i++ {
+	for i := range numExecuteTasks + numCanceledTasks {
 		ctx := cancelCtx
 
 		if i < numExecuteTasks {

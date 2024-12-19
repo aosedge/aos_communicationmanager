@@ -211,7 +211,7 @@ func TestMultiThread(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		for i := 0; i < numIterations; i++ {
+		for i := range numIterations {
 			if err := testDB.SetJournalCursor(strconv.Itoa(i)); err != nil {
 				t.Errorf("Can't set journal cursor: %s", err)
 			}
@@ -221,7 +221,7 @@ func TestMultiThread(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		for i := 0; i < numIterations; i++ {
+		for range numIterations {
 			if _, err := testDB.GetJournalCursor(); err != nil {
 				t.Errorf("Can't get journal cursor: %s", err)
 			}
@@ -231,7 +231,7 @@ func TestMultiThread(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		for i := 0; i < numIterations; i++ {
+		for i := range numIterations {
 			if err := testDB.SetComponentsUpdateInfo([]umcontroller.ComponentStatus{{Version: strconv.Itoa(i)}}); err != nil {
 				t.Errorf("Can't set journal cursor: %s", err)
 			}
@@ -241,7 +241,7 @@ func TestMultiThread(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		for i := 0; i < numIterations; i++ {
+		for range numIterations {
 			if _, err := testDB.GetComponentsUpdateInfo(); err != nil {
 				t.Errorf("Can't get journal cursor: %s", err)
 			}

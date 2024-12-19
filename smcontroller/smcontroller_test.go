@@ -1390,11 +1390,8 @@ func newTestSMClient(
 		receivedMessagesChannel: make(chan *pbsm.SMIncomingMessages, 10),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if client.connection, err = grpc.DialContext(
-		ctx, url, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock()); err != nil {
+	if client.connection, err = grpc.NewClient(
+		url, grpc.WithTransportCredentials(insecure.NewCredentials())); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 

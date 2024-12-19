@@ -277,7 +277,7 @@ func (im *instanceManager) setInstanceError(
 func (im *instanceManager) setAllInstanceError(
 	instance cloudprotocol.InstanceInfo, serviceVersion string, err error,
 ) {
-	for i := uint64(0); i < instance.NumInstances; i++ {
+	for i := range instance.NumInstances {
 		im.setInstanceError(createInstanceIdent(instance, i), serviceVersion, err)
 	}
 }

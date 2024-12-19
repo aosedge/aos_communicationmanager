@@ -372,10 +372,10 @@ func createClientConnection(
 	clientID string, state pb.UpdateState, components []*pb.ComponentStatus,
 ) (stream pb.UMService_RegisterUMClient, conn *grpc.ClientConn, err error) {
 	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	opts = append(opts, grpc.WithBlock())
 
-	conn, err = grpc.Dial(serverURL, opts...)
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	conn, err = grpc.NewClient(serverURL, opts...)
 	if err != nil {
 		return stream, nil, aoserrors.Wrap(err)
 	}

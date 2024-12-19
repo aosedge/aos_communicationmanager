@@ -432,7 +432,7 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 			continue
 		}
 
-		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+		for instanceIndex := range instance.NumInstances {
 			curInstance, err := launcher.instanceManager.getCurrentInstance(
 				createInstanceIdent(instance, instanceIndex))
 			if err != nil {
@@ -499,7 +499,7 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			continue
 		}
 
-		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+		for instanceIndex := range instance.NumInstances {
 			instanceIdent := createInstanceIdent(instance, instanceIndex)
 			log.WithFields(instanceIdentLogFields(instanceIdent, nil)).Debug("Balance instance")
 
@@ -628,7 +628,7 @@ func (launcher *Launcher) removeInstanceNetworkParameters(instances []cloudproto
 nextNetInstance:
 	for _, netInstance := range networkInstances {
 		for _, instance := range instances {
-			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+			for instanceIndex := range instance.NumInstances {
 				instanceIdent := aostypes.InstanceIdent{
 					ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 					Instance: instanceIndex,

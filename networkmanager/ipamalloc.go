@@ -235,7 +235,7 @@ func generateSubnetIPs(ipNet *net.IPNet) []net.IP {
 		ip = cidr.Inc(minIPRange)
 	)
 
-	for i := uint64(0); i < addressCount; i++ {
+	for i := range addressCount {
 		ip = cidr.Inc(ip)
 		ips[i] = ip
 	}

@@ -435,7 +435,7 @@ func (manager *softwareManager) needRunInstances(desiredInstances []cloudprotoco
 			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 		}
 
-		for i := uint64(0); i < instance.NumInstances; i++ {
+		for i := range instance.NumInstances {
 			ident.Instance = i
 
 			desiredIdents = append(desiredIdents, ident)
@@ -1504,7 +1504,7 @@ func (manager *softwareManager) runInstances() (runErr error) {
 			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 		}
 
-		for i := uint64(0); i < instance.NumInstances; i++ {
+		for i := range instance.NumInstances {
 			ident.Instance = i
 
 			instanceStatus := cloudprotocol.InstanceStatus{

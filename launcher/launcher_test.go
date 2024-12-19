@@ -300,7 +300,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 	instancesWereRemoved := false
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		time.Sleep(time.Duration(i) * time.Second)
 
 		instances, err := testStorage.GetInstances()
