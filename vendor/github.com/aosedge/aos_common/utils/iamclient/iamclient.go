@@ -20,13 +20,14 @@ package iamclient
 import (
 	"context"
 	"encoding/base64"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -68,9 +69,9 @@ type Client struct {
 	cryptocontext           *cryptutils.CryptoContext
 	insecure                bool
 
-	nodeID          string
-	systemID        string
-	currentNodeInfo *cloudprotocol.NodeInfo
+	nodeID     string
+	systemID   string
+	isMainNode bool
 
 	publicConnection    *grpchelpers.GRPCConn
 	protectedConnection *grpc.ClientConn
@@ -164,6 +165,34 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
+	nodeInfo, err := localClient.GetCurrentNodeInfo()
+	if err != nil {
+		return nil, aoserrors.Wrap(err)
+	}
+
+	localClient.nodeID = nodeInfo.NodeID
+	localClient.isMainNode = nodeInfo.IsMainNode()
+
+	if localClient.isMainNode {
+		if localClient.systemID, err = localClient.getSystemID(); err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+	}
+
+	if localClient.isMainNode {
+		if err = localClient.subscribeNodeInfoChange(); err != nil {
+			log.Error("Failed subscribe on NodeInfo change")
+
+			return nil, aoserrors.Wrap(err)
+		}
+
+		if err = localClient.subscribeUnitSubjectsChange(); err != nil {
+			log.Error("Failed subscribe on UnitSubject change")
+
+			return nil, aoserrors.Wrap(err)
+		}
+	}
+
 	if !insecure && localClient.isProtectedConnEnabled() {
 		var ch <-chan *pb.CertInfo
 
@@ -172,20 +201,6 @@ func New(
 		}
 
 		go localClient.processCertChange(ch)
-	}
-
-	var nodeInfo cloudprotocol.NodeInfo
-
-	if nodeInfo, err = localClient.GetCurrentNodeInfo(); err != nil {
-		return nil, aoserrors.Wrap(err)
-	}
-
-	localClient.nodeID = nodeInfo.NodeID
-
-	if localClient.currentNodeInfo.IsMainNode() {
-		if localClient.systemID, err = localClient.getSystemID(); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
 	}
 
 	return localClient, nil
@@ -321,20 +336,36 @@ func (client *Client) InstallCertificates(
 	// IAM cert type of secondary nodes should be sent the latest among certificates for that node.
 	// And IAM certificate for the main node should be send in the end. Otherwise IAM client/server
 	// restart will fail the following certificates to apply.
-	slices.SortStableFunc(certInfo, func(a, b cloudprotocol.IssuedCertData) bool {
+	slices.SortStableFunc(certInfo, func(a, b cloudprotocol.IssuedCertData) int {
+		if client.isMainNode && a.NodeID == client.nodeID && a.Type == iamCertType {
+			return 1
+		}
+
+		if client.isMainNode && b.NodeID == client.nodeID && b.Type == iamCertType {
+			return -1
+		}
+
+		if client.isMainNode && a.NodeID == client.nodeID {
+			return 1
+		}
+
+		if client.isMainNode && b.NodeID == client.nodeID {
+			return -1
+		}
+
 		if a.NodeID == b.NodeID {
-			return b.Type == iamCertType
+			if a.Type == iamCertType {
+				return 1
+			}
+
+			if b.Type == iamCertType {
+				return -1
+			}
+
+			return 0
 		}
 
-		if a.NodeID == client.nodeID && a.Type == iamCertType {
-			return false
-		}
-
-		if b.NodeID == client.nodeID && b.Type == iamCertType {
-			return true
-		}
-
-		return false
+		return strings.Compare(a.NodeID, b.NodeID)
 	})
 
 	for i, cert := range certInfo {
@@ -488,7 +519,7 @@ func (client *Client) Deprovision(nodeID, password string) (err error) {
 		}
 	}()
 
-	if nodeID == client.GetNodeID() {
+	if client.isMainNode && nodeID == client.nodeID {
 		err = aoserrors.New("Can't deprovision main node")
 		errorInfo = &cloudprotocol.ErrorInfo{
 			Message: err.Error(),
@@ -672,10 +703,6 @@ func (client *Client) GetCurrentNodeInfo() (cloudprotocol.NodeInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), iamRequestTimeout)
 	defer cancel()
 
-	if client.currentNodeInfo != nil {
-		return *client.currentNodeInfo, nil
-	}
-
 	response, err := client.publicService.GetNodeInfo(ctx, &empty.Empty{})
 	if err != nil {
 		return cloudprotocol.NodeInfo{}, aoserrors.Wrap(err)
@@ -684,12 +711,9 @@ func (client *Client) GetCurrentNodeInfo() (cloudprotocol.NodeInfo, error) {
 	log.WithFields(log.Fields{
 		"nodeID":   response.GetNodeId(),
 		"nodeType": response.GetNodeType(),
-	}).Debug("Get node Info")
+	}).Debug("Get current node Info")
 
-	nodeInfo := pbconvert.NodeInfoFromPB(response)
-	client.currentNodeInfo = &nodeInfo
-
-	return *client.currentNodeInfo, nil
+	return pbconvert.NodeInfoFromPB(response), nil
 }
 
 // GetUnitSubjects returns unit subjects.
@@ -817,7 +841,7 @@ func (client *Client) openGRPCConnection() (err error) {
 	var publicConn *grpc.ClientConn
 
 	publicConn, err = grpchelpers.CreatePublicConnection(
-		client.publicURL, iamRequestTimeout, client.cryptocontext, client.insecure)
+		client.publicURL, client.cryptocontext, client.insecure)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -831,26 +855,6 @@ func (client *Client) openGRPCConnection() (err error) {
 	client.publicNodesService = pb.NewIAMPublicNodesServiceClient(client.publicConnection)
 	client.publicPermissionsService = pb.NewIAMPublicPermissionsServiceClient(client.publicConnection)
 
-	var nodeInfo cloudprotocol.NodeInfo
-
-	if nodeInfo, err = client.GetCurrentNodeInfo(); err != nil {
-		return aoserrors.Wrap(err)
-	}
-
-	if nodeInfo.IsMainNode() {
-		if err = client.subscribeNodeInfoChange(); err != nil {
-			log.Error("Failed subscribe on NodeInfo change")
-
-			return aoserrors.Wrap(err)
-		}
-
-		if err = client.subscribeUnitSubjectsChange(); err != nil {
-			log.Error("Failed subscribe on UnitSubject change")
-
-			return aoserrors.Wrap(err)
-		}
-	}
-
 	if err = client.restoreCertInfoSubs(); err != nil {
 		log.Error("Failed subscribe on CertInfo change")
 
@@ -862,7 +866,7 @@ func (client *Client) openGRPCConnection() (err error) {
 	}
 
 	client.protectedConnection, err = grpchelpers.CreateProtectedConnection(client.certStorage,
-		client.protectedURL, iamRequestTimeout, client.cryptocontext, client, client.insecure)
+		client.protectedURL, client.cryptocontext, client, client.insecure)
 	if err != nil {
 		return aoserrors.Wrap(err)
 	}
@@ -871,6 +875,8 @@ func (client *Client) openGRPCConnection() (err error) {
 	client.provisioningService = pb.NewIAMProvisioningServiceClient(client.protectedConnection)
 	client.nodesService = pb.NewIAMNodesServiceClient(client.protectedConnection)
 	client.permissionsService = pb.NewIAMPermissionsServiceClient(client.protectedConnection)
+
+	log.Debug("Connected to IAM")
 
 	return nil
 }

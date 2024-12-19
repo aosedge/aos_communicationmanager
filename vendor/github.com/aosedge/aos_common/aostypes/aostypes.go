@@ -262,7 +262,7 @@ type NodeMonitoring struct {
  **********************************************************************************************************************/
 
 // MarshalJSON marshals JSON Time type.
-func (t Time) MarshalJSON() (b []byte, err error) {
+func (t *Time) MarshalJSON() (b []byte, err error) {
 	if b, err = json.Marshal(t.Format("15:04:05")); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -319,7 +319,7 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 }
 
 // MarshalJSON marshals JSON Duration type.
-func (d Duration) MarshalJSON() (b []byte, err error) {
+func (d *Duration) MarshalJSON() (b []byte, err error) {
 	if b, err = json.Marshal(d.Duration.String()); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
