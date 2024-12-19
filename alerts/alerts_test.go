@@ -87,7 +87,7 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 
 	expectedAlerts := cloudprotocol.Alerts{}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		// alert size = header 96 + message length
 		alertItem := cloudprotocol.SystemAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
@@ -99,7 +99,7 @@ func TestAlertsMaxMessageSize(t *testing.T) {
 		expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
 	}
 
-	for i := 2; i < numMessages; i++ {
+	for range numMessages {
 		// alert size = header 96 + message length
 		alertItem := cloudprotocol.SystemAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
@@ -144,7 +144,7 @@ func TestAlertsDuplicationMessages(t *testing.T) {
 
 	expectedAlerts.Items = append(expectedAlerts.Items, alertItem)
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		alertsHandler.SendAlert(alertItem)
 	}
 
@@ -179,7 +179,7 @@ func TestAlertsOfflineMessages(t *testing.T) {
 
 	expectedAlerts := cloudprotocol.Alerts{}
 
-	for i := 0; i < numOfflineMessages; i++ {
+	for range numOfflineMessages {
 		alertItem := cloudprotocol.SystemAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagSystemError},
 			Message:   randomString(200),
@@ -190,7 +190,7 @@ func TestAlertsOfflineMessages(t *testing.T) {
 		alertsHandler.SendAlert(alertItem)
 	}
 
-	for i := 0; i < numExtraMessages; i++ {
+	for range numExtraMessages {
 		alertItem := cloudprotocol.SystemAlert{
 			AlertItem: cloudprotocol.AlertItem{Timestamp: time.Now(), Tag: cloudprotocol.AlertTagAosCore},
 			Message:   randomString(200),
@@ -209,7 +209,7 @@ func TestAlertsOfflineMessages(t *testing.T) {
 
 	receivedAlerts := cloudprotocol.Alerts{}
 
-	for i := 0; i < numOfflineMessages; i++ {
+	for range numOfflineMessages {
 		alerts, err := sender.waitResult(2 * time.Second)
 		if err != nil {
 			t.Fatalf("Wait alerts error: %v", err)

@@ -1354,10 +1354,10 @@ func compareStatus(len1, len2 int, compare func(index1, index2 int) bool) (err e
 		return aoserrors.New("data mismatch")
 	}
 
-	for index1 := 0; index1 < len1; index1++ {
+	for index1 := range len1 {
 		found := false
 
-		for index2 := 0; index2 < len2; index2++ {
+		for index2 := range len2 {
 			if compare(index1, index2) {
 				found = true
 				break
@@ -1369,10 +1369,10 @@ func compareStatus(len1, len2 int, compare func(index1, index2 int) bool) (err e
 		}
 	}
 
-	for index2 := 0; index2 < len2; index2++ {
+	for index2 := range len2 {
 		found := false
 
-		for index1 := 0; index1 < len1; index1++ {
+		for index1 := range len1 {
 			if compare(index1, index2) {
 				found = true
 				break

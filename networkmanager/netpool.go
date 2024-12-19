@@ -78,7 +78,7 @@ func makeNetPool(size int, base *net.IPNet) (listIPNet []*net.IPNet) {
 	s := uint(bits - size)
 	listIPNet = make([]*net.IPNet, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ip := make([]byte, len(base.IP))
 
 		copy(ip, base.IP)

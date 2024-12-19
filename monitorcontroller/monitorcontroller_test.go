@@ -106,9 +106,9 @@ func TestSendMonitorOffline(t *testing.T) {
 	}
 	defer controller.Close()
 
-	var sentData []cloudprotocol.Monitoring
+	sentData := make([]cloudprotocol.Monitoring, 0, numOfflineMessages+numExtraMessages)
 
-	for i := 0; i < numOfflineMessages+numExtraMessages; i++ {
+	for range numOfflineMessages + numExtraMessages {
 		inputData, expectedData := getTestMonitoringData()
 
 		controller.SendNodeMonitoring(inputData)

@@ -106,7 +106,7 @@ func TestConnection(t *testing.T) {
 		t.Fatalf("Can't subscribe: %s", err)
 	}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		notification, err := stream.Recv()
 		if err != nil {
 			t.Fatalf("Can't receive notification: %s", err)
@@ -268,11 +268,8 @@ func TestConnection(t *testing.T) {
 func newTestClient(url string) (client *testClient, err error) {
 	client = &testClient{}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if client.connection, err = grpc.DialContext(
-		ctx, url, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock()); err != nil {
+	if client.connection, err = grpc.NewClient(
+		url, grpc.WithTransportCredentials(insecure.NewCredentials())); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
 

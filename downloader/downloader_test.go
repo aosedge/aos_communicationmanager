@@ -436,14 +436,14 @@ func TestConcurrentDownloads(t *testing.T) {
 
 	defer clearWondershaperLimit("lo") //nolint:errcheck
 
-	for i := 0; i < numDownloads; i++ {
+	for i := range numDownloads {
 		if err := generateFile(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)), 100*Kilobyte); err != nil {
 			t.Fatalf("Can't generate file: %s", err)
 		}
 	}
 
 	defer func() {
-		for i := 0; i < numDownloads; i++ {
+		for i := range numDownloads {
 			os.RemoveAll(path.Join(serverDir, fmt.Sprintf(fileNamePattern, i)))
 		}
 	}()
@@ -462,7 +462,7 @@ func TestConcurrentDownloads(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	for i := 0; i < numDownloads; i++ {
+	for i := range numDownloads {
 		packageInfo := preparePackageInfo(
 			"http://localhost:8001/", fmt.Sprintf(fileNamePattern, i), cloudprotocol.DownloadTargetLayer)
 

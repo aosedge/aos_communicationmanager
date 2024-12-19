@@ -457,9 +457,7 @@ func (downloader *Downloader) process(result *downloadResult) error {
 }
 
 func (downloader *Downloader) handleWaitQueue() {
-	numIter := downloader.waitQueue.Len()
-
-	for i := 0; i < numIter; i++ {
+	for range downloader.waitQueue.Len() {
 		// get first element from wait queue
 		firstElement := downloader.waitQueue.Front()
 

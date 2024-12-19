@@ -1026,7 +1026,7 @@ func TestSendMultipleMessages(t *testing.T) {
 		},
 	}
 
-	for i := 0; i < numMessages; i++ {
+	for range numMessages {
 		//nolint:gosec // it is enough to use weak random generator in this case
 		call := testData[rand.Intn(len(testData))]
 
@@ -1064,7 +1064,7 @@ func TestSendDisconnectMessages(t *testing.T) {
 
 	// Send number important messages equals to send channel size - should be accepted without error
 
-	for i := 0; i < sendQueueSize; i++ {
+	for range sendQueueSize {
 		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}); err != nil {
 			t.Errorf("Can't send important message: %v", err)
 		}
@@ -1084,7 +1084,7 @@ func TestSendDisconnectMessages(t *testing.T) {
 
 	// Server should receive pending important messages
 
-	for i := 0; i < sendQueueSize; i++ {
+	for range sendQueueSize {
 		select {
 		case delivery := <-testClient.delivery:
 			// unmarshal type name
