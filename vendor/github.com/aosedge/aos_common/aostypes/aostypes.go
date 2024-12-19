@@ -66,12 +66,12 @@ const (
  **********************************************************************************************************************/
 
 // Duration represents duration in format "00:00:00".
-type Duration struct {
+type Duration struct { //nolint:recvcheck
 	time.Duration
 }
 
 // Time represents time in format "00:00:00".
-type Time struct {
+type Time struct { //nolint:recvcheck
 	time.Time
 }
 

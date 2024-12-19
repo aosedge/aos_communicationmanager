@@ -30,10 +30,10 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/iamclient"
 	"github.com/aosedge/aos_common/journalalerts"
 	"github.com/aosedge/aos_common/resourcemonitor"
 	"github.com/aosedge/aos_common/utils/cryptutils"
-	"github.com/aosedge/aos_common/utils/iamclient"
 	"github.com/aosedge/aos_common/utils/retryhelper"
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/coreos/go-systemd/journal"
