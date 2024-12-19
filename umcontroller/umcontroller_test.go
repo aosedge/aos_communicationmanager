@@ -1826,24 +1826,20 @@ func (um *testUmConnection) processMessages() {
 		<-um.continueChan
 
 		msg, err := um.stream.Recv()
+		if errors.Is(err, io.EOF) {
+			log.Debug("[test] End of connection ", um.umID)
+			return
+		}
+
 		if err != nil {
+			log.Debug("[test] End of connection with error ", err, um.umID)
 			return
 		}
 
 		switch um.step {
 		case finishStep:
-			fallthrough
 
 		case rebootStep:
-			if errors.Is(err, io.EOF) {
-				log.Debug("[test] End of connection ", um.umID)
-				return
-			}
-
-			if err != nil {
-				log.Debug("[test] End of connection with error ", err, um.umID)
-				return
-			}
 
 		case prepareStep:
 			if msg.GetPrepareUpdate() == nil {
