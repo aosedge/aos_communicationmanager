@@ -313,6 +313,12 @@ func (umCtrl *Controller) Close() {
 
 	close(umCtrl.newComponentsChannel)
 	umCtrl.operable = false
+
+	log.Debug("Close all connections")
+
+	umCtrl.closeUMServer()
+	umCtrl.updateFinishCond.Broadcast()
+
 	umCtrl.stopChannel <- true
 }
 
@@ -480,12 +486,6 @@ func (umCtrl *Controller) processInternalMessages() {
 			umCtrl.handleCertChange()
 
 		case <-umCtrl.stopChannel:
-			log.Debug("Close all connections")
-
-			umCtrl.closeUMServer()
-
-			umCtrl.updateFinishCond.Broadcast()
-
 			return
 		}
 	}
