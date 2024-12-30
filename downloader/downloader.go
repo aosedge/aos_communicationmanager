@@ -457,9 +457,7 @@ func (downloader *Downloader) process(result *downloadResult) error {
 }
 
 func (downloader *Downloader) handleWaitQueue() {
-	numIter := downloader.waitQueue.Len()
-
-	for i := 0; i < numIter; i++ {
+	for range downloader.waitQueue.Len() {
 		// get first element from wait queue
 		firstElement := downloader.waitQueue.Front()
 
@@ -523,6 +521,7 @@ func (downloader *Downloader) downloadPackage(result *downloadResult) (err error
 			return nil
 		},
 		func(retryCount int, delay time.Duration, err error) {
+			log.Errorf("Can't download file: %v", err)
 			log.WithFields(log.Fields{"id": result.id}).Debugf("Retry download in %s", delay)
 		},
 		0, downloader.config.RetryDelay.Duration, downloader.config.MaxRetryDelay.Duration); err != nil {

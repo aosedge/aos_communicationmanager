@@ -210,7 +210,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
-		Cached:        true,
+		State:         launcher.InstanceCached,
 		Timestamp:     time.Now().Add(-time.Hour * 25).UTC(),
 		UID:           5000,
 	})
@@ -220,7 +220,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 
 	err = testStorage.AddInstance(launcher.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service2},
-		Cached:        true,
+		State:         launcher.InstanceCached,
 		Timestamp:     time.Now().UTC(),
 		UID:           5001,
 	})
@@ -283,7 +283,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 	err := testStorage.AddInstance(launcher.InstanceInfo{
 		InstanceIdent: aostypes.InstanceIdent{ServiceID: service1},
-		Cached:        false,
+		State:         launcher.InstanceActive,
 	})
 	if err != nil {
 		t.Fatalf("Can't add instance %v", err)
@@ -300,7 +300,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 
 	instancesWereRemoved := false
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		time.Sleep(time.Duration(i) * time.Second)
 
 		instances, err := testStorage.GetInstances()
@@ -476,6 +476,7 @@ func TestBalancing(t *testing.T) {
 		testItemStateRatio(),
 		testItemCPURatio(),
 		testItemRAMRatio(),
+		testItemSkipResourceLimits(),
 	}
 
 	for _, testItem := range testItems {
@@ -1820,6 +1821,59 @@ func testItemRAMRatio() testData {
 			createInstanceStatus(aostypes.InstanceIdent{
 				ServiceID: service1, SubjectID: subject1, Instance: 7,
 			}, "", errors.New("no nodes with available RAM")), //nolint:goerr113
+		},
+	}
+}
+
+func testItemSkipResourceLimits() testData {
+	return testData{
+		testCaseName: "skip resource limits",
+		nodeConfigs: map[string]cloudprotocol.NodeConfig{
+			nodeTypeLocalSM: {NodeType: nodeTypeLocalSM, Priority: 100},
+		},
+		serviceConfigs: map[string]aostypes.ServiceConfig{
+			service1: {
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(4000),
+					RAMLimit:      newQuota(4096),
+				},
+				Runners: []string{runnerRunc},
+			},
+			service2: {
+				SkipResourceLimits: true,
+				Quotas: aostypes.ServiceQuotas{
+					CPUDMIPSLimit: newQuota(4000),
+					RAMLimit:      newQuota(4096),
+				},
+				Runners: []string{runnerRunc},
+			},
+		},
+		desiredInstances: []cloudprotocol.InstanceInfo{
+			{ServiceID: service1, SubjectID: subject1, NumInstances: 1},
+			{ServiceID: service2, SubjectID: subject1, NumInstances: 1},
+		},
+		expectedRunRequests: map[string]runRequest{
+			nodeIDLocalSM: {
+				layers: []aostypes.LayerInfo{
+					createLayerInfo(layer1, layer1LocalURL),
+				},
+				services: []aostypes.ServiceInfo{
+					createServiceInfo(service2, 5001, service2LocalURL),
+				},
+				instances: []aostypes.InstanceInfo{
+					createInstanceInfo(5000, 2, aostypes.InstanceIdent{
+						ServiceID: service2, SubjectID: subject1, Instance: 0,
+					}, 0),
+				},
+			},
+		},
+		expectedRunStatus: []cloudprotocol.InstanceStatus{
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service1, SubjectID: subject1, Instance: 0,
+			}, "", errors.New("no nodes with available CPU")), //nolint:goerr113
+			createInstanceStatus(aostypes.InstanceIdent{
+				ServiceID: service2, SubjectID: subject1, Instance: 0,
+			}, nodeIDLocalSM, nil),
 		},
 	}
 }

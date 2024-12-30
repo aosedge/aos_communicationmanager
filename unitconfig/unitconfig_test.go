@@ -220,7 +220,7 @@ func TestCheckUnitConfig(t *testing.T) {
 		t.Errorf("Check unit config error: %v", err)
 	}
 
-	for i := 0; i < len(client.nodeConfigStatuses); i++ {
+	for i := range client.nodeConfigStatuses {
 		select {
 		case nodeConfig := <-client.nodeConfigSetCheckChannel:
 			if !reflect.DeepEqual(nodeConfig, testNodeConfig{
@@ -276,7 +276,7 @@ func TestUpdateUnitConfig(t *testing.T) {
 		t.Fatalf("Can't update unit config: %v", err)
 	}
 
-	for i := 0; i < len(client.nodeConfigStatuses); i++ {
+	for i := range len(client.nodeConfigStatuses) {
 		select {
 		case nodeConfig := <-client.nodeConfigSetCheckChannel:
 			if !reflect.DeepEqual(nodeConfig, testNodeConfig{
@@ -370,7 +370,7 @@ func TestCurrentNodeConfigUpdate(t *testing.T) {
 
 	node0 := "node0"
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case nodeConfig := <-client.nodeConfigSetCheckChannel:
 			if !reflect.DeepEqual(nodeConfig, testNodeConfig{NodeID: "node0", NodeType: "type1", Version: "1.0.0"}) {

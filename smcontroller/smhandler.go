@@ -755,16 +755,16 @@ func instantMonitoringFromPB(instantMonitoring *pb.InstantMonitoring) aostypes.N
 
 func monitoringDataFromPB(pbMonitoring *pb.MonitoringData) aostypes.MonitoringData {
 	monitoringData := aostypes.MonitoringData{
-		Timestamp: pbMonitoring.GetTimestamp().AsTime(),
-		RAM:       pbMonitoring.GetRam(),
-		CPU:       pbMonitoring.GetCpu(),
-		Download:  pbMonitoring.GetDownload(),
-		Upload:    pbMonitoring.GetUpload(),
-		Disk:      make([]aostypes.PartitionUsage, len(pbMonitoring.GetDisk())),
+		Timestamp:  pbMonitoring.GetTimestamp().AsTime(),
+		RAM:        pbMonitoring.GetRam(),
+		CPU:        pbMonitoring.GetCpu(),
+		Download:   pbMonitoring.GetDownload(),
+		Upload:     pbMonitoring.GetUpload(),
+		Partitions: make([]aostypes.PartitionUsage, len(pbMonitoring.GetPartitions())),
 	}
 
-	for i, pbData := range pbMonitoring.GetDisk() {
-		monitoringData.Disk[i] = aostypes.PartitionUsage{Name: pbData.GetName(), UsedSize: pbData.GetUsedSize()}
+	for i, pbData := range pbMonitoring.GetPartitions() {
+		monitoringData.Partitions[i] = aostypes.PartitionUsage{Name: pbData.GetName(), UsedSize: pbData.GetUsedSize()}
 	}
 
 	return monitoringData

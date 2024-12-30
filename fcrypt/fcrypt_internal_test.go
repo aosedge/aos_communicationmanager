@@ -406,7 +406,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 		test := make([]byte, 64*1024)
 
 		for {
-			readSiz, err := decFile.Read(test)
+			readSize, err := decFile.Read(test)
 			if err != nil {
 				if err != io.EOF {
 					t.Errorf("Error reading file: %v", err)
@@ -415,7 +415,7 @@ func TestSymmetricCipherContext_EncryptFile(t *testing.T) {
 				}
 			}
 
-			for i := 0; i < readSiz; i++ {
+			for i := range readSize {
 				if test[i] != 0 {
 					t.Errorf("Error decrypted file: non zero byte")
 				}

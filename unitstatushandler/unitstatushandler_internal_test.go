@@ -51,9 +51,11 @@ const waitStatusTimeout = 5 * time.Second
  * Types
  **********************************************************************************************************************/
 
-type TestNodeManager struct {
+type TestUnitManager struct {
 	nodesInfo       map[string]*cloudprotocol.NodeInfo
 	nodeInfoChannel chan cloudprotocol.NodeInfo
+	subjectsChannel chan []string
+	currentSubjects []string
 }
 
 type TestSender struct {
@@ -1276,10 +1278,11 @@ func TestSoftwareManager(t *testing.T) {
 		},
 	}
 
-	nodeManager := NewTestNodeManager([]cloudprotocol.NodeInfo{
+	unitManager := NewTestUnitManager([]cloudprotocol.NodeInfo{
 		{NodeID: "node1", NodeType: "type1", Status: cloudprotocol.NodeStatusProvisioned},
 		{NodeID: "node2", NodeType: "type2", Status: cloudprotocol.NodeStatusProvisioned},
-	})
+	},
+		nil)
 	unitConfigUpdater := NewTestUnitConfigUpdater(cloudprotocol.UnitConfigStatus{})
 	softwareUpdater := NewTestSoftwareUpdater(nil, nil)
 	instanceRunner := NewTestInstanceRunner()
@@ -1304,11 +1307,17 @@ func TestSoftwareManager(t *testing.T) {
 
 		// Create software manager
 
-		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, nodeManager,
+		softwareManager, err := newSoftwareManager(newTestStatusHandler(), softwareDownloader, unitManager,
 			unitConfigUpdater, softwareUpdater, instanceRunner, testStorage, 30*time.Second)
 		if err != nil {
 			t.Errorf("Can't create software manager: %s", err)
 			continue
+		}
+
+		// Process initial run status
+
+		if softwareManager.processRunStatus(nil) {
+			t.Error("Revert should not be required")
 		}
 
 		// Check init status
@@ -1348,7 +1357,9 @@ func TestSoftwareManager(t *testing.T) {
 					t.Errorf("Wait run instances error: %v", err)
 				}
 
-				softwareManager.processRunStatus(nil)
+				if softwareManager.processRunStatus(nil) {
+					t.Error("Revert should not be required")
+				}
 			}
 
 			if err = waitForSOTAUpdateStatus(softwareManager.statusChannel, expectedStatus); err != nil {
@@ -1362,7 +1373,7 @@ func TestSoftwareManager(t *testing.T) {
 
 		if item.desiredStatus != nil && item.desiredStatus.Nodes != nil {
 			for _, nodeStatus := range item.desiredStatus.Nodes {
-				nodeInfo, err := nodeManager.GetNodeInfo(nodeStatus.NodeID)
+				nodeInfo, err := unitManager.GetNodeInfo(nodeStatus.NodeID)
 				if err != nil {
 					t.Errorf("Get node info error: %v", err)
 				}
@@ -1592,7 +1603,7 @@ func TestSyncExecutor(t *testing.T) {
 
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
-	for i := 0; i < numExecuteTasks+numCanceledTasks; i++ {
+	for i := range numExecuteTasks + numCanceledTasks {
 		ctx := cancelCtx
 
 		if i < numExecuteTasks {
@@ -1641,10 +1652,10 @@ func TestSyncExecutor(t *testing.T) {
  **********************************************************************************************************************/
 
 /***********************************************************************************************************************
- * TestNodeManager
+ * TestUnitManager
  **********************************************************************************************************************/
 
-func NewTestNodeManager(nodesInfo []cloudprotocol.NodeInfo) *TestNodeManager {
+func NewTestUnitManager(nodesInfo []cloudprotocol.NodeInfo, subjects []string) *TestUnitManager {
 	nodesInfoMap := make(map[string]*cloudprotocol.NodeInfo)
 
 	for _, nodeInfo := range nodesInfo {
@@ -1652,12 +1663,13 @@ func NewTestNodeManager(nodesInfo []cloudprotocol.NodeInfo) *TestNodeManager {
 		*nodesInfoMap[nodeInfo.NodeID] = nodeInfo
 	}
 
-	return &TestNodeManager{
-		nodesInfo: nodesInfoMap,
+	return &TestUnitManager{
+		nodesInfo:       nodesInfoMap,
+		currentSubjects: subjects,
 	}
 }
 
-func (manager *TestNodeManager) GetAllNodeIDs() ([]string, error) {
+func (manager *TestUnitManager) GetAllNodeIDs() ([]string, error) {
 	nodeIDs := make([]string, 0, len(manager.nodesInfo))
 
 	for nodeID := range manager.nodesInfo {
@@ -1667,7 +1679,7 @@ func (manager *TestNodeManager) GetAllNodeIDs() ([]string, error) {
 	return nodeIDs, nil
 }
 
-func (manager *TestNodeManager) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
+func (manager *TestUnitManager) GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error) {
 	nodeInfo, ok := manager.nodesInfo[nodeID]
 	if !ok {
 		return cloudprotocol.NodeInfo{}, aoserrors.New("node not found")
@@ -1676,13 +1688,13 @@ func (manager *TestNodeManager) GetNodeInfo(nodeID string) (cloudprotocol.NodeIn
 	return *nodeInfo, nil
 }
 
-func (manager *TestNodeManager) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
+func (manager *TestUnitManager) SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo {
 	manager.nodeInfoChannel = make(chan cloudprotocol.NodeInfo, 1)
 
 	return manager.nodeInfoChannel
 }
 
-func (manager *TestNodeManager) NodeInfoChanged(nodeInfo cloudprotocol.NodeInfo) {
+func (manager *TestUnitManager) NodeInfoChanged(nodeInfo cloudprotocol.NodeInfo) {
 	if _, ok := manager.nodesInfo[nodeInfo.NodeID]; !ok {
 		manager.nodesInfo[nodeInfo.NodeID] = &cloudprotocol.NodeInfo{}
 	}
@@ -1694,7 +1706,7 @@ func (manager *TestNodeManager) NodeInfoChanged(nodeInfo cloudprotocol.NodeInfo)
 	}
 }
 
-func (manager *TestNodeManager) GetAllNodesInfo() []cloudprotocol.NodeInfo {
+func (manager *TestUnitManager) GetAllNodesInfo() []cloudprotocol.NodeInfo {
 	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(manager.nodesInfo))
 
 	for _, nodeInfo := range manager.nodesInfo {
@@ -1704,7 +1716,7 @@ func (manager *TestNodeManager) GetAllNodesInfo() []cloudprotocol.NodeInfo {
 	return nodesInfo
 }
 
-func (manager *TestNodeManager) PauseNode(nodeID string) error {
+func (manager *TestUnitManager) PauseNode(nodeID string) error {
 	if _, ok := manager.nodesInfo[nodeID]; !ok {
 		return aoserrors.New("node not found")
 	}
@@ -1714,7 +1726,7 @@ func (manager *TestNodeManager) PauseNode(nodeID string) error {
 	return nil
 }
 
-func (manager *TestNodeManager) ResumeNode(nodeID string) error {
+func (manager *TestUnitManager) ResumeNode(nodeID string) error {
 	if _, ok := manager.nodesInfo[nodeID]; !ok {
 		return aoserrors.New("node not found")
 	}
@@ -1722,6 +1734,24 @@ func (manager *TestNodeManager) ResumeNode(nodeID string) error {
 	manager.nodesInfo[nodeID].Status = cloudprotocol.NodeStatusProvisioned
 
 	return nil
+}
+
+func (manager *TestUnitManager) GetUnitSubjects() (subjects []string, err error) {
+	return manager.currentSubjects, nil
+}
+
+func (manager *TestUnitManager) SubscribeUnitSubjectsChanged() <-chan []string {
+	manager.subjectsChannel = make(chan []string, 1)
+
+	return manager.subjectsChannel
+}
+
+func (manager *TestUnitManager) SubjectsChanged(subjects []string) {
+	manager.currentSubjects = subjects
+
+	if manager.subjectsChannel != nil {
+		manager.subjectsChannel <- subjects
+	}
 }
 
 /***********************************************************************************************************************
@@ -1734,6 +1764,12 @@ func NewTestSender() (sender *TestSender) {
 
 func (sender *TestSender) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error) {
 	sender.statusChannel <- unitStatus
+
+	return nil
+}
+
+func (sender *TestSender) SendDeltaUnitStatus(deltaUnitStatus cloudprotocol.DeltaUnitStatus) (err error) {
+	sender.statusChannel <- cloudprotocol.UnitStatus(deltaUnitStatus)
 
 	return nil
 }
@@ -2037,24 +2073,28 @@ func newTestStatusHandler() *testStatusHandler {
 	return &testStatusHandler{}
 }
 
-func (statusHandler *testStatusHandler) updateComponentStatus(status cloudprotocol.ComponentStatus) {
+func (statusHandler *testStatusHandler) updateComponentStatus(status cloudprotocol.ComponentStatus) bool {
 	log.WithFields(log.Fields{
 		"id":      status.ComponentID,
 		"version": status.Version,
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update component status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
+func (statusHandler *testStatusHandler) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool {
 	log.WithFields(log.Fields{
 		"version": status.Version,
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update unit config status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.LayerStatus) {
+func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.LayerStatus) bool {
 	log.WithFields(log.Fields{
 		"id":      status.LayerID,
 		"digest":  status.Digest,
@@ -2062,18 +2102,22 @@ func (statusHandler *testStatusHandler) updateLayerStatus(status cloudprotocol.L
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update layer status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateServiceStatus(status cloudprotocol.ServiceStatus) {
+func (statusHandler *testStatusHandler) updateServiceStatus(status cloudprotocol.ServiceStatus) bool {
 	log.WithFields(log.Fields{
 		"id":      status.ServiceID,
 		"version": status.Version,
 		"status":  status.Status,
 		"error":   status.ErrorInfo,
 	}).Debug("Update service status")
+
+	return true
 }
 
-func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotocol.InstanceStatus) {
+func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotocol.InstanceStatus) bool {
 	log.WithFields(log.Fields{
 		"serviceID":  status.ServiceID,
 		"subjectID":  status.SubjectID,
@@ -2082,6 +2126,8 @@ func (statusHandler *testStatusHandler) updateInstanceStatus(status cloudprotoco
 		"error":      status.ErrorInfo,
 		"nodeID":     status.NodeID,
 	}).Debug("Update instance status")
+
+	return true
 }
 
 func (statusHandler *testStatusHandler) getNodesStatus() ([]cloudprotocol.NodeStatus, error) {

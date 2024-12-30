@@ -467,7 +467,7 @@ func TestSendMessages(t *testing.T) {
 	nodeMonitoring := cloudprotocol.NodeMonitoringData{
 		Items: []aostypes.MonitoringData{
 			{
-				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Disk: []aostypes.PartitionUsage{{
+				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Partitions: []aostypes.PartitionUsage{{
 					Name: "p1", UsedSize: 100,
 				}},
 				Timestamp: time.Now().UTC(),
@@ -479,25 +479,25 @@ func TestSendMessages(t *testing.T) {
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service0", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 1024, CPU: 50, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 1024, CPU: 50, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service1", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 128, CPU: 60, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 128, CPU: 60, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service2", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 256, CPU: 70, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 256, CPU: 70, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 		{
 			NodeID: "mainNode", InstanceIdent: aostypes.InstanceIdent{ServiceID: "service3", SubjectID: "subj1", Instance: 1},
 			Items: []aostypes.MonitoringData{
-				{RAM: 512, CPU: 80, Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
+				{RAM: 512, CPU: 80, Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}}},
 			},
 		},
 	}
@@ -980,6 +980,15 @@ func TestSendMultipleMessages(t *testing.T) {
 			)
 		},
 		func() error {
+			return aoserrors.Wrap(amqpHandler.SendDeltaUnitStatus(
+				cloudprotocol.DeltaUnitStatus{
+					MessageType:  cloudprotocol.UnitStatusMessageType,
+					IsDeltaInfo:  true,
+					UnitSubjects: []string{"subject"},
+				}),
+			)
+		},
+		func() error {
 			return aoserrors.Wrap(amqpHandler.SendMonitoringData(
 				cloudprotocol.Monitoring{MessageType: cloudprotocol.MonitoringMessageType}),
 			)
@@ -1017,7 +1026,7 @@ func TestSendMultipleMessages(t *testing.T) {
 		},
 	}
 
-	for i := 0; i < numMessages; i++ {
+	for range numMessages {
 		//nolint:gosec // it is enough to use weak random generator in this case
 		call := testData[rand.Intn(len(testData))]
 
@@ -1055,7 +1064,7 @@ func TestSendDisconnectMessages(t *testing.T) {
 
 	// Send number important messages equals to send channel size - should be accepted without error
 
-	for i := 0; i < sendQueueSize; i++ {
+	for range sendQueueSize {
 		if err := amqpHandler.SendAlerts(cloudprotocol.Alerts{MessageType: cloudprotocol.AlertsMessageType}); err != nil {
 			t.Errorf("Can't send important message: %v", err)
 		}
@@ -1075,7 +1084,7 @@ func TestSendDisconnectMessages(t *testing.T) {
 
 	// Server should receive pending important messages
 
-	for i := 0; i < sendQueueSize; i++ {
+	for range sendQueueSize {
 		select {
 		case delivery := <-testClient.delivery:
 			// unmarshal type name

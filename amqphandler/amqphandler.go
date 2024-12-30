@@ -44,7 +44,6 @@ const (
 	sendMaxTry         = 3
 	sendTimeout        = 1 * time.Minute
 	receiveChannelSize = 16
-	maxLenLogMessage   = 340
 )
 
 const (
@@ -237,6 +236,16 @@ func (handler *AmqpHandler) SendUnitStatus(unitStatus cloudprotocol.UnitStatus) 
 	unitStatus.MessageType = cloudprotocol.UnitStatusMessageType
 
 	return handler.scheduleMessage(unitStatus, false)
+}
+
+// SendDeltaUnitStatus sends delta unit status.
+func (handler *AmqpHandler) SendDeltaUnitStatus(deltaUnitStatus cloudprotocol.DeltaUnitStatus) error {
+	handler.Lock()
+	defer handler.Unlock()
+
+	deltaUnitStatus.MessageType = cloudprotocol.UnitStatusMessageType
+
+	return handler.scheduleMessage(deltaUnitStatus, false)
 }
 
 // SendMonitoringData sends monitoring data.
@@ -776,14 +785,6 @@ func (handler *AmqpHandler) scheduleMessage(data interface{}, important bool) er
 	}
 }
 
-func getMessageDataForLog(message interface{}, data []byte) string {
-	if len(data) > maxLenLogMessage && !isMessageImportant(message) {
-		return string(data[:maxLenLogMessage]) + "..."
-	}
-
-	return string(data)
-}
-
 func (handler *AmqpHandler) sendMessage(
 	message cloudprotocol.Message, amqpChannel *amqp.Channel, params cloudprotocol.SendParams,
 ) error {
@@ -793,9 +794,9 @@ func (handler *AmqpHandler) sendMessage(
 	}
 
 	if handler.sendTry > 1 {
-		log.WithField("data", getMessageDataForLog(message.Data, data)).Debug("AMQP retry message")
+		log.WithField("data", string(data)).Debug("AMQP retry message")
 	} else {
-		log.WithField("data", getMessageDataForLog(message.Data, data)).Debug("AMQP send message")
+		log.WithField("data", string(data)).Debug("AMQP send message")
 	}
 
 	if handler.sendTry++; handler.sendTry > sendMaxTry {
@@ -818,33 +819,4 @@ func (handler *AmqpHandler) sendMessage(
 	}
 
 	return nil
-}
-
-func isMessageImportant(message interface{}) bool {
-	switch message.(type) {
-	case cloudprotocol.DesiredStatus:
-		return true
-	case cloudprotocol.StateAcceptance:
-		return true
-	case cloudprotocol.RenewCertsNotification:
-		return true
-	case cloudprotocol.IssuedUnitCerts:
-		return true
-	case cloudprotocol.OverrideEnvVars:
-		return true
-	case cloudprotocol.NewState:
-		return true
-	case cloudprotocol.StateRequest:
-		return true
-	case cloudprotocol.UnitStatus:
-		return true
-	case cloudprotocol.IssueUnitCerts:
-		return true
-	case cloudprotocol.InstallCertData:
-		return true
-	case cloudprotocol.OverrideEnvVarsStatus:
-		return true
-	}
-
-	return false
 }

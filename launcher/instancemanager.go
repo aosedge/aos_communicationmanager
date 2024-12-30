@@ -45,13 +45,20 @@ const removePeriod = time.Hour * 24
  * Types
  **********************************************************************************************************************/
 
+// Instance state.
+const (
+	InstanceActive = iota
+	InstanceCached
+)
+
+// InstanceInfo instance info.
 type InstanceInfo struct {
 	aostypes.InstanceIdent
 	NodeID     string
 	PrevNodeID string
 	UID        int
 	Timestamp  time.Time
-	Cached     bool
+	State      int
 }
 
 // Storage storage interface.
@@ -134,7 +141,7 @@ func (im *instanceManager) initInstances() {
 	im.curInstances = make([]InstanceInfo, 0, len(instances))
 
 	for _, instance := range instances {
-		if instance.Cached {
+		if instance.State == InstanceCached {
 			continue
 		}
 
@@ -159,6 +166,10 @@ func (im *instanceManager) getCurrentInstance(instanceIdent aostypes.InstanceIde
 }
 
 func (im *instanceManager) resetStorageStateUsage(storageSize, stateSize uint64) {
+	log.WithFields(log.Fields{
+		"availableState": im.availableState, "availableStorage": im.availableStorage,
+	}).Debug("Available storage and state")
+
 	im.availableStorage, im.availableState = storageSize, stateSize
 }
 
@@ -207,18 +218,29 @@ func (im *instanceManager) setupInstance(
 
 		storedInstance.NodeID = node.nodeInfo.NodeID
 		storedInstance.Timestamp = time.Now()
-		storedInstance.Cached = false
+		storedInstance.State = InstanceActive
 
-		err = im.storage.UpdateInstance(storedInstance)
-		if err != nil {
+		if err := im.storage.UpdateInstance(storedInstance); err != nil {
 			log.Errorf("Can't update instance: %v", err)
 		}
 	}
 
-	instanceInfo.UID = uint32(storedInstance.UID)
+	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent,
+		log.Fields{
+			"curNodeID":  storedInstance.NodeID,
+			"prevNodeID": storedInstance.PrevNodeID,
+		})).Debug("Setup instance")
 
-	if err = im.setupInstanceStateStorage(&instanceInfo, service,
-		getStorageRequestRatio(service.Config.ResourceRatios, node.nodeConfig.ResourceRatios)); err != nil {
+	instanceInfo.UID = uint32(storedInstance.UID)
+	requestedState, requestedStorage := getReqDiskSize(service.Config, node.nodeConfig.ResourceRatios)
+
+	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent,
+		log.Fields{
+			"requestedStorage": requestedStorage,
+			"requestedState":   requestedState,
+		})).Debug("Requested storage and state")
+
+	if err = im.setupInstanceStateStorage(&instanceInfo, service, requestedState, requestedStorage); err != nil {
 		return aostypes.InstanceInfo{}, err
 	}
 
@@ -255,7 +277,7 @@ func (im *instanceManager) setInstanceError(
 func (im *instanceManager) setAllInstanceError(
 	instance cloudprotocol.InstanceInfo, serviceVersion string, err error,
 ) {
-	for i := uint64(0); i < instance.NumInstances; i++ {
+	for i := range instance.NumInstances {
 		im.setInstanceError(createInstanceIdent(instance, i), serviceVersion, err)
 	}
 }
@@ -278,7 +300,7 @@ func (im *instanceManager) getInstanceCheckSum(instance aostypes.InstanceIdent) 
 
 func (im *instanceManager) setupInstanceStateStorage(
 	instanceInfo *aostypes.InstanceInfo, serviceInfo imagemanager.ServiceInfo,
-	requestRation float64,
+	requestedState, requestedStorage uint64,
 ) error {
 	stateStorageParams := storagestate.SetupParams{
 		InstanceIdent: instanceInfo.InstanceIdent,
@@ -293,14 +315,11 @@ func (im *instanceManager) setupInstanceStateStorage(
 		stateStorageParams.StorageQuota = *serviceInfo.Config.Quotas.StorageLimit
 	}
 
-	requestedStorage := uint64(float64(stateStorageParams.StorageQuota)*requestRation + 0.5)
-	requestedState := uint64(float64(stateStorageParams.StateQuota)*requestRation + 0.5)
-
-	if requestedStorage > im.availableStorage {
+	if requestedStorage > im.availableStorage && !serviceInfo.Config.SkipResourceLimits {
 		return aoserrors.Errorf("not enough storage space")
 	}
 
-	if requestedState > im.availableState {
+	if requestedState > im.availableState && !serviceInfo.Config.SkipResourceLimits {
 		return aoserrors.Errorf("not enough state space")
 	}
 
@@ -311,8 +330,14 @@ func (im *instanceManager) setupInstanceStateStorage(
 		return aoserrors.Wrap(err)
 	}
 
-	im.availableStorage -= requestedStorage
-	im.availableState -= requestedState
+	if !serviceInfo.Config.SkipResourceLimits {
+		im.availableStorage -= requestedStorage
+		im.availableState -= requestedState
+	}
+
+	log.WithFields(log.Fields{
+		"remainingState": im.availableState, "remainingStorage": im.availableStorage,
+	}).Debug("Remaining storage and state")
 
 	return nil
 }
@@ -320,7 +345,7 @@ func (im *instanceManager) setupInstanceStateStorage(
 func (im *instanceManager) cacheInstance(instanceInfo InstanceInfo) error {
 	log.WithFields(instanceIdentLogFields(instanceInfo.InstanceIdent, nil)).Debug("Cache instance")
 
-	instanceInfo.Cached = true
+	instanceInfo.State = InstanceCached
 	instanceInfo.NodeID = ""
 
 	if err := im.storage.UpdateInstance(instanceInfo); err != nil {
@@ -379,7 +404,7 @@ func (im *instanceManager) removeOutdatedInstances() error {
 	}
 
 	for _, instance := range instances {
-		if !instance.Cached ||
+		if instance.State != InstanceCached ||
 			time.Since(instance.Timestamp) < time.Hour*24*time.Duration(im.config.ServiceTTLDays) {
 			continue
 		}

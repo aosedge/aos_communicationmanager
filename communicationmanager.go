@@ -30,6 +30,7 @@ import (
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/api/cloudprotocol"
+	"github.com/aosedge/aos_common/iamclient"
 	"github.com/aosedge/aos_common/journalalerts"
 	"github.com/aosedge/aos_common/resourcemonitor"
 	"github.com/aosedge/aos_common/utils/cryptutils"
@@ -46,7 +47,6 @@ import (
 	"github.com/aosedge/aos_communicationmanager/database"
 	"github.com/aosedge/aos_communicationmanager/downloader"
 	"github.com/aosedge/aos_communicationmanager/fcrypt"
-	"github.com/aosedge/aos_communicationmanager/iamclient"
 	"github.com/aosedge/aos_communicationmanager/imagemanager"
 	"github.com/aosedge/aos_communicationmanager/launcher"
 	"github.com/aosedge/aos_communicationmanager/monitorcontroller"
@@ -153,7 +153,8 @@ func newCommunicationManager(cfg *config.Config) (cm *communicationManager, err 
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if cm.iam, err = iamclient.New(cfg, cm.amqp, cm.cryptoContext, false); err != nil {
+	if cm.iam, err = iamclient.New(cfg.IAMPublicServerURL, cfg.IAMProtectedServerURL, cfg.CertStorage,
+		cm.amqp, cm.cryptoContext, false); err != nil {
 		return cm, aoserrors.Wrap(err)
 	}
 

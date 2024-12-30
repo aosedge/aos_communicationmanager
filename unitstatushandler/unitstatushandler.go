@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -41,13 +42,15 @@ import (
  * Types
  **********************************************************************************************************************/
 
-// NodeManager manages nodes.
-type NodeManager interface {
+// UnitManager manages unit.
+type UnitManager interface {
 	GetAllNodeIDs() ([]string, error)
 	GetNodeInfo(nodeID string) (cloudprotocol.NodeInfo, error)
 	SubscribeNodeInfoChange() <-chan cloudprotocol.NodeInfo
 	PauseNode(nodeID string) error
 	ResumeNode(nodeID string) error
+	GetUnitSubjects() ([]string, error)
+	SubscribeUnitSubjectsChanged() <-chan []string
 }
 
 // Downloader downloads packages.
@@ -60,6 +63,7 @@ type Downloader interface {
 // StatusSender sends unit status to cloud.
 type StatusSender interface {
 	SendUnitStatus(unitStatus cloudprotocol.UnitStatus) (err error)
+	SendDeltaUnitStatus(deltaUnitStatus cloudprotocol.DeltaUnitStatus) (err error)
 	SubscribeForConnectionEvents(consumer amqphandler.ConnectionEventsConsumer) error
 }
 
@@ -127,7 +131,7 @@ type LayerStatus struct {
 type Instance struct {
 	sync.Mutex
 
-	nodeManager  NodeManager
+	unitManager  UnitManager
 	statusSender StatusSender
 
 	statusMutex sync.Mutex
@@ -139,9 +143,10 @@ type Instance struct {
 	firmwareManager *firmwareManager
 	softwareManager *softwareManager
 
-	newComponentsChannel    <-chan []cloudprotocol.ComponentStatus
-	nodeChangedChannel      <-chan cloudprotocol.NodeInfo
-	systemQuotaAlertChannel <-chan cloudprotocol.SystemQuotaAlert
+	newComponentsChannel       <-chan []cloudprotocol.ComponentStatus
+	nodeChangedChannel         <-chan cloudprotocol.NodeInfo
+	unitSubjectsChangedChannel <-chan []string
+	systemQuotaAlertChannel    <-chan cloudprotocol.SystemQuotaAlert
 
 	initDone    bool
 	isConnected bool
@@ -154,7 +159,7 @@ type Instance struct {
 // New creates new unit status handler instance.
 func New(
 	cfg *config.Config,
-	nodeManager NodeManager,
+	unitManager UnitManager,
 	unitConfigUpdater UnitConfigUpdater,
 	firmwareUpdater FirmwareUpdater,
 	softwareUpdater SoftwareUpdater,
@@ -167,12 +172,13 @@ func New(
 	log.Debug("Create unit status handler")
 
 	instance = &Instance{
-		nodeManager:             nodeManager,
-		statusSender:            statusSender,
-		sendStatusPeriod:        cfg.UnitStatusSendTimeout.Duration,
-		newComponentsChannel:    firmwareUpdater.NewComponentsChannel(),
-		nodeChangedChannel:      nodeManager.SubscribeNodeInfoChange(),
-		systemQuotaAlertChannel: systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
+		unitManager:                unitManager,
+		statusSender:               statusSender,
+		sendStatusPeriod:           cfg.UnitStatusSendTimeout.Duration,
+		newComponentsChannel:       firmwareUpdater.NewComponentsChannel(),
+		nodeChangedChannel:         unitManager.SubscribeNodeInfoChange(),
+		unitSubjectsChangedChannel: unitManager.SubscribeUnitSubjectsChanged(),
+		systemQuotaAlertChannel:    systemQuotaAlertProvider.GetSystemQuoteAlertChannel(),
 	}
 
 	instance.resetUnitStatus()
@@ -184,7 +190,7 @@ func New(
 		return nil, aoserrors.Wrap(err)
 	}
 
-	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, nodeManager, unitConfigUpdater,
+	if instance.softwareManager, err = newSoftwareManager(instance, groupDownloader, unitManager, unitConfigUpdater,
 		softwareUpdater, instanceRunner, storage, cfg.SMController.UpdateTTL.Duration); err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -249,7 +255,7 @@ func (instance *Instance) ProcessRunStatus(instances []cloudprotocol.InstanceSta
 
 	log.Debug("Process run status")
 
-	if !instance.softwareManager.processRunStatus(instances) {
+	if instance.softwareManager.processRunStatus(instances) {
 		return nil
 	}
 
@@ -447,6 +453,19 @@ func (instance *Instance) initNodesStatus() error {
 	return nil
 }
 
+func (instance *Instance) initUnitSubjects() error {
+	subjects, err := instance.unitManager.GetUnitSubjects()
+	if err != nil {
+		log.Errorf("Can't get unit subjects: %v", err)
+	}
+
+	if len(subjects) > 0 {
+		instance.setSubjects(subjects)
+	}
+
+	return nil
+}
+
 func (instance *Instance) initCurrentStatus() error {
 	if err := instance.initUnitConfigStatus(); err != nil {
 		return err
@@ -472,10 +491,14 @@ func (instance *Instance) initCurrentStatus() error {
 		return err
 	}
 
+	if err := instance.initUnitSubjects(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
+func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -490,19 +513,30 @@ func (instance *Instance) setUnitConfigStatus(status cloudprotocol.UnitConfigSta
 	})
 	if index < 0 {
 		instance.unitStatus.UnitConfig = append(instance.unitStatus.UnitConfig, status)
-	} else {
-		instance.unitStatus.UnitConfig[index] = status
+
+		return true
 	}
 
-	instance.statusChanged()
+	if !reflect.DeepEqual(instance.unitStatus.UnitConfig[index], status) {
+		instance.unitStatus.UnitConfig[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) {
-	instance.setUnitConfigStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool {
+	if instance.setUnitConfigStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatus) {
+func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -511,6 +545,7 @@ func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatu
 		"type":    status.ComponentType,
 		"status":  status.Status,
 		"version": status.Version,
+		"nodeID":  status.NodeID,
 		"error":   status.ErrorInfo,
 	}).Debug("Set component status")
 
@@ -519,17 +554,30 @@ func (instance *Instance) setComponentStatus(status cloudprotocol.ComponentStatu
 	})
 	if index < 0 {
 		instance.unitStatus.Components = append(instance.unitStatus.Components, status)
-	} else {
-		instance.unitStatus.Components[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Components[index], status) {
+		instance.unitStatus.Components[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentStatus) {
-	instance.setComponentStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateComponentStatus(status cloudprotocol.ComponentStatus) bool {
+	if instance.setComponentStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) {
+func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -546,17 +594,30 @@ func (instance *Instance) setLayerStatus(status cloudprotocol.LayerStatus) {
 	})
 	if index < 0 {
 		instance.unitStatus.Layers = append(instance.unitStatus.Layers, status)
-	} else {
-		instance.unitStatus.Layers[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Layers[index], status) {
+		instance.unitStatus.Layers[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) {
-	instance.setLayerStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateLayerStatus(status cloudprotocol.LayerStatus) bool {
+	if instance.setLayerStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) {
+func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -572,17 +633,30 @@ func (instance *Instance) setServiceStatus(status cloudprotocol.ServiceStatus) {
 	})
 	if index < 0 {
 		instance.unitStatus.Services = append(instance.unitStatus.Services, status)
-	} else {
-		instance.unitStatus.Services[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Services[index], status) {
+		instance.unitStatus.Services[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateServiceStatus(status cloudprotocol.ServiceStatus) {
-	instance.setServiceStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateServiceStatus(status cloudprotocol.ServiceStatus) bool {
+	if instance.setServiceStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus) {
+func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -600,17 +674,30 @@ func (instance *Instance) setInstanceStatus(status cloudprotocol.InstanceStatus)
 	})
 	if index < 0 {
 		instance.unitStatus.Instances = append(instance.unitStatus.Instances, status)
-	} else {
-		instance.unitStatus.Instances[index] = status
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Instances[index], status) {
+		instance.unitStatus.Instances[index] = status
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateInstanceStatus(status cloudprotocol.InstanceStatus) {
-	instance.setInstanceStatus(status)
-	instance.statusChanged()
+func (instance *Instance) updateInstanceStatus(status cloudprotocol.InstanceStatus) bool {
+	if instance.setInstanceStatus(status) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
+func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) bool {
 	instance.statusMutex.Lock()
 	defer instance.statusMutex.Unlock()
 
@@ -625,30 +712,60 @@ func (instance *Instance) setNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
 	})
 	if index < 0 {
 		instance.unitStatus.Nodes = append(instance.unitStatus.Nodes, nodeInfo)
-	} else {
-		instance.unitStatus.Nodes[index] = nodeInfo
+
+		return true
 	}
+
+	if !reflect.DeepEqual(instance.unitStatus.Nodes[index], nodeInfo) {
+		instance.unitStatus.Nodes[index] = nodeInfo
+
+		return true
+	}
+
+	return false
 }
 
-func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) {
-	instance.setNodeInfo(nodeInfo)
+func (instance *Instance) updateNodeInfo(nodeInfo cloudprotocol.NodeInfo) bool {
+	if instance.setNodeInfo(nodeInfo) {
+		instance.statusChanged()
+
+		return true
+	}
+
+	return false
+}
+
+func (instance *Instance) setSubjects(subjects []string) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
+	log.WithField("subjects", subjects).Debug("Set subjects")
+
+	instance.unitStatus.UnitSubjects = subjects
+}
+
+func (instance *Instance) updateSubjects(subjects []string) {
+	instance.setSubjects(subjects)
 	instance.statusChanged()
 }
 
 func (instance *Instance) statusChanged() {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
 	if instance.statusTimer != nil {
 		return
 	}
 
 	instance.statusTimer = time.AfterFunc(instance.sendStatusPeriod, func() {
-		instance.statusMutex.Lock()
-		defer instance.statusMutex.Unlock()
-
 		instance.sendCurrentStatus(true)
 	})
 }
 
 func (instance *Instance) sendCurrentStatus(deltaStatus bool) {
+	instance.statusMutex.Lock()
+	defer instance.statusMutex.Unlock()
+
 	if instance.statusTimer != nil {
 		instance.statusTimer.Stop()
 		instance.statusTimer = nil
@@ -666,15 +783,26 @@ func (instance *Instance) sendCurrentStatus(deltaStatus bool) {
 		return
 	}
 
-	instance.unitStatus.IsDeltaInfo = deltaStatus
-	if err := instance.statusSender.SendUnitStatus(
-		instance.unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
-		log.Errorf("Can't send unit status: %s", err)
+	if !deltaStatus {
+		if err := instance.statusSender.SendUnitStatus(
+			instance.unitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+			log.Errorf("Can't send unit status: %s", err)
+		}
+
+		return
+	}
+
+	deltaUnitStatus := cloudprotocol.DeltaUnitStatus(instance.unitStatus)
+	deltaUnitStatus.IsDeltaInfo = true
+
+	if err := instance.statusSender.SendDeltaUnitStatus(
+		deltaUnitStatus); err != nil && !errors.Is(err, amqphandler.ErrNotConnected) {
+		log.Errorf("Can't send delta unit status: %s", err)
 	}
 }
 
 func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
-	nodeIDs, err := instance.nodeManager.GetAllNodeIDs()
+	nodeIDs, err := instance.unitManager.GetAllNodeIDs()
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
 	}
@@ -682,7 +810,7 @@ func (instance *Instance) getAllNodesInfo() ([]cloudprotocol.NodeInfo, error) {
 	nodesInfo := make([]cloudprotocol.NodeInfo, 0, len(nodeIDs))
 
 	for _, nodeID := range nodeIDs {
-		nodeInfo, err := instance.nodeManager.GetNodeInfo(nodeID)
+		nodeInfo, err := instance.unitManager.GetNodeInfo(nodeID)
 		if err != nil {
 			log.WithField("nodeID", nodeID).Errorf("Can't get node info: %s", err)
 			continue
@@ -726,11 +854,18 @@ func (instance *Instance) handleChannels() {
 				return
 			}
 
-			instance.updateNodeInfo(nodeInfo)
-
-			if err := instance.softwareManager.requestRebalancing(); err != nil {
-				log.Errorf("Can't perform rebalancing: %v", err)
+			if instance.updateNodeInfo(nodeInfo) {
+				if err := instance.softwareManager.requestRebalancing(); err != nil {
+					log.Errorf("Can't perform rebalancing: %v", err)
+				}
 			}
+
+		case subjects, ok := <-instance.unitSubjectsChangedChannel:
+			if !ok {
+				return
+			}
+
+			instance.updateSubjects(subjects)
 
 		case systemQuotaAlert, ok := <-instance.systemQuotaAlertChannel:
 			if !ok {
@@ -738,7 +873,7 @@ func (instance *Instance) handleChannels() {
 			}
 
 			if systemQuotaAlert.Status == resourcemonitor.AlertStatusFall {
-				return
+				continue
 			}
 
 			if slices.Contains([]string{"cpu", "ram"}, systemQuotaAlert.Parameter) {

@@ -54,10 +54,10 @@ type softwareDownloader interface {
 	releaseDownloadedSoftware() error
 }
 type softwareStatusHandler interface {
-	updateLayerStatus(status cloudprotocol.LayerStatus)
-	updateServiceStatus(status cloudprotocol.ServiceStatus)
-	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus)
-	updateInstanceStatus(status cloudprotocol.InstanceStatus)
+	updateLayerStatus(status cloudprotocol.LayerStatus) bool
+	updateServiceStatus(status cloudprotocol.ServiceStatus) bool
+	updateUnitConfigStatus(status cloudprotocol.UnitConfigStatus) bool
+	updateInstanceStatus(status cloudprotocol.InstanceStatus) bool
 	getNodesStatus() ([]cloudprotocol.NodeStatus, error)
 }
 
@@ -77,13 +77,22 @@ type softwareUpdate struct {
 	RebalanceRequest bool                             `json:"rebalanceRequest,omitempty"`
 }
 
+const (
+	runStatusEventNone = iota
+	runStatusEventReceived
+	runStatusEventTimeout
+	runStatusEventClose
+)
+
 type softwareManager struct {
 	sync.Mutex
-	runStatusCV *sync.Cond
+
+	runStatusCV    *sync.Cond
+	runStatusEvent int
 
 	statusChannel chan cmserver.UpdateSOTAStatus
 
-	nodeManager       NodeManager
+	unitManager       UnitManager
 	unitConfigUpdater UnitConfigUpdater
 	downloader        softwareDownloader
 	statusHandler     softwareStatusHandler
@@ -114,7 +123,7 @@ type softwareManager struct {
  * Interface
  **********************************************************************************************************************/
 
-func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader, nodeManager NodeManager,
+func newSoftwareManager(statusHandler softwareStatusHandler, downloader softwareDownloader, unitManager UnitManager,
 	unitConfigUpdater UnitConfigUpdater, softwareUpdater SoftwareUpdater, instanceRunner InstanceRunner,
 	storage Storage, defaultTTL time.Duration,
 ) (manager *softwareManager, err error) {
@@ -122,7 +131,7 @@ func newSoftwareManager(statusHandler softwareStatusHandler, downloader software
 		statusChannel:     make(chan cmserver.UpdateSOTAStatus, 1),
 		downloader:        downloader,
 		statusHandler:     statusHandler,
-		nodeManager:       nodeManager,
+		unitManager:       unitManager,
 		unitConfigUpdater: unitConfigUpdater,
 		softwareUpdater:   softwareUpdater,
 		instanceRunner:    instanceRunner,
@@ -165,6 +174,7 @@ func (manager *softwareManager) close() (err error) {
 
 	log.Debug("Close software manager")
 
+	manager.runStatusEvent = runStatusEventClose
 	manager.runStatusCV.Signal()
 
 	close(manager.statusChannel)
@@ -219,7 +229,7 @@ func (manager *softwareManager) getCurrentStatus() (status cmserver.UpdateSOTASt
 	return status
 }
 
-func (manager *softwareManager) processRunStatus(instances []cloudprotocol.InstanceStatus) bool {
+func (manager *softwareManager) processRunStatus(instances []cloudprotocol.InstanceStatus) (revertRequired bool) {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -230,9 +240,10 @@ func (manager *softwareManager) processRunStatus(instances []cloudprotocol.Insta
 		manager.newServices = nil
 	}
 
+	manager.runStatusEvent = runStatusEventReceived
 	manager.runStatusCV.Signal()
 
-	return len(manager.revertServices) == 0
+	return len(manager.revertServices) != 0
 }
 
 func (manager *softwareManager) processDesiredStatus(desiredStatus cloudprotocol.DesiredStatus) error {
@@ -424,7 +435,7 @@ func (manager *softwareManager) needRunInstances(desiredInstances []cloudprotoco
 			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 		}
 
-		for i := uint64(0); i < instance.NumInstances; i++ {
+		for i := range instance.NumInstances {
 			ident.Instance = i
 
 			desiredIdents = append(desiredIdents, ident)
@@ -789,7 +800,7 @@ func (manager *softwareManager) readyToUpdate() {
 	manager.stateMachine.scheduleUpdate(manager.CurrentUpdate.Schedule)
 }
 
-func (manager *softwareManager) update(ctx context.Context) {
+func (manager *softwareManager) update(ctx context.Context) { //nolint: funlen
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -811,6 +822,14 @@ func (manager *softwareManager) update(ctx context.Context) {
 			manager.stateMachine.finishOperation(ctx, eventFinishUpdate, updateErr)
 		}()
 	}()
+
+	for manager.runStatusEvent == runStatusEventNone {
+		manager.runStatusCV.Wait()
+	}
+
+	if manager.runStatusEvent == runStatusEventClose {
+		return
+	}
 
 	if err := manager.updateNodes(); err != nil {
 		updateErr = err
@@ -854,7 +873,15 @@ func (manager *softwareManager) update(ctx context.Context) {
 		updateErr = err
 	}
 
-	manager.runStatusCV.Wait()
+	manager.runStatusEvent = runStatusEventNone
+
+	for manager.runStatusEvent == runStatusEventNone {
+		manager.runStatusCV.Wait()
+	}
+
+	if manager.runStatusEvent != runStatusEventReceived {
+		return
+	}
 
 	if len(manager.revertServices) != 0 {
 		manager.doRevertServices()
@@ -864,7 +891,11 @@ func (manager *softwareManager) update(ctx context.Context) {
 			updateErr = err
 		}
 
-		manager.runStatusCV.Wait()
+		manager.runStatusEvent = runStatusEventNone
+
+		for manager.runStatusEvent == runStatusEventNone {
+			manager.runStatusCV.Wait()
+		}
 	}
 }
 
@@ -928,6 +959,7 @@ func (manager *softwareManager) updateTimeout() {
 		}
 	}
 
+	manager.runStatusEvent = runStatusEventTimeout
 	manager.runStatusCV.Signal()
 }
 
@@ -1472,7 +1504,7 @@ func (manager *softwareManager) runInstances() (runErr error) {
 			ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 		}
 
-		for i := uint64(0); i < instance.NumInstances; i++ {
+		for i := range instance.NumInstances {
 			ident.Instance = i
 
 			instanceStatus := cloudprotocol.InstanceStatus{
@@ -1499,7 +1531,7 @@ func (manager *softwareManager) updateNodes() (nodesErr error) {
 		if nodeStatus.Status == cloudprotocol.NodeStatusPaused {
 			log.WithField("nodeID", nodeStatus.NodeID).Debug("Pause node")
 
-			if err := manager.nodeManager.PauseNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
+			if err := manager.unitManager.PauseNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
 				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't pause node: %v", err)
 
 				nodesErr = aoserrors.Wrap(err)
@@ -1509,7 +1541,7 @@ func (manager *softwareManager) updateNodes() (nodesErr error) {
 		if nodeStatus.Status == cloudprotocol.NodeStatusProvisioned {
 			log.WithField("nodeID", nodeStatus.NodeID).Debug("Resume node")
 
-			if err := manager.nodeManager.ResumeNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
+			if err := manager.unitManager.ResumeNode(nodeStatus.NodeID); err != nil && nodesErr == nil {
 				log.WithField("nodeID", nodeStatus.NodeID).Errorf("Can't resume node: %v", err)
 
 				nodesErr = aoserrors.Wrap(err)

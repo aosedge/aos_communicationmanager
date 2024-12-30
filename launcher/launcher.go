@@ -318,17 +318,17 @@ func (launcher *Launcher) processRunInstanceStatus(runStatus NodeRunInstanceStat
 	launcher.Lock()
 	defer launcher.Unlock()
 
-	log.Debugf("Received run status from nodeID: %s", runStatus.NodeID)
+	log.WithFields(log.Fields{"nodeID": runStatus.NodeID}).Debugf("Receive run status from node")
 
-	currentStatus := launcher.getNode(runStatus.NodeID)
-	if currentStatus == nil {
-		log.Errorf("Received status for unknown nodeID  %s", runStatus.NodeID)
+	node := launcher.getNode(runStatus.NodeID)
+	if node == nil {
+		log.WithField("nodeID", runStatus.NodeID).Errorf("Received status for unknown nodeID")
 
 		return
 	}
 
-	currentStatus.runStatus = runStatus.Instances
-	currentStatus.waitStatus = false
+	node.runStatus = runStatus.Instances
+	node.waitStatus = false
 
 	for _, node := range launcher.nodes {
 		if node.waitStatus {
@@ -432,7 +432,7 @@ func (launcher *Launcher) performPolicyBalancing(instances []cloudprotocol.Insta
 			continue
 		}
 
-		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+		for instanceIndex := range instance.NumInstances {
 			curInstance, err := launcher.instanceManager.getCurrentInstance(
 				createInstanceIdent(instance, instanceIndex))
 			if err != nil {
@@ -478,12 +478,19 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			"subjectID":    instance.SubjectID,
 			"numInstances": instance.NumInstances,
 			"priority":     instance.Priority,
-		}).Debug("Balance instances")
+		}).Debug("Balance service instances")
 
 		service, layers, err := launcher.getServiceLayers(instance)
 		if err != nil {
 			launcher.instanceManager.setAllInstanceError(instance, service.Version, err)
 			continue
+		}
+
+		if service.Config.SkipResourceLimits {
+			log.WithFields(log.Fields{
+				"serviceID": instance.ServiceID,
+				"subjectID": instance.SubjectID,
+			}).Warn("Skip resource limits")
 		}
 
 		nodes, err := getNodesByStaticResources(launcher.getNodesByPriorities(), service.Config, instance)
@@ -492,8 +499,9 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 			continue
 		}
 
-		for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+		for instanceIndex := range instance.NumInstances {
 			instanceIdent := createInstanceIdent(instance, instanceIndex)
+			log.WithFields(instanceIdentLogFields(instanceIdent, nil)).Debug("Balance instance")
 
 			if launcher.instanceManager.isInstanceScheduled(instanceIdent) {
 				continue
@@ -507,6 +515,9 @@ func (launcher *Launcher) performNodeBalancing(instances []cloudprotocol.Instanc
 				}
 
 				if curInstance.PrevNodeID != "" && curInstance.PrevNodeID != curInstance.NodeID {
+					log.WithFields(instanceIdentLogFields(curInstance.InstanceIdent,
+						log.Fields{"prevNodeID": curInstance.PrevNodeID})).Debug("Exclude previous node")
+
 					nodes = excludeNodes(nodes, []string{curInstance.PrevNodeID})
 					if len(nodes) == 0 {
 						launcher.instanceManager.setInstanceError(instanceIdent, service.Version,
@@ -545,7 +556,7 @@ func (launcher *Launcher) getServiceLayers(instance cloudprotocol.InstanceInfo) 
 		return service, nil, aoserrors.Wrap(err)
 	}
 
-	if service.Cached {
+	if service.State == InstanceCached {
 		return service, nil, aoserrors.New("service deleted")
 	}
 
@@ -617,7 +628,7 @@ func (launcher *Launcher) removeInstanceNetworkParameters(instances []cloudproto
 nextNetInstance:
 	for _, netInstance := range networkInstances {
 		for _, instance := range instances {
-			for instanceIndex := uint64(0); instanceIndex < instance.NumInstances; instanceIndex++ {
+			for instanceIndex := range instance.NumInstances {
 				instanceIdent := aostypes.InstanceIdent{
 					ServiceID: instance.ServiceID, SubjectID: instance.SubjectID,
 					Instance: instanceIndex,
@@ -687,46 +698,104 @@ func (launcher *Launcher) getLayersForService(digests []string) ([]imagemanager.
 	return layers, nil
 }
 
-func getStorageRequestRatio(
-	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
-) float64 {
-	if serviceRatios != nil && serviceRatios.Storage != nil {
-		return float64(*serviceRatios.Storage) / 100
+func getReqDiskSize(serviceConfig aostypes.ServiceConfig, nodeRatios *aostypes.ResourceRatiosInfo,
+) (stateSize, storageSize uint64) {
+	stateQuota := serviceConfig.Quotas.StateLimit
+	storageQuota := serviceConfig.Quotas.StorageLimit
+
+	if serviceConfig.RequestedResources != nil && serviceConfig.RequestedResources.State != nil {
+		stateSize = clampResource(*serviceConfig.RequestedResources.State, stateQuota)
+	} else {
+		stateSize = getReqStateFromNodeConf(stateQuota, nodeRatios)
 	}
+
+	if serviceConfig.RequestedResources != nil && serviceConfig.RequestedResources.Storage != nil {
+		storageSize = clampResource(*serviceConfig.RequestedResources.Storage, storageQuota)
+	} else {
+		storageSize = getReqStorageFromNodeConf(storageQuota, nodeRatios)
+	}
+
+	return stateSize, storageSize
+}
+
+func getReqCPUFromNodeConf(cpuQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
+
+	if nodeRatios != nil && nodeRatios.CPU != nil {
+		ratio = float64(*nodeRatios.CPU) / 100.0
+	}
+
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	if cpuQuota != nil {
+		return uint64(float64(*cpuQuota)*ratio + 0.5)
+	}
+
+	return 0
+}
+
+func getReqRAMFromNodeConf(ramQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
+
+	if nodeRatios != nil && nodeRatios.RAM != nil {
+		ratio = float64(*nodeRatios.RAM) / 100.0
+	}
+
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	if ramQuota != nil {
+		return uint64(float64(*ramQuota)*ratio + 0.5)
+	}
+
+	return 0
+}
+
+func getReqStorageFromNodeConf(storageQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
 
 	if nodeRatios != nil && nodeRatios.Storage != nil {
-		return float64(*nodeRatios.Storage) / 100
+		ratio = float64(*nodeRatios.Storage) / 100.0
 	}
 
-	return defaultResourceRation / 100
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	if storageQuota != nil {
+		return uint64(float64(*storageQuota)*ratio + 0.5)
+	}
+
+	return 0
 }
 
-func getCPURequestRatio(
-	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
-) float64 {
-	if serviceRatios != nil && serviceRatios.CPU != nil {
-		return float64(*serviceRatios.CPU) / 100
+func getReqStateFromNodeConf(stateQuota *uint64, nodeRatios *aostypes.ResourceRatiosInfo) uint64 {
+	ratio := defaultResourceRation / 100.0
+
+	if nodeRatios != nil && nodeRatios.State != nil {
+		ratio = float64(*nodeRatios.State) / 100.0
 	}
 
-	if nodeRatios != nil && nodeRatios.CPU != nil {
-		return float64(*nodeRatios.CPU) / 100
+	if ratio > 1.0 {
+		ratio = 1.0
 	}
 
-	return defaultResourceRation / 100
+	if stateQuota != nil {
+		return uint64(float64(*stateQuota)*ratio + 0.5)
+	}
+
+	return 0
 }
 
-func getRAMRequestRatio(
-	serviceRatios *aostypes.ResourceRatiosInfo, nodeRatios *aostypes.ResourceRatiosInfo,
-) float64 {
-	if serviceRatios != nil && serviceRatios.RAM != nil {
-		return float64(*serviceRatios.RAM) / 100
+func clampResource(value uint64, quota *uint64) uint64 {
+	if quota != nil && value > *quota {
+		return *quota
 	}
 
-	if nodeRatios != nil && nodeRatios.CPU != nil {
-		return float64(*nodeRatios.CPU) / 100
-	}
-
-	return defaultResourceRation / 100
+	return value
 }
 
 func instanceIdentLogFields(instance aostypes.InstanceIdent, extraFields log.Fields) log.Fields {

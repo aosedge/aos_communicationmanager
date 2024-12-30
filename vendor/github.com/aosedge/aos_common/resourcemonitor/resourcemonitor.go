@@ -23,10 +23,9 @@ import (
 	"context"
 	"math"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
@@ -269,15 +268,15 @@ func (monitor *ResourceMonitor) StartInstanceMonitor(
 
 	monitor.instanceMonitoringMap[instanceID] = instanceMonitoring
 
-	instanceMonitoring.monitoring.Disk = make(
+	instanceMonitoring.monitoring.Partitions = make(
 		[]aostypes.PartitionUsage, len(monitoringConfig.Partitions))
 
 	for i, partitionParam := range monitoringConfig.Partitions {
-		instanceMonitoring.monitoring.Disk[i].Name = partitionParam.Name
+		instanceMonitoring.monitoring.Partitions[i].Name = partitionParam.Name
 	}
 
 	instanceMonitoring.averageData = *newAverageMonitoring(
-		monitor.averageWindowCount, instanceMonitoring.monitoring.Disk)
+		monitor.averageWindowCount, instanceMonitoring.monitoring.Partitions)
 
 	if monitoringConfig.AlertRules != nil && monitor.alertSender != nil {
 		if err := monitor.setupInstanceAlerts(
@@ -355,14 +354,14 @@ func (monitor *ResourceMonitor) setupNodeMonitoring(nodeInfo cloudprotocol.NodeI
 	monitor.nodeInfo = nodeInfo
 
 	monitor.nodeMonitoring = aostypes.MonitoringData{
-		Disk: make([]aostypes.PartitionUsage, len(nodeInfo.Partitions)),
+		Partitions: make([]aostypes.PartitionUsage, len(nodeInfo.Partitions)),
 	}
 
 	for i, partitionParam := range nodeInfo.Partitions {
-		monitor.nodeMonitoring.Disk[i].Name = partitionParam.Name
+		monitor.nodeMonitoring.Partitions[i].Name = partitionParam.Name
 	}
 
-	monitor.nodeAverageData = *newAverageMonitoring(monitor.averageWindowCount, monitor.nodeMonitoring.Disk)
+	monitor.nodeAverageData = *newAverageMonitoring(monitor.averageWindowCount, monitor.nodeMonitoring.Partitions)
 
 	return nil
 }
@@ -401,9 +400,9 @@ func (monitor *ResourceMonitor) setupSystemAlerts(nodeConfig cloudprotocol.NodeC
 			*nodeConfig.AlertRules.RAM))
 	}
 
-	for _, diskRule := range nodeConfig.AlertRules.UsedDisks {
+	for _, diskRule := range nodeConfig.AlertRules.Partitions {
 		diskUsageValue, diskTotalSize, findErr := getDiskUsageValue(
-			diskRule.Name, monitor.nodeMonitoring.Disk, monitor.nodeInfo.Partitions)
+			diskRule.Name, monitor.nodeMonitoring.Partitions, monitor.nodeInfo.Partitions)
 		if findErr != nil && err == nil {
 			err = findErr
 			continue
@@ -526,9 +525,9 @@ func (monitor *ResourceMonitor) setupInstanceAlerts(instanceID string, instanceM
 		instanceMonitoring.alertProcessorElements = append(instanceMonitoring.alertProcessorElements, e)
 	}
 
-	for _, diskRule := range rules.UsedDisks {
+	for _, diskRule := range rules.Partitions {
 		diskUsageValue, diskTotalSize, findErr := getDiskUsageValue(
-			diskRule.Name, instanceMonitoring.monitoring.Disk, monitor.nodeInfo.Partitions)
+			diskRule.Name, instanceMonitoring.monitoring.Partitions, monitor.nodeInfo.Partitions)
 		if findErr != nil && err == nil {
 			err = findErr
 			continue
@@ -606,7 +605,7 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 		log.Errorf("Can't get system RAM: %s", err)
 	}
 
-	for i, disk := range monitor.nodeMonitoring.Disk {
+	for i, disk := range monitor.nodeMonitoring.Partitions {
 		mountPoint, err := getDiskPath(monitor.nodeInfo.Partitions, disk.Name)
 		if err != nil {
 			log.Errorf("Can't get disk path: %v", err)
@@ -614,7 +613,7 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 			continue
 		}
 
-		monitor.nodeMonitoring.Disk[i].UsedSize, err = getSystemDiskUsage(mountPoint)
+		monitor.nodeMonitoring.Partitions[i].UsedSize, err = getSystemDiskUsage(mountPoint)
 		if err != nil {
 			log.Errorf("Can't get system Disk usage: %v", err)
 		}
@@ -633,11 +632,11 @@ func (monitor *ResourceMonitor) getCurrentSystemData() {
 	monitor.nodeAverageData.updateMonitoringData(monitor.nodeMonitoring)
 
 	log.WithFields(log.Fields{
-		"CPU":      monitor.nodeMonitoring.CPU,
-		"RAM":      monitor.nodeMonitoring.RAM,
-		"Disk":     monitor.nodeMonitoring.Disk,
-		"Download": monitor.nodeMonitoring.Download,
-		"Upload":   monitor.nodeMonitoring.Upload,
+		"CPU":        monitor.nodeMonitoring.CPU,
+		"RAM":        monitor.nodeMonitoring.RAM,
+		"Partitions": monitor.nodeMonitoring.Partitions,
+		"Download":   monitor.nodeMonitoring.Download,
+		"Upload":     monitor.nodeMonitoring.Upload,
 	}).Debug("Monitoring data")
 }
 
@@ -655,7 +654,8 @@ func (monitor *ResourceMonitor) getCurrentInstancesData() {
 		value.monitoring.CPU = monitor.cpuToDMIPs(float64(value.monitoring.CPU))
 
 		for i, partitionParam := range value.partitions {
-			value.monitoring.Disk[i].UsedSize, err = getInstanceDiskUsage(partitionParam.Path, value.uid, value.gid)
+			value.monitoring.Partitions[i].UsedSize, err = getInstanceDiskUsage(partitionParam.Path,
+				value.uid, value.gid)
 			if err != nil {
 				log.Errorf("Can't get service disk usage: %v", err)
 			}
@@ -674,12 +674,12 @@ func (monitor *ResourceMonitor) getCurrentInstancesData() {
 		value.averageData.updateMonitoringData(value.monitoring.MonitoringData)
 
 		log.WithFields(log.Fields{
-			"id":       instanceID,
-			"CPU":      value.monitoring.CPU,
-			"RAM":      value.monitoring.RAM,
-			"Disk":     value.monitoring.Disk,
-			"Download": value.monitoring.Download,
-			"Upload":   value.monitoring.Upload,
+			"id":         instanceID,
+			"CPU":        value.monitoring.CPU,
+			"RAM":        value.monitoring.RAM,
+			"Partitions": value.monitoring.Partitions,
+			"Download":   value.monitoring.Download,
+			"Upload":     value.monitoring.Upload,
 		}).Debug("Instance monitoring data")
 	}
 }
@@ -797,16 +797,16 @@ func newAverageMonitoring(windowCount uint64, partitions []aostypes.PartitionUsa
 
 func (average *averageMonitoring) toMonitoringData(timestamp time.Time) aostypes.MonitoringData {
 	data := aostypes.MonitoringData{
-		CPU:       average.cpu.getIntValue(),
-		RAM:       average.ram.getIntValue(),
-		Download:  average.download.getIntValue(),
-		Upload:    average.upload.getIntValue(),
-		Disk:      make([]aostypes.PartitionUsage, 0, len(average.disks)),
-		Timestamp: timestamp,
+		CPU:        average.cpu.getIntValue(),
+		RAM:        average.ram.getIntValue(),
+		Download:   average.download.getIntValue(),
+		Upload:     average.upload.getIntValue(),
+		Partitions: make([]aostypes.PartitionUsage, 0, len(average.disks)),
+		Timestamp:  timestamp,
 	}
 
 	for name, diskUsage := range average.disks {
-		data.Disk = append(data.Disk, aostypes.PartitionUsage{
+		data.Partitions = append(data.Partitions, aostypes.PartitionUsage{
 			Name: name, UsedSize: diskUsage.getIntValue(),
 		})
 	}
@@ -820,14 +820,14 @@ func (average *averageMonitoring) updateMonitoringData(data aostypes.MonitoringD
 	average.download.calculate(float64(data.Download))
 	average.upload.calculate(float64(data.Upload))
 
-	for _, disk := range data.Disk {
-		averageCalc, ok := average.disks[disk.Name]
+	for _, partition := range data.Partitions {
+		averageCalc, ok := average.disks[partition.Name]
 		if !ok {
-			log.Errorf("Can't find disk: %s", disk.Name)
+			log.Errorf("Can't find disk: %s", partition.Name)
 
 			continue
 		}
 
-		averageCalc.calculate(float64(disk.UsedSize))
+		averageCalc.calculate(float64(partition.UsedSize))
 	}
 }

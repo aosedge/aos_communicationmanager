@@ -106,9 +106,9 @@ func TestSendMonitorOffline(t *testing.T) {
 	}
 	defer controller.Close()
 
-	var sentData []cloudprotocol.Monitoring
+	sentData := make([]cloudprotocol.Monitoring, 0, numOfflineMessages+numExtraMessages)
 
-	for i := 0; i < numOfflineMessages+numExtraMessages; i++ {
+	for range numOfflineMessages + numExtraMessages {
 		inputData, expectedData := getTestMonitoringData()
 
 		controller.SendNodeMonitoring(inputData)
@@ -184,7 +184,7 @@ func getTestMonitoringData() (aostypes.NodeMonitoring, cloudprotocol.Monitoring)
 		Items: []aostypes.MonitoringData{
 			{
 				RAM: 1024, CPU: 50, Download: 8192, Upload: 4096, Timestamp: timestamp,
-				Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 			},
 		},
 	}
@@ -195,7 +195,7 @@ func getTestMonitoringData() (aostypes.NodeMonitoring, cloudprotocol.Monitoring)
 		Items: []aostypes.MonitoringData{
 			{
 				RAM: 1024, CPU: 50, Timestamp: timestamp,
-				Disk: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
+				Partitions: []aostypes.PartitionUsage{{Name: "p1", UsedSize: 100}},
 			},
 		},
 	}
