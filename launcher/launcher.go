@@ -81,7 +81,7 @@ type NetworkManager interface {
 	PrepareInstanceNetworkParameters(
 		instanceIdent aostypes.InstanceIdent, networkID string,
 		params networkmanager.NetworkParameters) (aostypes.NetworkParameters, error)
-	RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent, networkID string)
+	RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent)
 	RestartDNSServer() error
 	GetInstances() []aostypes.InstanceIdent
 	UpdateProviderNetwork(providers []string, nodeID string) error
@@ -640,13 +640,7 @@ nextNetInstance:
 			}
 		}
 
-		serviceInfo, err := launcher.imageProvider.GetServiceInfo(netInstance.ServiceID)
-		if err != nil {
-			log.WithField("serviceID", netInstance.ServiceID).Errorf("Can't get service info: %v", err)
-			continue
-		}
-
-		launcher.networkManager.RemoveInstanceNetworkParameters(netInstance, serviceInfo.ProviderID)
+		launcher.networkManager.RemoveInstanceNetworkParameters(netInstance)
 	}
 }
 
