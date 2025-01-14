@@ -180,11 +180,11 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 }
 
 // RemoveInstanceNetworkConf removes stored instance network parameters.
-func (manager *NetworkManager) RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent, networkID string) {
+func (manager *NetworkManager) RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent) {
 	manager.Lock()
 	defer manager.Unlock()
 
-	networkParameters, found := manager.getNetworkParametersToCache(networkID, instanceIdent)
+	networkParameters, networkID, found := manager.getNetworkParametersToCache(instanceIdent)
 	if !found {
 		return
 	}
@@ -250,7 +250,16 @@ func (manager *NetworkManager) PrepareInstanceNetworkParameters(
 		}
 	}
 
-	networkParameters, found := manager.getNetworkParametersToCache(networkID, instanceIdent)
+	networkParameters, currentNetworkID, found := manager.getNetworkParametersToCache(instanceIdent)
+	if found && networkID != currentNetworkID {
+		if err := manager.removeInstanceNetworkParameters(
+			networkID, instanceIdent, net.IP(networkParameters.IP)); err != nil {
+			log.Errorf("Can't remove network info: %v", err)
+		}
+
+		found = false
+	}
+
 	if !found {
 		if networkParameters, err = manager.createNetwork(instanceIdent, networkID, params); err != nil {
 			return networkParameters, err
@@ -426,15 +435,15 @@ func (manager *NetworkManager) addNetworkParametersToCache(instanceNetworkInfo I
 }
 
 func (manager *NetworkManager) getNetworkParametersToCache(
-	networkID string, instanceIdent aostypes.InstanceIdent,
-) (aostypes.NetworkParameters, bool) {
-	if instances, ok := manager.instancesData[networkID]; ok {
-		if networkParameter, ok := instances[instanceIdent]; ok {
-			return networkParameter.NetworkParameters, true
+	instanceIdent aostypes.InstanceIdent,
+) (params aostypes.NetworkParameters, networkID string, found bool) {
+	for networkID, instanceData := range manager.instancesData {
+		if networkParameter, ok := instanceData[instanceIdent]; ok {
+			return networkParameter.NetworkParameters, networkID, true
 		}
 	}
 
-	return aostypes.NetworkParameters{}, false
+	return aostypes.NetworkParameters{}, "", false
 }
 
 func (manager *NetworkManager) removeProviderNetworks(providers []string) {

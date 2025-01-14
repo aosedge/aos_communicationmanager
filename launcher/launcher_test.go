@@ -1094,10 +1094,14 @@ func (network *testNetworkManager) PrepareInstanceNetworkParameters(
 	}, nil
 }
 
-func (network *testNetworkManager) RemoveInstanceNetworkParameters(
-	instanceIdent aostypes.InstanceIdent, networkID string,
-) {
-	delete(network.networkInfo[networkID], instanceIdent)
+func (network *testNetworkManager) RemoveInstanceNetworkParameters(instanceIdent aostypes.InstanceIdent) {
+	for _, network := range network.networkInfo {
+		if _, ok := network[instanceIdent]; ok {
+			delete(network, instanceIdent)
+
+			break
+		}
+	}
 }
 
 func (network *testNetworkManager) GetInstances() (instances []aostypes.InstanceIdent) {

@@ -158,7 +158,7 @@ func TestBaseNetwork(t *testing.T) {
 
 	for _, data := range testData {
 		if data.removeConfig {
-			manager.RemoveInstanceNetworkParameters(data.instance, "network1")
+			manager.RemoveInstanceNetworkParameters(data.instance)
 
 			continue
 		}
