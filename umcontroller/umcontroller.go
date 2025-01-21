@@ -803,7 +803,7 @@ func (umCtrl *Controller) cleanupUpdateData() {
 
 func (umCtrl *Controller) generateFSMEvent(event string, args ...interface{}) {
 	if !umCtrl.operable {
-		log.Error("Update controller in shutdown state")
+		log.Debug("Update controller in shutdown state")
 		return
 	}
 
