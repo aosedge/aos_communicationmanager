@@ -182,6 +182,10 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 
 	defer smClient.close()
 
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
+	}
+
 	if err := waitMessage(
 		controller.GetRunInstancesStatusChannel(), expectedRuntimeStatus, messageTimeout); err != nil {
 		t.Errorf("Incorrect runtime status notification: %v", err)
@@ -232,10 +236,8 @@ func TestNodeConfigMessages(t *testing.T) {
 		t.Errorf("Incorrect runtime status notification: %v", err)
 	}
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{ConnectionStatus: &pbsm.ConnectionStatus{}},
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
 	go func() {
@@ -337,6 +339,10 @@ func TestSMAlertNotifications(t *testing.T) {
 	}
 
 	defer smClient.close()
+
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
+	}
 
 	// Test alert notifications
 	type testAlert struct {
@@ -533,6 +539,10 @@ func TestSMMonitoringNotifications(t *testing.T) {
 
 	defer smClient.close()
 
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
+	}
+
 	type testMonitoringElement struct {
 		expectedMonitoring aostypes.NodeMonitoring
 		sendMonitoring     *pbsm.InstantMonitoring
@@ -652,12 +662,8 @@ func TestLogMessages(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-			ConnectionStatus: &pbsm.ConnectionStatus{},
-		},
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
 	type testLogRequest struct {
@@ -898,15 +904,11 @@ func TestOverrideEnvVars(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-			ConnectionStatus: &pbsm.ConnectionStatus{},
-		},
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
-	if err = controller.OverrideEnvVars(nodeID, envVars); err != nil {
+	if err = controller.OverrideEnvVars(envVars); err != nil {
 		t.Fatalf("Error sending override env vars: %v", err)
 	}
 
@@ -986,16 +988,12 @@ func TestRunInstances(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
-		NodeID: nodeID, NodeType: nodeType, Instances: make([]cloudprotocol.InstanceStatus, 0),
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-			ConnectionStatus: &pbsm.ConnectionStatus{},
-		},
+	if err := waitMessage(controller.GetRunInstancesStatusChannel(), launcher.NodeRunInstanceStatus{
+		NodeID: nodeID, NodeType: nodeType, Instances: make([]cloudprotocol.InstanceStatus, 0),
 	}, messageTimeout); err != nil {
 		t.Fatalf("Wait message error: %v", err)
 	}
@@ -1066,12 +1064,8 @@ func TestUpdateNetwork(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-			ConnectionStatus: &pbsm.ConnectionStatus{},
-		},
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
 	if err := controller.UpdateNetwork(nodeID, networkParameters); err != nil {
@@ -1106,12 +1100,8 @@ func TestSyncClock(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-			ConnectionStatus: &pbsm.ConnectionStatus{},
-		},
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
 	smClient.sendMessageChannel <- &pbsm.SMOutgoingMessages{
@@ -1212,12 +1202,8 @@ func TestGetAverageMonitoring(t *testing.T) {
 
 	defer smClient.close()
 
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-			ConnectionStatus: &pbsm.ConnectionStatus{},
-		},
-	}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(false, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
 	go func() {
@@ -1271,12 +1257,8 @@ func TestConnectionStatus(t *testing.T) {
 
 	defer smClient.close()
 
-	// check receive correct connection status on registration
-
-	if err := smClient.waitMessage(&pbsm.SMIncomingMessages{SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{
-		ConnectionStatus: &pbsm.ConnectionStatus{CloudStatus: pbsm.ConnectionEnum_CONNECTED},
-	}}, messageTimeout); err != nil {
-		t.Fatalf("Wait message error: %v", err)
+	if err := smClient.waitInitMessages(true, messageTimeout); err != nil {
+		t.Fatalf("Can't wait init messages: %v", err)
 	}
 
 	// check receive correct connection status when cloud disconnected
@@ -1467,6 +1449,29 @@ func (client *testSMClient) processSendMessages(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (client *testSMClient) waitInitMessages(cloudConnected bool, timeout time.Duration) error {
+	cloudStatus := pbsm.ConnectionEnum_DISCONNECTED
+	if cloudConnected {
+		cloudStatus = pbsm.ConnectionEnum_CONNECTED
+	}
+
+	if err := client.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_ConnectionStatus{ConnectionStatus: &pbsm.ConnectionStatus{
+			CloudStatus: cloudStatus,
+		}},
+	}, timeout); err != nil {
+		return err
+	}
+
+	if err := client.waitMessage(&pbsm.SMIncomingMessages{
+		SMIncomingMessage: &pbsm.SMIncomingMessages_OverrideEnvVars{},
+	}, timeout); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (client *testSMClient) waitMessage(expectedMsg *pbsm.SMIncomingMessages, timeout time.Duration) error {
