@@ -356,7 +356,7 @@ func (cm *communicationManager) processMessage(message amqp.Message) (err error)
 	case *cloudprotocol.OverrideEnvVars:
 		log.Info("Receive override env vars message")
 
-		if err = cm.smController.OverrideEnvVars(cm.iam.GetNodeID(), *data); err != nil {
+		if err = cm.smController.OverrideEnvVars(*data); err != nil {
 			return aoserrors.Wrap(err)
 		}
 
