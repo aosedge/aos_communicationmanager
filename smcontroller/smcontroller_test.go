@@ -1465,12 +1465,6 @@ func (client *testSMClient) waitInitMessages(cloudConnected bool, timeout time.D
 		return err
 	}
 
-	if err := client.waitMessage(&pbsm.SMIncomingMessages{
-		SMIncomingMessage: &pbsm.SMIncomingMessages_OverrideEnvVars{},
-	}, timeout); err != nil {
-		return err
-	}
-
 	return nil
 }
 
