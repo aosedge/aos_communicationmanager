@@ -75,7 +75,6 @@ type Controller struct {
 	nodeConfigStatusChan      chan unitconfig.NodeConfigStatus
 	closeChannel              chan struct{}
 	restartTimer              *time.Timer
-	overrideEnvVar            cloudprotocol.OverrideEnvVars
 
 	isCloudConnected bool
 	grpcServer       *grpchelpers.GRPCServer
@@ -274,8 +273,6 @@ func (controller *Controller) UpdateNetwork(nodeID string, networkParameters []a
 
 // OverrideEnvVars overrides instance env vars.
 func (controller *Controller) OverrideEnvVars(envVars cloudprotocol.OverrideEnvVars) error {
-	controller.overrideEnvVar = envVars
-
 	for _, handler := range controller.nodes {
 		if handler == nil {
 			continue
@@ -498,10 +495,6 @@ func (controller *Controller) handleNewConnection(
 
 	if err := newHandler.sendConnectionStatus(controller.isCloudConnected); err != nil {
 		log.Errorf("Can't send connection status: %v", err)
-	}
-
-	if err := newHandler.overrideEnvVars(controller.overrideEnvVar); err != nil {
-		log.Errorf("Can't send override env vars: %v", err)
 	}
 
 	return nil
