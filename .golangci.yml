@@ -20,6 +20,7 @@ linters:
     # deprecated
     - bodyclose
     - contextcheck
+    - exportloopref
     - nilerr
     - noctx
     - rowserrcheck
@@ -48,8 +49,24 @@ linters-settings:
       - G204
 
   mnd:
-    ignored-numbers: 0o600,0o755,0o644,0.5,3,5,10,16,32,64,128,100,100.0,0xff
-    ignored-files: config/config.go,fcrypt/utils.go
+    ignored-numbers:
+      [
+        "0o600",
+        "0o755",
+        "0o644",
+        "0.5",
+        "3",
+        "5",
+        "10",
+        "16",
+        "32",
+        "64",
+        "128",
+        "100",
+        "100.0",
+        "0xff",
+      ]
+    ignored-files: ["config/config.go", "fcrypt/utils.go"]
 
   interfacebloat:
     max: 12
