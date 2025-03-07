@@ -23,8 +23,6 @@ func NewHandleAtFrom(newNs, curNs netns.NsHandle) (*Handle, error) {
 	return nil, ErrNotImplemented
 }
 
-func (h *Handle) Close() {}
-
 func (h *Handle) Delete() {}
 
 func (h *Handle) SupportsNetlinkFamily(nlFamily int) bool {
@@ -79,10 +77,6 @@ func (h *Handle) LinkSetVfVlanQos(link Link, vf, vlan, qos int) error {
 	return ErrNotImplemented
 }
 
-func (h *Handle) LinkSetVfVlanQosProto(link Link, vf, vlan, qos, proto int) error {
-	return ErrNotImplemented
-}
-
 func (h *Handle) LinkSetVfTxRate(link Link, vf, rate int) error {
 	return ErrNotImplemented
 }
@@ -91,7 +85,7 @@ func (h *Handle) LinkSetVfRate(link Link, vf, minRate, maxRate int) error {
 	return ErrNotImplemented
 }
 
-func (h *Handle) LinkSetMaster(link Link, master Link) error {
+func (h *Handle) LinkSetMaster(link Link, master *Bridge) error {
 	return ErrNotImplemented
 }
 
@@ -164,22 +158,6 @@ func (h *Handle) LinkSetTxQLen(link Link, qlen int) error {
 }
 
 func (h *Handle) LinkSetGroup(link Link, group int) error {
-	return ErrNotImplemented
-}
-
-func (h *Handle) LinkSetGSOMaxSize(link Link, maxSize int) error {
-	return ErrNotImplemented
-}
-
-func (h *Handle) LinkSetGROMaxSize(link Link, maxSize int) error {
-	return ErrNotImplemented
-}
-
-func (h *Handle) LinkSetGSOIPv4MaxSize(link Link, maxSize int) error {
-	return ErrNotImplemented
-}
-
-func (h *Handle) LinkSetGROIPv4MaxSize(link Link, maxSize int) error {
 	return ErrNotImplemented
 }
 
@@ -256,14 +234,6 @@ func (h *Handle) NeighProxyList(linkIndex, family int) ([]Neigh, error) {
 }
 
 func (h *Handle) RouteAdd(route *Route) error {
-	return ErrNotImplemented
-}
-
-func (h *Handle) RouteAppend(route *Route) error {
-	return ErrNotImplemented
-}
-
-func (h *Handle) RouteChange(route *Route) error {
 	return ErrNotImplemented
 }
 
