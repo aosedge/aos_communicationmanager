@@ -4,11 +4,6 @@
 package route
 
 const (
-	sizeofIfMsghdrlFreeBSD10        = 0xb0
-	sizeofIfaMsghdrFreeBSD10        = 0x14
-	sizeofIfmaMsghdrFreeBSD10       = 0x10
-	sizeofIfAnnouncemsghdrFreeBSD10 = 0x18
-
 	sizeofRtMsghdrFreeBSD10  = 0x98
 	sizeofRtMetricsFreeBSD10 = 0x70
 
@@ -18,10 +13,6 @@ const (
 	sizeofIfMsghdrFreeBSD10 = 0xa8
 	sizeofIfMsghdrFreeBSD11 = 0xa8
 
-	sizeofIfaMsghdrFreeBSD10Emu        = 0x14
-	sizeofIfmaMsghdrFreeBSD10Emu       = 0x10
-	sizeofIfAnnouncemsghdrFreeBSD10Emu = 0x18
-
 	sizeofRtMsghdrFreeBSD10Emu  = 0x98
 	sizeofRtMetricsFreeBSD10Emu = 0x70
 
@@ -30,7 +21,4 @@ const (
 	sizeofIfMsghdrFreeBSD9Emu  = 0xa8
 	sizeofIfMsghdrFreeBSD10Emu = 0xa8
 	sizeofIfMsghdrFreeBSD11Emu = 0xa8
-
-	sizeofSockaddrInet  = 0x10
-	sizeofSockaddrInet6 = 0x1c
 )
