@@ -234,7 +234,7 @@ const (
 	umRestartInterval = 10 * time.Second
 )
 
-const lowestUpdatePriority = 1000
+const lowestUpdatePriority = 0
 
 const fileScheme = "file"
 
@@ -548,6 +548,10 @@ func (umCtrl *Controller) handleNewConnection(nodeID string, handler *umHandler,
 
 		return
 	}
+
+	sort.SliceStable(umCtrl.connections, func(i, j int) bool {
+		return umCtrl.connections[i].updatePriority > umCtrl.connections[j].updatePriority
+	})
 
 	if umCtrl.isAllNodesConnected() {
 		umCtrl.processAllNodesConnected()
@@ -1187,18 +1191,9 @@ func (umCtrl *Controller) createConnections() error {
 		}
 
 		if nodeHasUM {
-			umCtrl.connections = append(umCtrl.connections, umConnection{
-				nodeID:         nodeInfo.NodeID,
-				isLocalClient:  nodeInfo.NodeID == umCtrl.currentNodeID,
-				updatePriority: lowestUpdatePriority,
-				handler:        nil,
-			})
+			umCtrl.addNewConnection(nodeInfo.NodeID)
 		}
 	}
-
-	sort.Slice(umCtrl.connections, func(i, j int) bool {
-		return umCtrl.connections[i].updatePriority < umCtrl.connections[j].updatePriority
-	})
 
 	return nil
 }
@@ -1241,10 +1236,7 @@ func (umCtrl *Controller) handleNodeInfoChange(nodeInfo cloudprotocol.NodeInfo) 
 			}
 		}
 
-		umCtrl.connections = append(umCtrl.connections, umConnection{
-			nodeID:        nodeInfo.NodeID,
-			isLocalClient: nodeInfo.NodeID == umCtrl.currentNodeID, updatePriority: lowestUpdatePriority, handler: nil,
-		})
+		umCtrl.addNewConnection(nodeInfo.NodeID)
 	}
 }
 
@@ -1345,4 +1337,19 @@ func (umCtrl *Controller) processAllNodesConnected() {
 	}
 
 	umCtrl.generateFSMEvent(evAllClientsConnected)
+}
+
+func (umCtrl *Controller) addNewConnection(nodeID string) {
+	isMainNode := nodeID == umCtrl.currentNodeID
+
+	umCtrl.connections = append(umCtrl.connections, umConnection{
+		nodeID:         nodeID,
+		isLocalClient:  isMainNode,
+		updatePriority: lowestUpdatePriority,
+		handler:        nil,
+	})
+
+	sort.SliceStable(umCtrl.connections, func(i, j int) bool {
+		return umCtrl.connections[i].updatePriority > umCtrl.connections[j].updatePriority
+	})
 }
