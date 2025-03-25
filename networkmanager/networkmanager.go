@@ -32,7 +32,7 @@ import (
 	"github.com/aosedge/aos_common/aoserrors"
 	"github.com/aosedge/aos_common/aostypes"
 	"github.com/aosedge/aos_communicationmanager/config"
-	"github.com/apparentlymart/go-cidr/cidr"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -55,9 +55,9 @@ type Storage interface {
 	AddNetworkInstanceInfo(info InstanceNetworkInfo) error
 	RemoveNetworkInstanceInfo(instance aostypes.InstanceIdent) error
 	GetNetworkInstancesInfo() ([]InstanceNetworkInfo, error)
-	RemoveNetworkInfo(networkID string) error
-	AddNetworkInfo(info aostypes.NetworkParameters) error
-	GetNetworksInfo() ([]aostypes.NetworkParameters, error)
+	RemoveNetworkInfo(networkID string, nodeID string) error
+	AddNetworkInfo(info NetworkParametersStorage) error
+	GetNetworksInfo() ([]NetworkParametersStorage, error)
 }
 
 // NodeManager nodes controller.
@@ -65,11 +65,16 @@ type NodeManager interface {
 	UpdateNetwork(nodeID string, networkParameters []aostypes.NetworkParameters) error
 }
 
+type NetworkParametersStorage struct {
+	aostypes.NetworkParameters
+	NodeID string
+}
+
 // NetworkManager networks manager instance.
 type NetworkManager struct {
 	sync.RWMutex
 	instancesData    map[string]map[aostypes.InstanceIdent]InstanceNetworkInfo
-	providerNetworks map[string]aostypes.NetworkParameters
+	providerNetworks map[string][]NetworkParametersStorage
 	ipamSubnet       *ipSubnet
 	dns              *dnsServer
 	storage          Storage
@@ -105,7 +110,6 @@ type NetworkParameters struct {
 //nolint:gochecknoglobals
 var (
 	GetIPSubnet func(networkID string) (allocIPNet *net.IPNet, ip net.IP, err error)
-	GetSubnet   func(networkID string) (*net.IPNet, error)
 	GetVlanID   func(networkID string) (uint64, error)
 )
 
@@ -133,13 +137,9 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 		GetIPSubnet = ipamSubnet.prepareSubnet
 	}
 
-	if GetSubnet == nil {
-		GetSubnet = ipamSubnet.getAvailableSubnet
-	}
-
 	networkManager := &NetworkManager{
 		instancesData:    make(map[string]map[aostypes.InstanceIdent]InstanceNetworkInfo),
-		providerNetworks: make(map[string]aostypes.NetworkParameters),
+		providerNetworks: make(map[string][]NetworkParametersStorage),
 		ipamSubnet:       ipamSubnet,
 		dns:              dns,
 		storage:          storage,
@@ -156,7 +156,8 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 	}
 
 	for _, networkInfo := range networksInfo {
-		networkManager.providerNetworks[networkInfo.NetworkID] = networkInfo
+		networkManager.providerNetworks[networkInfo.NetworkID] = append(
+			networkManager.providerNetworks[networkInfo.NetworkID], networkInfo)
 	}
 
 	networkInstancesInfos, err := storage.GetNetworkInstancesInfo()
@@ -216,9 +217,9 @@ func (manager *NetworkManager) UpdateProviderNetwork(providers []string, nodeID 
 	manager.Lock()
 	defer manager.Unlock()
 
-	manager.removeProviderNetworks(providers)
+	manager.removeProviderNetworks(providers, nodeID)
 
-	networkParameters, err := manager.addProviderNetworks(providers)
+	networkParameters, err := manager.addProviderNetworks(providers, nodeID)
 	if err != nil {
 		return err
 	}
@@ -446,16 +447,60 @@ func (manager *NetworkManager) getNetworkParametersToCache(
 	return aostypes.NetworkParameters{}, "", false
 }
 
-func (manager *NetworkManager) removeProviderNetworks(providers []string) {
-next:
-	for networkID := range manager.providerNetworks {
+func (manager *NetworkManager) removeProviderNetworks(providers []string, nodeID string) {
+	for networkID, networksInfo := range manager.providerNetworks {
+		var validNetworks []NetworkParametersStorage
+
+		// If network is not assigned to any node, remove it
+		for _, info := range networksInfo {
+			if info.NodeID == "" {
+				if err := manager.storage.RemoveNetworkInfo(networkID, ""); err != nil {
+					log.Errorf("Can't remove network info: %v", err)
+				}
+
+				continue
+			}
+
+			validNetworks = append(validNetworks, info)
+		}
+
+		providerFound := false
+
 		for _, providerID := range providers {
 			if networkID == providerID {
-				continue next
+				providerFound = true
+
+				break
 			}
 		}
 
-		log.Debugf("Remove provider network %s", networkID)
+		if providerFound && len(validNetworks) > 0 {
+			manager.providerNetworks[networkID] = validNetworks
+
+			continue
+		}
+
+		log.Debugf("Remove provider network %s for node %s", networkID, nodeID)
+
+		var filteredNetworks []NetworkParametersStorage
+
+		for _, info := range validNetworks {
+			if info.NodeID == nodeID {
+				if err := manager.storage.RemoveNetworkInfo(networkID, nodeID); err != nil {
+					log.Errorf("Can't remove network info: %v", err)
+				}
+
+				continue
+			}
+
+			filteredNetworks = append(filteredNetworks, info)
+		}
+
+		manager.providerNetworks[networkID] = filteredNetworks
+
+		if len(filteredNetworks) > 0 {
+			continue
+		}
 
 		for instanceIdent, netInfo := range manager.instancesData[networkID] {
 			if err := manager.removeInstanceNetworkParameters(
@@ -465,51 +510,99 @@ next:
 		}
 
 		delete(manager.providerNetworks, networkID)
-
 		manager.ipamSubnet.releaseIPNetPool(networkID)
-
-		if err := manager.storage.RemoveNetworkInfo(networkID); err != nil {
-			log.Errorf("Can't remove network info: %v", err)
-		}
 	}
 }
 
+func (manager *NetworkManager) setupNetworkParameters(
+	providerID string, networkParameter *NetworkParametersStorage,
+) error {
+	subnet, ip, err := GetIPSubnet(providerID)
+	if err != nil {
+		return err
+	}
+
+	networkParameter.Subnet = subnet.String()
+	networkParameter.IP = ip.String()
+
+	if err := manager.storage.AddNetworkInfo(*networkParameter); err != nil {
+		return aoserrors.Wrap(err)
+	}
+
+	manager.providerNetworks[providerID] = append(manager.providerNetworks[providerID], *networkParameter)
+
+	return nil
+}
+
+func (manager *NetworkManager) createProviderNetwork(providerID, nodeID string) (aostypes.NetworkParameters, error) {
+	networkParameter := NetworkParametersStorage{
+		NetworkParameters: aostypes.NetworkParameters{
+			NetworkID: providerID,
+		},
+		NodeID: nodeID,
+	}
+
+	var err error
+	if networkParameter.VlanID, err = GetVlanID(providerID); err != nil {
+		return aostypes.NetworkParameters{}, err
+	}
+
+	if err := manager.setupNetworkParameters(providerID, &networkParameter); err != nil {
+		return aostypes.NetworkParameters{}, err
+	}
+
+	return networkParameter.NetworkParameters, nil
+}
+
+func (manager *NetworkManager) updateProviderNetworkForNode(
+	providerID, nodeID string, existingNetwork aostypes.NetworkParameters,
+) (aostypes.NetworkParameters, error) {
+	networkParameter := NetworkParametersStorage{
+		// vlanID should be the same for the same network provider
+		NetworkParameters: existingNetwork,
+		NodeID:            nodeID,
+	}
+
+	if err := manager.setupNetworkParameters(providerID, &networkParameter); err != nil {
+		return aostypes.NetworkParameters{}, err
+	}
+
+	return networkParameter.NetworkParameters, nil
+}
+
 func (manager *NetworkManager) addProviderNetworks(
-	providers []string,
+	providers []string, nodeID string,
 ) (networkParameters []aostypes.NetworkParameters, err error) {
+nextProvider:
 	for _, providerID := range providers {
-		if networkParameter, ok := manager.providerNetworks[providerID]; ok {
-			networkParameters = append(networkParameters, networkParameter)
+		if networks, ok := manager.providerNetworks[providerID]; ok {
+			for _, networkParameter := range networks {
+				if networkParameter.NodeID == nodeID {
+					networkParameters = append(networkParameters, networkParameter.NetworkParameters)
+
+					continue nextProvider
+				}
+			}
+
+			netParam, err := manager.updateProviderNetworkForNode(providerID, nodeID, networks[0].NetworkParameters)
+			if err != nil {
+				return networkParameters, err
+			}
+
+			networkParameters = append(networkParameters, netParam)
 
 			continue
 		}
 
-		networkParameter := aostypes.NetworkParameters{
-			NetworkID: providerID,
-		}
-
-		if networkParameter.VlanID, err = GetVlanID(providerID); err != nil {
-			return nil, err
-		}
-
-		subnet, err := GetSubnet(providerID)
+		netParam, err := manager.createProviderNetwork(providerID, nodeID)
 		if err != nil {
-			return nil, err
+			return networkParameters, err
 		}
 
-		networkParameter.Subnet = subnet.String()
-		networkParameter.IP = cidr.Inc(subnet.IP).String()
-		networkParameter.NetworkID = providerID
-		manager.providerNetworks[providerID] = networkParameter
-
-		if err := manager.storage.AddNetworkInfo(networkParameter); err != nil {
-			return nil, aoserrors.Wrap(err)
-		}
-
-		networkParameters = append(networkParameters, networkParameter)
+		networkParameters = append(networkParameters, netParam)
 	}
 
-	return networkParameters, err
+	return networkParameters, nil
 }
 
 func (manager *NetworkManager) getVlanID(networkID string) (uint64, error) {
