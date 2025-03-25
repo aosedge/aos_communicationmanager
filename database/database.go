@@ -50,7 +50,7 @@ const (
 	syncMode    = "NORMAL"
 )
 
-const dbVersion = 3
+const dbVersion = 4
 
 const dbFileName = "communicationmanager.db"
 
@@ -649,20 +649,21 @@ func (db *Database) RemoveStorageStateInfo(instanceIdent aostypes.InstanceIdent)
 	return err
 }
 
-func (db *Database) AddNetworkInfo(networkInfo aostypes.NetworkParameters) error {
-	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?)",
-		networkInfo.NetworkID, networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID)
+func (db *Database) AddNetworkInfo(networkInfo networkmanager.NetworkParametersStorage) error {
+	return db.executeQuery("INSERT INTO network values(?, ?, ?, ?, ?)",
+		networkInfo.NetworkID, networkInfo.IP, networkInfo.Subnet, networkInfo.VlanID, networkInfo.NodeID)
 }
 
-func (db *Database) RemoveNetworkInfo(networkID string) (err error) {
-	if err = db.executeQuery("DELETE FROM network WHERE networkID = ?", networkID); errors.Is(err, errNotExist) {
+func (db *Database) RemoveNetworkInfo(networkID string, nodeID string) (err error) {
+	if err = db.executeQuery(
+		"DELETE FROM network WHERE networkID = ? AND nodeID = ?", networkID, nodeID); errors.Is(err, errNotExist) {
 		return nil
 	}
 
 	return err
 }
 
-func (db *Database) GetNetworksInfo() ([]aostypes.NetworkParameters, error) {
+func (db *Database) GetNetworksInfo() ([]networkmanager.NetworkParametersStorage, error) {
 	rows, err := db.sql.Query("SELECT * FROM network")
 	if err != nil {
 		return nil, aoserrors.Wrap(err)
@@ -673,12 +674,13 @@ func (db *Database) GetNetworksInfo() ([]aostypes.NetworkParameters, error) {
 		return nil, aoserrors.Wrap(rows.Err())
 	}
 
-	var networks []aostypes.NetworkParameters
+	var networks []networkmanager.NetworkParametersStorage
 
 	for rows.Next() {
-		var networkInfo aostypes.NetworkParameters
+		var networkInfo networkmanager.NetworkParametersStorage
 
-		if err = rows.Scan(&networkInfo.NetworkID, &networkInfo.IP, &networkInfo.Subnet, &networkInfo.VlanID); err != nil {
+		if err = rows.Scan(&networkInfo.NetworkID, &networkInfo.IP,
+			&networkInfo.Subnet, &networkInfo.VlanID, &networkInfo.NodeID); err != nil {
 			return nil, aoserrors.Wrap(err)
 		}
 
@@ -878,10 +880,12 @@ func (db *Database) createNetworkTable() (err error) {
 		return aoserrors.Wrap(err)
 	}
 
-	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS network (networkID TEXT NOT NULL PRIMARY KEY,
+	_, err = db.sql.Exec(`CREATE TABLE IF NOT EXISTS network (networkID TEXT NOT NULL,
                                                               ip TEXT,
                                                               subnet TEXT,
-                                                              vlanID INTEGER)`)
+                                                              vlanID INTEGER,
+															  nodeID TEXT,
+															  PRIMARY KEY(networkID, nodeID))`)
 
 	return aoserrors.Wrap(err)
 }
