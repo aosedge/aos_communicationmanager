@@ -132,7 +132,7 @@ func TestBaseNetwork(t *testing.T) {
 	}{
 		{
 			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.2"),
+				IP:     ("172.17.0.1"),
 				Subnet: ("172.17.0.0/16"),
 			},
 			instance: aostypes.InstanceIdent{
@@ -144,7 +144,7 @@ func TestBaseNetwork(t *testing.T) {
 		},
 		{
 			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.3"),
+				IP:     ("172.17.0.2"),
 				Subnet: ("172.17.0.0/16"),
 			},
 			instance: aostypes.InstanceIdent{
@@ -197,8 +197,8 @@ func TestBaseNetwork(t *testing.T) {
 	}
 
 	expected := []string{
-		"172.17.0.2\thosts1\t1.subject1.service1",
-		"172.17.0.3\thosts2\t2.subject1.service1",
+		"172.17.0.1\thosts1\t1.subject1.service1",
+		"172.17.0.2\thosts2\t2.subject1.service1",
 	}
 	sort.Strings(expected)
 
@@ -265,7 +265,7 @@ func TestAllowConnection(t *testing.T) {
 	}{
 		{
 			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.2"),
+				IP:     ("172.17.0.1"),
 				Subnet: ("172.17.0.0/16"),
 			},
 			instance: aostypes.InstanceIdent{
@@ -278,14 +278,14 @@ func TestAllowConnection(t *testing.T) {
 		},
 		{
 			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.18.0.2"),
+				IP:     ("172.18.0.1"),
 				Subnet: ("172.18.0.0/16"),
 				FirewallRules: []aostypes.FirewallRule{
 					{
 						Proto:   "udp",
 						DstPort: "10001",
-						SrcIP:   "172.18.0.2",
-						DstIP:   "172.17.0.2",
+						SrcIP:   "172.18.0.1",
+						DstIP:   "172.17.0.1",
 					},
 				},
 			},
@@ -358,7 +358,7 @@ func TestNetworkStorage(t *testing.T) {
 	}{
 		{
 			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.2"),
+				IP:     ("172.17.0.1"),
 				Subnet: ("172.17.0.0/16"),
 			},
 			instance: aostypes.InstanceIdent{
@@ -370,7 +370,7 @@ func TestNetworkStorage(t *testing.T) {
 		},
 		{
 			networkParameters: aostypes.NetworkParameters{
-				IP:     ("172.17.0.3"),
+				IP:     ("172.17.0.2"),
 				Subnet: ("172.17.0.0/16"),
 			},
 			instance: aostypes.InstanceIdent{
@@ -429,7 +429,6 @@ func TestNetworkUpdates(t *testing.T) {
 	networkmanager.LookPath = lookPath
 	networkmanager.DiscoverInterface = discoverInterface
 	networkmanager.ExecContext = newTestShellCommander
-	networkmanager.GetSubnet = ipam.getSubnet
 	networkmanager.GetVlanID = vlan.getVlanID
 
 	storage := &testStore{
@@ -520,7 +519,7 @@ func newIpam() (*ipamTest, error) {
 
 	ipamInfo.ipamData["network1"] = &ipam{
 		subnet: *ipnet,
-		ip:     cidr.Inc(ip),
+		ip:     ip,
 	}
 
 	if ip, ipnet, err = net.ParseCIDR("172.18.0.0/16"); err != nil {
@@ -529,7 +528,7 @@ func newIpam() (*ipamTest, error) {
 
 	ipamInfo.ipamData["network2"] = &ipam{
 		subnet: *ipnet,
-		ip:     cidr.Inc(ip),
+		ip:     ip,
 	}
 
 	return ipamInfo, nil
@@ -544,15 +543,6 @@ func (ipam *ipamTest) getIPSubnet(networkID string) (*net.IPNet, net.IP, error) 
 	ipamInfo.ip = cidr.Inc(ipamInfo.ip)
 
 	return &ipamInfo.subnet, ipamInfo.ip, nil
-}
-
-func (ipam *ipamTest) getSubnet(networkID string) (*net.IPNet, error) {
-	ipamInfo, ok := ipam.ipamData[networkID]
-	if !ok {
-		return nil, aoserrors.Errorf("Can't find network %v", networkID)
-	}
-
-	return &ipamInfo.subnet, nil
 }
 
 func (storage *testStore) AddNetworkInstanceInfo(networkInfo networkmanager.InstanceNetworkInfo) error {
@@ -575,15 +565,15 @@ func (storage *testStore) GetNetworkInstancesInfo() (networkInfos []networkmanag
 	return networkInfos, err
 }
 
-func (storage *testStore) RemoveNetworkInfo(networkID string) error {
+func (storage *testStore) RemoveNetworkInfo(networkID string, nodeID string) error {
 	return nil
 }
 
-func (storage *testStore) AddNetworkInfo(networkInfo aostypes.NetworkParameters) error {
+func (storage *testStore) AddNetworkInfo(networkInfo networkmanager.NetworkParametersStorage) error {
 	return nil
 }
 
-func (storage *testStore) GetNetworksInfo() (networkInfos []aostypes.NetworkParameters, err error) {
+func (storage *testStore) GetNetworksInfo() (networkInfos []networkmanager.NetworkParametersStorage, err error) {
 	return nil, nil
 }
 

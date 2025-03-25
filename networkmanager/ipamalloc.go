@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/aosedge/aos_common/aoserrors"
-	"github.com/aosedge/aos_common/aostypes"
 	"github.com/apparentlymart/go-cidr/cidr"
 	log "github.com/sirupsen/logrus"
 )
@@ -173,7 +172,7 @@ func (ipam *ipSubnet) getAvailableSubnet(networkID string) (*net.IPNet, error) {
 	return subnet.ipNet, nil
 }
 
-func (ipam *ipSubnet) removeAllocatedSubnets(networks []aostypes.NetworkParameters,
+func (ipam *ipSubnet) removeAllocatedSubnets(networks []NetworkParametersStorage,
 	networkInstances []InstanceNetworkInfo,
 ) {
 	ipam.Lock()
@@ -232,7 +231,7 @@ func generateSubnetIPs(ipNet *net.IPNet) []net.IP {
 
 		ips = make([]net.IP, addressCount)
 
-		ip = cidr.Inc(minIPRange)
+		ip = minIPRange
 	)
 
 	for i := range addressCount {
