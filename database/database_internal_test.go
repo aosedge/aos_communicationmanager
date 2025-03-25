@@ -686,30 +686,39 @@ func TestNetworkInstanceConfiguration(t *testing.T) {
 
 func TestNetworkConfiguration(t *testing.T) {
 	casesAdd := []struct {
-		networkInfo aostypes.NetworkParameters
+		networkInfo networkmanager.NetworkParametersStorage
 	}{
 		{
-			networkInfo: aostypes.NetworkParameters{
-				NetworkID: "network1",
-				Subnet:    "172.17.0.0/16",
-				IP:        "172.17.0.1",
-				VlanID:    1,
+			networkInfo: networkmanager.NetworkParametersStorage{
+				NetworkParameters: aostypes.NetworkParameters{
+					NetworkID: "network1",
+					Subnet:    "172.17.0.0/16",
+					IP:        "172.17.0.1",
+					VlanID:    1,
+				},
+				NodeID: "node1",
 			},
 		},
 		{
-			networkInfo: aostypes.NetworkParameters{
-				NetworkID: "network2",
-				Subnet:    "172.18.0.0/16",
-				IP:        "172.18.0.1",
-				VlanID:    1,
+			networkInfo: networkmanager.NetworkParametersStorage{
+				NetworkParameters: aostypes.NetworkParameters{
+					NetworkID: "network2",
+					Subnet:    "172.18.0.0/16",
+					IP:        "172.18.0.1",
+					VlanID:    1,
+				},
+				NodeID: "node2",
 			},
 		},
 		{
-			networkInfo: aostypes.NetworkParameters{
-				NetworkID: "network3",
-				Subnet:    "172.19.0.0/16",
-				IP:        "172.19.0.2",
-				VlanID:    1,
+			networkInfo: networkmanager.NetworkParametersStorage{
+				NetworkParameters: aostypes.NetworkParameters{
+					NetworkID: "network3",
+					Subnet:    "172.19.0.0/16",
+					IP:        "172.19.0.2",
+					VlanID:    1,
+				},
+				NodeID: "node3",
 			},
 		},
 	}
@@ -721,45 +730,58 @@ func TestNetworkConfiguration(t *testing.T) {
 	}
 
 	casesRemove := []struct {
-		expectedNetworkInfo []aostypes.NetworkParameters
+		expectedNetworkInfo []networkmanager.NetworkParametersStorage
 		removeNetwork       string
+		removeNodeID        string
 	}{
 		{
 			removeNetwork: "network1",
-			expectedNetworkInfo: []aostypes.NetworkParameters{
+			removeNodeID:  "node1",
+			expectedNetworkInfo: []networkmanager.NetworkParametersStorage{
 				{
-					NetworkID: "network2",
-					Subnet:    "172.18.0.0/16",
-					IP:        "172.18.0.1",
-					VlanID:    1,
+					NetworkParameters: aostypes.NetworkParameters{
+						NetworkID: "network2",
+						Subnet:    "172.18.0.0/16",
+						IP:        "172.18.0.1",
+						VlanID:    1,
+					},
+					NodeID: "node2",
 				},
 				{
-					NetworkID: "network3",
-					Subnet:    "172.19.0.0/16",
-					IP:        "172.19.0.2",
-					VlanID:    1,
+					NetworkParameters: aostypes.NetworkParameters{
+						NetworkID: "network3",
+						Subnet:    "172.19.0.0/16",
+						IP:        "172.19.0.2",
+						VlanID:    1,
+					},
+					NodeID: "node3",
 				},
 			},
 		},
 		{
 			removeNetwork: "network2",
-			expectedNetworkInfo: []aostypes.NetworkParameters{
+			removeNodeID:  "node2",
+			expectedNetworkInfo: []networkmanager.NetworkParametersStorage{
 				{
-					NetworkID: "network3",
-					Subnet:    "172.19.0.0/16",
-					IP:        "172.19.0.2",
-					VlanID:    1,
+					NetworkParameters: aostypes.NetworkParameters{
+						NetworkID: "network3",
+						Subnet:    "172.19.0.0/16",
+						IP:        "172.19.0.2",
+						VlanID:    1,
+					},
+					NodeID: "node3",
 				},
 			},
 		},
 		{
 			removeNetwork:       "network3",
+			removeNodeID:        "node3",
 			expectedNetworkInfo: nil,
 		},
 	}
 
 	for _, tCase := range casesRemove {
-		if err := testDB.RemoveNetworkInfo(tCase.removeNetwork); err != nil {
+		if err := testDB.RemoveNetworkInfo(tCase.removeNetwork, tCase.removeNodeID); err != nil {
 			t.Errorf("Can't remove network info: %v", err)
 		}
 
@@ -1111,7 +1133,23 @@ func TestMigration(t *testing.T) {
 		t.Fatalf("Error checking db version: %v", err)
 	}
 
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 4); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer4(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
+
 	// Migration downward
+
+	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 3); err != nil {
+		t.Fatalf("Can't perform migration: %v", err)
+	}
+
+	if err = checkDatabaseVer3(migrationDB); err != nil {
+		t.Fatalf("Error checking db version: %v", err)
+	}
 
 	if err = migration.DoMigrate(migrationDB, mergedMigrationDir, 2); err != nil {
 		t.Fatalf("Can't perform migration: %v", err)
@@ -1353,6 +1391,27 @@ func checkDatabaseVer3(sqlite *sql.DB) error {
 	}
 
 	if exist, err = isColumnExist(sqlite, "layers", "state"); err != nil {
+		return err
+	}
+
+	if !exist {
+		return errWrongVersion
+	}
+
+	return nil
+}
+
+func checkDatabaseVer4(sqlite *sql.DB) error {
+	exist, err := isTableExist(sqlite, "network")
+	if err != nil {
+		return err
+	}
+
+	if !exist {
+		return errWrongVersion
+	}
+
+	if exist, err = isColumnExist(sqlite, "network", "nodeID"); err != nil {
 		return err
 	}
 
