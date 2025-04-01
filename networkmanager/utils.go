@@ -48,7 +48,15 @@ func getNetworkRoutes() (routeIPList []netlink.Route, err error) {
 
 func checkRouteOverlaps(toCheck *net.IPNet, networks []netlink.Route) (overlapsIPs bool) {
 	for _, network := range networks {
-		if network.Dst != nil && (toCheck.Contains(network.Dst.IP) || network.Dst.Contains(toCheck.IP)) {
+		if network.Dst == nil {
+			continue
+		}
+
+		if network.Dst.String() == "0.0.0.0/0" {
+			if network.Gw != nil && toCheck.Contains(network.Gw) {
+				return true
+			}
+		} else if toCheck.Contains(network.Dst.IP) || network.Dst.Contains(toCheck.IP) {
 			return true
 		}
 	}
