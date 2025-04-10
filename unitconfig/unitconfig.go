@@ -254,6 +254,8 @@ func (instance *Instance) load() (err error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Don't treat absent config as an error.
+			log.Errorf("Unit config file doesn't exist: %s", instance.unitConfigFile)
+
 			instance.unitConfig = cloudprotocol.UnitConfig{Version: "0.0.0"}
 
 			return nil
@@ -263,7 +265,11 @@ func (instance *Instance) load() (err error) {
 	}
 
 	if err = json.Unmarshal(byteValue, &instance.unitConfig); err != nil {
-		return aoserrors.Wrap(err)
+		log.WithError(err).Errorf("Can't unmarshal unit config file: %s", instance.unitConfigFile)
+
+		instance.unitConfig = cloudprotocol.UnitConfig{Version: "0.0.0"}
+
+		return nil
 	}
 
 	return nil

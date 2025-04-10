@@ -185,8 +185,12 @@ func TestInvalidGetStatus(t *testing.T) {
 		t.Fatalf("Can't get unit config status: %s", err)
 	}
 
-	if info.Status != cloudprotocol.ErrorStatus {
+	if info.Status != cloudprotocol.InstalledStatus {
 		t.Errorf("Wrong unit config status: %s", info.Status)
+	}
+
+	if info.Version != "0.0.0" {
+		t.Errorf("Wrong unit config version: %s", info.Version)
 	}
 }
 
