@@ -1,6 +1,7 @@
 module github.com/aosedge/aos_communicationmanager
 
 go 1.22.0
+toolchain go1.24.1
 
 replace github.com/ThalesIgnite/crypto11 => github.com/aosedge/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f
 
@@ -25,7 +26,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/streadway/amqp v1.1.0
 	github.com/vishvananda/netlink v1.1.0
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.35.0
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0
 	golang.org/x/sys v0.30.0
 	google.golang.org/grpc v1.69.0
