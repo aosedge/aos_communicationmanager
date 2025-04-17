@@ -110,6 +110,7 @@ type Config struct {
 	Migration             Migration         `json:"migration"`
 	SMController          SMController      `json:"smController"`
 	UMController          UMController      `json:"umController"`
+	DNSIP                 string            `json:"dnsIp"`
 }
 
 /***********************************************************************************************************************
