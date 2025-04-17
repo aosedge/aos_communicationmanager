@@ -82,7 +82,7 @@ var errProcessNotExist = aoserrors.New("process not exist")
  * Private
  **********************************************************************************************************************/
 
-func newDNSServer(networkDir string) (*dnsServer, error) {
+func newDNSServer(networkDir string, dnsIP string) (*dnsServer, error) {
 	dnsMasqBinary, err := LookPath("dnsmasq")
 	if err != nil {
 		return nil, aoserrors.New("dnsmasq binary not found")
@@ -92,16 +92,20 @@ func newDNSServer(networkDir string) (*dnsServer, error) {
 		return nil, aoserrors.Wrap(err)
 	}
 
-	ip, err := DiscoverInterface()
-	if err != nil {
-		return nil, aoserrors.Wrap(err)
+	if dnsIP == "" {
+		ip, err := DiscoverInterface()
+		if err != nil {
+			return nil, aoserrors.Wrap(err)
+		}
+
+		dnsIP = ip.String()
 	}
 
 	dnsServer := &dnsServer{
 		configFile:     filepath.Join(networkDir, confFileName),
 		PidFile:        filepath.Join(networkDir, pidFileName),
 		AddOnHostsFile: filepath.Join(networkDir, hostsFileName),
-		IPAddress:      ip.String(),
+		IPAddress:      dnsIP,
 		binary:         dnsMasqBinary,
 		hosts:          make(map[string][]string),
 	}
