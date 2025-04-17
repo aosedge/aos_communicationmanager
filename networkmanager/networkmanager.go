@@ -128,7 +128,7 @@ func New(storage Storage, nodeManager NodeManager, config *config.Config) (*Netw
 		return nil, err
 	}
 
-	dns, err := newDNSServer(filepath.Join(config.WorkingDir, "network"))
+	dns, err := newDNSServer(filepath.Join(config.WorkingDir, "network"), config.DNSIP)
 	if err != nil {
 		return nil, err
 	}
