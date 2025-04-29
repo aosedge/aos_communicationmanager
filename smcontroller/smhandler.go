@@ -704,7 +704,7 @@ func instancesStatusFromPB(pbStatuses []*pb.InstanceStatus, nodeID string) []clo
 			NodeID:         nodeID,
 			ServiceVersion: status.GetServiceVersion(),
 			Status:         status.GetRunState(),
-			ErrorInfo:      errorInfoFromPB(status.GetErrorInfo()),
+			ErrorInfo:      errorInfoFromPB(status.GetError()),
 		}
 	}
 
