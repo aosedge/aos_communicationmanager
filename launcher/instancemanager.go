@@ -405,7 +405,7 @@ func (im *instanceManager) removeOutdatedInstances() error {
 
 	for _, instance := range instances {
 		if instance.State != InstanceCached ||
-			time.Since(instance.Timestamp) < time.Hour*24*time.Duration(im.config.ServiceTTLDays) {
+			time.Since(instance.Timestamp) < im.config.ServiceTTL.Duration {
 			continue
 		}
 

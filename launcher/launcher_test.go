@@ -199,7 +199,7 @@ func TestInstancesWithOutdatedTTLRemovedOnStart(t *testing.T) {
 			SMController: config.SMController{
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
-			ServiceTTLDays: 1,
+			ServiceTTL: aostypes.Duration{Duration: time.Hour},
 		}
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()
@@ -272,7 +272,7 @@ func TestInstancesAreRemovedViaChannel(t *testing.T) {
 			SMController: config.SMController{
 				NodesConnectionTimeout: aostypes.Duration{Duration: time.Second},
 			},
-			ServiceTTLDays: 1,
+			ServiceTTL: aostypes.Duration{Duration: time.Hour},
 		}
 		nodeInfoProvider = newTestNodeInfoProvider(nodeIDLocalSM)
 		nodeManager      = newTestNodeManager()

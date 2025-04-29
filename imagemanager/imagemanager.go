@@ -93,8 +93,8 @@ type Imagemanager struct {
 	layerAllocator         spaceallocator.Allocator
 	tmpAllocator           spaceallocator.Allocator
 	gidPool                *uidgidpool.IdentifierPool
-	serviceTTLDays         uint64
-	layerTTLDays           uint64
+	serviceTTL             time.Duration
+	layerTTL               time.Duration
 	validateTTLStopChannel chan struct{}
 	removeServiceChannel   chan string
 	fileServer             *fileserver.FileServer
@@ -163,8 +163,8 @@ func New(
 		tmpDir:                 path.Join(cfg.ImageStoreDir, "tmp"),
 		storage:                storage,
 		decrypter:              decrypter,
-		serviceTTLDays:         cfg.ServiceTTLDays,
-		layerTTLDays:           cfg.LayerTTLDays,
+		serviceTTL:             cfg.ServiceTTL.Duration,
+		layerTTL:               cfg.LayerTTL.Duration,
 		gidPool:                uidgidpool.NewGroupIDPool(),
 		validateTTLStopChannel: make(chan struct{}),
 		removeServiceChannel:   make(chan string, 1),
@@ -1133,7 +1133,7 @@ func (imagemanager *Imagemanager) removeOutdatedServices() error {
 
 	for _, service := range services {
 		if service.State == ServiceCached &&
-			service.Timestamp.Add(time.Hour*24*time.Duration(imagemanager.serviceTTLDays)).Before(time.Now()) {
+			service.Timestamp.Add(imagemanager.serviceTTL).Before(time.Now()) {
 			if removeErr := imagemanager.removeService(service); removeErr != nil {
 				log.WithField("serviceID", service.ServiceID).Errorf("Can't remove outdated service: %v", removeErr)
 
@@ -1155,7 +1155,7 @@ func (imagemanager *Imagemanager) removeOutdatedLayers() error {
 
 	for _, layer := range layers {
 		if layer.State == LayerCached &&
-			layer.Timestamp.Add(time.Hour*24*time.Duration(imagemanager.layerTTLDays)).Before(time.Now()) {
+			layer.Timestamp.Add(imagemanager.layerTTL).Before(time.Now()) {
 			if err := imagemanager.removeLayer(layer); err != nil {
 				return err
 			}
