@@ -546,7 +546,7 @@ func (handler *smHandler) processAlert(alert *pb.Alert) {
 		}
 
 	default:
-		log.Warn("Unsupported alert notification")
+		log.WithField("type", reflect.TypeOf(data)).Warn("Unsupported alert notification")
 	}
 
 	handler.alertSender.SendAlert(alertItem)
