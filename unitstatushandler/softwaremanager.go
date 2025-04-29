@@ -929,9 +929,17 @@ serviceLoop:
 			}
 		}
 
-		log.WithField("serviceID", serviceID).Error("Can't run any instances of service")
+		instanceErrMsg := "unknown error"
 
-		updateErr := aoserrors.New("can't run any instances of service")
+		if len(manager.InstanceStatuses) > 0 && manager.InstanceStatuses[0].ErrorInfo != nil {
+			instanceErrMsg = manager.InstanceStatuses[0].ErrorInfo.Message
+		}
+
+		log.WithFields(log.Fields{
+			"serviceID": serviceID, "instanceErr": instanceErrMsg,
+		}).Error("Can't run any instances of service")
+
+		updateErr := aoserrors.Errorf("can't run any instances of service: %s", instanceErrMsg)
 
 		if _, ok := manager.ServiceStatuses[serviceID]; !ok {
 			log.Errorf("Service status not found: %s", serviceID)
