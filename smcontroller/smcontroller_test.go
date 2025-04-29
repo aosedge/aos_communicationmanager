@@ -114,7 +114,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 				{
 					Instance:       &pbcommon.InstanceIdent{ServiceId: "serv2", SubjectId: "subj2", Instance: 1},
 					ServiceVersion: "1.0.0", RunState: "fail",
-					ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+					Error: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 				},
 			},
 		}
@@ -148,7 +148,7 @@ func TestSMInstancesStatusNotifications(t *testing.T) {
 								ServiceId: "serv2", SubjectId: "subj2", Instance: 1,
 							},
 							ServiceVersion: "1.0.0", RunState: "fail",
-							ErrorInfo: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
+							Error: &pbcommon.ErrorInfo{AosCode: 200, ExitCode: 300, Message: "superError"},
 						},
 					},
 				},
