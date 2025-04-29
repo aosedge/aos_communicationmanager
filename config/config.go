@@ -102,8 +102,8 @@ type Config struct {
 	ImageStoreDir         string            `json:"imageStoreDir"`
 	ComponentsDir         string            `json:"componentsDir"`
 	UnitConfigFile        string            `json:"unitConfigFile"`
-	ServiceTTLDays        uint64            `json:"serviceTtlDays"`
-	LayerTTLDays          uint64            `json:"layerTtlDays"`
+	ServiceTTL            aostypes.Duration `json:"serviceTtlDays"`
+	LayerTTL              aostypes.Duration `json:"layerTtlDays"`
 	UnitStatusSendTimeout aostypes.Duration `json:"unitStatusSendTimeout"`
 	Monitoring            Monitoring        `json:"monitoring"`
 	Alerts                Alerts            `json:"alerts"`
@@ -125,6 +125,8 @@ func New(fileName string) (config *Config, err error) {
 	}
 
 	config = &Config{
+		ServiceTTL:            aostypes.Duration{Duration: 30 * 24 * time.Hour},
+		LayerTTL:              aostypes.Duration{Duration: 30 * 24 * time.Hour},
 		UnitStatusSendTimeout: aostypes.Duration{Duration: 30 * time.Second},
 		Alerts: Alerts{
 			SendPeriod:         aostypes.Duration{Duration: 10 * time.Second},
