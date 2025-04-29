@@ -52,8 +52,8 @@ const testConfigContent = `{
 	"workingDir" : "workingDir",
 	"imageStoreDir": "imagestoreDir",
 	"componentsDir": "componentDir",
-	"serviceTtlDays": 30,
-	"layerTtlDays": 40,
+	"serviceTtl": "720h",
+	"layerTtl": "720h",
 	"unitConfigFile" : "/var/aos/aos_unit.cfg",
 	"downloader": {
 		"downloadDir": "/path/to/download",
@@ -302,14 +302,14 @@ func TestCMServer(t *testing.T) {
 }
 
 func TestGetLayerTTLDays(t *testing.T) {
-	if testCfg.LayerTTLDays != 40 {
-		t.Errorf("Wrong LayerTTLDays value: %d", testCfg.LayerTTLDays)
+	if testCfg.LayerTTL.Duration != 30*24*time.Hour {
+		t.Errorf("Wrong LayerTTL value: %d", testCfg.LayerTTL)
 	}
 }
 
 func TestGetServiceTTLDays(t *testing.T) {
-	if testCfg.ServiceTTLDays != 30 {
-		t.Errorf("Wrong ServiceTTLDays value: %d", testCfg.ServiceTTLDays)
+	if testCfg.ServiceTTL.Duration != 30*24*time.Hour {
+		t.Errorf("Wrong ServiceTTL value: %d", testCfg.ServiceTTL)
 	}
 }
 
