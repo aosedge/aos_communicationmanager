@@ -160,7 +160,10 @@ func (stateMachine *updateStateMachine) sendEvent(event string, managerErr error
 }
 
 func (stateMachine *updateStateMachine) scheduleUpdate(schedule cloudprotocol.ScheduleRule) {
-	var updateTime time.Duration
+	var (
+		updateTime time.Duration
+		err        error
+	)
 
 	switch schedule.Type {
 	case cloudprotocol.TriggerUpdate:
@@ -168,7 +171,10 @@ func (stateMachine *updateStateMachine) scheduleUpdate(schedule cloudprotocol.Sc
 		return
 
 	case cloudprotocol.TimetableUpdate:
-		updateTime, _ = getAvailableTimetableTime(time.Now(), schedule.Timetable)
+		if updateTime, err = getAvailableTimetableTime(time.Now(), schedule.Timetable); err != nil {
+			log.WithField("err", err).Error("Can't get available timetable time")
+			return
+		}
 
 		log.WithFields(log.Fields{"in": updateTime}).Debug("Schedule timetable update")
 
