@@ -1464,7 +1464,7 @@ func TestTimeTable(t *testing.T) {
 					DayOfWeek: 1, TimeSlots: []cloudprotocol.TimeSlot{
 						{
 							Start: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
-							End:   aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 1, time.Local)},
 						},
 					},
 				},
@@ -1562,6 +1562,20 @@ func TestTimeTable(t *testing.T) {
 				},
 			},
 			result: 70 * time.Hour,
+		},
+		{
+			fromDate: time.Date(1977, 4, 6, 6, 0, 0, 0, time.Local),
+			timetable: []cloudprotocol.TimetableEntry{
+				{
+					DayOfWeek: uint(time.Wednesday), TimeSlots: []cloudprotocol.TimeSlot{
+						{
+							Start: aostypes.Time{Time: time.Date(0, 1, 1, 0, 0, 0, 0, time.Local)},
+							End:   aostypes.Time{Time: time.Date(0, 1, 1, 1, 0, 0, 0, time.Local)},
+						},
+					},
+				},
+			},
+			result: (24*7 - 6) * time.Hour,
 		},
 	}
 
