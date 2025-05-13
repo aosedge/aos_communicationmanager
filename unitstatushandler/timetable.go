@@ -30,8 +30,7 @@ import (
  **********************************************************************************************************************/
 
 const (
-	maxAvailableTime = 1<<63 - 1
-	daysInWeek       = 7
+	daysInWeek = 7
 )
 
 /***********************************************************************************************************************
@@ -61,7 +60,7 @@ func validateTimetable(timetable []cloudprotocol.TimetableEntry) (err error) {
 				return aoserrors.New("end value should contain only time")
 			}
 
-			if slot.Start.After(slot.End.Time) {
+			if slot.Start.After(slot.End.Time) || slot.Start.Equal(slot.End.Time) {
 				return aoserrors.New("start value should be before end value")
 			}
 		}
@@ -74,58 +73,57 @@ func getAvailableTimetableTime(
 	fromDate time.Time, timetable []cloudprotocol.TimetableEntry,
 ) (availableTime time.Duration, err error) {
 	defer func() {
-		log.WithFields(log.Fields{"fromDate": fromDate, "availableTime": availableTime}).Debug("Get available timetable time")
+		if err == nil {
+			log.WithFields(log.Fields{
+				"fromDate": fromDate, "availableTime": availableTime,
+			}).Debug("Get available timetable time")
+		}
 	}()
-
-	// Set to maximum by default
-	availableTime = maxAvailableTime
 
 	if err = validateTimetable(timetable); err != nil {
 		return availableTime, err
 	}
 
-	startTime := time.Date(fromDate.Year(), fromDate.Month(), fromDate.Day(), 0, 0, 0, 0, time.Local) //nolint:gosmopolitan
+	timetableMap := make(map[time.Weekday][]cloudprotocol.TimeSlot)
 
 	for _, entry := range timetable {
-		// Convert to time.Weekday
-		entryWeekday := time.Weekday((entry.DayOfWeek) % daysInWeek)
-		fromWeekday := fromDate.Weekday()
+		dayOfWeek := time.Weekday(entry.DayOfWeek)
 
-		// Get num of days from weekday to entry weekday
-		shiftDays := int(entryWeekday - fromWeekday)
-		if shiftDays < 0 {
-			shiftDays += 7
+		if dayOfWeek == daysInWeek {
+			dayOfWeek = 0
 		}
 
-		startEntry := startTime.Add(time.Duration(shiftDays) * 24 * time.Hour)
+		timetableMap[dayOfWeek] = append(timetableMap[dayOfWeek], entry.TimeSlots...)
+	}
 
-		for _, slot := range entry.TimeSlots {
-			//nolint:gosmopolitan
-			startDate := time.Date(startEntry.Year(), startEntry.Month(), startEntry.Day(),
-				slot.Start.Hour(), slot.Start.Minute(), slot.Start.Second(), slot.Start.Nanosecond(), time.Local)
+	for i := 0; i <= daysInWeek; i++ {
+		curWeekday := (fromDate.Weekday() + time.Weekday(i)) % daysInWeek
 
-			//nolint:gosmopolitan
-			finishDate := time.Date(startEntry.Year(), startEntry.Month(), startEntry.Day(),
-				slot.End.Hour(), slot.End.Minute(), slot.End.Second(), slot.End.Nanosecond(), time.Local)
+		nearestDuration := time.Duration(1<<63 - 1)
 
-			duration := startDate.Sub(fromDate)
+		for _, slot := range timetableMap[curWeekday] {
+			startTime := time.Date(fromDate.Year(), fromDate.Month(), fromDate.Day(),
+				slot.Start.Hour(), slot.Start.Minute(), slot.Start.Second(), slot.Start.Nanosecond(),
+				time.Local).Add(24 * time.Duration(i) * time.Hour) //nolint:gosmopolitan
+			endTime := time.Date(fromDate.Year(), fromDate.Month(), fromDate.Day(),
+				slot.End.Hour(), slot.End.Minute(), slot.End.Second(), slot.End.Nanosecond(),
+				time.Local).Add(24 * time.Duration(i) * time.Hour) //nolint:gosmopolitan
 
-			if duration < 0 {
-				// We are in the time slot right now
-				if fromDate.Before(finishDate) {
-					return 0, nil
-				}
+			if (startTime.Before(fromDate) || startTime.Equal(fromDate)) && endTime.After(fromDate) {
+				return 0, nil
+			}
 
-				// We are ouf of this slot, skip it
+			if endTime.Before(fromDate) || endTime.Equal(fromDate) {
 				continue
 			}
 
-			// Calculate nearest available time
-			if duration < availableTime {
-				availableTime = duration
+			if startTime.Sub(fromDate) < nearestDuration {
+				nearestDuration = startTime.Sub(fromDate)
 			}
+
+			return nearestDuration, nil
 		}
 	}
 
-	return availableTime, nil
+	return availableTime, aoserrors.New("no available time")
 }
