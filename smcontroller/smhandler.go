@@ -346,7 +346,7 @@ func (handler *smHandler) overrideEnvVars(envVars cloudprotocol.OverrideEnvVars)
 	log.WithFields(log.Fields{
 		"nodeID":   handler.nodeID,
 		"nodeType": handler.nodeType,
-	}).Debug("Override env vars SM ")
+	}).Debug("Override env vars SM")
 
 	request := &pb.OverrideEnvVars{EnvVars: make([]*pb.OverrideInstanceEnvVar, len(envVars.Items))}
 
