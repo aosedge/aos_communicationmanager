@@ -610,8 +610,16 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 				log.WithFields(log.Fields{
 					"id":         result.id,
 					"file":       resp.Filename,
-					"downloaded": resp.BytesComplete(), "reason": err,
+					"downloaded": resp.BytesComplete(),
+					"reason":     err,
 				}).Warn("Download interrupted")
+
+				if resp.HTTPResponse != nil {
+					log.WithFields(log.Fields{
+						"status": resp.HTTPResponse.Status,
+						"code":   resp.HTTPResponse.StatusCode,
+					}).Debug("HTTP Response")
+				}
 
 				downloadInfo.InterruptReason = err.Error()
 
