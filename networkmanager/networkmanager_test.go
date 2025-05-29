@@ -197,8 +197,8 @@ func TestBaseNetwork(t *testing.T) {
 	}
 
 	expected := []string{
-		"172.17.0.1\thosts1\t1.subject1.service1",
-		"172.17.0.2\thosts2\t2.subject1.service1",
+		"172.17.0.1\thosts1\t1.subject1.service1\t1.subject1.service1.network1",
+		"172.17.0.2\thosts2\t2.subject1.service1\t2.subject1.service1.network1",
 	}
 	sort.Strings(expected)
 
