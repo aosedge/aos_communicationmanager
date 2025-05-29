@@ -244,10 +244,18 @@ func (manager *NetworkManager) PrepareInstanceNetworkParameters(
 ) (networkParameters aostypes.NetworkParameters, err error) {
 	if instanceIdent.ServiceID != "" && instanceIdent.SubjectID != "" {
 		params.Hosts = append(
-			params.Hosts, fmt.Sprintf("%d.%s.%s", instanceIdent.Instance, instanceIdent.SubjectID, instanceIdent.ServiceID))
+			params.Hosts, fmt.Sprintf(
+				"%d.%s.%s", instanceIdent.Instance, instanceIdent.SubjectID, instanceIdent.ServiceID))
+
+		params.Hosts = append(
+			params.Hosts, fmt.Sprintf(
+				"%d.%s.%s.%s", instanceIdent.Instance, instanceIdent.SubjectID, instanceIdent.ServiceID, networkID))
 
 		if instanceIdent.Instance == 0 {
 			params.Hosts = append(params.Hosts, fmt.Sprintf("%s.%s", instanceIdent.SubjectID, instanceIdent.ServiceID))
+			params.Hosts = append(
+				params.Hosts, fmt.Sprintf(
+					"%s.%s.%s", instanceIdent.SubjectID, instanceIdent.ServiceID, networkID))
 		}
 	}
 
