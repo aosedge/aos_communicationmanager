@@ -1,7 +1,7 @@
 code.cloudfoundry.org/bytefmt v0.22.0 h1:gu5ebZR/n3BMeiLpjF1rb/NZcqD/1vwNBNWp1uWjz8Y=
 code.cloudfoundry.org/bytefmt v0.22.0/go.mod h1:gVWU9Xk7D6PqXdpiCKxVv7X9OXqyeE38BugdzZMRaNg=
-github.com/aosedge/aos_common v0.0.0-20250429145809-23357d996f4c h1:JyJ9qyEFSKzB9jywmq8FQPW68UHtbIMIUzrjQqFILvA=
-github.com/aosedge/aos_common v0.0.0-20250429145809-23357d996f4c/go.mod h1:ihCabfpyFa5Z4MQTDat2zqkZOUMYN2PEd8hkvt9XMvs=
+github.com/aosedge/aos_common v0.0.0-20250603073327-0ce51fd64ebc h1:A/l9sZu/wzg3KEhny/mVMCkHwmO8GJHfemu+Vktiuro=
+github.com/aosedge/aos_common v0.0.0-20250603073327-0ce51fd64ebc/go.mod h1:ihCabfpyFa5Z4MQTDat2zqkZOUMYN2PEd8hkvt9XMvs=
 github.com/aosedge/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f h1:xL5hA9axQFHnoVVF/Q8CkKl9JiTvA7U72jRDltMBB9M=
 github.com/aosedge/crypto11 v1.0.3-0.20220217163524-ddd0ace39e6f/go.mod h1:ILDKtnCKiQ7zRoNxcp36Y1ZR8LBPmR2E23+wTQe/MlE=
 github.com/aosedge/fsquota v0.0.0-20231127111317-842d831105a7 h1:KR+SuYXJ9HigUaJdUwRlkDOOpkCrliFF3liBVKu2GKY=
