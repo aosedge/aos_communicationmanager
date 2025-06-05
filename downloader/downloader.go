@@ -603,7 +603,7 @@ func (downloader *Downloader) download(url string, result *downloadResult) (err 
 		case <-timer.C:
 			downloader.sender.SendAlert(downloader.prepareDownloadAlert(resp, result, "Download status"))
 
-			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size}).Debug("Download progress")
+			log.WithFields(log.Fields{"complete": resp.BytesComplete(), "total": resp.Size()}).Debug("Download progress")
 
 		case <-resp.Done:
 			if err = resp.Err(); err != nil {
