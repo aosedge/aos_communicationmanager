@@ -188,7 +188,11 @@ func (node *nodeHandler) resetDeviceAllocations() {
 	node.deviceAllocations = make(map[string]int)
 
 	for _, device := range node.nodeConfig.Devices {
-		node.deviceAllocations[device.Name] = device.SharedCount
+		if device.SharedCount > 0 {
+			node.deviceAllocations[device.Name] = device.SharedCount
+		} else {
+			node.deviceAllocations[device.Name] = math.MaxInt
+		}
 	}
 }
 
